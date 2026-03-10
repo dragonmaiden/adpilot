@@ -350,7 +350,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .kpi-grid.kpi-grid-4 {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
 }
 
 .kpi-grid.small {
@@ -446,7 +446,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .charts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
   gap: var(--space-4);
 }
 
@@ -820,7 +820,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .fatigue-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: var(--space-4);
 }
 
@@ -986,8 +986,78 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .footer-attr a:hover { color: var(--color-primary); }
 
 /* ============================================
+   CANDLESTICK CARD CLASSES
+   ============================================ */
+
+.candlestick-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.72rem;
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  flex-wrap: wrap;
+}
+
+.candlestick-stats {
+  display: flex;
+  gap: 0;
+  padding: 10px 20px;
+  border-top: 1px solid var(--color-border);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-text-faint);
+  overflow-x: auto;
+  flex-wrap: wrap;
+}
+
+/* ============================================
+   LIVE.JS CSS CLASSES (replacing inline styles)
+   ============================================ */
+
+.live-ads-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+}
+
+.lessons-summary-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.inactive-ad-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--color-text-faint);
+  flex-wrap: wrap;
+}
+
+/* ============================================
    RESPONSIVE
    ============================================ */
+
+/* Ultra-wide: cap content width */
+@media (min-width: 1920px) {
+  .page {
+    max-width: 1440px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .charts-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Small laptop */
+@media (max-width: 1280px) {
+  .kpi-grid.kpi-grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
 
 @media (max-width: 1024px) {
   .charts-grid { grid-template-columns: 1fr; }
@@ -1020,11 +1090,101 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .charts-grid { grid-template-columns: 1fr; }
 
   .header-right .btn span { display: none; }
+
+  /* Hide connected badges */
+  .connected-badge { display: none; }
+
+  /* Header tighter gap */
+  .header-right { gap: var(--space-2); }
+
+  /* Table mobile UX */
+  .data-table th, .data-table td {
+    font-size: var(--text-xs);
+    padding: var(--space-2);
+  }
+
+  /* Table scroll fade hint */
+  .table-wrapper {
+    position: relative;
+  }
+  .table-wrapper::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 32px;
+    height: 100%;
+    background: linear-gradient(to right, transparent, var(--color-surface));
+    pointer-events: none;
+  }
+
+  /* Candlestick stats stack */
+  .candlestick-stats {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .candlestick-stats > div {
+    padding: var(--space-1) 0 !important;
+    border-left: none !important;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .candlestick-stats > div:last-child {
+    border-bottom: none;
+  }
+
+  /* Candlestick legend wrap */
+  .candlestick-legend {
+    gap: 8px;
+  }
 }
 
 @media (max-width: 480px) {
   .kpi-grid { grid-template-columns: 1fr; }
   .kpi-grid.kpi-grid-4 { grid-template-columns: 1fr; }
+  .kpi-grid.small { grid-template-columns: 1fr; }
+
+  /* Hide lang toggle */
+  .lang-toggle { display: none; }
+
+  /* Tighter header padding */
+  .header { padding: 0 var(--space-3); }
+
+  /* API rows stack */
+  .api-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+  .api-value {
+    word-break: break-all;
+  }
+
+  /* Reduce chart heights */
+  .chart-container { height: 220px; }
+
+  /* Live ads grid single column */
+  .live-ads-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tiny phone */
+@media (max-width: 360px) {
+  .main { padding: var(--space-3); }
+  .card { padding: var(--space-3); }
+  .kpi-card { padding: var(--space-3); }
+
+  .page-title h1 { font-size: var(--text-base); }
+
+  /* Opt items stack vertically */
+  .opt-item {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .lessons-summary-grid {
+    flex-direction: column;
+  }
 }
 
 /* ── Language Toggle ── */

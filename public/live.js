@@ -503,7 +503,7 @@ async function updateLiveCampaigns() {
       activeContainer.innerHTML = '<div class="empty-state">No active ads right now</div>';
     } else {
       activeContainer.innerHTML = `
-        <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
+        <div class="live-ads-grid">
           ${active.map(ad => {
             const cpaStr = ad.cpa ? `$${ad.cpa.toFixed(2)}` : 'N/A';
             const cpaColor = ad.cpa && ad.cpa < 15 ? '#4ade80' : ad.cpa && ad.cpa < 25 ? '#facc15' : '#f87171';
@@ -547,7 +547,7 @@ async function updateLiveCampaigns() {
     const keys = Object.keys(summary).filter(k => k !== 'no_data');
     if (keys.length > 0) {
       lessonsSummaryEl.innerHTML = `
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="lessons-summary-grid">
           ${keys.map(k => {
             const info = lessonLabels[k] || { icon: 'ℹ️', title: k, color: '#94a3b8', tip: '' };
             return `
@@ -591,7 +591,7 @@ async function updateLiveCampaigns() {
               <div style="background:var(--color-surface-alt);border-radius:10px;padding:14px 16px;border:1px solid var(--color-divider);opacity:0.85">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                   <div style="font-weight:600;font-size:0.88rem">${ad.name}</div>
-                  <div style="display:flex;gap:8px;align-items:center;font-size:0.78rem;color:var(--color-text-faint)">
+                  <div class="inactive-ad-meta">
                     <span>$${ad.spend.toFixed(2)} spent</span>
                     <span>·</span>
                     <span>${ad.purchases} purchase${ad.purchases !== 1 ? 's' : ''}</span>
