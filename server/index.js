@@ -10,6 +10,8 @@ const config = require('./config');
 const scheduler = require('./modules/scheduler');
 const meta = require('./modules/metaClient');
 const telegram = require('./modules/telegram');
+const contracts = require('./contracts/v1');
+const transforms = require('./transforms/charts');
 
 // ── Validate required env vars on startup ──
 const REQUIRED_ENV = ['META_ACCESS_TOKEN', 'IMWEB_CLIENT_ID', 'IMWEB_CLIENT_SECRET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'];
@@ -86,7 +88,7 @@ app.get('/api/overview', (req, res) => {
   const scan = scheduler.getLastScanResult();
 
   if (!scan) {
-    return res.json({ ready: false, message: 'First scan not yet complete. Starting up...' });
+    return res.json(contracts.overviewNotReady());
   }
 
   // Calculate KPIs from fresh data
@@ -104,10 +106,15 @@ app.get('/api/overview', (req, res) => {
   const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
   const roas = totalSpend > 0 ? revenue.netRevenue / (totalSpend * config.currency.usdToKrw) : 0;
 
-  res.json({
-    ready: true,
-    lastScan: scheduler.getLastScanTime()?.toISOString(),
-    isScanning: scheduler.getIsScanning(),
+  // Build ALL chart data server-side — frontend does zero transformation
+  const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights);
+  const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
+  const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
+  const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged);
+  const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
+  const dailyProfit = transforms.buildDailyProfit(dailyMerged);
+
+  res.json(contracts.overview({
     kpis: {
       revenue: revenue.totalRevenue || 0,
       refunded: revenue.totalRefunded || 0,
@@ -122,20 +129,12 @@ app.get('/api/overview', (req, res) => {
       refundRate: revenue.refundRate || 0,
       cancelRate: revenue.cancelRate || 0,
     },
-    campaigns: (data.campaigns || []).map(c => ({
-      id: c.id,
-      name: c.name,
-      status: c.status,
-      dailyBudget: c.daily_budget,
-      objective: c.objective,
-      bidStrategy: c.bid_strategy,
-    })),
-    dailyInsights: data.campaignInsights || [],
-    adSetInsights: data.adSetInsights || [],
-    revenueByDay: revenue.dailyRevenue || {},
-    hourlyOrders: revenue.hourlyOrders || [],
+    campaigns: data.campaigns || [],
+    charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
     scanStats: scan.stats || {},
-  });
+    lastScan: scheduler.getLastScanTime()?.toISOString(),
+    isScanning: scheduler.getIsScanning(),
+  }));
 });
 
 // ── Campaigns list with live data ──
@@ -169,7 +168,7 @@ app.get('/api/campaigns', async (req, res) => {
       };
     });
 
-    res.json({ campaigns: enriched });
+    res.json(contracts.campaigns({ campaigns: enriched }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -189,7 +188,7 @@ app.get('/api/optimizations', (req, res) => {
   // Most recent first
   filtered = filtered.slice().reverse().slice(0, limit);
 
-  res.json({
+  res.json(contracts.optimizations({
     total: opts.length,
     showing: filtered.length,
     optimizations: filtered,
@@ -199,19 +198,19 @@ app.get('/api/optimizations', (req, res) => {
       executed: opts.filter(o => o.executed).length,
       pending: opts.filter(o => !o.executed).length,
     },
-  });
+  }));
 });
 
 // ── Scan history ──
 app.get('/api/scans', (req, res) => {
-  res.json({
+  res.json(contracts.scans({
     history: scheduler.getScanHistory().reverse(),
     lastScan: scheduler.getLastScanResult(),
     isScanning: scheduler.getIsScanning(),
     nextScan: scheduler.getLastScanTime()
       ? new Date(scheduler.getLastScanTime().getTime() + config.scheduler.scanIntervalMinutes * 60 * 1000).toISOString()
       : null,
-  });
+  }));
 });
 
 // ── Trigger manual scan ──
@@ -431,7 +430,7 @@ app.post('/api/seed-token', async (req, res) => {
 
 // ── Settings ──
 app.get('/api/settings', (req, res) => {
-  res.json({
+  res.json(contracts.settings({
     rules: config.rules,
     scheduler: config.scheduler,
     meta: {
@@ -442,7 +441,7 @@ app.get('/api/settings', (req, res) => {
     imweb: {
       siteCode: config.imweb.siteCode,
     },
-  });
+  }));
 });
 
 app.put('/api/settings', (req, res) => {
@@ -556,7 +555,7 @@ app.get('/api/postmortem', (req, res) => {
     });
   });
 
-  res.json({
+  res.json(contracts.postmortem({
     active,
     inactive,
     noData,
@@ -567,7 +566,7 @@ app.get('/api/postmortem', (req, res) => {
       inactiveNoData: noData.length,
       totalAds: ads.length,
     },
-  });
+  }));
 });
 
 // ── Optimization Timeline (for micro-adjustment chart) ──
@@ -626,63 +625,20 @@ app.get('/api/optimizations/timeline', (req, res) => {
     };
   });
 
-  res.json({
+  res.json(contracts.optimizationTimeline({
     timeline,
     scanTimeline,
     totalOptimizations: opts.length,
     totalScans: scans.length,
-  });
+  }));
 });
 
 // ── Spend Daily (OHLC candlestick data for the Spend & CAC chart) ──
 app.get('/api/spend-daily', async (req, res) => {
   try {
     const data = scheduler.getLatestData();
-    const insights = data.campaignInsights || [];
-
-    // Group by date, summing all campaigns' spend per day
-    const byDate = {};
-    for (const row of insights) {
-      const d = row.date_start;
-      if (!d) continue;
-      if (!byDate[d]) byDate[d] = { spend: 0, purchases: 0, impressions: 0, clicks: 0 };
-      byDate[d].spend += parseFloat(row.spend || 0);
-      byDate[d].impressions += parseInt(row.impressions || 0);
-      byDate[d].clicks += parseInt(row.clicks || 0);
-      const acts = row.actions || [];
-      const purchaseAction = acts.find(a => a.action_type === 'purchase' || a.action_type === 'omni_purchase');
-      byDate[d].purchases += purchaseAction ? parseInt(purchaseAction.value || 0) : 0;
-    }
-
-    const dates = Object.keys(byDate).sort();
-    if (dates.length === 0) return res.json([]);
-
-    // Build OHLC: open = prev day close (or current spend), close = spend
-    // High/low simulated from ±15% variance (real hourly data would be better)
-    const result = dates.map((d, i) => {
-      const spend = byDate[d].spend;
-      const prevSpend = i > 0 ? byDate[dates[i - 1]].spend : spend;
-      const o = prevSpend;
-      const c = spend;
-      const variance = spend * 0.15;
-      const h = Math.max(o, c) + Math.random() * variance;
-      const l = Math.max(0, Math.min(o, c) - Math.random() * variance);
-      const purchases = byDate[d].purchases;
-      const cac = purchases > 0 ? Math.round(spend / purchases) : 0;
-
-      return {
-        date: d,
-        o: Math.round(o),
-        h: Math.round(h),
-        l: Math.round(l),
-        c: Math.round(c),
-        spend: Math.round(spend),
-        cac,
-        orders: purchases,
-      };
-    });
-
-    res.json(result);
+    const result = transforms.buildSpendDaily(data.campaignInsights);
+    res.json(contracts.spendDaily(result));
   } catch (err) {
     console.error('Spend daily error:', err.message);
     res.json([]);
@@ -694,18 +650,21 @@ app.get('/api/analytics', (req, res) => {
   const data = scheduler.getLatestData();
   const revenue = data.revenueData || {};
 
-  res.json({
+  // Build chart-ready arrays server-side
+  const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights);
+  const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
+  const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
+  const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged);
+  const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
+  const dailyProfit = transforms.buildDailyProfit(dailyMerged);
+
+  res.json(contracts.analytics({
+    charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
+    revenueData: revenue,
     dailyInsights: data.campaignInsights || [],
     adSetInsights: data.adSetInsights || [],
     adInsights: data.adInsights || [],
-    revenueByDay: revenue.dailyRevenue || {},
-    hourlyOrders: revenue.hourlyOrders || [],
-    refundRate: revenue.refundRate || 0,
-    cancelRate: revenue.cancelRate || 0,
-    totalRefunded: revenue.totalRefunded || 0,
-    totalRevenue: revenue.totalRevenue || 0,
-    netRevenue: revenue.netRevenue || 0,
-  });
+  }));
 });
 
 // ── Helper ──
@@ -715,6 +674,19 @@ function countBy(arr, key) {
     return acc;
   }, {});
 }
+
+// ── Snapshots (debug endpoints) ──
+app.get('/api/snapshots', (req, res) => {
+  res.json(contracts.snapshotsList(scheduler.getSnapshotsList()));
+});
+
+app.get('/api/snapshots/:scanId', (req, res) => {
+  const snapshot = scheduler.getSnapshot(req.params.scanId);
+  if (!snapshot) {
+    return res.status(404).json({ apiVersion: contracts.API_VERSION, error: 'Snapshot not found' });
+  }
+  res.json(contracts.snapshotDetail(snapshot));
+});
 
 // ── SPA fallback: serve index.html for any non-API route ──
 app.get('/{*path}', (req, res) => {

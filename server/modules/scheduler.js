@@ -11,6 +11,7 @@ const meta = require('./metaClient');
 const imweb = require('./imwebClient');
 const OptimizationEngine = require('./optimizer');
 const telegram = require('./telegram');
+const { validateMetaCampaigns, validateMetaInsights, validateImwebOrders, logValidation } = require('../validation/vendorSchemas');
 
 const DATA_DIR = config.paths.dataDir;
 const LOG_DIR = path.join(DATA_DIR, 'logs');
@@ -94,10 +95,14 @@ async function runScan(manual = false) {
       meta.getAdSets(),
       meta.getAds(),
     ]);
+    // Validate vendor response shapes
+    const campValid = validateMetaCampaigns(campaigns);
+    logValidation(campValid, 'Meta campaigns');
+
     latestData.campaigns = campaigns;
     latestData.adSets = adSets;
     latestData.ads = ads;
-    scanResult.steps.push({ step: 'meta_structure', campaigns: campaigns.length, adSets: adSets.length, ads: ads.length });
+    scanResult.steps.push({ step: 'meta_structure', campaigns: campaigns.length, adSets: adSets.length, ads: ads.length, validation: { campaigns: campValid.valid } });
     console.log(`[SCHEDULER]   → ${campaigns.length} campaigns, ${adSets.length} ad sets, ${ads.length} ads`);
 
     // ── Step 2: Pull Meta Ads Insights (full history from account creation) ──
@@ -109,6 +114,14 @@ async function runScan(manual = false) {
       meta.getAllAdSetInsights(since, until),
       meta.getAllAdInsights(since, until),
     ]);
+    // Validate insight response shapes
+    const ciValid = validateMetaInsights(campaignInsights, 'campaign');
+    const asiValid = validateMetaInsights(adSetInsights, 'adset');
+    const aiValid = validateMetaInsights(adInsights, 'ad');
+    logValidation(ciValid, 'Meta campaign insights');
+    logValidation(asiValid, 'Meta adset insights');
+    logValidation(aiValid, 'Meta ad insights');
+
     latestData.campaignInsights = campaignInsights;
     latestData.adSetInsights = adSetInsights;
     latestData.adInsights = adInsights;
@@ -118,6 +131,7 @@ async function runScan(manual = false) {
       campaignRows: campaignInsights.length,
       adSetRows: adSetInsights.length,
       adRows: adInsights.length,
+      validation: { campaigns: ciValid.valid, adSets: asiValid.valid, ads: aiValid.valid },
     });
     console.log(`[SCHEDULER]   → ${campaignInsights.length} campaign, ${adSetInsights.length} ad set, ${adInsights.length} ad insight rows`);
 
@@ -125,6 +139,10 @@ async function runScan(manual = false) {
     console.log('[SCHEDULER] Step 3: Fetching Imweb orders...');
     try {
       const orders = await imweb.getAllOrders();
+      // Validate Imweb order shapes
+      const ordValid = validateImwebOrders(orders);
+      logValidation(ordValid, 'Imweb orders');
+
       latestData.orders = orders;
       latestData.revenueData = imweb.processOrders(orders);
       scanResult.steps.push({
@@ -133,6 +151,7 @@ async function runScan(manual = false) {
         revenue: latestData.revenueData.totalRevenue,
         refunded: latestData.revenueData.totalRefunded,
         netRevenue: latestData.revenueData.netRevenue,
+        validation: { orders: ordValid.valid },
       });
       console.log(`[SCHEDULER]   → ${orders.length} orders, ₩${latestData.revenueData.netRevenue.toLocaleString()} net revenue`);
     } catch (err) {
@@ -197,6 +216,26 @@ async function runScan(manual = false) {
       revenueData: latestData.revenueData,
       timestamp: new Date().toISOString(),
     });
+
+    // ── Persist snapshot for debugging & recovery ──
+    try {
+      const SNAP_DIR = path.join(DATA_DIR, 'snapshots');
+      if (!fs.existsSync(SNAP_DIR)) fs.mkdirSync(SNAP_DIR, { recursive: true });
+      saveData(`snapshots/${scanId}_meta_structure.json`, { campaigns, adSets, ads });
+      saveData(`snapshots/${scanId}_meta_insights.json`, { campaignInsights, adSetInsights, adInsights });
+      if (latestData.orders) {
+        saveData(`snapshots/${scanId}_imweb_orders.json`, latestData.orders);
+      }
+      saveData(`snapshots/${scanId}_normalized.json`, {
+        revenueData: latestData.revenueData,
+        timestamp: new Date().toISOString(),
+      });
+      // Cleanup: keep only last 48 snapshots (2 days at hourly scans)
+      cleanupSnapshots(SNAP_DIR, 48);
+      console.log(`[SCHEDULER]   → Snapshot ${scanId} saved`);
+    } catch (snapErr) {
+      console.warn('[SCHEDULER]   ⚠ Snapshot save failed:', snapErr.message);
+    }
 
     // Compute stats
     const totalSpend7d = campaignInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
@@ -281,6 +320,59 @@ function getScanHistory() { return scanHistory; }
 function getAllOptimizations() { return allOptimizations; }
 function getIsScanning() { return isScanning; }
 
+// ── Snapshot helpers ──
+function cleanupSnapshots(snapDir, maxScanSets) {
+  try {
+    const files = fs.readdirSync(snapDir).filter(f => f.endsWith('.json'));
+    // Extract unique scan IDs
+    const scanIds = [...new Set(files.map(f => f.split('_')[0]))].sort();
+    if (scanIds.length <= maxScanSets) return;
+    // Delete oldest scan sets
+    const toDelete = scanIds.slice(0, scanIds.length - maxScanSets);
+    for (const scanId of toDelete) {
+      const scanFiles = files.filter(f => f.startsWith(scanId + '_'));
+      for (const file of scanFiles) {
+        fs.unlinkSync(path.join(snapDir, file));
+      }
+    }
+    console.log(`[SCHEDULER] Cleaned up ${toDelete.length} old snapshot sets`);
+  } catch (e) {
+    console.warn('[SCHEDULER] Snapshot cleanup error:', e.message);
+  }
+}
+
+function getSnapshotsList() {
+  const snapDir = path.join(DATA_DIR, 'snapshots');
+  if (!fs.existsSync(snapDir)) return [];
+  const files = fs.readdirSync(snapDir).filter(f => f.endsWith('.json'));
+  const scanIds = [...new Set(files.map(f => f.split('_')[0]))].sort().reverse();
+  return scanIds.map(id => {
+    const scanFiles = files.filter(f => f.startsWith(id + '_'));
+    return {
+      scanId: id,
+      timestamp: new Date(parseInt(id)).toISOString(),
+      files: scanFiles,
+    };
+  });
+}
+
+function getSnapshot(scanId) {
+  const snapDir = path.join(DATA_DIR, 'snapshots');
+  if (!fs.existsSync(snapDir)) return null;
+  const files = fs.readdirSync(snapDir).filter(f => f.startsWith(scanId + '_'));
+  if (files.length === 0) return null;
+  const result = { scanId, timestamp: new Date(parseInt(scanId)).toISOString(), data: {} };
+  for (const file of files) {
+    const key = file.replace(scanId + '_', '').replace('.json', '');
+    try {
+      result.data[key] = JSON.parse(fs.readFileSync(path.join(snapDir, file), 'utf8'));
+    } catch (e) {
+      result.data[key] = { error: 'Failed to read: ' + e.message };
+    }
+  }
+  return result;
+}
+
 module.exports = {
   runScan,
   startScheduler,
@@ -291,4 +383,6 @@ module.exports = {
   getScanHistory,
   getAllOptimizations,
   getIsScanning,
+  getSnapshotsList,
+  getSnapshot,
 };
