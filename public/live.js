@@ -6,6 +6,7 @@
 const API_BASE = window.location.origin + '/api';
 let pollInterval = null;
 let liveMode = false;
+let USD_TO_KRW = 1450; // default; overwritten from /api/settings on load
 
 // ── API Helper ──
 async function api(path, method = 'GET', body = null) {
@@ -88,12 +89,6 @@ async function updateSettings(settings) {
 // UPDATE DASHBOARD WITH LIVE DATA
 // ═══════════════════════════════════════════
 
-function formatKRW(val) {
-  if (val >= 1000000) return '₩' + (val / 1000000).toFixed(1) + 'M';
-  if (val >= 1000) return '₩' + (val / 1000).toFixed(0) + 'K';
-  return '₩' + Math.round(val).toLocaleString();
-}
-
 // ── Overview KPIs + Charts ──
 async function updateDashboard() {
   const data = await fetchOverview();
@@ -143,7 +138,6 @@ async function updateOverviewKPIs() {
     if (!data) return;
 
     const k = data.kpis;
-    const USD_TO_KRW = 1450;
 
     // ── KPI Card 1: Revenue (Imweb) ──
     const revenueEl = document.querySelector('[data-kpi="revenue"] .kpi-value');
@@ -778,6 +772,138 @@ async function updateAnalyticsPage() {
 }
 
 // ═══════════════════════════════════════════
+// PROFIT ANALYSIS PAGE
+// ═══════════════════════════════════════════
+
+async function updateProfitPage() {
+  try {
+    const data = await fetchAnalytics();
+    if (!data || !data.profitAnalysis) return;
+
+    const pa = data.profitAnalysis;
+    const waterfall = pa.waterfall || [];
+    const campaignProfit = pa.campaignProfit || [];
+    const coverage = pa.coverage || {};
+    const todaySummary = pa.todaySummary;
+
+    // ── Hero Card ──
+    const heroEl = document.getElementById('profitHero');
+    const verdictEl = document.getElementById('profitVerdict');
+    const amountEl = document.getElementById('profitAmount');
+    const confEl = document.getElementById('profitConfidence');
+    const heroSubEl = document.getElementById('profitHeroSub');
+
+    if (todaySummary && verdictEl) {
+      const isPositive = todaySummary.trueNetProfit >= 0;
+      verdictEl.textContent = todaySummary.verdict;
+      verdictEl.className = 'profit-verdict ' + (isPositive ? 'verdict-positive' : 'verdict-negative');
+      amountEl.textContent = '\u20a9' + todaySummary.trueNetProfit.toLocaleString();
+      amountEl.className = 'profit-amount ' + (isPositive ? 'verdict-positive' : 'verdict-negative');
+      if (heroEl) heroEl.className = 'profit-hero ' + (isPositive ? 'hero-positive' : 'hero-negative');
+    }
+
+    if (confEl && coverage.confidence) {
+      confEl.textContent = coverage.confidence.label;
+      confEl.className = 'confidence-badge confidence-' + coverage.confidence.level;
+    }
+
+    if (heroSubEl && todaySummary) {
+      const cogsNote = todaySummary.hasCOGS ? 'COGS included' : 'COGS estimated (no data for this date)';
+      heroSubEl.textContent = todaySummary.date + ' \u2014 ' + cogsNote;
+    }
+
+    // ── KPI Cards ──
+    const totalProfit = waterfall.reduce((s, r) => s + r.trueNetProfit, 0);
+    const totalNetRev = waterfall.reduce((s, r) => s + r.netRevenue, 0);
+    const totalAdSpend = waterfall.reduce((s, r) => s + r.adSpendKRW, 0);
+    const blendedMargin = totalNetRev > 0 ? (totalProfit / totalNetRev * 100) : 0;
+    const trueRoas = totalAdSpend > 0 ? totalNetRev / totalAdSpend : 0;
+
+    const profitKpi = document.querySelector('[data-profit-kpi="trueNetProfit"] .kpi-value');
+    if (profitKpi) profitKpi.textContent = '\u20a9' + totalProfit.toLocaleString();
+    const profitSub = document.querySelector('[data-profit-kpi="trueNetProfit"] .kpi-delta span');
+    if (profitSub) profitSub.textContent = waterfall.length + ' days';
+
+    const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
+    if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';
+    const cogsSub = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-delta span');
+    if (cogsSub) cogsSub.textContent = (coverage.daysWithCOGS || 0) + ' of ' + (coverage.totalDays || 0) + ' days';
+
+    const marginKpi = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-value');
+    if (marginKpi) marginKpi.textContent = blendedMargin.toFixed(1) + '%';
+    const marginSub = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-delta span');
+    if (marginSub) marginSub.textContent = totalProfit >= 0 ? 'Profitable' : 'Unprofitable';
+
+    const roasKpi = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-value');
+    if (roasKpi) roasKpi.textContent = trueRoas.toFixed(2) + 'x';
+    const roasSub = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-delta span');
+    if (roasSub) roasSub.textContent = 'Net Revenue / Ad Spend';
+
+    // ── Waterfall Chart ──
+    if (waterfall.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
+      const gold = '#FFC553';
+      profitWaterfallChart.data.labels = waterfall.map(d => d.date);
+      profitWaterfallChart.data.datasets[0].data = waterfall.map(d => d.netRevenue);
+      profitWaterfallChart.data.datasets[1].data = waterfall.map(d => -d.refunded);
+      profitWaterfallChart.data.datasets[2].data = waterfall.map(d => -(d.cogs + d.cogsShipping));
+      profitWaterfallChart.data.datasets[3].data = waterfall.map(d => -d.adSpendKRW);
+      profitWaterfallChart.data.datasets[4].data = waterfall.map(d => -d.paymentFees);
+      profitWaterfallChart.data.datasets[5].data = waterfall.map(d => d.trueNetProfit);
+      profitWaterfallChart.data.datasets[5].pointBackgroundColor = waterfall.map(d =>
+        d.trueNetProfit >= 0 ? '#4ade80' : '#f87171'
+      );
+      // Dim bars where COGS is missing
+      profitWaterfallChart.data.datasets[0].backgroundColor = waterfall.map(d =>
+        d.hasCOGS ? 'rgba(74, 222, 128, 0.75)' : 'rgba(74, 222, 128, 0.35)'
+      );
+      profitWaterfallChart.update();
+
+      const daysEl = document.getElementById('profitWaterfallDays');
+      if (daysEl) daysEl.textContent = '(' + waterfall.length + 'd)';
+    }
+
+    // ── Campaign Profit Leaderboard ──
+    const tbody = document.getElementById('campaignProfitBody');
+    if (tbody) {
+      tbody.innerHTML = campaignProfit.map(c => {
+        const statusClass = c.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral';
+        const profitColor = c.grossProfit >= 0 ? 'var(--color-success)' : 'var(--color-error)';
+        return `<tr>
+          <td title="${c.campaignId}">${c.campaignName}</td>
+          <td><span class="badge ${statusClass}">${c.status}</span></td>
+          <td>$${c.spend.toFixed(2)}<br><span style="font-size:0.7rem;color:var(--color-text-faint)">\u20a9${c.spendKRW.toLocaleString()}</span></td>
+          <td>${c.metaPurchases}</td>
+          <td>\u20a9${c.estimatedRevenue.toLocaleString()}</td>
+          <td>\u20a9${c.allocatedCOGS.toLocaleString()}</td>
+          <td style="color:${profitColor};font-weight:600">\u20a9${c.grossProfit.toLocaleString()}</td>
+          <td style="color:${profitColor}">${c.margin.toFixed(1)}%</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ── Data Coverage Card ──
+    const coverageContent = document.getElementById('dataCoverageContent');
+    if (coverageContent && coverage.confidence) {
+      const conf = coverage.confidence;
+      const coveredRange = coverage.cogsCoveredRange || {};
+      const missing = coverage.missingRanges || [];
+      coverageContent.innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+          <span class="confidence-badge confidence-${conf.level}">${conf.label}</span>
+          <span style="font-size:0.85rem;color:var(--color-text-muted)">${coverage.daysWithCOGS} of ${coverage.totalDays} days have COGS data (${(coverage.coverageRatio * 100).toFixed(0)}%)</span>
+        </div>
+        ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">Covered: <strong>${coveredRange.from}</strong> to <strong>${coveredRange.to}</strong></p>` : ''}
+        ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">Missing: ${missing.join(', ')}</p>` : ''}
+        <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">Days without COGS data are shown dimmed in the waterfall chart. Profit for those days only accounts for revenue, ad spend, and payment fees.</p>
+      `;
+    }
+
+  } catch (err) {
+    console.warn('[LIVE] Profit page error:', err.message);
+  }
+}
+
+// ═══════════════════════════════════════════
 // FATIGUE DETECTION PAGE
 // ═══════════════════════════════════════════
 
@@ -1170,6 +1296,14 @@ async function startLiveMode() {
   console.log('[LIVE] Backend connected — enabling live mode');
   liveMode = true;
 
+  // Fetch currency config from settings
+  try {
+    const settings = await api('/settings');
+    if (settings && settings.currency && settings.currency.usdToKrw) {
+      USD_TO_KRW = settings.currency.usdToKrw;
+    }
+  } catch (e) { console.warn('[LIVE] Failed to fetch settings currency:', e.message); }
+
   // Show live indicator
   showLiveIndicator();
 
@@ -1231,6 +1365,9 @@ async function startLiveMode() {
     }
     if (typeof budgetChartsInitialized !== 'undefined' && budgetChartsInitialized) {
       await updateBudgetPage();
+    }
+    if (typeof profitChartsInitialized !== 'undefined' && profitChartsInitialized) {
+      await updateProfitPage();
     }
   }, 120000);
 

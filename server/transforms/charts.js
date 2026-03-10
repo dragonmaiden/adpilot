@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════════════════
 
 const config = require('../config');
+const { PURCHASE_ACTION_TYPES } = require('../helpers/metrics');
 
 const USD_TO_KRW = config.currency.usdToKrw;
 
@@ -28,7 +29,7 @@ function buildDailyMerged(revenueByDay, dailyInsights) {
     byDate[d].impressions += parseInt(row.impressions || 0);
     const acts = row.actions || [];
     for (const a of acts) {
-      if (a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase' || a.action_type === 'omni_purchase') {
+      if (PURCHASE_ACTION_TYPES.includes(a.action_type)) {
         byDate[d].purchases += parseInt(a.value || 0);
       }
     }
@@ -174,7 +175,7 @@ function buildSpendDaily(campaignInsights) {
     byDate[d].impressions += parseInt(row.impressions || 0);
     byDate[d].clicks += parseInt(row.clicks || 0);
     const acts = row.actions || [];
-    const purchaseAction = acts.find(a => a.action_type === 'purchase' || a.action_type === 'omni_purchase');
+    const purchaseAction = acts.find(a => PURCHASE_ACTION_TYPES.includes(a.action_type));
     byDate[d].purchases += purchaseAction ? parseInt(purchaseAction.value || 0) : 0;
   }
 
@@ -205,6 +206,162 @@ function buildSpendDaily(campaignInsights) {
   });
 }
 
+/**
+ * Build profit waterfall data — true net profit per day including COGS, shipping, payment fees.
+ * @param {Array} dailyMerged – output of buildDailyMerged
+ * @param {Object} dailyCOGS – { "2026-02-10": { cogs, shipping }, ... }
+ * @param {number} paymentFeeRate – e.g. 0.033
+ * @returns {Array} [{date, revenue, refunded, netRevenue, cogs, cogsShipping, adSpendKRW, paymentFees, trueNetProfit, hasCOGS}, ...]
+ */
+function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate) {
+  const cogsDict = dailyCOGS || {};
+  const feeRate = paymentFeeRate || 0;
+
+  return dailyMerged.map(d => {
+    const dateKey = (d.date || '').slice(0, 10); // defensive normalization
+    const netRevenue = d.revenue - d.refunded;
+    const cogsEntry = cogsDict[dateKey];
+    const hasCOGS = !!cogsEntry;
+    const cogs = hasCOGS ? (cogsEntry.cogs || 0) : 0;
+    const cogsShipping = hasCOGS ? (cogsEntry.shipping || 0) : 0;
+    const adSpendKRW = (d.spend || 0) * USD_TO_KRW;
+    const paymentFees = netRevenue * feeRate;
+    const trueNetProfit = netRevenue - cogs - cogsShipping - adSpendKRW - paymentFees;
+
+    return {
+      date: d.date,
+      revenue: d.revenue,
+      refunded: d.refunded,
+      netRevenue,
+      cogs,
+      cogsShipping,
+      adSpendKRW,
+      paymentFees: Math.round(paymentFees),
+      trueNetProfit: Math.round(trueNetProfit),
+      hasCOGS,
+    };
+  });
+}
+
+/**
+ * Build campaign-level profit estimates using Meta pixel purchases × avg Imweb AOV.
+ * @param {Array} campaignInsights – raw Meta insight rows
+ * @param {Array} campaigns – campaign metadata
+ * @param {number} avgAOV – average order value (KRW)
+ * @param {Object} cogsData – { totalCOGS, totalShipping, ... }
+ * @param {number} totalRevenue – total net revenue (KRW)
+ * @param {number} totalOrders – total orders
+ * @returns {Array} sorted by grossProfit desc
+ */
+function buildCampaignProfit(campaignInsights, campaigns, avgAOV, cogsData, totalRevenue, totalOrders) {
+  const campaignMap = {};
+  for (const c of (campaigns || [])) {
+    campaignMap[c.id] = c;
+  }
+
+  // Aggregate insights per campaign
+  const byCampaign = {};
+  for (const row of (campaignInsights || [])) {
+    const cid = row.campaign_id;
+    if (!cid) continue;
+    if (!byCampaign[cid]) byCampaign[cid] = { spend: 0, purchases: 0 };
+    byCampaign[cid].spend += parseFloat(row.spend || 0);
+    const acts = row.actions || [];
+    for (const a of acts) {
+      if (PURCHASE_ACTION_TYPES.includes(a.action_type)) {
+        byCampaign[cid].purchases += parseInt(a.value || 0);
+      }
+    }
+  }
+
+  const totalCOGSWithShipping = cogsData ? ((cogsData.totalCOGS || 0) + (cogsData.totalShipping || 0)) : 0;
+
+  const result = Object.entries(byCampaign).map(([cid, agg]) => {
+    const camp = campaignMap[cid] || {};
+    const spendKRW = agg.spend * USD_TO_KRW;
+    const estimatedRevenue = agg.purchases * avgAOV;
+    // Allocate COGS proportionally based on revenue share
+    const revenueShare = totalRevenue > 0 ? estimatedRevenue / totalRevenue : 0;
+    const allocatedCOGS = totalCOGSWithShipping * revenueShare;
+    const grossProfit = estimatedRevenue - allocatedCOGS - spendKRW;
+    const margin = estimatedRevenue > 0 ? (grossProfit / estimatedRevenue * 100) : 0;
+
+    return {
+      campaignId: cid,
+      campaignName: camp.name || cid,
+      status: camp.effective_status || camp.status || 'UNKNOWN',
+      spend: parseFloat(agg.spend.toFixed(2)),
+      spendKRW: Math.round(spendKRW),
+      metaPurchases: agg.purchases,
+      estimatedRevenue: Math.round(estimatedRevenue),
+      allocatedCOGS: Math.round(allocatedCOGS),
+      grossProfit: Math.round(grossProfit),
+      margin: parseFloat(margin.toFixed(1)),
+    };
+  });
+
+  return result.sort((a, b) => b.grossProfit - a.grossProfit);
+}
+
+/**
+ * Build data coverage / confidence metrics for COGS.
+ * @param {Array} dailyMerged – output of buildDailyMerged
+ * @param {Object} dailyCOGS – { "2026-02-10": {...}, ... }
+ * @returns {Object} { totalDays, daysWithCOGS, coverageRatio, confidence, cogsCoveredRange, missingRanges }
+ */
+function buildDataCoverage(dailyMerged, dailyCOGS) {
+  const cogsDict = dailyCOGS || {};
+  const totalDays = dailyMerged.length;
+  const dates = dailyMerged.map(d => d.date);
+  const coveredDates = dates.filter(d => !!cogsDict[d.slice(0, 10)]);
+  const daysWithCOGS = coveredDates.length;
+  const coverageRatio = totalDays > 0 ? daysWithCOGS / totalDays : 0;
+
+  let level, label, color;
+  if (coverageRatio >= 0.8) {
+    level = 'high'; label = 'High confidence'; color = '#4ade80';
+  } else if (coverageRatio >= 0.4) {
+    level = 'medium'; label = 'Medium confidence'; color = '#fbbf24';
+  } else {
+    level = 'low'; label = 'Low confidence'; color = '#f87171';
+  }
+
+  // Find covered range
+  const sortedCovered = coveredDates.sort();
+  const cogsCoveredRange = sortedCovered.length > 0
+    ? { from: sortedCovered[0], to: sortedCovered[sortedCovered.length - 1] }
+    : { from: null, to: null };
+
+  // Find missing ranges (contiguous gaps)
+  const missingRanges = [];
+  let gapStart = null;
+  for (const d of dates) {
+    const key = d.slice(0, 10);
+    if (!cogsDict[key]) {
+      if (!gapStart) gapStart = d;
+    } else {
+      if (gapStart) {
+        const prev = dates[dates.indexOf(d) - 1] || gapStart;
+        missingRanges.push(gapStart === prev ? gapStart : `${gapStart} → ${prev}`);
+        gapStart = null;
+      }
+    }
+  }
+  if (gapStart) {
+    const last = dates[dates.length - 1];
+    missingRanges.push(gapStart === last ? gapStart : `${gapStart} → ${last}`);
+  }
+
+  return {
+    totalDays,
+    daysWithCOGS,
+    coverageRatio: parseFloat(coverageRatio.toFixed(3)),
+    confidence: { level, label, color },
+    cogsCoveredRange,
+    missingRanges,
+  };
+}
+
 module.exports = {
   buildDailyMerged,
   buildWeekdayPerf,
@@ -213,4 +370,7 @@ module.exports = {
   buildMonthlyRefunds,
   buildDailyProfit,
   buildSpendDaily,
+  buildProfitWaterfall,
+  buildCampaignProfit,
+  buildDataCoverage,
 };

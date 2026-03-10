@@ -6,23 +6,10 @@
 const config = require('../config');
 const meta = require('./metaClient');
 const telegram = require('./telegram');
+const { getPurchases, getCPA, sumField, sumPurchases, calcCPA } = require('../helpers/metrics');
 
 const RULES = config.rules;
 const USD_TO_KRW = config.currency.usdToKrw;
-
-// ── Extract purchase count from Meta actions array ──
-function getPurchases(actions) {
-  if (!actions) return 0;
-  const purchase = actions.find(a => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase');
-  return purchase ? parseInt(purchase.value, 10) : 0;
-}
-
-// ── Extract CPA from cost_per_action_type ──
-function getCPA(costPerAction) {
-  if (!costPerAction) return null;
-  const cpa = costPerAction.find(a => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase');
-  return cpa ? parseFloat(cpa.value) : null;
-}
 
 // ═══════════════════════════════════════════════
 // OPTIMIZATION RULES
@@ -93,9 +80,9 @@ class OptimizationEngine {
       const cInsights = insights.filter(i => i.campaign_id === campaign.id);
       if (cInsights.length === 0) continue;
 
-      const totalSpend = cInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-      const totalPurchases = cInsights.reduce((s, i) => s + getPurchases(i.actions), 0);
-      const avgCPA = totalPurchases > 0 ? totalSpend / totalPurchases : null;
+      const totalSpend = sumField(cInsights, 'spend');
+      const totalPurchases = sumPurchases(cInsights);
+      const avgCPA = calcCPA(totalSpend, totalPurchases);
       const avgCTR = cInsights.reduce((s, i) => s + parseFloat(i.ctr || 0), 0) / cInsights.length;
       const avgFrequency = cInsights.reduce((s, i) => s + parseFloat(i.frequency || 0), 0) / cInsights.length;
 
@@ -151,9 +138,9 @@ class OptimizationEngine {
       const asInsights = insights.filter(i => i.adset_id === adSet.id);
       if (asInsights.length === 0) continue;
 
-      const totalSpend = asInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-      const totalPurchases = asInsights.reduce((s, i) => s + getPurchases(i.actions), 0);
-      const avgCPA = totalPurchases > 0 ? totalSpend / totalPurchases : null;
+      const totalSpend = sumField(asInsights, 'spend');
+      const totalPurchases = sumPurchases(asInsights);
+      const avgCPA = calcCPA(totalSpend, totalPurchases);
       const avgCTR = asInsights.reduce((s, i) => s + parseFloat(i.ctr || 0), 0) / asInsights.length;
 
       // Rule: Ad set spending with zero conversions
@@ -188,9 +175,9 @@ class OptimizationEngine {
       const parentCampaign = campaigns.find(c => c.id === adSet.campaign_id);
       if (parentCampaign && avgCPA) {
         const campaignInsights = insights.filter(i => i.campaign_id === adSet.campaign_id);
-        const campaignSpend = campaignInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-        const campaignPurchases = campaignInsights.reduce((s, i) => s + getPurchases(i.actions), 0);
-        const campaignCPA = campaignPurchases > 0 ? campaignSpend / campaignPurchases : null;
+        const campaignSpend = sumField(campaignInsights, 'spend');
+        const campaignPurchases = sumPurchases(campaignInsights);
+        const campaignCPA = calcCPA(campaignSpend, campaignPurchases);
 
         if (campaignCPA && avgCPA > campaignCPA * 1.5) {
           this.addAction('budget', 'adset', adSet.id, adSet.name,
@@ -212,8 +199,8 @@ class OptimizationEngine {
       const adInsights = insights.filter(i => i.ad_id === ad.id);
       if (adInsights.length < 3) continue;
 
-      const totalSpend = adInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-      const totalPurchases = adInsights.reduce((s, i) => s + getPurchases(i.actions), 0);
+      const totalSpend = sumField(adInsights, 'spend');
+      const totalPurchases = sumPurchases(adInsights);
 
       // Frequency trend
       const frequencies = adInsights.map(i => parseFloat(i.frequency || 0)).filter(f => f > 0);
@@ -273,9 +260,9 @@ class OptimizationEngine {
     // Calculate CPA for each active campaign
     const campaignPerf = activeCampaigns.map(c => {
       const cInsights = insights.filter(i => i.campaign_id === c.id);
-      const spend = cInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-      const purchases = cInsights.reduce((s, i) => s + getPurchases(i.actions), 0);
-      return { ...c, spend, purchases, cpa: purchases > 0 ? spend / purchases : Infinity };
+      const spend = sumField(cInsights, 'spend');
+      const purchases = sumPurchases(cInsights);
+      return { ...c, spend, purchases, cpa: calcCPA(spend, purchases) ?? Infinity };
     });
 
     // Sort by CPA (best first)
@@ -335,7 +322,7 @@ class OptimizationEngine {
   analyzeROAS(campaignInsights, revenueData) {
     if (!revenueData) return;
 
-    const totalSpend = campaignInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
+    const totalSpend = sumField(campaignInsights, 'spend');
     const totalSpendKRW = totalSpend * USD_TO_KRW;
     const netRevenue = revenueData.netRevenue || 0;
     const roas = totalSpendKRW > 0 ? netRevenue / totalSpendKRW : 0;

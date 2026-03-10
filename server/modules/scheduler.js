@@ -13,6 +13,7 @@ const OptimizationEngine = require('./optimizer');
 const telegram = require('./telegram');
 const { validateMetaCampaigns, validateMetaInsights, validateImwebOrders, logValidation } = require('../validation/vendorSchemas');
 const cogsClient = require('./cogsClient');
+const { sumField, sumPurchases } = require('../helpers/metrics');
 
 const DATA_DIR = config.paths.dataDir;
 const LOG_DIR = path.join(DATA_DIR, 'logs');
@@ -258,12 +259,8 @@ async function runScan(manual = false) {
     }
 
     // Compute stats
-    const totalSpend7d = campaignInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-    const totalPurchases7d = campaignInsights.reduce((s, i) => {
-      const acts = i.actions || [];
-      const p = acts.find(a => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase');
-      return s + (p ? parseInt(p.value) : 0);
-    }, 0);
+    const totalSpend7d = sumField(campaignInsights, 'spend');
+    const totalPurchases7d = sumPurchases(campaignInsights);
 
     scanResult.stats = {
       totalSpend7d: totalSpend7d.toFixed(2),

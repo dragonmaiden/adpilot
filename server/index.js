@@ -12,6 +12,11 @@ const meta = require('./modules/metaClient');
 const telegram = require('./modules/telegram');
 const contracts = require('./contracts/v1');
 const transforms = require('./transforms/charts');
+const overviewService = require('./services/overviewService');
+const campaignService = require('./services/campaignService');
+const postmortemService = require('./services/postmortemService');
+const analyticsService = require('./services/analyticsService');
+const optimizationService = require('./services/optimizationService');
 
 // ── Validate required env vars on startup ──
 const REQUIRED_ENV = ['META_ACCESS_TOKEN', 'IMWEB_CLIENT_ID', 'IMWEB_CLIENT_SECRET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'];
@@ -84,131 +89,17 @@ app.get('/api/health', (req, res) => {
 
 // ── Dashboard Overview (live KPIs + charts data) ──
 app.get('/api/overview', (req, res) => {
-  const data = scheduler.getLatestData();
-  const scan = scheduler.getLastScanResult();
-
-  if (!scan) {
-    return res.json(contracts.overviewNotReady());
-  }
-
-  // Calculate KPIs from fresh data
-  const totalSpend = (data.campaignInsights || []).reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-  const totalPurchases = (data.campaignInsights || []).reduce((s, i) => {
-    const acts = i.actions || [];
-    const p = acts.find(a => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase');
-    return s + (p ? parseInt(p.value) : 0);
-  }, 0);
-  const totalClicks = (data.campaignInsights || []).reduce((s, i) => s + parseInt(i.clicks || 0), 0);
-  const totalImpressions = (data.campaignInsights || []).reduce((s, i) => s + parseInt(i.impressions || 0), 0);
-
-  const revenue = data.revenueData || {};
-  const cogs = data.cogsData || null;
-  const cpa = totalPurchases > 0 ? totalSpend / totalPurchases : 0;
-  const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
-  const roas = totalSpend > 0 ? revenue.netRevenue / (totalSpend * config.currency.usdToKrw) : 0;
-
-  // Build ALL chart data server-side — frontend does zero transformation
-  const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights);
-  const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
-  const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
-  const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged);
-  const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
-  const dailyProfit = transforms.buildDailyProfit(dailyMerged);
-
-  // Compute days of data and gross profit margin
-  const totalCOGSWithShipping = cogs ? cogs.totalCOGSWithShipping : 0;
-  const grossProfit = (revenue.netRevenue || 0) - totalCOGSWithShipping - (totalSpend * config.currency.usdToKrw);
-  const grossMargin = (revenue.netRevenue || 0) > 0 ? (grossProfit / (revenue.netRevenue || 1) * 100) : 0;
-
-  res.json(contracts.overview({
-    kpis: {
-      revenue: revenue.totalRevenue || 0,
-      refunded: revenue.totalRefunded || 0,
-      netRevenue: revenue.netRevenue || 0,
-      totalOrders: revenue.totalOrders || 0,
-      adSpend: totalSpend,
-      adSpendKRW: totalSpend * config.currency.usdToKrw,
-      purchases: totalPurchases,
-      cpa,
-      ctr,
-      roas,
-      refundRate: revenue.refundRate || 0,
-      cancelRate: revenue.cancelRate || 0,
-      cogs: cogs ? cogs.totalCOGSWithShipping : null,
-      grossProfit,
-      grossMargin: parseFloat(grossMargin.toFixed(1)),
-    },
-    days: dailyMerged.length,
-    campaigns: data.campaigns || [],
-    charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
-    scanStats: scan.stats || {},
-    lastScan: scheduler.getLastScanTime()?.toISOString(),
-    isScanning: scheduler.getIsScanning(),
-  }));
+  res.json(overviewService.getOverviewResponse());
 });
 
 // ── Campaigns list with live data ──
-app.get('/api/campaigns', async (req, res) => {
-  try {
-    const data = scheduler.getLatestData();
-    const campaigns = data.campaigns || [];
-    const insights = data.campaignInsights || [];
-
-    const enriched = campaigns.map(c => {
-      const cInsights = insights.filter(i => i.campaign_id === c.id);
-      const spend = cInsights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-      const purchases = cInsights.reduce((s, i) => {
-        const acts = i.actions || [];
-        const p = acts.find(a => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase');
-        return s + (p ? parseInt(p.value) : 0);
-      }, 0);
-      const clicks = cInsights.reduce((s, i) => s + parseInt(i.clicks || 0), 0);
-      const impressions = cInsights.reduce((s, i) => s + parseInt(i.impressions || 0), 0);
-
-      return {
-        ...c,
-        metrics7d: {
-          spend,
-          purchases,
-          cpa: purchases > 0 ? spend / purchases : null,
-          clicks,
-          impressions,
-          ctr: impressions > 0 ? (clicks / impressions * 100) : 0,
-        },
-      };
-    });
-
-    res.json(contracts.campaigns({ campaigns: enriched }));
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.get('/api/campaigns', (req, res) => {
+  res.json(campaignService.getEnrichedCampaigns());
 });
 
 // ── Optimizations log ──
 app.get('/api/optimizations', (req, res) => {
-  const opts = scheduler.getAllOptimizations();
-  const limit = parseInt(req.query.limit) || 50;
-  const type = req.query.type || 'all';
-  const priority = req.query.priority || 'all';
-
-  let filtered = opts;
-  if (type !== 'all') filtered = filtered.filter(o => o.type === type);
-  if (priority !== 'all') filtered = filtered.filter(o => o.priority === priority);
-
-  // Most recent first
-  filtered = filtered.slice().reverse().slice(0, limit);
-
-  res.json(contracts.optimizations({
-    total: opts.length,
-    showing: filtered.length,
-    optimizations: filtered,
-    stats: {
-      byType: countBy(opts, 'type'),
-      byPriority: countBy(opts, 'priority'),
-      executed: opts.filter(o => o.executed).length,
-      pending: opts.filter(o => !o.executed).length,
-    },
-  }));
+  res.json(optimizationService.getOptimizationsResponse(req.query));
 });
 
 // ── Scan history ──
@@ -451,6 +342,7 @@ app.get('/api/settings', (req, res) => {
     imweb: {
       siteCode: config.imweb.siteCode,
     },
+    currency: config.currency,
   }));
 });
 
@@ -467,180 +359,12 @@ app.put('/api/settings', (req, res) => {
 
 // ── Post-mortem analysis for paused ads ──
 app.get('/api/postmortem', (req, res) => {
-  const data = scheduler.getLatestData();
-  const ads = data.ads || [];
-  const adInsights = data.adInsights || [];
-  const campaigns = data.campaigns || [];
-  const adSets = data.adSets || [];
-
-  // Build performance data for ALL ads (active + paused)
-  const adPerformance = ads.map(ad => {
-    const insights = adInsights.filter(i => i.ad_id === ad.id);
-    const totalSpend = insights.reduce((s, i) => s + parseFloat(i.spend || 0), 0);
-    const totalClicks = insights.reduce((s, i) => s + parseInt(i.clicks || 0), 0);
-    const totalImpressions = insights.reduce((s, i) => s + parseInt(i.impressions || 0), 0);
-    const totalPurchases = insights.reduce((s, i) => {
-      const acts = i.actions || [];
-      const p = acts.find(a => a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase');
-      return s + (p ? parseInt(p.value) : 0);
-    }, 0);
-
-    const ctrs = insights.map(i => parseFloat(i.ctr || 0)).filter(c => c > 0);
-    const cpms = insights.map(i => parseFloat(i.cpm || 0)).filter(c => c > 0);
-    const freqs = insights.map(i => parseFloat(i.frequency || 0)).filter(f => f > 0);
-
-    const peakCTR = ctrs.length > 0 ? Math.max(...ctrs) : 0;
-    const avgCTR = ctrs.length > 0 ? ctrs.reduce((a, b) => a + b, 0) / ctrs.length : 0;
-    const lastCTR = ctrs.length > 0 ? ctrs[ctrs.length - 1] : 0;
-    const avgCPM = cpms.length > 0 ? cpms.reduce((a, b) => a + b, 0) / cpms.length : 0;
-    const lastFreq = freqs.length > 0 ? freqs[freqs.length - 1] : 0;
-    const cpa = totalPurchases > 0 ? totalSpend / totalPurchases : null;
-
-    // Generate lessons for paused ads
-    const lessons = [];
-    if (ad.effective_status !== 'ACTIVE') {
-      if (totalSpend > 0 && totalPurchases === 0) {
-        lessons.push({ type: 'no_conversions', text: `Spent $${totalSpend.toFixed(2)} with zero purchases — creative or targeting didn't resonate` });
-      }
-      if (cpa && cpa > 30) {
-        lessons.push({ type: 'high_cpa', text: `CPA of $${cpa.toFixed(2)} was too high — audience may have been too broad or creative lacked urgency` });
-      }
-      if (peakCTR > 0 && lastCTR > 0 && ((peakCTR - lastCTR) / peakCTR) > 0.3) {
-        lessons.push({ type: 'ctr_decay', text: `CTR dropped ${((peakCTR - lastCTR) / peakCTR * 100).toFixed(0)}% from peak (${peakCTR.toFixed(2)}% → ${lastCTR.toFixed(2)}%) — audience fatigue` });
-      }
-      if (lastFreq > 3) {
-        lessons.push({ type: 'high_frequency', text: `Frequency reached ${lastFreq.toFixed(1)} — same people seeing the ad too many times` });
-      }
-      if (avgCTR > 1.5 && totalPurchases === 0) {
-        lessons.push({ type: 'clicks_no_purchase', text: `Good CTR (${avgCTR.toFixed(2)}%) but no purchases — landing page or pricing may be the issue` });
-      }
-      if (totalSpend === 0) {
-        lessons.push({ type: 'no_data', text: 'No spend data in the last 7 days — was paused before this period' });
-      }
-      if (lessons.length === 0 && totalSpend > 0) {
-        lessons.push({ type: 'general', text: `Spent $${totalSpend.toFixed(2)} with ${totalPurchases} purchase${totalPurchases !== 1 ? 's' : ''} — manually paused or replaced by better creative` });
-      }
-    }
-
-    const campaign = campaigns.find(c => c.id === ad.campaign_id);
-
-    return {
-      id: ad.id,
-      name: ad.name,
-      status: ad.status,
-      effectiveStatus: ad.effective_status,
-      campaignId: ad.campaign_id,
-      campaignName: campaign ? campaign.name : 'Unknown',
-      adsetId: ad.adset_id,
-      daysOfData: insights.length,
-      spend: totalSpend,
-      clicks: totalClicks,
-      impressions: totalImpressions,
-      purchases: totalPurchases,
-      cpa,
-      avgCTR,
-      peakCTR,
-      lastCTR,
-      avgCPM,
-      lastFrequency: lastFreq,
-      lessons,
-    };
-  });
-
-  // Separate active vs inactive
-  const active = adPerformance.filter(a => a.effectiveStatus === 'ACTIVE');
-  const inactive = adPerformance.filter(a => a.effectiveStatus !== 'ACTIVE' && a.spend > 0)
-    .sort((a, b) => b.spend - a.spend);
-  const noData = adPerformance.filter(a => a.effectiveStatus !== 'ACTIVE' && a.spend === 0);
-
-  // Aggregate lessons across all inactive
-  const lessonsSummary = {};
-  inactive.forEach(a => {
-    a.lessons.forEach(l => {
-      if (!lessonsSummary[l.type]) lessonsSummary[l.type] = { count: 0, examples: [] };
-      lessonsSummary[l.type].count++;
-      if (lessonsSummary[l.type].examples.length < 3) {
-        lessonsSummary[l.type].examples.push(a.name);
-      }
-    });
-  });
-
-  res.json(contracts.postmortem({
-    active,
-    inactive,
-    noData,
-    lessonsSummary,
-    totals: {
-      activeCount: active.length,
-      inactiveWithData: inactive.length,
-      inactiveNoData: noData.length,
-      totalAds: ads.length,
-    },
-  }));
+  res.json(postmortemService.getPostmortemResponse());
 });
 
 // ── Optimization Timeline (for micro-adjustment chart) ──
 app.get('/api/optimizations/timeline', (req, res) => {
-  const opts = scheduler.getAllOptimizations();
-  const scans = scheduler.getScanHistory();
-
-  // Group optimizations by scan
-  const scanMap = {};
-  for (const scan of scans) {
-    scanMap[scan.scanId] = {
-      time: scan.time,
-      optimizations: scan.optimizations,
-      errors: scan.errors,
-    };
-  }
-
-  // Group all opts by type for the timeline
-  const timeline = opts.map(o => ({
-    time: o.timestamp,
-    scanId: o.scanId,
-    type: o.type,
-    priority: o.priority,
-    action: o.action,
-    target: o.targetName,
-    executed: o.executed,
-    result: o.executionResult,
-    // Derive direction: budget increase = up, budget decrease/pause = down
-    direction: o.action.includes('Increase') || o.action.includes('scale') || o.action.includes('Resume')
-      ? 'up'
-      : o.action.includes('Reduce') || o.action.includes('Pause') || o.action.includes('Reallocate')
-        ? 'down'
-        : 'neutral',
-  }));
-
-  // Aggregate by scan for the bar chart
-  const scanTimeline = scans.map(s => {
-    const scanOpts = opts.filter(o => o.scanId === s.scanId);
-    const budgetUp = scanOpts.filter(o => o.type === 'budget' && (o.action.includes('Increase') || o.action.includes('scale'))).length;
-    const budgetDown = scanOpts.filter(o => o.type === 'budget' && (o.action.includes('Reduce') || o.action.includes('Reallocate'))).length;
-    const pauses = scanOpts.filter(o => o.type === 'status').length;
-    const fatigue = scanOpts.filter(o => o.type === 'creative' || o.type === 'targeting').length;
-    const bids = scanOpts.filter(o => o.type === 'bid').length;
-    const schedule = scanOpts.filter(o => o.type === 'schedule').length;
-
-    return {
-      time: s.time,
-      scanId: s.scanId,
-      total: s.optimizations,
-      budgetUp,
-      budgetDown,
-      pauses,
-      fatigue,
-      bids,
-      schedule,
-    };
-  });
-
-  res.json(contracts.optimizationTimeline({
-    timeline,
-    scanTimeline,
-    totalOptimizations: opts.length,
-    totalScans: scans.length,
-  }));
+  res.json(optimizationService.getTimelineResponse());
 });
 
 // ── Spend Daily (OHLC candlestick data for the Spend & CAC chart) ──
@@ -657,45 +381,8 @@ app.get('/api/spend-daily', async (req, res) => {
 
 // ── Analytics deep data ──
 app.get('/api/analytics', (req, res) => {
-  const data = scheduler.getLatestData();
-  const revenue = data.revenueData || {};
-
-  // Build chart-ready arrays server-side
-  const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights);
-  const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
-  const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
-  const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged);
-  const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
-  const dailyProfit = transforms.buildDailyProfit(dailyMerged);
-
-  const cogs = data.cogsData || null;
-
-  // Compute per-month refund rates from monthly data
-  const monthlyRates = {};
-  for (const m of monthlyRefunds) {
-    if (m.revenue > 0) {
-      monthlyRates[m.month] = parseFloat(((m.refunded / m.revenue) * 100).toFixed(1));
-    }
-  }
-
-  res.json(contracts.analytics({
-    charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
-    revenueData: revenue,
-    dailyInsights: data.campaignInsights || [],
-    adSetInsights: data.adSetInsights || [],
-    adInsights: data.adInsights || [],
-    cogsData: cogs,
-    monthlyRates,
-  }));
+  res.json(analyticsService.getAnalyticsResponse());
 });
-
-// ── Helper ──
-function countBy(arr, key) {
-  return arr.reduce((acc, item) => {
-    acc[item[key]] = (acc[item[key]] || 0) + 1;
-    return acc;
-  }, {});
-}
 
 // ── Snapshots (debug endpoints) ──
 app.get('/api/snapshots', (req, res) => {

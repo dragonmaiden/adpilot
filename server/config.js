@@ -57,6 +57,11 @@ module.exports = {
     },
   },
 
+  // Fees
+  fees: {
+    paymentFeeRate: 0.033, // Standard Korean PG rate (3.3%)
+  },
+
   // Currency
   currency: {
     usdToKrw: 1450,

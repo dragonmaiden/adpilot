@@ -60,6 +60,7 @@ const pageTitleKeys = {
   optimizations: 'page.optimizations',
   fatigue: 'page.fatigue',
   budget: 'page.budget',
+  profit: 'page.profit',
   settings: 'page.settings'
 };
 
@@ -71,6 +72,7 @@ const pageTitles = {
   optimizations: 'Optimization Log',
   fatigue: 'Fatigue Detection',
   budget: 'Budget Manager',
+  profit: 'Profit Analysis',
   settings: 'Settings'
 };
 
@@ -99,6 +101,7 @@ navItems.forEach(item => {
     if (target === 'fatigue' && !fatigueChartInitialized) initFatigueChart();
     if (target === 'budget' && !budgetChartsInitialized) initBudgetCharts();
     if (target === 'optimizations' && !optTimelineInitialized) initOptTimeline();
+    if (target === 'profit' && !profitChartsInitialized) initProfitCharts();
   });
 });
 
@@ -176,13 +179,15 @@ Chart.defaults.maintainAspectRatio = false;
 
 let spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart;
 let optTimelineChart, optTypeChart, optPriorityChart;
+let profitWaterfallChart;
 let fatigueChartInitialized = false;
 let budgetChartsInitialized = false;
 let optTimelineInitialized = false;
+let profitChartsInitialized = false;
 
 function updateChartColors() {
   const c = getChartColors();
-  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart, optTimelineChart, optTypeChart, optPriorityChart];
+  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart, optTimelineChart, optTypeChart, optPriorityChart, profitWaterfallChart];
   allCharts.forEach(chart => {
     if (!chart) return;
     if (chart.options.scales) {
@@ -194,8 +199,6 @@ function updateChartColors() {
     chart.update('none');
   });
 }
-
-const USD_TO_KRW = 1450;
 
 // ── Sparklines ──
 function createSparkline(containerId, data, color) {
@@ -737,12 +740,6 @@ const candlestickPlugin = {
 };
 Chart.register(candlestickPlugin);
 
-function formatKRW(val) {
-  if (val >= 1000000) return '\u20a9' + (val / 1000000).toFixed(1) + 'M';
-  if (val >= 1000) return '\u20a9' + (val / 1000).toFixed(0) + 'K';
-  return '\u20a9' + val.toLocaleString();
-}
-
 function updateCandlestickStats(data) {
   const el = document.getElementById('candlestickStats');
   if (!el || !data.length) return;
@@ -1036,6 +1033,114 @@ async function initOptTimeline() {
   // Trigger live timeline data now that chart exists
   if (typeof liveMode !== 'undefined' && liveMode && typeof updateOptTimeline === 'function') {
     updateOptTimeline();
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// ── PROFIT ANALYSIS PAGE ──
+// ═══════════════════════════════════════════════════════
+
+function initProfitCharts() {
+  profitChartsInitialized = true;
+  const c = getChartColors();
+
+  const ctx = document.getElementById('profitWaterfallChart');
+  if (ctx) {
+    profitWaterfallChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Net Revenue',
+            data: [],
+            backgroundColor: 'rgba(74, 222, 128, 0.75)',
+            borderRadius: 3,
+            stack: 'costs',
+            order: 2,
+          },
+          {
+            label: 'Refunds',
+            data: [],
+            backgroundColor: 'rgba(239, 68, 68, 0.65)',
+            borderRadius: 3,
+            stack: 'deductions',
+            order: 2,
+          },
+          {
+            label: 'COGS',
+            data: [],
+            backgroundColor: 'rgba(251, 146, 60, 0.65)',
+            borderRadius: 3,
+            stack: 'deductions',
+            order: 2,
+          },
+          {
+            label: 'Ad Spend',
+            data: [],
+            backgroundColor: 'rgba(56, 189, 248, 0.65)',
+            borderRadius: 3,
+            stack: 'deductions',
+            order: 2,
+          },
+          {
+            label: 'Payment Fees',
+            data: [],
+            backgroundColor: 'rgba(139, 139, 148, 0.5)',
+            borderRadius: 3,
+            stack: 'deductions',
+            order: 2,
+          },
+          {
+            label: 'Net Profit',
+            data: [],
+            type: 'line',
+            borderColor: c.gold || '#FFC553',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            pointRadius: 3,
+            pointBackgroundColor: [],
+            tension: 0.3,
+            order: 1,
+          }
+        ]
+      },
+      options: {
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: c.text, boxWidth: 12, padding: 12, font: { size: 11 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                const val = ctx.parsed.y;
+                return ctx.dataset.label + ': \u20a9' + (val || 0).toLocaleString();
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: c.textFaint, maxRotation: 45, font: { size: 10 } }
+          },
+          y: {
+            grid: { color: c.grid },
+            ticks: {
+              color: c.textFaint,
+              callback: v => '\u20a9' + (v / 1000).toFixed(0) + 'K'
+            }
+          }
+        }
+      }
+    });
+  }
+
+  // Trigger live data population if already in live mode
+  if (typeof liveMode !== 'undefined' && liveMode && typeof updateProfitPage === 'function') {
+    updateProfitPage();
   }
 }
 

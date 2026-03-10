@@ -986,6 +986,82 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .footer-attr a:hover { color: var(--color-primary); }
 
 /* ============================================
+   PROFIT ANALYSIS PAGE
+   ============================================ */
+
+.profit-hero {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8) var(--space-6);
+  text-align: center;
+}
+
+.profit-hero.hero-positive {
+  border-color: var(--color-success);
+  background: var(--color-success-subtle);
+}
+
+.profit-hero.hero-negative {
+  border-color: var(--color-error);
+  background: var(--color-error-subtle);
+}
+
+.profit-hero-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.profit-verdict {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.profit-amount {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.verdict-positive { color: var(--color-success); }
+.verdict-negative { color: var(--color-error); }
+
+.profit-hero-sub {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.confidence-high {
+  background: var(--color-success-subtle);
+  color: var(--color-success);
+}
+
+.confidence-medium {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.confidence-low {
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+}
+
+/* ============================================
    CANDLESTICK CARD CLASSES
    ============================================ */
 

@@ -67,7 +67,7 @@ function overviewNotReady() {
 /**
  * Build /api/analytics response.
  */
-function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData, monthlyRates }) {
+function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData, monthlyRates, profitAnalysis }) {
   return {
     apiVersion: API_VERSION,
     charts: {
@@ -98,6 +98,13 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
     dailyInsights: dailyInsights ?? [],
     adSetInsights: adSetInsights ?? [],
     adInsights: adInsights ?? [],
+    // Profit Analysis
+    profitAnalysis: {
+      waterfall: profitAnalysis?.waterfall ?? [],
+      campaignProfit: profitAnalysis?.campaignProfit ?? [],
+      coverage: profitAnalysis?.coverage ?? {},
+      todaySummary: profitAnalysis?.todaySummary ?? null,
+    },
   };
 }
 
@@ -220,13 +227,14 @@ function optimizationTimeline({ timeline, scanTimeline, totalOptimizations, tota
 /**
  * Build /api/settings response.
  */
-function settings({ rules, scheduler, meta, imweb }) {
+function settings({ rules, scheduler, meta, imweb, currency }) {
   return {
     apiVersion: API_VERSION,
     rules: rules ?? {},
     scheduler: scheduler ?? {},
     meta: meta ?? {},
     imweb: imweb ?? {},
+    currency: currency ?? {},
   };
 }
 

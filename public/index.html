@@ -63,6 +63,10 @@
         <i data-lucide="wallet"></i>
         <span data-i18n="nav.budget">Budget Manager</span>
       </a>
+      <a href="#" class="nav-item" data-page="profit">
+        <i data-lucide="coins"></i>
+        <span data-i18n="nav.profit">Profit</span>
+      </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="settings"></i>
         <span data-i18n="nav.settings">Settings</span>
@@ -595,6 +599,89 @@
       </div>
     </section>
 
+    <!-- Profit Analysis Page -->
+    <section class="page" data-page="profit">
+      <!-- Hero Card -->
+      <div class="profit-hero" id="profitHero">
+        <div class="profit-hero-inner">
+          <div class="profit-verdict" id="profitVerdict">—</div>
+          <div class="profit-amount" id="profitAmount">—</div>
+          <span class="confidence-badge" id="profitConfidence">—</span>
+        </div>
+        <div class="profit-hero-sub" id="profitHeroSub">Waiting for data...</div>
+      </div>
+
+      <!-- KPI Row -->
+      <div class="kpi-grid kpi-grid-4">
+        <div class="kpi-card" data-profit-kpi="trueNetProfit">
+          <div class="kpi-label">True Net Profit (Period)</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="coins"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-profit-kpi="cogsCoverage">
+          <div class="kpi-label">COGS Coverage</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="database"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-profit-kpi="blendedMargin">
+          <div class="kpi-label">Blended Margin</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="percent"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-profit-kpi="trueRoas">
+          <div class="kpi-label">True ROAS</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
+        </div>
+      </div>
+
+      <!-- Waterfall Chart -->
+      <div class="card chart-card">
+        <div class="card-header">
+          <h2>Daily Profit Waterfall</h2>
+          <span class="chart-days" id="profitWaterfallDays"></span>
+        </div>
+        <div class="chart-container" style="height:380px">
+          <canvas id="profitWaterfallChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Campaign Profit Leaderboard -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Campaign Profit Leaderboard</h2>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)">Revenue estimated (pixel-attributed)</span>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table" id="campaignProfitTable">
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>Status</th>
+                <th>Ad Spend</th>
+                <th>Purchases</th>
+                <th>Est. Revenue</th>
+                <th>Est. COGS</th>
+                <th>Gross Profit</th>
+                <th>Margin %</th>
+              </tr>
+            </thead>
+            <tbody id="campaignProfitBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Data Coverage Card -->
+      <div class="card" id="dataCoverageCard">
+        <div class="card-header">
+          <h2>Data Coverage & Confidence</h2>
+        </div>
+        <div id="dataCoverageContent">
+          <p style="color:var(--color-text-faint)">Waiting for data...</p>
+        </div>
+      </div>
+    </section>
+
     <!-- Settings Page -->
     <section class="page" data-page="settings">
       <div class="card">
@@ -776,6 +863,7 @@
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
 <script src="./i18n.js"></script>
+<script src="./utils.js"></script>
 <script src="./app.js"></script>
 <script src="./live.js"></script>
 </body>
