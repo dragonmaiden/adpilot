@@ -909,33 +909,106 @@ function renderBudgetHistory() {
 // ── OPTIMIZATION TIMELINE PAGE ──
 // ═══════════════════════════════════════════════════════
 
-// Static fallback data: simulates what hourly scans would generate
-// Each entry = one scan session with breakdown of optimization types
-const staticScanTimeline = [
-  { time: '03/04 00:00', budgetUp: 0, budgetDown: 1, pauses: 1, fatigue: 0, bids: 1, schedule: 1 },
-  { time: '03/04 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
-  { time: '03/04 12:00', budgetUp: 0, budgetDown: 0, pauses: 0, fatigue: 1, bids: 1, schedule: 0 },
-  { time: '03/04 18:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 1 },
-  { time: '03/05 00:00', budgetUp: 0, budgetDown: 0, pauses: 1, fatigue: 0, bids: 0, schedule: 0 },
-  { time: '03/05 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
-  { time: '03/05 12:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
-  { time: '03/05 18:00', budgetUp: 0, budgetDown: 1, pauses: 0, fatigue: 0, bids: 1, schedule: 0 },
-  { time: '03/06 00:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 1 },
-  { time: '03/06 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
-  { time: '03/06 12:00', budgetUp: 0, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
-  { time: '03/06 18:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 1, schedule: 0 },
-  { time: '03/07 00:00', budgetUp: 0, budgetDown: 1, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
-  { time: '03/07 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
-  { time: '03/07 12:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 1 },
-  { time: '03/07 18:00', budgetUp: 0, budgetDown: 0, pauses: 1, fatigue: 0, bids: 0, schedule: 0 },
-  { time: '03/08 00:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 1, schedule: 0 },
-  { time: '03/08 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
-  { time: '03/08 12:00', budgetUp: 0, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
-  { time: '03/08 18:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 1 },
-  { time: '03/09 00:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
-  { time: '03/09 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
-  { time: '03/09 12:00', budgetUp: 0, budgetDown: 1, pauses: 0, fatigue: 0, bids: 1, schedule: 0 },
-  { time: '03/09 18:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
+// ── Candlestick Chart.js Plugin ──
+const candlestickPlugin = {
+  id: 'candlestick',
+  beforeDatasetsDraw(chart) {
+    // Only run on charts that have OHLC data (candlestick chart)
+    const dataset = chart.data.datasets[0];
+    if (!dataset || !dataset.data || !dataset.data.length) return;
+    if (!dataset.data[0] || dataset.data[0].o === undefined) return;
+
+    const meta = chart.getDatasetMeta(0);
+    if (!meta || !meta.data.length) return;
+    const ctx = chart.ctx;
+    const data = dataset.data;
+    const yScale = chart.scales.y;
+
+    meta.data.forEach((bar, i) => {
+      const d = data[i];
+      if (!d || d.o == null) return;
+      const x = bar.x;
+      const barW = Math.max(bar.width * 0.7, 6);
+      const halfW = barW / 2;
+
+      const oY = yScale.getPixelForValue(d.o);
+      const cY = yScale.getPixelForValue(d.c);
+      const hY = yScale.getPixelForValue(d.h);
+      const lY = yScale.getPixelForValue(d.l);
+      const isUp = d.c >= d.o;
+      const color = isUp ? '#4ade80' : '#ef6461';
+
+      ctx.save();
+      // Wick (high-low line)
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(x, hY);
+      ctx.lineTo(x, lY);
+      ctx.stroke();
+
+      // Body (open-close rect)
+      const top = Math.min(oY, cY);
+      const bodyH = Math.max(Math.abs(oY - cY), 1);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(x - halfW, top, barW, bodyH);
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    });
+  },
+  afterDatasetsDraw(chart) {
+    // Draw Target CPA label on the dashed line
+    const dataset = chart.data.datasets[0];
+    if (!dataset || !dataset.data || !dataset.data.length) return;
+    if (!dataset.data[0] || dataset.data[0].o === undefined) return;
+
+    const ctx = chart.ctx;
+    const y1Scale = chart.scales.y1;
+    if (!y1Scale) return;
+
+    // Find the Target CPA dataset (index 2)
+    const targetDs = chart.data.datasets[2];
+    if (!targetDs || !targetDs.data || !targetDs.data.length) return;
+    const targetVal = targetDs.data[0];
+    const yPos = y1Scale.getPixelForValue(targetVal);
+    const chartArea = chart.chartArea;
+
+    ctx.save();
+    // Background pill for label
+    const labelText = 'Target CAC ' + formatKRW(targetVal);
+    ctx.font = "11px 'JetBrains Mono', monospace";
+    const textW = ctx.measureText(labelText).width;
+    const pillX = chartArea.right - textW - 16;
+    const pillY = yPos - 10;
+    ctx.fillStyle = 'rgba(239, 100, 97, 0.15)';
+    ctx.roundRect(pillX - 4, pillY - 2, textW + 12, 16, 3);
+    ctx.fill();
+    ctx.fillStyle = '#ef6461';
+    ctx.fillText(labelText, pillX + 2, pillY + 10);
+    ctx.restore();
+  }
+};
+Chart.register(candlestickPlugin);
+
+// Static fallback: daily spend data with OHLC + CAC
+// (replaced by live API data when available)
+const staticSpendDaily = [
+  { date: '2026-02-23', o: 85000, h: 92000, l: 78000, c: 89000, spend: 89000, cac: 42000, orders: 2 },
+  { date: '2026-02-24', o: 89000, h: 95000, l: 82000, c: 84000, spend: 84000, cac: 38000, orders: 2 },
+  { date: '2026-02-25', o: 84000, h: 98000, l: 80000, c: 95000, spend: 95000, cac: 45000, orders: 2 },
+  { date: '2026-02-26', o: 95000, h: 105000, l: 88000, c: 92000, spend: 92000, cac: 40000, orders: 2 },
+  { date: '2026-02-27', o: 92000, h: 110000, l: 85000, c: 108000, spend: 108000, cac: 48000, orders: 2 },
+  { date: '2026-02-28', o: 108000, h: 115000, l: 90000, c: 96000, spend: 96000, cac: 44000, orders: 2 },
+  { date: '2026-03-01', o: 96000, h: 102000, l: 82000, c: 88000, spend: 88000, cac: 41000, orders: 2 },
+  { date: '2026-03-02', o: 88000, h: 100000, l: 78000, c: 97000, spend: 97000, cac: 43000, orders: 2 },
+  { date: '2026-03-03', o: 97000, h: 108000, l: 90000, c: 103000, spend: 103000, cac: 46000, orders: 2 },
+  { date: '2026-03-04', o: 103000, h: 112000, l: 95000, c: 99000, spend: 99000, cac: 42000, orders: 2 },
+  { date: '2026-03-05', o: 99000, h: 106000, l: 85000, c: 87000, spend: 87000, cac: 39000, orders: 2 },
+  { date: '2026-03-06', o: 87000, h: 95000, l: 80000, c: 93000, spend: 93000, cac: 44000, orders: 2 },
+  { date: '2026-03-07', o: 93000, h: 100000, l: 88000, c: 91000, spend: 91000, cac: 41000, orders: 2 },
+  { date: '2026-03-08', o: 91000, h: 98000, l: 82000, c: 86000, spend: 86000, cac: 38000, orders: 2 },
+  { date: '2026-03-09', o: 86000, h: 105000, l: 83000, c: 102000, spend: 102000, cac: 45000, orders: 2 },
 ];
 
 // Aggregate from static optimizations data (type + priority counts)
@@ -944,97 +1017,204 @@ const staticOptCounts = {
   byPriority: { critical: 2, high: 5, medium: 4, low: 3 },
 };
 
+function formatKRW(val) {
+  if (val >= 1000000) return '\u20a9' + (val / 1000000).toFixed(1) + 'M';
+  if (val >= 1000) return '\u20a9' + (val / 1000).toFixed(0) + 'K';
+  return '\u20a9' + val.toLocaleString();
+}
+
+function updateCandlestickStats(data) {
+  const el = document.getElementById('candlestickStats');
+  if (!el || !data.length) return;
+  const totalSpend = data.reduce((s, d) => s + d.spend, 0);
+  const peakDay = data.reduce((max, d) => d.spend > max.spend ? d : max, data[0]);
+  const avgDaily = totalSpend / data.length;
+  const avgCac = data.reduce((s, d) => s + d.cac, 0) / data.length;
+  const peakDate = new Date(peakDay.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+  const vals = el.querySelectorAll('strong');
+  if (vals.length >= 6) {
+    vals[0].textContent = formatKRW(totalSpend);
+    vals[1].textContent = formatKRW(peakDay.spend);
+    vals[2].textContent = formatKRW(Math.round(avgDaily));
+    vals[3].textContent = data.length.toString();
+    vals[4].textContent = formatKRW(Math.round(avgCac));
+    vals[5].textContent = peakDate;
+  }
+}
+
 function initOptTimeline() {
   optTimelineInitialized = true;
   const c = getChartColors();
+  const data = staticSpendDaily;
+  const targetCPA = 45000; // Target CPA in KRW
+  const budgetLine = 90000; // Daily budget target in KRW
 
-  // ── Stacked bar timeline chart ──
+  // Format date labels
+  const labels = data.map(d => {
+    const dt = new Date(d.date);
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  });
+
+  // Prepare OHLC data for candlestick plugin
+  const ohlcData = data.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
+
+  // Compute previous-day changes for tooltip
+  const changes = data.map((d, i) => {
+    if (i === 0) return { pct: 0, dir: '' };
+    const prev = data[i - 1].spend;
+    const pct = ((d.spend - prev) / prev * 100).toFixed(1);
+    return { pct: Math.abs(pct), dir: d.spend >= prev ? '\u25b2' : '\u25bc' };
+  });
+
   const tlCtx = document.getElementById('optTimelineChart');
   if (tlCtx) {
     optTimelineChart = new Chart(tlCtx, {
       type: 'bar',
       data: {
-        labels: staticScanTimeline.map(s => s.time),
+        labels: labels,
         datasets: [
           {
-            label: 'Budget \u2191',
-            data: staticScanTimeline.map(s => s.budgetUp),
-            backgroundColor: 'rgba(74, 222, 128, 0.85)',
-            borderRadius: 2,
-            stack: 'positive',
+            label: 'Spend',
+            data: ohlcData,
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            barPercentage: 0.6,
+            categoryPercentage: 0.8,
+            yAxisID: 'y',
+            parsing: { yAxisKey: 'c' },
           },
           {
-            label: 'Budget \u2193 / Pause',
-            data: staticScanTimeline.map(s => -(s.budgetDown + s.pauses)),
-            backgroundColor: 'rgba(239, 68, 68, 0.75)',
-            borderRadius: 2,
-            stack: 'negative',
+            label: 'CAC',
+            data: data.map(d => d.cac),
+            type: 'line',
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.08)',
+            pointBackgroundColor: '#38bdf8',
+            pointBorderColor: '#38bdf8',
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            yAxisID: 'y1',
           },
           {
-            label: 'Fatigue / Creative',
-            data: staticScanTimeline.map(s => s.fatigue),
-            backgroundColor: 'rgba(251, 146, 60, 0.75)',
-            borderRadius: 2,
-            stack: 'positive',
+            label: 'Target CPA',
+            data: data.map(() => targetCPA),
+            type: 'line',
+            borderColor: '#ef6461',
+            borderDash: [6, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            fill: false,
+            yAxisID: 'y1',
           },
           {
-            label: 'Bid / Schedule',
-            data: staticScanTimeline.map(s => s.bids + s.schedule),
-            backgroundColor: 'rgba(56, 189, 248, 0.6)',
-            borderRadius: 2,
-            stack: 'positive',
+            label: 'Budget',
+            data: data.map(() => budgetLine),
+            type: 'line',
+            borderColor: '#d4a44a',
+            borderDash: [6, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            fill: false,
+            yAxisID: 'y',
           },
         ],
       },
       options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
         plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: {
-              color: c.textFaint,
-              usePointStyle: true,
-              pointStyle: 'rectRounded',
-              padding: 16,
-              font: { size: 11 },
-            }
-          },
+          legend: { display: false },
           tooltip: {
+            backgroundColor: 'rgba(15, 15, 17, 0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 1,
+            titleFont: { size: 13, weight: 'bold', family: "'DM Sans', sans-serif" },
+            bodyFont: { size: 12, family: "'JetBrains Mono', monospace" },
+            padding: 14,
+            cornerRadius: 6,
+            displayColors: true,
             callbacks: {
+              title: function(items) {
+                const idx = items[0].dataIndex;
+                const dt = new Date(data[idx].date);
+                return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              },
               label: function(ctx) {
-                const v = Math.abs(ctx.raw);
-                return v > 0 ? `${ctx.dataset.label}: ${v}` : null;
+                const idx = ctx.dataIndex;
+                const d = data[idx];
+                const ch = changes[idx];
+                if (ctx.datasetIndex === 0) {
+                  const lines = [];
+                  lines.push('Spend:   ' + formatKRW(d.spend));
+                  if (ch.dir) lines.push('Change:  ' + ch.dir + ' ' + ch.pct + '% vs prev day');
+                  lines.push('Orders:  ' + d.orders);
+                  lines.push('CAC:     ' + formatKRW(d.cac));
+                  return lines;
+                }
+                if (ctx.datasetIndex === 1) return 'CAC: ' + formatKRW(d.cac);
+                if (ctx.datasetIndex === 2) return 'Target CPA: ' + formatKRW(targetCPA);
+                if (ctx.datasetIndex === 3) return 'Budget: ' + formatKRW(budgetLine);
+                return '';
+              },
+              labelColor: function(ctx) {
+                if (ctx.datasetIndex === 0) return { borderColor: '#8b8b94', backgroundColor: '#8b8b94' };
+                if (ctx.datasetIndex === 1) return { borderColor: '#38bdf8', backgroundColor: '#38bdf8' };
+                if (ctx.datasetIndex === 2) return { borderColor: '#ef6461', backgroundColor: '#ef6461' };
+                if (ctx.datasetIndex === 3) return { borderColor: '#d4a44a', backgroundColor: '#d4a44a' };
+                return { borderColor: '#fff', backgroundColor: '#fff' };
               },
             },
           },
         },
         scales: {
           x: {
-            stacked: true,
             grid: { display: false },
             ticks: {
               color: c.textFaint,
-              maxRotation: 45,
-              font: { size: 9 },
-              callback: function(val, idx) {
-                return idx % 4 === 0 ? this.getLabelForValue(val) : '';
-              },
+              font: { size: 10, family: "'JetBrains Mono', monospace" },
+              maxRotation: 0,
             },
+            border: { color: 'rgba(255,255,255,0.06)' },
           },
           y: {
-            stacked: true,
-            grid: { color: c.grid },
+            position: 'left',
+            grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
             ticks: {
               color: c.textFaint,
-              stepSize: 1,
-              callback: v => Math.abs(v),
+              font: { size: 10, family: "'JetBrains Mono', monospace" },
+              callback: v => formatKRW(v),
             },
-            title: { display: true, text: 'Actions per scan', color: c.textFaint, font: { size: 11 } },
+            border: { display: false },
+            min: 0,
+          },
+          y1: {
+            position: 'right',
+            grid: { display: false },
+            ticks: {
+              color: c.textFaint,
+              font: { size: 10, family: "'JetBrains Mono', monospace" },
+              callback: v => formatKRW(v),
+            },
+            border: { display: false },
+            min: 0,
           },
         },
       },
     });
   }
+
+  // Update summary stats bar
+  updateCandlestickStats(data);
 
   // ── Type breakdown donut ──
   const typeCtx = document.getElementById('optTypeChart');

@@ -401,24 +401,27 @@ async function updateLiveCampaigns() {
 // ═══════════════════════════════════════════════
 
 async function updateOptTimeline() {
-  const data = await api('/optimizations/timeline');
-  if (!data || !data.scanTimeline || data.scanTimeline.length === 0) return;
+  // Fetch daily spend data from the spend-daily endpoint
+  const spendData = await api('/spend-daily');
 
-  // Update the timeline chart if it exists
-  if (typeof optTimelineChart !== 'undefined' && optTimelineChart) {
-    const st = data.scanTimeline;
-    const labels = st.map(s => {
-      const d = new Date(s.time);
-      return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
-        + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  // Update candlestick chart with live spend data
+  if (typeof optTimelineChart !== 'undefined' && optTimelineChart && spendData && spendData.length > 0) {
+    const labels = spendData.map(d => {
+      const dt = new Date(d.date);
+      return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
+    const ohlcData = spendData.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
 
     optTimelineChart.data.labels = labels;
-    optTimelineChart.data.datasets[0].data = st.map(s => s.budgetUp);
-    optTimelineChart.data.datasets[1].data = st.map(s => -(s.budgetDown + s.pauses));
-    optTimelineChart.data.datasets[2].data = st.map(s => s.fatigue);
-    optTimelineChart.data.datasets[3].data = st.map(s => s.bids + s.schedule);
+    optTimelineChart.data.datasets[0].data = ohlcData;
+    optTimelineChart.data.datasets[1].data = spendData.map(d => d.cac);
+    // Target CPA + Budget lines stay constant (datasets 2 & 3)
     optTimelineChart.update();
+
+    // Update stats bar
+    if (typeof updateCandlestickStats === 'function') {
+      updateCandlestickStats(spendData);
+    }
   }
 
   // Update type + priority donuts from live optimization stats
