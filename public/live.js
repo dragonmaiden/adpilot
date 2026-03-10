@@ -95,14 +95,14 @@ async function updateDashboard() {
   const k = data.kpis;
 
   // Update KPI cards that have data-live attributes
-  updateKPI('liveRevenue', '₩' + Math.round(k.revenue).toLocaleString());
-  updateKPI('liveAdSpend', '$' + k.adSpend.toFixed(0));
-  updateKPI('liveROAS', k.roas.toFixed(2) + 'x');
-  updateKPI('livePurchases', k.purchases.toString());
-  updateKPI('liveCPA', '$' + k.cpa.toFixed(2));
-  updateKPI('liveCTR', k.ctr.toFixed(2) + '%');
-  updateKPI('liveRefundRate', k.refundRate.toFixed(1) + '%');
-  updateKPI('liveNetRevenue', '₩' + Math.round(k.netRevenue).toLocaleString());
+  updateKPI('liveRevenue', '₩' + Math.round(k.revenue || 0).toLocaleString());
+  updateKPI('liveAdSpend', '$' + (k.adSpend || 0).toFixed(0));
+  updateKPI('liveROAS', k.roas != null ? k.roas.toFixed(2) + 'x' : '—');
+  updateKPI('livePurchases', (k.purchases || 0).toString());
+  updateKPI('liveCPA', k.cpa != null ? '$' + k.cpa.toFixed(2) : '—');
+  updateKPI('liveCTR', (k.ctr || 0).toFixed(2) + '%');
+  updateKPI('liveRefundRate', (k.refundRate || 0).toFixed(1) + '%');
+  updateKPI('liveNetRevenue', '₩' + Math.round(k.netRevenue || 0).toLocaleString());
 
   // Update last scan time
   if (data.lastScan) {
@@ -469,7 +469,10 @@ async function updateOptTimeline() {
     if (totalEl) totalEl.textContent = optData.total || 0;
     if (execEl) execEl.textContent = optData.stats.executed || 0;
     if (pendEl) pendEl.textContent = optData.stats.pending || 0;
-    if (scansEl) scansEl.textContent = data.totalScans || 0;
+    if (scansEl) {
+      const scanData = await api('/scans');
+      scansEl.textContent = scanData ? scanData.history.length : 0;
+    }
   }
 }
 
@@ -596,11 +599,11 @@ async function startLiveMode() {
   // Show live indicator
   showLiveIndicator();
 
-  // Initial fetch
-  await updateDashboard();
-  await updateOptimizationLog();
-  await updateLiveCampaigns();
-  await updateOptTimeline();
+  // Initial fetch — each wrapped so one failure doesn't block the rest
+  try { await updateDashboard(); } catch (e) { console.warn('[LIVE] updateDashboard error:', e.message); }
+  try { await updateOptimizationLog(); } catch (e) { console.warn('[LIVE] updateOptimizationLog error:', e.message); }
+  try { await updateLiveCampaigns(); } catch (e) { console.warn('[LIVE] updateLiveCampaigns error:', e.message); }
+  try { await updateOptTimeline(); } catch (e) { console.warn('[LIVE] updateOptTimeline error:', e.message); }
 
   // Wire up scan button for live scans
   const scanBtn = document.getElementById('runScanBtn');

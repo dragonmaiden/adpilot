@@ -19,7 +19,7 @@ const LOG_DIR = path.join(DATA_DIR, 'logs');
 let lastScanTime = null;
 let lastScanResult = null;
 let scanHistory = [];
-let allOptimizations = [];
+let allOptimizations = loadData('all_optimizations.json') || [];
 let latestData = {
   campaigns: [],
   adSets: [],
@@ -186,6 +186,8 @@ async function runScan(manual = false) {
     allOptimizations.push(...optimizations);
     // Keep only last 500 optimizations in memory
     if (allOptimizations.length > 500) allOptimizations = allOptimizations.slice(-500);
+    // Persist optimizations so they survive restarts
+    saveData('all_optimizations.json', allOptimizations);
 
     saveData('latest_scan.json', scanResult);
     saveData('latest_data.json', {

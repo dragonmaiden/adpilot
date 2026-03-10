@@ -661,7 +661,12 @@ function renderOptimizations(filter) {
 const optTypeFilter = document.getElementById('optTypeFilter');
 if (optTypeFilter) {
   optTypeFilter.addEventListener('change', (e) => {
-    renderOptimizations(e.target.value);
+    // In live mode, re-fetch and re-render from API
+    if (typeof liveMode !== 'undefined' && liveMode && typeof updateOptimizationLog === 'function') {
+      updateOptimizationLog();
+    } else {
+      renderOptimizations(e.target.value);
+    }
   });
 }
 
