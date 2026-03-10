@@ -67,7 +67,7 @@ function overviewNotReady() {
 /**
  * Build /api/analytics response.
  */
-function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData }) {
+function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData, monthlyRates }) {
   return {
     apiVersion: API_VERSION,
     charts: {
@@ -84,6 +84,11 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
     totalRefunded: revenueData?.totalRefunded ?? 0,
     totalRevenue: revenueData?.totalRevenue ?? 0,
     netRevenue: revenueData?.netRevenue ?? 0,
+    totalOrders: revenueData?.totalOrders ?? 0,
+    // Per-month refund rates
+    febRefundRate: monthlyRates?.['2026-02'] ?? null,
+    marRefundRate: monthlyRates?.['2026-03'] ?? null,
+    monthlyRates: monthlyRates ?? {},
     // COGS data from Google Sheets
     totalCOGS: cogsData?.totalCOGS ?? 0,
     totalShipping: cogsData?.totalShipping ?? 0,

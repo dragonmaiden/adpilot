@@ -670,6 +670,14 @@ app.get('/api/analytics', (req, res) => {
 
   const cogs = data.cogsData || null;
 
+  // Compute per-month refund rates from monthly data
+  const monthlyRates = {};
+  for (const m of monthlyRefunds) {
+    if (m.revenue > 0) {
+      monthlyRates[m.month] = parseFloat(((m.refunded / m.revenue) * 100).toFixed(1));
+    }
+  }
+
   res.json(contracts.analytics({
     charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
     revenueData: revenue,
@@ -677,6 +685,7 @@ app.get('/api/analytics', (req, res) => {
     adSetInsights: data.adSetInsights || [],
     adInsights: data.adInsights || [],
     cogsData: cogs,
+    monthlyRates,
   }));
 });
 

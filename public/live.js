@@ -638,31 +638,41 @@ async function updateAnalyticsPage() {
     // ── KPI Cards: Refund/Cancel Rates ──
     const refundRateEl = document.querySelector('[data-kpi-analytics="refundRate"] .kpi-value');
     if (refundRateEl && data.refundRate != null) {
-      refundRateEl.dataset.target = data.refundRate.toFixed(1);
-      refundRateEl.dataset.prefix = '';
-      refundRateEl.dataset.suffix = '%';
       refundRateEl.textContent = data.refundRate.toFixed(1) + '%';
     }
+    const refundSubEl = document.querySelector('[data-kpi-analytics="refundRate"] .kpi-delta span');
+    if (refundSubEl && data.totalRefunded != null) {
+      refundSubEl.textContent = '₩' + (data.totalRefunded / 1000).toFixed(0) + 'K of ₩' + ((data.totalRevenue || 0) / 1000000).toFixed(1) + 'M';
+    }
+
     const cancelRateEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-value');
     if (cancelRateEl && data.cancelRate != null) {
-      cancelRateEl.dataset.target = data.cancelRate.toFixed(1);
-      cancelRateEl.dataset.prefix = '';
-      cancelRateEl.dataset.suffix = '%';
       cancelRateEl.textContent = data.cancelRate.toFixed(1) + '%';
     }
+    const cancelSubEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-delta span');
+    if (cancelSubEl && data.totalOrders) {
+      const cancelledSections = Math.round(data.cancelRate / 100 * data.totalOrders);
+      cancelSubEl.textContent = cancelledSections + ' cancelled of ' + data.totalOrders + ' orders';
+    }
+
     const febRefundEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-value');
     if (febRefundEl && data.febRefundRate != null) {
-      febRefundEl.dataset.target = data.febRefundRate.toFixed(1);
-      febRefundEl.dataset.prefix = '';
-      febRefundEl.dataset.suffix = '%';
       febRefundEl.textContent = data.febRefundRate.toFixed(1) + '%';
     }
+    const febSubEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-delta span');
+    if (febSubEl) {
+      const febData = (data.charts?.monthlyRefunds || []).find(m => m.month === '2026-02');
+      if (febData) febSubEl.textContent = '₩' + (febData.refunded / 1000).toFixed(0) + 'K refunded of ₩' + (febData.revenue / 1000000).toFixed(1) + 'M';
+    }
+
     const marRefundEl = document.querySelector('[data-kpi-analytics="marRefundRate"] .kpi-value');
     if (marRefundEl && data.marRefundRate != null) {
-      marRefundEl.dataset.target = data.marRefundRate.toFixed(1);
-      marRefundEl.dataset.prefix = '';
-      marRefundEl.dataset.suffix = '%';
       marRefundEl.textContent = data.marRefundRate.toFixed(1) + '%';
+    }
+    const marSubEl = document.querySelector('[data-kpi-analytics="marRefundRate"] .kpi-delta span');
+    if (marSubEl) {
+      const marData = (data.charts?.monthlyRefunds || []).find(m => m.month === '2026-03');
+      if (marData) marSubEl.textContent = '₩' + (marData.refunded / 1000).toFixed(0) + 'K refunded of ₩' + (marData.revenue / 1000000).toFixed(1) + 'M';
     }
 
     // ── Chart data comes pre-computed from the server ──
