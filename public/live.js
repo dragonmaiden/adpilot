@@ -164,6 +164,11 @@ async function updateOverviewKPIs() {
     if (cogsEl) {
       cogsEl.textContent = k.cogs != null ? '₩' + Math.round(k.cogs).toLocaleString() : '—';
     }
+    const cogsSubEl = document.querySelector('[data-kpi="cogs"] .kpi-delta span');
+    if (cogsSubEl && k.cogs != null && k.revenue) {
+      const cogsPct = ((k.cogs / k.revenue) * 100).toFixed(1);
+      cogsSubEl.textContent = cogsPct + '% of revenue · Google Sheets';
+    }
 
     // ── KPI Card 3: Ad Spend ──
     const spendEl = document.querySelector('[data-kpi="adspend"] .kpi-value');
@@ -181,10 +186,15 @@ async function updateOverviewKPIs() {
     // ── KPI Card 4: Gross Profit ──
     const profitEl = document.querySelector('[data-kpi="profit"] .kpi-value');
     if (profitEl) {
-      const profit = (k.revenue || 0) - (k.cogs || 0) - ((k.adSpend || 0) * USD_TO_KRW);
+      // Use netRevenue (after refunds), not gross revenue
+      const profit = (k.netRevenue || 0) - (k.cogs || 0) - ((k.adSpend || 0) * USD_TO_KRW);
       profitEl.textContent = profit >= 0
         ? '₩' + (profit / 1000).toFixed(0) + 'K'
         : '-₩' + (Math.abs(profit) / 1000).toFixed(0) + 'K';
+    }
+    const profitSubEl = document.querySelector('[data-kpi="profit"] .kpi-delta span');
+    if (profitSubEl && k.grossMargin != null) {
+      profitSubEl.textContent = '₩' + ((k.netRevenue || 0) / 1000000).toFixed(2) + 'M net · ' + k.grossMargin + '% margin';
     }
 
     // ── KPI Row 2: ROAS, Purchases, CTR, CPA ──
@@ -228,20 +238,30 @@ async function updateOverviewKPIs() {
 
     // ── Overview Charts: Revenue vs Ad Spend, ROAS, CTR/CPC ──
     if (dailyMerged.length > 0) {
-      const last14 = dailyMerged.slice(-14);
-      const labels = last14.map(d => d.date);
+      // Show ALL data since inception (no slicing)
+      const allDays = dailyMerged;
+      const labels = allDays.map(d => d.date);
+
+      // Update chart titles with actual date range
+      const dateRange = allDays[0].date.slice(5) + ' → ' + allDays[allDays.length - 1].date.slice(5);
+      const dayCount = allDays.length;
+      document.querySelectorAll('.chart-card h2').forEach(h => {
+        if (h.textContent.includes('14d')) {
+          h.textContent = h.textContent.replace('(14d)', '(' + dayCount + 'd)');
+        }
+      });
 
       // spendRevenueChart
       if (typeof spendRevenueChart !== 'undefined' && spendRevenueChart) {
         spendRevenueChart.data.labels = labels;
-        spendRevenueChart.data.datasets[0].data = last14.map(d => d.revenue || 0);
-        spendRevenueChart.data.datasets[1].data = last14.map(d => Math.round((d.spend || 0) * USD_TO_KRW));
+        spendRevenueChart.data.datasets[0].data = allDays.map(d => d.revenue || 0);
+        spendRevenueChart.data.datasets[1].data = allDays.map(d => Math.round((d.spend || 0) * USD_TO_KRW));
         spendRevenueChart.update();
       }
 
       // roasChart
       if (typeof roasChart !== 'undefined' && roasChart) {
-        const roasData = last14.map(d => {
+        const roasData = allDays.map(d => {
           const spendKrw = (d.spend || 0) * USD_TO_KRW;
           return spendKrw > 0 ? parseFloat(((d.revenue || 0) / spendKrw).toFixed(2)) : 0;
         });
@@ -256,8 +276,8 @@ async function updateOverviewKPIs() {
       // impactChart (CTR + CPC)
       if (typeof impactChart !== 'undefined' && impactChart) {
         impactChart.data.labels = labels;
-        impactChart.data.datasets[0].data = last14.map(d => d.ctr || 0);
-        impactChart.data.datasets[1].data = last14.map(d => d.cpc || 0);
+        impactChart.data.datasets[0].data = allDays.map(d => d.ctr || 0);
+        impactChart.data.datasets[1].data = allDays.map(d => d.cpc || 0);
         impactChart.update();
       }
     }

@@ -115,6 +115,11 @@ app.get('/api/overview', (req, res) => {
   const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
   const dailyProfit = transforms.buildDailyProfit(dailyMerged);
 
+  // Compute days of data and gross profit margin
+  const totalCOGSWithShipping = cogs ? cogs.totalCOGSWithShipping : 0;
+  const grossProfit = (revenue.netRevenue || 0) - totalCOGSWithShipping - (totalSpend * config.currency.usdToKrw);
+  const grossMargin = (revenue.netRevenue || 0) > 0 ? (grossProfit / (revenue.netRevenue || 1) * 100) : 0;
+
   res.json(contracts.overview({
     kpis: {
       revenue: revenue.totalRevenue || 0,
@@ -130,7 +135,10 @@ app.get('/api/overview', (req, res) => {
       refundRate: revenue.refundRate || 0,
       cancelRate: revenue.cancelRate || 0,
       cogs: cogs ? cogs.totalCOGSWithShipping : null,
+      grossProfit,
+      grossMargin: parseFloat(grossMargin.toFixed(1)),
     },
+    days: dailyMerged.length,
     campaigns: data.campaigns || [],
     charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
     scanStats: scan.stats || {},
