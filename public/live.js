@@ -78,6 +78,134 @@ async function updateSettings(settings) {
 }
 
 // ═══════════════════════════════════════════
+// DATA TRANSFORMATION HELPERS
+// ═══════════════════════════════════════════
+
+// Merge revenueByDay (dict) + dailyInsights (raw rows) into a sorted array
+// Output: [{date, revenue, refunded, orders, spend, purchases, clicks, impressions, ctr, cpc}, ...]
+function buildDailyMerged(revenueByDay, dailyInsights) {
+  const byDate = {};
+
+  // Aggregate ad insights by date
+  for (const row of (dailyInsights || [])) {
+    const d = row.date_start;
+    if (!d) continue;
+    if (!byDate[d]) byDate[d] = { date: d, revenue: 0, refunded: 0, orders: 0, spend: 0, purchases: 0, clicks: 0, impressions: 0 };
+    byDate[d].spend += parseFloat(row.spend || 0);
+    byDate[d].clicks += parseInt(row.clicks || 0);
+    byDate[d].impressions += parseInt(row.impressions || 0);
+    const acts = row.actions || [];
+    for (const a of acts) {
+      if (a.action_type === 'purchase' || a.action_type === 'offsite_conversion.fb_pixel_purchase' || a.action_type === 'omni_purchase') {
+        byDate[d].purchases += parseInt(a.value || 0);
+      }
+    }
+  }
+
+  // Merge revenue data (dict keyed by date)
+  if (revenueByDay && typeof revenueByDay === 'object' && !Array.isArray(revenueByDay)) {
+    for (const [d, v] of Object.entries(revenueByDay)) {
+      if (!byDate[d]) byDate[d] = { date: d, revenue: 0, refunded: 0, orders: 0, spend: 0, purchases: 0, clicks: 0, impressions: 0 };
+      byDate[d].revenue = v.revenue || 0;
+      byDate[d].refunded = v.refunded || 0;
+      byDate[d].orders = v.orders || 0;
+    }
+  }
+
+  // Compute derived metrics and sort
+  return Object.values(byDate)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(d => ({
+      ...d,
+      ctr: d.impressions > 0 ? (d.clicks / d.impressions * 100) : 0,
+      cpc: d.clicks > 0 ? (d.spend / d.clicks) : 0,
+    }));
+}
+
+// Build weekday performance from merged daily data
+function buildWeekdayPerf(daily) {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const agg = days.map(d => ({ day: d, spend: 0, purchases: 0, clicks: 0, impressions: 0, revenue: 0, refunded: 0, orders: 0, count: 0 }));
+  for (const d of daily) {
+    const dow = new Date(d.date + 'T00:00:00').getDay();
+    agg[dow].spend += d.spend;
+    agg[dow].purchases += d.purchases;
+    agg[dow].clicks += d.clicks;
+    agg[dow].impressions += d.impressions;
+    agg[dow].revenue += d.revenue;
+    agg[dow].refunded += d.refunded;
+    agg[dow].orders += d.orders;
+    agg[dow].count++;
+  }
+  return agg.map(d => ({
+    day: d.day.slice(0, 3),
+    spend: d.spend,
+    purchases: d.purchases,
+    cpa: d.purchases > 0 ? d.spend / d.purchases : 0,
+    ctr: d.impressions > 0 ? (d.clicks / d.impressions * 100) : 0,
+    revenue: d.revenue,
+    refunded: d.refunded,
+    orders: d.orders,
+    paid: d.revenue,
+    net: d.revenue - d.refunded,
+  }));
+}
+
+// Build hourly orders from raw array [count_0h, count_1h, ... count_23h]
+function buildHourlyOrders(hourlyArr) {
+  if (!Array.isArray(hourlyArr) || hourlyArr.length === 0) return [];
+  return hourlyArr.map((count, i) => ({ hour: i, orders: count }));
+}
+
+// Build weekly aggregates from daily data
+function buildWeeklyAgg(daily, USD_TO_KRW) {
+  const weeks = {};
+  for (const d of daily) {
+    const dt = new Date(d.date + 'T00:00:00');
+    // Week starts Monday
+    const dayOfWeek = (dt.getDay() + 6) % 7;
+    const weekStart = new Date(dt);
+    weekStart.setDate(dt.getDate() - dayOfWeek);
+    const weekKey = weekStart.toISOString().slice(0, 10);
+    if (!weeks[weekKey]) weeks[weekKey] = { week: weekKey, revenue: 0, refunded: 0, spend: 0, purchases: 0, spendKrw: 0 };
+    weeks[weekKey].revenue += d.revenue;
+    weeks[weekKey].refunded += d.refunded;
+    weeks[weekKey].spend += d.spend;
+    weeks[weekKey].purchases += d.purchases;
+    weeks[weekKey].spendKrw += d.spend * USD_TO_KRW;
+  }
+  return Object.values(weeks).sort((a, b) => a.week.localeCompare(b.week)).map(w => ({
+    week: w.week,
+    profit: w.revenue - w.refunded - w.spendKrw,
+    revenue: w.revenue,
+    refunded: w.refunded,
+    spend: w.spend,
+    purchases: w.purchases,
+    cpa: w.purchases > 0 ? w.spend / w.purchases : 0,
+  }));
+}
+
+// Build monthly refund comparison
+function buildMonthlyRefunds(daily) {
+  const months = {};
+  for (const d of daily) {
+    const mKey = d.date.slice(0, 7);
+    if (!months[mKey]) months[mKey] = { month: mKey, revenue: 0, refunded: 0 };
+    months[mKey].revenue += d.revenue;
+    months[mKey].refunded += d.refunded;
+  }
+  return Object.values(months).sort((a, b) => a.month.localeCompare(b.month));
+}
+
+// Build daily profit from merged data
+function buildDailyProfit(daily, USD_TO_KRW) {
+  return daily.map(d => ({
+    date: d.date,
+    profit: d.revenue - d.refunded - (d.spend * USD_TO_KRW),
+  }));
+}
+
+// ═══════════════════════════════════════════
 // UPDATE DASHBOARD WITH LIVE DATA
 // ═══════════════════════════════════════════
 
@@ -216,9 +344,12 @@ async function updateOverviewKPIs() {
       cpaEl.textContent = k.cpa != null ? '$' + k.cpa.toFixed(2) : '—';
     }
 
+    // ── Build merged daily data from API response ──
+    const dailyMerged = buildDailyMerged(data.revenueByDay, data.dailyInsights);
+
     // ── Overview Charts: Revenue vs Ad Spend, ROAS, CTR/CPC ──
-    if (data.revenueByDay && data.revenueByDay.length > 0) {
-      const last14 = data.revenueByDay.slice(-14);
+    if (dailyMerged.length > 0) {
+      const last14 = dailyMerged.slice(-14);
       const labels = last14.map(d => d.date);
 
       // spendRevenueChart
@@ -235,7 +366,7 @@ async function updateOverviewKPIs() {
           const spendKrw = (d.spend || 0) * USD_TO_KRW;
           return spendKrw > 0 ? parseFloat(((d.revenue || 0) / spendKrw).toFixed(2)) : 0;
         });
-        const c = getChartColors ? getChartColors() : {};
+        const c = typeof getChartColors === 'function' ? getChartColors() : {};
         const gold = c.gold || '#FFC553';
         roasChart.data.labels = labels;
         roasChart.data.datasets[0].data = roasData;
@@ -252,13 +383,6 @@ async function updateOverviewKPIs() {
       }
     }
 
-    // ── Brand donut chart ──
-    if (data.brandRevenue && data.brandRevenue.length > 0 && typeof brandChart !== 'undefined' && brandChart) {
-      brandChart.data.labels = data.brandRevenue.map(b => b.brand);
-      brandChart.data.datasets[0].data = data.brandRevenue.map(b => b.revenue);
-      brandChart.update();
-    }
-
     // ── Sparklines ── (clear existing and re-render)
     const sparkIds = ['sparkRevenue', 'sparkSpend', 'sparkRoas', 'sparkPurchases', 'sparkCtr', 'sparkCpa', 'sparkCogs'];
     sparkIds.forEach(id => {
@@ -266,9 +390,9 @@ async function updateOverviewKPIs() {
       if (el) el.innerHTML = '';
     });
 
-    if (data.revenueByDay && data.revenueByDay.length >= 2) {
-      const last12 = data.revenueByDay.slice(-12);
-      const c = getChartColors ? getChartColors() : { primary: '#20808D', secondary: '#A84B2F' };
+    if (dailyMerged.length >= 2) {
+      const last12 = dailyMerged.slice(-12);
+      const c = typeof getChartColors === 'function' ? getChartColors() : { primary: '#20808D', secondary: '#A84B2F' };
       if (typeof createSparkline === 'function') {
         createSparkline('sparkRevenue', last12.map(d => d.revenue || 0), '#4ade80');
         createSparkline('sparkSpend', last12.map(d => d.spend || 0), c.primary);
@@ -279,12 +403,6 @@ async function updateOverviewKPIs() {
         createSparkline('sparkPurchases', last12.map(d => d.purchases || 0), '#4ade80');
         createSparkline('sparkCtr', last12.map(d => d.ctr || 0), c.primary);
         createSparkline('sparkCpa', last12.map(d => (d.spend || 0) / Math.max(d.purchases || 1, 1)), c.secondary);
-        if (data.cogsData) {
-          createSparkline('sparkCogs', last12.map(d => {
-            const cg = data.cogsData[d.date];
-            return cg ? (cg.cost || 0) + (cg.shipping || 0) : 0;
-          }), c.secondary);
-        }
       }
     }
 
@@ -648,95 +766,99 @@ async function updateAnalyticsPage() {
       marRefundEl.textContent = data.marRefundRate.toFixed(1) + '%';
     }
 
-    // ── Daily Profit Trend ──
-    if (data.dailyProfit && data.dailyProfit.length > 0 && typeof profitTrendChart !== 'undefined' && profitTrendChart) {
-      let cumProfit = 0;
-      const cumData = data.dailyProfit.map(d => { cumProfit += (d.profit || 0); return cumProfit; });
+    // ── Build merged daily data from raw API fields ──
+    const dailyMerged = buildDailyMerged(data.revenueByDay, data.dailyInsights);
+    const USD_TO_KRW = 1450;
 
-      profitTrendChart.data.labels = data.dailyProfit.map(d => d.date);
-      profitTrendChart.data.datasets[0].data = data.dailyProfit.map(d => d.profit || 0);
-      profitTrendChart.data.datasets[0].backgroundColor = data.dailyProfit.map(d =>
+    // ── Daily Profit Trend ──
+    const dailyProfit = buildDailyProfit(dailyMerged, USD_TO_KRW);
+    if (dailyProfit.length > 0 && typeof profitTrendChart !== 'undefined' && profitTrendChart) {
+      let cumProfit = 0;
+      const cumData = dailyProfit.map(d => { cumProfit += (d.profit || 0); return cumProfit; });
+
+      profitTrendChart.data.labels = dailyProfit.map(d => d.date);
+      profitTrendChart.data.datasets[0].data = dailyProfit.map(d => d.profit || 0);
+      profitTrendChart.data.datasets[0].backgroundColor = dailyProfit.map(d =>
         (d.profit || 0) >= 0 ? 'rgba(74, 222, 128, 0.7)' : 'rgba(239, 68, 68, 0.6)'
       );
       profitTrendChart.data.datasets[1].data = cumData;
       profitTrendChart.update();
     }
 
-    // ── Weekly Profit ──
-    if (data.weeklyProfit && data.weeklyProfit.length > 0 && typeof weeklyProfitChart !== 'undefined' && weeklyProfitChart) {
-      weeklyProfitChart.data.labels = data.weeklyProfit.map(d => d.week);
-      weeklyProfitChart.data.datasets[0].data = data.weeklyProfit.map(d => d.profit || 0);
-      weeklyProfitChart.data.datasets[0].backgroundColor = data.weeklyProfit.map(d =>
+    // ── Weekly Profit + CPA ──
+    const weeklyAgg = buildWeeklyAgg(dailyMerged, USD_TO_KRW);
+    if (weeklyAgg.length > 0 && typeof weeklyProfitChart !== 'undefined' && weeklyProfitChart) {
+      weeklyProfitChart.data.labels = weeklyAgg.map(d => d.week);
+      weeklyProfitChart.data.datasets[0].data = weeklyAgg.map(d => d.profit || 0);
+      weeklyProfitChart.data.datasets[0].backgroundColor = weeklyAgg.map(d =>
         (d.profit || 0) >= 0 ? 'rgba(32, 128, 141, 0.8)' : 'rgba(239, 68, 68, 0.6)'
       );
       weeklyProfitChart.update();
     }
 
+    if (weeklyAgg.length > 0 && typeof weeklyCpaChartInstance !== 'undefined' && weeklyCpaChartInstance) {
+      weeklyCpaChartInstance.data.labels = weeklyAgg.map(d => d.week);
+      weeklyCpaChartInstance.data.datasets[0].data = weeklyAgg.map(d => d.cpa || 0);
+      weeklyCpaChartInstance.data.datasets[0].pointBackgroundColor = weeklyAgg.map(d =>
+        (d.cpa || 0) > 20 ? 'rgba(239, 68, 68, 0.9)' : primary
+      );
+      weeklyCpaChartInstance.data.datasets[1].data = weeklyAgg.map(d => d.purchases || 0);
+      weeklyCpaChartInstance.update();
+    }
+
     // ── Weekday Ad Performance ──
-    if (data.weekdayPerf && data.weekdayPerf.length > 0 && typeof weekdayChartInstance !== 'undefined' && weekdayChartInstance) {
-      weekdayChartInstance.data.labels = data.weekdayPerf.map(d => d.day);
-      weekdayChartInstance.data.datasets[0].data = data.weekdayPerf.map(d => d.purchases || 0);
-      weekdayChartInstance.data.datasets[1].data = data.weekdayPerf.map(d => d.cpa || 0);
+    const weekdayPerf = buildWeekdayPerf(dailyMerged);
+    if (weekdayPerf.length > 0 && typeof weekdayChartInstance !== 'undefined' && weekdayChartInstance) {
+      weekdayChartInstance.data.labels = weekdayPerf.map(d => d.day);
+      weekdayChartInstance.data.datasets[0].data = weekdayPerf.map(d => d.purchases || 0);
+      weekdayChartInstance.data.datasets[1].data = weekdayPerf.map(d => d.cpa || 0);
       weekdayChartInstance.update();
     }
 
     // ── Hourly Orders ──
-    if (data.hourlyOrders && data.hourlyOrders.length > 0 && typeof hourChartInstance !== 'undefined' && hourChartInstance) {
-      const peakHours = data.hourlyOrders
+    const hourlyOrders = buildHourlyOrders(data.hourlyOrders);
+    if (hourlyOrders.length > 0 && typeof hourChartInstance !== 'undefined' && hourChartInstance) {
+      const peakHours = hourlyOrders
         .slice()
         .sort((a, b) => (b.orders || 0) - (a.orders || 0))
         .slice(0, 3)
         .map(d => d.hour);
 
-      hourChartInstance.data.labels = data.hourlyOrders.map(d => d.hour + ':00');
-      hourChartInstance.data.datasets[0].data = data.hourlyOrders.map(d => d.orders || 0);
-      hourChartInstance.data.datasets[0].backgroundColor = data.hourlyOrders.map(d =>
+      hourChartInstance.data.labels = hourlyOrders.map(d => d.hour + ':00');
+      hourChartInstance.data.datasets[0].data = hourlyOrders.map(d => d.orders || 0);
+      hourChartInstance.data.datasets[0].backgroundColor = hourlyOrders.map(d =>
         peakHours.includes(d.hour) ? 'rgba(255, 197, 83, 0.9)' : 'rgba(32, 128, 141, 0.6)'
       );
       hourChartInstance.update();
     }
 
-    // ── Weekly CPA ──
-    if (data.weeklyCpa && data.weeklyCpa.length > 0 && typeof weeklyCpaChartInstance !== 'undefined' && weeklyCpaChartInstance) {
-      weeklyCpaChartInstance.data.labels = data.weeklyCpa.map(d => d.week);
-      weeklyCpaChartInstance.data.datasets[0].data = data.weeklyCpa.map(d => d.cpa || 0);
-      weeklyCpaChartInstance.data.datasets[0].pointBackgroundColor = data.weeklyCpa.map(d =>
-        (d.cpa || 0) > 20 ? 'rgba(239, 68, 68, 0.9)' : primary
-      );
-      weeklyCpaChartInstance.data.datasets[1].data = data.weeklyCpa.map(d => d.purchases || 0);
-      weeklyCpaChartInstance.update();
-    }
-
     // ── Monthly Refund Comparison ──
-    if (data.monthlyRefunds && typeof refundChartInstance !== 'undefined' && refundChartInstance) {
-      refundChartInstance.data.labels = data.monthlyRefunds.map(m => m.month);
-      refundChartInstance.data.datasets[0].data = data.monthlyRefunds.map(m => m.revenue || 0);
-      refundChartInstance.data.datasets[1].data = data.monthlyRefunds.map(m => m.refunded || 0);
+    const monthlyRefunds = buildMonthlyRefunds(dailyMerged);
+    if (monthlyRefunds.length > 0 && typeof refundChartInstance !== 'undefined' && refundChartInstance) {
+      refundChartInstance.data.labels = monthlyRefunds.map(m => m.month);
+      refundChartInstance.data.datasets[0].data = monthlyRefunds.map(m => m.revenue || 0);
+      refundChartInstance.data.datasets[1].data = monthlyRefunds.map(m => m.refunded || 0);
       refundChartInstance.update();
     }
 
     // ── Weekday Revenue Table ──
-    if (data.weekdayRevenue && data.weekdayPerf) {
+    if (weekdayPerf.length > 0) {
       const body = document.getElementById('weekdayBody');
       if (body) {
-        const perfMap = {};
-        (data.weekdayPerf || []).forEach(wp => { perfMap[wp.day] = wp; });
+        const bestCpa = Math.min(...weekdayPerf.filter(x => x.cpa > 0).map(x => x.cpa));
+        const worstCpa = Math.max(...weekdayPerf.map(x => x.cpa || 0));
 
-        const bestCpa = Math.min(...(data.weekdayPerf || []).map(x => x.cpa || Infinity));
-        const worstCpa = Math.max(...(data.weekdayPerf || []).map(x => x.cpa || 0));
-
-        body.innerHTML = data.weekdayRevenue.map(d => {
-          const wp = perfMap[d.day] || {};
-          const cpa = wp.cpa || 0;
-          const cpaBadge = cpa <= bestCpa + 3 ? 'badge-success' : cpa >= worstCpa - 3 ? 'badge-danger' : '';
+        body.innerHTML = weekdayPerf.map(d => {
+          const cpa = d.cpa || 0;
+          const cpaBadge = cpa > 0 && cpa <= bestCpa + 3 ? 'badge-success' : cpa >= worstCpa - 3 ? 'badge-danger' : '';
           return `<tr>
             <td style="font-weight:600">${d.day}</td>
             <td>${d.orders || 0}</td>
-            <td>\u20a9${(d.paid || 0).toLocaleString()}</td>
-            <td style="color:var(--color-danger)">\u20a9${(d.refunded || 0).toLocaleString()}</td>
-            <td style="font-weight:600">\u20a9${(d.net || 0).toLocaleString()}</td>
-            <td>$${(wp.spend || 0).toFixed(0)}</td>
-            <td>${wp.purchases || 0}</td>
+            <td>\u20a9${Math.round(d.paid || 0).toLocaleString()}</td>
+            <td style="color:var(--color-danger)">\u20a9${Math.round(d.refunded || 0).toLocaleString()}</td>
+            <td style="font-weight:600">\u20a9${Math.round(d.net || 0).toLocaleString()}</td>
+            <td>$${(d.spend || 0).toFixed(0)}</td>
+            <td>${d.purchases || 0}</td>
             <td><span class="badge ${cpaBadge}">$${cpa.toFixed(2)}</span></td>
           </tr>`;
         }).join('');
