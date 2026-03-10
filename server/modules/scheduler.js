@@ -100,9 +100,9 @@ async function runScan(manual = false) {
     scanResult.steps.push({ step: 'meta_structure', campaigns: campaigns.length, adSets: adSets.length, ads: ads.length });
     console.log(`[SCHEDULER]   → ${campaigns.length} campaigns, ${adSets.length} ad sets, ${ads.length} ads`);
 
-    // ── Step 2: Pull Meta Ads Insights (last 7 days) ──
-    console.log('[SCHEDULER] Step 2: Fetching Meta Ads insights (7 days)...');
-    const since = daysAgo(7);
+    // ── Step 2: Pull Meta Ads Insights (full history from account creation) ──
+    console.log('[SCHEDULER] Step 2: Fetching Meta Ads insights (full history)...');
+    const since = '2026-02-01'; // Account created Feb 2 2026 — fetch from Feb 1 to catch everything
     const until = today();
     const [campaignInsights, adSetInsights, adInsights] = await Promise.all([
       meta.getAllCampaignInsights(since, until),

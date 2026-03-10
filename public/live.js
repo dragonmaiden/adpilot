@@ -411,9 +411,18 @@ async function updateOptTimeline() {
       return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
 
-    // Update the global OHLC array that the candlestick plugin reads
+    // Update the global arrays that the candlestick plugin reads
     if (typeof _candlestickOHLC !== 'undefined') {
       _candlestickOHLC = spendData.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
+    }
+    if (typeof _candlestickData !== 'undefined') {
+      _candlestickData = spendData;
+      _candlestickChanges = spendData.map((d, i) => {
+        if (i === 0) return { pct: 0, dir: '' };
+        const prev = spendData[i - 1].spend;
+        const pct = ((d.spend - prev) / prev * 100).toFixed(1);
+        return { pct: Math.abs(pct), dir: d.spend >= prev ? '\u25b2' : '\u25bc' };
+      });
     }
 
     optTimelineChart.data.labels = labels;

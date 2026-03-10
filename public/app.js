@@ -989,24 +989,8 @@ const candlestickPlugin = {
 };
 Chart.register(candlestickPlugin);
 
-// Static fallback: daily spend data with OHLC + CAC
-const staticSpendDaily = [
-  { date: '2026-02-23', o: 85000, h: 97000, l: 76000, c: 89000, spend: 89000, cac: 42000, orders: 2 },
-  { date: '2026-02-24', o: 89000, h: 94000, l: 72000, c: 78000, spend: 78000, cac: 38000, orders: 2 },
-  { date: '2026-02-25', o: 78000, h: 102000, l: 75000, c: 98000, spend: 98000, cac: 45000, orders: 2 },
-  { date: '2026-02-26', o: 98000, h: 108000, l: 88000, c: 92000, spend: 92000, cac: 40000, orders: 2 },
-  { date: '2026-02-27', o: 92000, h: 118000, l: 90000, c: 115000, spend: 115000, cac: 48000, orders: 2 },
-  { date: '2026-02-28', o: 115000, h: 120000, l: 85000, c: 90000, spend: 90000, cac: 44000, orders: 2 },
-  { date: '2026-03-01', o: 90000, h: 96000, l: 70000, c: 75000, spend: 75000, cac: 41000, orders: 2 },
-  { date: '2026-03-02', o: 75000, h: 105000, l: 72000, c: 100000, spend: 100000, cac: 43000, orders: 2 },
-  { date: '2026-03-03', o: 100000, h: 112000, l: 95000, c: 110000, spend: 110000, cac: 46000, orders: 2 },
-  { date: '2026-03-04', o: 110000, h: 115000, l: 88000, c: 93000, spend: 93000, cac: 42000, orders: 2 },
-  { date: '2026-03-05', o: 93000, h: 98000, l: 68000, c: 72000, spend: 72000, cac: 39000, orders: 2 },
-  { date: '2026-03-06', o: 72000, h: 95000, l: 70000, c: 90000, spend: 90000, cac: 44000, orders: 2 },
-  { date: '2026-03-07', o: 90000, h: 100000, l: 78000, c: 82000, spend: 82000, cac: 41000, orders: 2 },
-  { date: '2026-03-08', o: 82000, h: 88000, l: 65000, c: 70000, spend: 70000, cac: 38000, orders: 3 },
-  { date: '2026-03-09', o: 70000, h: 108000, l: 68000, c: 105000, spend: 105000, cac: 45000, orders: 2 },
-];
+// No static fallback — always fetch real data from API
+// This ensures data completeness from the very first day of ad spend
 
 // Aggregate from static optimizations data (type + priority counts)
 const staticOptCounts = {
@@ -1040,12 +1024,34 @@ function updateCandlestickStats(data) {
   }
 }
 
-function initOptTimeline() {
+// Shared ref for tooltip data so closures can access updated data
+let _candlestickData = [];
+let _candlestickChanges = [];
+
+async function initOptTimeline() {
   optTimelineInitialized = true;
   const c = getChartColors();
-  const data = staticSpendDaily;
-  const targetCPA = 45000;
-  const budgetLine = 90000;
+  const targetCPA = 45000; // KRW
+  const budgetLine = 90000; // KRW
+
+  // Fetch real data from API (full history)
+  let data = [];
+  try {
+    const resp = await fetch('/api/spend-daily');
+    data = await resp.json();
+  } catch (e) {
+    console.warn('Failed to fetch spend-daily, chart will be empty until next scan');
+  }
+  if (!data || data.length === 0) {
+    // Show empty state message
+    const el = document.getElementById('optTimelineChart');
+    if (el && el.parentNode) {
+      el.parentNode.innerHTML = '<p style="text-align:center;color:var(--color-text-faint);padding:60px 0;font-size:0.85rem">Waiting for first scan to collect spend data...</p>';
+    }
+    return;
+  }
+
+  _candlestickData = data;
 
   // Store OHLC for the plugin to draw
   _candlestickOHLC = data.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
@@ -1055,8 +1061,8 @@ function initOptTimeline() {
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   });
 
-  // Compute previous-day changes for tooltip
-  const changes = data.map((d, i) => {
+  // Compute previous-day changes for tooltip (stored in shared ref)
+  _candlestickChanges = data.map((d, i) => {
     if (i === 0) return { pct: 0, dir: '' };
     const prev = data[i - 1].spend;
     const pct = ((d.spend - prev) / prev * 100).toFixed(1);
@@ -1149,13 +1155,15 @@ function initOptTimeline() {
             callbacks: {
               title: function(items) {
                 const idx = items[0].dataIndex;
-                const dt = new Date(data[idx].date);
+                if (!_candlestickData[idx]) return '';
+                const dt = new Date(_candlestickData[idx].date);
                 return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
               },
               label: function(ctx) {
                 const idx = ctx.dataIndex;
-                const d = data[idx];
-                const ch = changes[idx];
+                const d = _candlestickData[idx];
+                if (!d) return '';
+                const ch = _candlestickChanges[idx] || { pct: 0, dir: '' };
                 if (ctx.datasetIndex === 0) {
                   const lines = [];
                   lines.push('Spend:   ' + formatKRW(d.spend));
