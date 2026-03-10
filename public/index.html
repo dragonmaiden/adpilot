@@ -120,78 +120,78 @@
     <section class="page active" data-page="overview">
       <!-- KPI Row 1: Revenue & Profitability -->
       <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi="revenue">
           <div class="kpi-label">Revenue (Imweb)</div>
-          <div class="kpi-value" data-target="20470118" data-prefix="₩">₩0</div>
+          <div class="kpi-value" data-target="0" data-prefix="₩">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
-            <span>265 orders · ₩77,245 AOV</span>
+            <span>— orders · — AOV</span>
           </div>
           <div class="kpi-spark" id="sparkRevenue"></div>
         </div>
-        <div class="kpi-card">
-          <div class="kpi-label">COGS (Feb only)</div>
-          <div class="kpi-value" data-target="6202000" data-prefix="₩">₩0</div>
+        <div class="kpi-card" data-kpi="cogs">
+          <div class="kpi-label">COGS</div>
+          <div class="kpi-value">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="package"></i>
-            <span>₩5.85M product + ₩348K shipping</span>
+            <span>—</span>
           </div>
           <div class="kpi-spark" id="sparkCogs"></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi="adspend">
           <div class="kpi-label">Ad Spend (Meta)</div>
-          <div class="kpi-value" data-target="3530">$0</div>
+          <div class="kpi-value" data-target="0" data-prefix="$">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="calendar"></i>
-            <span>₩5.12M · 36 days</span>
+            <span>—</span>
           </div>
           <div class="kpi-spark" id="sparkSpend"></div>
         </div>
-        <div class="kpi-card highlight">
-          <div class="kpi-label">Gross Profit (Feb)</div>
-          <div class="kpi-value" data-target="714" data-prefix="₩" data-suffix="K">₩0K</div>
+        <div class="kpi-card highlight" data-kpi="profit">
+          <div class="kpi-label">Gross Profit</div>
+          <div class="kpi-value">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="info"></i>
-            <span>7.2% margin · COGS Feb only</span>
+            <span>— margin</span>
           </div>
         </div>
       </div>
 
       <!-- KPI Row 2: Performance Metrics -->
       <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi="roas">
           <div class="kpi-label">ROAS</div>
-          <div class="kpi-value" data-target="3.48" data-prefix="" data-suffix="x">0x</div>
+          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="x">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
-            <span>₩3.48 earned per ₩1 ad spend</span>
+            <span>—</span>
           </div>
           <div class="kpi-spark" id="sparkRoas"></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi="purchases">
           <div class="kpi-label">Purchases (Meta)</div>
-          <div class="kpi-value" data-target="207" data-prefix="">0</div>
+          <div class="kpi-value" data-target="0" data-prefix="">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
-            <span>5.8 avg/day · improving</span>
+            <span>— avg/day</span>
           </div>
           <div class="kpi-spark" id="sparkPurchases"></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi="ctr">
           <div class="kpi-label">CTR</div>
-          <div class="kpi-value" data-target="9.72" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
-            <span>4.18% → 13%+ trend</span>
+            <span>—</span>
           </div>
           <div class="kpi-spark" id="sparkCtr"></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi="cpa">
           <div class="kpi-label">Cost per Purchase</div>
-          <div class="kpi-value" data-target="17.05">$0</div>
+          <div class="kpi-value" data-target="0" data-prefix="$">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="target"></i>
-            <span>$16.68 on main campaign</span>
+            <span>—</span>
           </div>
           <div class="kpi-spark" id="sparkCpa"></div>
         </div>
@@ -251,36 +251,36 @@
     <section class="page" data-page="analytics">
       <!-- Refund & Order KPIs -->
       <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi-analytics="refundRate">
           <div class="kpi-label">Refund Rate (₩)</div>
-          <div class="kpi-value" data-target="13.1" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta negative">
             <i data-lucide="alert-triangle"></i>
-            <span>₩2.67M refunded of ₩20.47M</span>
+            <span>—</span>
           </div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi-analytics="cancelRate">
           <div class="kpi-label">Cancel Rate (Sections)</div>
-          <div class="kpi-value" data-target="43.2" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta negative">
             <i data-lucide="x-circle"></i>
-            <span>118 of 273 order sections</span>
+            <span>—</span>
           </div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi-analytics="febRefundRate">
           <div class="kpi-label">Feb Refund Rate</div>
-          <div class="kpi-value" data-target="18.5" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta negative">
             <i data-lucide="trending-down"></i>
-            <span>11 of 166 orders · ₩2.26M</span>
+            <span>—</span>
           </div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-kpi-analytics="marRefundRate">
           <div class="kpi-label">Mar Refund Rate</div>
-          <div class="kpi-value" data-target="5.0" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-down"></i>
-            <span>4 of 99 orders · ₩416K ↓</span>
+            <span>—</span>
           </div>
         </div>
       </div>
@@ -516,7 +516,7 @@
       <div class="card">
         <div class="card-header">
           <h2>Ad Fatigue Monitor</h2>
-          <span class="badge badge-warning">1 ad needs attention · 3 healthy</span>
+          <span class="badge badge-warning" data-fatigue-badge>— ads · — healthy</span>
         </div>
         <p class="card-desc">The agent monitors frequency, CTR decay, and CPM rise to detect ad fatigue before it damages performance.</p>
         <div class="fatigue-grid" id="fatigueGrid"></div>
@@ -534,22 +534,22 @@
     <!-- Budget Manager Page -->
     <section class="page" data-page="budget">
       <div class="kpi-grid small">
-        <div class="kpi-card">
+        <div class="kpi-card" data-budget-kpi="daily">
           <div class="kpi-label">Daily Budget (Active)</div>
-          <div class="kpi-value">$110/day</div>
+          <div class="kpi-value">—</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-budget-kpi="periodSpend">
           <div class="kpi-label">Period Spend</div>
-          <div class="kpi-value" data-target="3530">$0</div>
-          <div class="budget-bar"><div class="budget-fill" style="width:84%"></div></div>
+          <div class="kpi-value" data-target="0" data-prefix="$">—</div>
+          <div class="budget-bar"><div class="budget-fill" style="width:0%"></div></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-budget-kpi="remaining">
           <div class="kpi-label">Budget Remaining</div>
-          <div class="kpi-value">$98.06/day</div>
+          <div class="kpi-value">—</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" data-budget-kpi="pace">
           <div class="kpi-label">Pace</div>
-          <div class="kpi-value pace-on-track">Active</div>
+          <div class="kpi-value">—</div>
         </div>
       </div>
       <div class="charts-grid">
@@ -721,11 +721,11 @@
           </div>
           <div class="api-row">
             <span class="api-label">Total Orders</span>
-            <span class="api-value">265 orders (Feb 6 – Mar 10, 2026)</span>
+            <span class="api-value" id="settingsImwebOrders">—</span>
           </div>
           <div class="api-row">
             <span class="api-label">Revenue</span>
-            <span class="api-value">₩20,470,118 (net of ₩2,674,635 refunds)</span>
+            <span class="api-value" id="settingsImwebRevenue">—</span>
           </div>
         </div>
       </div>
@@ -748,11 +748,11 @@
           </div>
           <div class="api-row">
             <span class="api-label">Line Items</span>
-            <span class="api-value">107 items across ~90 orders</span>
+            <span class="api-value" id="settingsCogsItems">—</span>
           </div>
           <div class="api-row">
             <span class="api-label">Total COGS</span>
-            <span class="api-value">₩5,854,000 product + ₩348,000 shipping</span>
+            <span class="api-value" id="settingsCogs">—</span>
           </div>
         </div>
       </div>
