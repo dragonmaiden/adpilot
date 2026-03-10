@@ -1,0 +1,72 @@
+// ═══════════════════════════════════════════════════════
+// AdPilot — Configuration
+// All secrets via environment variables (required on Render)
+// ═══════════════════════════════════════════════════════
+
+const path = require('path');
+
+// Data directory — uses Render persistent disk if mounted, otherwise local
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+
+module.exports = {
+  // Meta Ads API
+  meta: {
+    accessToken: process.env.META_ACCESS_TOKEN,
+    adAccountId: process.env.META_AD_ACCOUNT_ID || 'act_1407071387528879',
+    businessId: process.env.META_BUSINESS_ID || '1037680327881084',
+    apiVersion: 'v20.0',
+    baseUrl: 'https://graph.facebook.com',
+  },
+
+  // Imweb API
+  imweb: {
+    clientId: process.env.IMWEB_CLIENT_ID,
+    clientSecret: process.env.IMWEB_CLIENT_SECRET,
+    siteCode: process.env.IMWEB_SITE_CODE || 'S20260108741f7ad4afc71',
+    unitCode: process.env.IMWEB_UNIT_CODE || 'u20260108695f4cab3dea1',
+    baseUrl: 'https://openapi.imweb.me',
+    tokenFile: path.join(DATA_DIR, 'imweb_tokens.json'),
+  },
+
+  // Optimization Rules
+  rules: {
+    maxBudgetChangePercent: 20,
+    cpaPauseThreshold: 50,
+    cpaWarningThreshold: 30,
+    minSpendForDecision: 20,
+    fatigueFrequencyThreshold: 4,
+    fatigueCtrDecayPercent: 30,
+    roasMinimum: 1.5,
+    minDataDays: 3,
+    budgetReallocationEnabled: true,
+    autonomousMode: true,
+  },
+
+  // Scheduler
+  scheduler: {
+    scanIntervalMinutes: parseInt(process.env.SCAN_INTERVAL_MINUTES || '60', 10),
+    dataRetentionDays: 90,
+  },
+
+  // Currency
+  currency: {
+    usdToKrw: 1450,
+    storeCurrency: 'KRW',
+  },
+
+  // Telegram Approval
+  telegram: {
+    botToken: process.env.TELEGRAM_BOT_TOKEN,
+    chatId: process.env.TELEGRAM_CHAT_ID,
+  },
+
+  // Server
+  server: {
+    port: parseInt(process.env.PORT || '3001', 10),
+  },
+
+  // Paths
+  paths: {
+    dataDir: DATA_DIR,
+  },
+};

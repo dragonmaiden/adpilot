@@ -1,0 +1,7 @@
+node_modules/
+.env
+server/data/*.json
+server/data/logs/
+eslint.config.mjs
+*.log
+.DS_Store

@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: adpilot
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    disk:
+      name: adpilot-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /data
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: META_AD_ACCOUNT_ID
+        value: act_1407071387528879
+      - key: META_BUSINESS_ID
+        value: 1037680327881084
+      - key: IMWEB_CLIENT_ID
+        sync: false
+      - key: IMWEB_CLIENT_SECRET
+        sync: false
+      - key: IMWEB_REFRESH_TOKEN
+        sync: false
+      - key: IMWEB_SITE_CODE
+        value: S20260108741f7ad4afc71
+      - key: IMWEB_UNIT_CODE
+        value: u20260108695f4cab3dea1
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        value: "244024848"
+      - key: SCAN_INTERVAL_MINUTES
+        value: "60"

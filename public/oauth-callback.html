@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AdPilot — Imweb Authorization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0f1117; --surface: #181a20; --border: #2a2d35; --text: #e8eaed; --muted: #9aa0a6; --primary: #20808D; --success: #4ade80; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 40px; max-width: 560px; width: 100%; text-align: center; }
+  .icon { width: 64px; height: 64px; border-radius: 16px; background: rgba(32,128,141,0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
+  .icon svg { width: 32px; height: 32px; color: var(--primary); }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; line-height: 1.5; }
+  .code-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 24px; text-align: left; }
+  .code-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px; }
+  .code-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; word-break: break-all; color: var(--success); line-height: 1.6; user-select: all; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { opacity: 0.9; }
+  .status { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .status.copied { color: var(--success); }
+  .error-msg { color: #f87171; font-size: 14px; margin-bottom: 16px; }
+  .waiting { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+</style>
+</head>
+<body>
+<div class="card" id="main">
+  <div class="icon">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+  </div>
+  <div id="content"></div>
+</div>
+
+<script>
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const error = params.get('error');
+  const state = params.get('state');
+  const content = document.getElementById('content');
+
+  if (error) {
+    content.innerHTML = `
+      <h1>Authorization Failed</h1>
+      <p class="error-msg">Error: ${error}</p>
+      <p class="subtitle">Please try the authorization process again. If the issue persists, check your Imweb app settings.</p>
+    `;
+    return;
+  }
+
+  if (code) {
+    content.innerHTML = `
+      <h1>Authorization Successful</h1>
+      <p class="subtitle">Imweb has granted access. Copy the authorization code below and paste it back to the AdPilot setup conversation.</p>
+      <div class="code-box">
+        <div class="code-label">Authorization Code</div>
+        <div class="code-value" id="codeValue">${code}</div>
+      </div>
+      <button class="btn btn-primary" onclick="copyCode()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        Copy Code
+      </button>
+      <div class="status" id="status">Click to copy, then paste in the setup conversation</div>
+    `;
+    return;
+  }
+
+  // No code yet — show waiting state
+  content.innerHTML = `
+    <h1>Imweb OAuth Setup</h1>
+    <p class="subtitle">This page handles the Imweb authorization callback for AdPilot. You'll be redirected here after granting access in Imweb.</p>
+    <p class="subtitle waiting">Waiting for authorization...</p>
+  `;
+})();
+
+function copyCode() {
+  const code = document.getElementById('codeValue').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const status = document.getElementById('status');
+    status.textContent = 'Copied to clipboard!';
+    status.className = 'status copied';
+  });
+}
+</script>
+</body>
+</html>

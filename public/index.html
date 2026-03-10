@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<!--
+   ______                            __
+  / ____/___  ____ ___  ____  __  __/ /____  _____
+ / /   / __ \/ __ `__ \/ __ \/ / / / __/ _ \/ ___/
+/ /___/ /_/ / / / / / / /_/ / /_/ / /_/  __/ /
+\____/\____/_/ /_/ /_/ .___/\__,_/\__/\___/_/
+                    /_/
+        Created with Perplexity Computer
+        https://www.perplexity.ai/computer
+-->
+<meta name="generator" content="Perplexity Computer">
+<meta name="author" content="Perplexity Computer">
+<meta property="og:see_also" content="https://www.perplexity.ai/computer">
+<link rel="author" href="https://www.perplexity.ai/computer">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AdPilot — Autonomous Meta Ads Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<link rel="stylesheet" href="./base.css">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div class="dashboard">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 32 32" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="AdPilot Logo">
+        <rect x="2" y="2" width="28" height="28" rx="6" stroke="currentColor" stroke-width="2.5"/>
+        <path d="M10 22L16 10L22 22" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="16" cy="18" r="2" fill="var(--color-primary)"/>
+      </svg>
+      <span class="logo-text">AdPilot</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-page="overview">
+        <i data-lucide="layout-dashboard"></i>
+        <span>Overview</span>
+      </a>
+      <a href="#" class="nav-item" data-page="campaigns">
+        <i data-lucide="megaphone"></i>
+        <span>Campaigns</span>
+      </a>
+      <a href="#" class="nav-item" data-page="analytics">
+        <i data-lucide="bar-chart-3"></i>
+        <span>Analytics</span>
+      </a>
+      <a href="#" class="nav-item" data-page="optimizations">
+        <i data-lucide="zap"></i>
+        <span>Optimizations</span>
+      </a>
+      <a href="#" class="nav-item" data-page="fatigue">
+        <i data-lucide="activity"></i>
+        <span>Fatigue Detection</span>
+      </a>
+      <a href="#" class="nav-item" data-page="budget">
+        <i data-lucide="wallet"></i>
+        <span>Budget Manager</span>
+      </a>
+      <a href="#" class="nav-item" data-page="settings">
+        <i data-lucide="settings"></i>
+        <span>Settings</span>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="agent-status">
+        <span class="status-dot active"></span>
+        <span class="status-label">Agent Active</span>
+      </div>
+      <div class="scan-info">Next scan in <span id="countdown">47m</span></div>
+    </div>
+  </aside>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <button class="mobile-menu-btn" id="menuBtn" aria-label="Toggle menu">
+        <i data-lucide="menu"></i>
+      </button>
+      <div class="page-title">
+        <h1 id="pageTitle">Overview</h1>
+        <span class="last-scan">Last scan: <span id="lastScan">12 min ago</span></span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="connected-badge">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="7" stroke="#1877F2" stroke-width="1.5"/>
+          <text x="8" y="11" text-anchor="middle" font-size="9" font-weight="700" fill="#1877F2">f</text>
+        </svg>
+        <span>Meta Ads</span>
+      </div>
+      <div class="connected-badge">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="1" width="14" height="14" rx="3" stroke="#4ade80" stroke-width="1.5"/>
+          <text x="8" y="11.5" text-anchor="middle" font-size="8" font-weight="700" fill="#4ade80">iw</text>
+        </svg>
+        <span>Imweb</span>
+      </div>
+      <button class="btn btn-primary" id="runScanBtn">
+        <i data-lucide="radar"></i>
+        <span>Run Scan Now</span>
+      </button>
+      <button data-theme-toggle aria-label="Toggle theme">
+        <i data-lucide="moon"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main" id="mainContent">
+
+    <!-- Overview Page -->
+    <section class="page active" data-page="overview">
+      <!-- KPI Row 1: Revenue & Profitability -->
+      <div class="kpi-grid kpi-grid-4">
+        <div class="kpi-card">
+          <div class="kpi-label">Revenue (Imweb)</div>
+          <div class="kpi-value" data-target="20470118" data-prefix="₩">₩0</div>
+          <div class="kpi-delta positive">
+            <i data-lucide="trending-up"></i>
+            <span>265 orders · ₩77,245 AOV</span>
+          </div>
+          <div class="kpi-spark" id="sparkRevenue"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">COGS (Feb only)</div>
+          <div class="kpi-value" data-target="6202000" data-prefix="₩">₩0</div>
+          <div class="kpi-delta neutral">
+            <i data-lucide="package"></i>
+            <span>₩5.85M product + ₩348K shipping</span>
+          </div>
+          <div class="kpi-spark" id="sparkCogs"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Ad Spend (Meta)</div>
+          <div class="kpi-value" data-target="3530">$0</div>
+          <div class="kpi-delta neutral">
+            <i data-lucide="calendar"></i>
+            <span>₩5.12M · 36 days</span>
+          </div>
+          <div class="kpi-spark" id="sparkSpend"></div>
+        </div>
+        <div class="kpi-card highlight">
+          <div class="kpi-label">Gross Profit (Feb)</div>
+          <div class="kpi-value" data-target="714" data-prefix="₩" data-suffix="K">₩0K</div>
+          <div class="kpi-delta neutral">
+            <i data-lucide="info"></i>
+            <span>7.2% margin · COGS Feb only</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Row 2: Performance Metrics -->
+      <div class="kpi-grid kpi-grid-4">
+        <div class="kpi-card">
+          <div class="kpi-label">ROAS</div>
+          <div class="kpi-value" data-target="3.48" data-prefix="" data-suffix="x">0x</div>
+          <div class="kpi-delta positive">
+            <i data-lucide="trending-up"></i>
+            <span>₩3.48 earned per ₩1 ad spend</span>
+          </div>
+          <div class="kpi-spark" id="sparkRoas"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Purchases (Meta)</div>
+          <div class="kpi-value" data-target="207" data-prefix="">0</div>
+          <div class="kpi-delta positive">
+            <i data-lucide="trending-up"></i>
+            <span>5.8 avg/day · improving</span>
+          </div>
+          <div class="kpi-spark" id="sparkPurchases"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">CTR</div>
+          <div class="kpi-value" data-target="9.72" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-delta positive">
+            <i data-lucide="trending-up"></i>
+            <span>4.18% → 13%+ trend</span>
+          </div>
+          <div class="kpi-spark" id="sparkCtr"></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Cost per Purchase</div>
+          <div class="kpi-value" data-target="17.05">$0</div>
+          <div class="kpi-delta neutral">
+            <i data-lucide="target"></i>
+            <span>$16.68 on main campaign</span>
+          </div>
+          <div class="kpi-spark" id="sparkCpa"></div>
+        </div>
+      </div>
+
+      <!-- Charts Row -->
+      <div class="charts-grid">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Revenue vs Ad Spend (14d)</h2>
+          </div>
+          <div class="chart-container">
+            <canvas id="spendRevenueChart"></canvas>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Daily ROAS (14d)</h2>
+          </div>
+          <div class="chart-container">
+            <canvas id="roasChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Second Charts Row -->
+      <div class="charts-grid">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>CTR & CPC Trend (14d)</h2>
+          </div>
+          <div class="chart-container">
+            <canvas id="impactChart"></canvas>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Revenue by Brand</h2>
+          </div>
+          <div class="chart-container">
+            <canvas id="brandChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Recent AI Actions</h2>
+          <button class="btn btn-ghost">View All</button>
+        </div>
+        <div class="activity-feed" id="activityFeed"></div>
+      </div>
+    </section>
+
+    <!-- Analytics Page -->
+    <section class="page" data-page="analytics">
+      <!-- Refund & Order KPIs -->
+      <div class="kpi-grid kpi-grid-4">
+        <div class="kpi-card">
+          <div class="kpi-label">Refund Rate (₩)</div>
+          <div class="kpi-value" data-target="13.1" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-delta negative">
+            <i data-lucide="alert-triangle"></i>
+            <span>₩2.67M refunded of ₩20.47M</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Cancel Rate (Sections)</div>
+          <div class="kpi-value" data-target="43.2" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-delta negative">
+            <i data-lucide="x-circle"></i>
+            <span>118 of 273 order sections</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Feb Refund Rate</div>
+          <div class="kpi-value" data-target="18.5" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-delta negative">
+            <i data-lucide="trending-down"></i>
+            <span>11 of 166 orders · ₩2.26M</span>
+          </div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Mar Refund Rate</div>
+          <div class="kpi-value" data-target="5.0" data-prefix="" data-suffix="%">0%</div>
+          <div class="kpi-delta positive">
+            <i data-lucide="trending-down"></i>
+            <span>4 of 99 orders · ₩416K ↓</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profit Trend + Weekly CPA -->
+      <div class="charts-grid">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Daily Profit Trend</h2>
+          </div>
+          <div class="chart-container" style="height:320px">
+            <canvas id="profitTrendChart"></canvas>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Weekly Profit</h2>
+          </div>
+          <div class="chart-container" style="height:320px">
+            <canvas id="weeklyProfitChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weekday Performance + Hour Distribution -->
+      <div class="charts-grid">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Ad Performance by Weekday</h2>
+          </div>
+          <div class="chart-container" style="height:320px">
+            <canvas id="weekdayChart"></canvas>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Order Volume by Hour (KST)</h2>
+          </div>
+          <div class="chart-container" style="height:320px">
+            <canvas id="hourChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Campaign Weekly CPA + Refund Trend -->
+      <div class="charts-grid">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Main Campaign Weekly CPA</h2>
+          </div>
+          <div class="chart-container" style="height:300px">
+            <canvas id="weeklyCpaChart"></canvas>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Monthly Refund Comparison</h2>
+          </div>
+          <div class="chart-container" style="height:300px">
+            <canvas id="refundChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weekday Revenue Table -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Revenue by Day of Week</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table" id="weekdayTable">
+            <thead>
+              <tr>
+                <th>Day</th>
+                <th>Orders</th>
+                <th>Revenue (Paid)</th>
+                <th>Refunded</th>
+                <th>Net Revenue</th>
+                <th>Ad Spend</th>
+                <th>Purchases (Pixel)</th>
+                <th>CPA</th>
+              </tr>
+            </thead>
+            <tbody id="weekdayBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Campaigns Page -->
+    <section class="page" data-page="campaigns">
+      <!-- Live / Active Section -->
+      <div class="card" id="activeCampaignsCard">
+        <div class="card-header">
+          <h2><span style="display:inline-block;width:8px;height:8px;background:#4ade80;border-radius:50%;margin-right:8px;animation:livePulse 2s infinite"></span>Live Ads</h2>
+          <span id="activeCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
+        </div>
+        <div id="activeAdsContainer" style="padding:0 20px 20px">
+          <div class="empty-state">Loading live ad data...</div>
+        </div>
+      </div>
+
+      <!-- Campaign Overview -->
+      <div class="card" id="campaignOverviewCard">
+        <div class="card-header">
+          <h2>Campaigns Overview</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table" id="campaignTable">
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>Status</th>
+                <th>Daily Budget</th>
+                <th>Spend (7d)</th>
+                <th>Purchases</th>
+                <th>CPA</th>
+                <th>CTR</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="campaignBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Inactive Ads + Lessons -->
+      <div class="card" id="inactiveAdsCard" style="margin-top:0">
+        <div class="card-header">
+          <h2>Paused Ads — Performance Lessons</h2>
+          <span id="inactiveCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
+        </div>
+        <!-- Lessons Summary -->
+        <div id="lessonsSummary" style="padding:0 20px 16px"></div>
+        <!-- Individual paused ads -->
+        <div id="inactiveAdsContainer" style="padding:0 20px 20px"></div>
+      </div>
+    </section>
+
+    <!-- Optimizations Page -->
+    <section class="page" data-page="optimizations">
+      <div class="kpi-grid small">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Optimizations</div>
+          <div class="kpi-value" id="optTotal" data-target="0" data-prefix="">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Auto-Executed</div>
+          <div class="kpi-value" id="optExecuted" data-target="0" data-prefix="">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Pending Approval</div>
+          <div class="kpi-value" id="optPending" data-target="0" data-prefix="">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Scans Completed</div>
+          <div class="kpi-value" id="optScans" data-target="0" data-prefix="">—</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Live Optimization Log</h2>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span id="optStats"></span>
+            <div class="filter-group">
+              <select class="select-input" id="optTypeFilter">
+                <option value="all">All Types</option>
+                <option value="budget">Budget</option>
+                <option value="bid">Bid</option>
+                <option value="creative">Creative</option>
+                <option value="status">Status</option>
+                <option value="schedule">Schedule</option>
+                <option value="targeting">Targeting</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="optimization-log" id="optimizationLog">
+          <div class="empty-state">Waiting for backend connection and first scan...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Fatigue Detection Page -->
+    <section class="page" data-page="fatigue">
+      <div class="card">
+        <div class="card-header">
+          <h2>Ad Fatigue Monitor</h2>
+          <span class="badge badge-warning">1 ad needs attention · 3 healthy</span>
+        </div>
+        <p class="card-desc">The agent monitors frequency, CTR decay, and CPM rise to detect ad fatigue before it damages performance.</p>
+        <div class="fatigue-grid" id="fatigueGrid"></div>
+      </div>
+      <div class="card chart-card">
+        <div class="card-header">
+          <h2>Fatigue Indicators Over Time</h2>
+        </div>
+        <div class="chart-container">
+          <canvas id="fatigueChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- Budget Manager Page -->
+    <section class="page" data-page="budget">
+      <div class="kpi-grid small">
+        <div class="kpi-card">
+          <div class="kpi-label">Daily Budget (Active)</div>
+          <div class="kpi-value">$110/day</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Period Spend</div>
+          <div class="kpi-value" data-target="3530">$0</div>
+          <div class="budget-bar"><div class="budget-fill" style="width:84%"></div></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Budget Remaining</div>
+          <div class="kpi-value">$98.06/day</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Pace</div>
+          <div class="kpi-value pace-on-track">Active</div>
+        </div>
+      </div>
+      <div class="charts-grid">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Budget Allocation by Campaign</h2>
+          </div>
+          <div class="chart-container">
+            <canvas id="budgetPieChart"></canvas>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Daily Spend Pace</h2>
+          </div>
+          <div class="chart-container">
+            <canvas id="budgetPaceChart"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Budget Reallocation History</h2>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>From Campaign</th>
+                <th>To Campaign</th>
+                <th>Amount</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody id="budgetHistory"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings Page -->
+    <section class="page" data-page="settings">
+      <div class="card">
+        <div class="card-header">
+          <h2>Agent Configuration</h2>
+        </div>
+        <div class="settings-grid">
+          <div class="setting-group">
+            <label class="setting-label">Scan Frequency</label>
+            <select class="select-input">
+              <option>Every 15 minutes</option>
+              <option>Every 30 minutes</option>
+              <option selected>Every hour</option>
+              <option>Every 2 hours</option>
+              <option>Every 4 hours</option>
+            </select>
+            <span class="setting-desc">How often the agent scans your campaigns for optimization opportunities</span>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Max Daily Budget Change</label>
+            <div class="input-with-unit">
+              <input type="number" class="text-input" value="20" min="1" max="100">
+              <span class="unit">%</span>
+            </div>
+            <span class="setting-desc">Maximum percentage the agent can adjust a campaign's daily budget per scan</span>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Auto-pause Threshold (CPA)</label>
+            <div class="input-with-unit">
+              <input type="number" class="text-input" value="15" min="1">
+              <span class="unit">$</span>
+            </div>
+            <span class="setting-desc">Pause campaigns when CPA exceeds this amount for 24+ hours</span>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Fatigue Detection Sensitivity</label>
+            <select class="select-input">
+              <option>Low</option>
+              <option selected>Medium</option>
+              <option>High</option>
+            </select>
+            <span class="setting-desc">How aggressively the agent flags creatives for fatigue</span>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Autonomous Mode</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="autoMode" checked>
+              <label for="autoMode" class="toggle-track"></label>
+            </div>
+            <span class="setting-desc">When enabled, the agent applies optimizations automatically. When disabled, it only suggests changes.</span>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Budget Reallocation</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="budgetRealloc" checked>
+              <label for="budgetRealloc" class="toggle-track"></label>
+            </div>
+            <span class="setting-desc">Allow the agent to move budget between campaigns based on performance</span>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Creative Rotation</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="creativeRotation" checked>
+              <label for="creativeRotation" class="toggle-track"></label>
+            </div>
+            <span class="setting-desc">Automatically rotate underperforming creatives when fatigue is detected</span>
+          </div>
+          <div class="setting-group">
+            <label class="setting-label">Notification Channel</label>
+            <select class="select-input">
+              <option selected>Email + In-App</option>
+              <option>Email Only</option>
+              <option>In-App Only</option>
+              <option>Slack</option>
+              <option>Webhook</option>
+            </select>
+            <span class="setting-desc">Where to send alerts about significant changes or issues</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Meta Ads API Connection</h2>
+        </div>
+        <div class="api-status">
+          <div class="api-row">
+            <span class="api-label">Connection Status</span>
+            <span class="badge badge-success">Connected</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Ad Account</span>
+            <span class="api-value">act_1407071387528879 (SHUE)</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Access Token</span>
+            <span class="api-value">••••••••••••YmkZD (Long-lived, ~60 days)</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Business ID</span>
+            <span class="api-value">1037680327881084</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Permissions</span>
+            <span class="api-value">ads_management, ads_read, pages_read</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Imweb Store Connection</h2>
+        </div>
+        <div class="api-status">
+          <div class="api-row">
+            <span class="api-label">Connection Status</span>
+            <span class="badge badge-success">Connected</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Store</span>
+            <span class="api-value">슈에 (SHUE) — shue1.imweb.me</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Site Code</span>
+            <span class="api-value">S20260108741f7ad4afc71</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Scopes</span>
+            <span class="api-value">site-info:read/write, order:read, product:read</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Total Orders</span>
+            <span class="api-value">265 orders (Feb 6 – Mar 10, 2026)</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Revenue</span>
+            <span class="api-value">₩20,470,118 (net of ₩2,674,635 refunds)</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>COGS Data (Google Sheets)</h2>
+        </div>
+        <div class="api-status">
+          <div class="api-row">
+            <span class="api-label">Connection Status</span>
+            <span class="badge badge-warning">Partial</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Source</span>
+            <span class="api-value">SHUE 2월 주문 (Google Sheets)</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Coverage</span>
+            <span class="api-value">Feb 8 – Feb 28, 2026 (no March data)</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Line Items</span>
+            <span class="api-value">107 items across ~90 orders</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Total COGS</span>
+            <span class="api-value">₩5,854,000 product + ₩348,000 shipping</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer Attribution -->
+    <footer class="footer-attr">
+      <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">
+        Created with Perplexity Computer
+      </a>
+    </footer>
+
+  </main>
+</div>
+
+<!-- Mobile overlay -->
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<script src="./app.js"></script>
+<script src="./live.js"></script>
+</body>
+</html>

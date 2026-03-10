@@ -1,0 +1,17 @@
+{
+  "name": "adpilot",
+  "version": "1.0.0",
+  "description": "SHUE AdPilot — Autonomous Meta Ads optimization agent with Telegram approval",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "node-cron": "^4.2.1"
+  }
+}
