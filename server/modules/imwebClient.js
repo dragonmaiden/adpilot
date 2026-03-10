@@ -4,6 +4,8 @@
 
 const fs = require('fs');
 const config = require('../config');
+const { formatDateInTimeZone, getHourInTimeZone } = require('../domain/time');
+const runtimePaths = require('../runtime/paths');
 
 let accessToken = null;
 let refreshToken = null;
@@ -12,11 +14,11 @@ let tokenExpiry = 0;
 // ── Load tokens from disk ──
 function loadTokens() {
   try {
-    if (!fs.existsSync(config.imweb.tokenFile)) {
+    if (!fs.existsSync(runtimePaths.imwebTokenFile)) {
       console.log('[IMWEB] No token file found — will authenticate fresh');
       return false;
     }
-    const raw = JSON.parse(fs.readFileSync(config.imweb.tokenFile, 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(runtimePaths.imwebTokenFile, 'utf8'));
     const payload = raw.data || raw;
     const loadedAccess = payload.accessToken || payload.access_token;
     const loadedRefresh = payload.refreshToken || payload.refresh_token;
@@ -53,9 +55,9 @@ function saveTokens(data) {
   tokenExpiry = now + expiresIn * 1000;
 
   // Persist with absolute timestamps so loadTokens() doesn't guess
-  const dir = require('path').dirname(config.imweb.tokenFile);
+  const dir = require('path').dirname(runtimePaths.imwebTokenFile);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(config.imweb.tokenFile, JSON.stringify({
+  fs.writeFileSync(runtimePaths.imwebTokenFile, JSON.stringify({
     access_token: accessToken,
     refresh_token: refreshToken,
     expires_in: expiresIn,
@@ -205,8 +207,8 @@ function processOrders(orders) {
 
     // wtime is ISO string like "2026-03-10T05:13:50.000Z"
     const orderDate = order.wtime ? new Date(order.wtime) : new Date();
-    const dateKey = orderDate.toISOString().slice(0, 10);
-    const hour = (orderDate.getUTCHours() + 9) % 24; // UTC → KST
+    const dateKey = formatDateInTimeZone(orderDate);
+    const hour = getHourInTimeZone(orderDate);
 
     // Revenue by day
     if (!dailyRevenue[dateKey]) {

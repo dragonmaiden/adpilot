@@ -1,6 +1,6 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
-const { sumField, sumPurchases } = require('../helpers/metrics');
+const { summarizeInsights, extractPositiveFieldValues } = require('../domain/metrics');
 
 /**
  * Build the /api/postmortem response — ad performance data with lessons for paused ads.
@@ -14,27 +14,28 @@ function getPostmortemResponse() {
   // Build performance data for ALL ads (active + paused)
   const adPerformance = ads.map(ad => {
     const adIns = adInsights.filter(i => i.ad_id === ad.id);
-    const totalSpend = sumField(adIns, 'spend');
-    const totalClicks = sumField(adIns, 'clicks', parseInt);
-    const totalImpressions = sumField(adIns, 'impressions', parseInt);
-    const totalPurchases = sumPurchases(adIns);
+    const metrics = summarizeInsights(adIns);
+    const totalSpend = metrics.spend;
+    const totalClicks = metrics.clicks;
+    const totalImpressions = metrics.impressions;
+    const totalMetaPurchases = metrics.purchases;
 
-    const ctrs = adIns.map(i => parseFloat(i.ctr || 0)).filter(c => c > 0);
-    const cpms = adIns.map(i => parseFloat(i.cpm || 0)).filter(c => c > 0);
-    const freqs = adIns.map(i => parseFloat(i.frequency || 0)).filter(f => f > 0);
+    const ctrs = extractPositiveFieldValues(adIns, 'ctr');
+    const cpms = extractPositiveFieldValues(adIns, 'cpm');
+    const freqs = extractPositiveFieldValues(adIns, 'frequency');
 
     const peakCTR = ctrs.length > 0 ? Math.max(...ctrs) : 0;
     const avgCTR = ctrs.length > 0 ? ctrs.reduce((a, b) => a + b, 0) / ctrs.length : 0;
     const lastCTR = ctrs.length > 0 ? ctrs[ctrs.length - 1] : 0;
     const avgCPM = cpms.length > 0 ? cpms.reduce((a, b) => a + b, 0) / cpms.length : 0;
     const lastFreq = freqs.length > 0 ? freqs[freqs.length - 1] : 0;
-    const cpa = totalPurchases > 0 ? totalSpend / totalPurchases : null;
+    const cpa = metrics.cpa;
 
     // Generate lessons for paused ads
     const lessons = [];
     if (ad.effective_status !== 'ACTIVE') {
-      if (totalSpend > 0 && totalPurchases === 0) {
-        lessons.push({ type: 'no_conversions', text: `Spent $${totalSpend.toFixed(2)} with zero purchases — creative or targeting didn't resonate` });
+      if (totalSpend > 0 && totalMetaPurchases === 0) {
+        lessons.push({ type: 'no_conversions', text: `Spent $${totalSpend.toFixed(2)} with zero pixel purchases — creative or targeting did not resonate` });
       }
       if (cpa && cpa > 30) {
         lessons.push({ type: 'high_cpa', text: `CPA of $${cpa.toFixed(2)} was too high — audience may have been too broad or creative lacked urgency` });
@@ -45,14 +46,14 @@ function getPostmortemResponse() {
       if (lastFreq > 3) {
         lessons.push({ type: 'high_frequency', text: `Frequency reached ${lastFreq.toFixed(1)} — same people seeing the ad too many times` });
       }
-      if (avgCTR > 1.5 && totalPurchases === 0) {
-        lessons.push({ type: 'clicks_no_purchase', text: `Good CTR (${avgCTR.toFixed(2)}%) but no purchases — landing page or pricing may be the issue` });
+      if (avgCTR > 1.5 && totalMetaPurchases === 0) {
+        lessons.push({ type: 'clicks_no_purchase', text: `Good CTR (${avgCTR.toFixed(2)}%) but no pixel purchases — landing page or pricing may be the issue` });
       }
       if (totalSpend === 0) {
         lessons.push({ type: 'no_data', text: 'No spend data in the last 7 days — was paused before this period' });
       }
       if (lessons.length === 0 && totalSpend > 0) {
-        lessons.push({ type: 'general', text: `Spent $${totalSpend.toFixed(2)} with ${totalPurchases} purchase${totalPurchases !== 1 ? 's' : ''} — manually paused or replaced by better creative` });
+        lessons.push({ type: 'general', text: `Spent $${totalSpend.toFixed(2)} with ${totalMetaPurchases} pixel purchase${totalMetaPurchases !== 1 ? 's' : ''} — manually paused or replaced by better creative` });
       }
     }
 
@@ -70,7 +71,7 @@ function getPostmortemResponse() {
       spend: totalSpend,
       clicks: totalClicks,
       impressions: totalImpressions,
-      purchases: totalPurchases,
+      metaPurchases: totalMetaPurchases,
       cpa,
       avgCTR,
       peakCTR,

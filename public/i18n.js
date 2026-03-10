@@ -33,7 +33,7 @@ const I18N = {
   'kpi.adspend':        { en: 'Ad Spend (Meta)',    kr: '광고비 (Meta)' },
   'kpi.profit':         { en: 'Gross Profit',       kr: '매출총이익' },
   'kpi.roas':           { en: 'ROAS',              kr: 'ROAS' },
-  'kpi.purchases':      { en: 'Purchases (Meta)',   kr: '구매 (Meta)' },
+  'kpi.purchases':      { en: 'Purchases (COGS)',   kr: '구매 (COGS)' },
   'kpi.ctr':            { en: 'CTR',               kr: 'CTR' },
   'kpi.cpa':            { en: 'Cost per Purchase',  kr: '구매당 비용' },
 
@@ -67,7 +67,7 @@ const I18N = {
   'th.refunded':        { en: 'Refunded',          kr: '환불' },
   'th.netRevenue':      { en: 'Net Revenue',       kr: '순매출' },
   'th.adSpend':         { en: 'Ad Spend',          kr: '광고비' },
-  'th.purchasesPixel':  { en: 'Purchases (Pixel)', kr: '구매 (픽셀)' },
+  'th.purchasesPixel':  { en: 'Pixel Purchases', kr: '픽셀 구매' },
   'th.cpa':             { en: 'CPA',               kr: 'CPA' },
 
   // ── Campaigns Page ──
@@ -120,11 +120,11 @@ const I18N = {
   'budget.pace':        { en: 'Pace',                  kr: '속도' },
   'chart.budgetAlloc':  { en: 'Budget Allocation by Campaign', kr: '캠페인별 예산 배분' },
   'chart.dailyPace':    { en: 'Daily Spend Pace',              kr: '일별 지출 속도' },
-  'budget.history':     { en: 'Budget Reallocation History',    kr: '예산 재배분 내역' },
+  'budget.history':     { en: 'Budget Optimization History',    kr: '예산 최적화 내역' },
   'th.time':            { en: 'Time',               kr: '시간' },
-  'th.fromCampaign':    { en: 'From Campaign',      kr: '기존 캠페인' },
-  'th.toCampaign':      { en: 'To Campaign',        kr: '이동 캠페인' },
-  'th.amount':          { en: 'Amount',             kr: '금액' },
+  'th.target':          { en: 'Target',             kr: '대상' },
+  'th.scope':           { en: 'Scope',              kr: '범위' },
+  'th.actionTaken':     { en: 'Action',             kr: '조치' },
   'th.reason':          { en: 'Reason',             kr: '사유' },
 
   // ── Settings Page ──

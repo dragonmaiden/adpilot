@@ -4,9 +4,13 @@
 // ═══════════════════════════════════════════════════════
 
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
+const runtimePaths = require('./runtime/paths');
+const runtimeSettings = require('./runtime/runtimeSettings');
 const scheduler = require('./modules/scheduler');
 const meta = require('./modules/metaClient');
 const telegram = require('./modules/telegram');
@@ -18,6 +22,26 @@ const postmortemService = require('./services/postmortemService');
 const analyticsService = require('./services/analyticsService');
 const optimizationService = require('./services/optimizationService');
 
+function isValidMetaId(id) {
+  return /^\d{1,20}$/.test(String(id || ''));
+}
+
+function handleInternalError(req, res, err) {
+  console.error(`[API] ${req.method} ${req.path} error:`, err);
+  res.status(500).json({ error: 'Internal server error' });
+}
+
+function validateMetaIdParam(req, res, next) {
+  if (!isValidMetaId(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid Meta object ID' });
+  }
+  next();
+}
+
+function isFiniteNumberInRange(value, min, max) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+}
+
 // ── Validate required env vars on startup ──
 const REQUIRED_ENV = ['META_ACCESS_TOKEN', 'IMWEB_CLIENT_ID', 'IMWEB_CLIENT_SECRET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'];
 const missing = REQUIRED_ENV.filter(key => !process.env[key]);
@@ -28,36 +52,70 @@ if (missing.length > 0) {
 }
 
 // ── Ensure data directory exists ──
-// If the configured DATA_DIR (e.g. /data) isn't writable (no persistent disk attached),
-// fall back to a local directory so the server can still start.
-let DATA_DIR = config.paths.dataDir;
-try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  // Test write access
-  const testFile = path.join(DATA_DIR, '.write-test');
-  fs.writeFileSync(testFile, 'ok');
-  fs.unlinkSync(testFile);
-  console.log(`[INIT] Data directory ready: ${DATA_DIR}`);
-} catch (err) {
-  const fallback = path.join(__dirname, 'data');
-  console.warn(`[INIT] ⚠️  Cannot write to ${DATA_DIR} (${err.code}) — falling back to ${fallback}`);
+// If the configured DATA_DIR isn't writable, runtimePaths already falls back to a local directory.
+const DATA_DIR = runtimePaths.dataDir;
+if (runtimePaths.usedFallback) {
+  console.warn(`[INIT] ⚠️  Cannot write to ${runtimePaths.configuredDataDir} (${runtimePaths.fallbackReason.code}) — falling back to ${DATA_DIR}`);
   console.warn('[INIT] Data will NOT persist across deploys. Attach a Render Disk at /data for persistence.');
-  DATA_DIR = fallback;
-  config.paths.dataDir = fallback;
-  config.imweb.tokenFile = path.join(fallback, 'imweb_tokens.json');
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
-const LOG_DIR = path.join(DATA_DIR, 'logs');
-if (!fs.existsSync(LOG_DIR)) {
-  fs.mkdirSync(LOG_DIR, { recursive: true });
+} else {
+  console.log(`[INIT] Data directory ready: ${DATA_DIR}`);
 }
 
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || `http://localhost:${config.server.port}`;
+const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY;
+
+if (!DASHBOARD_API_KEY) {
+  console.warn('[INIT] ⚠️   DASHBOARD_API_KEY not set — API auth disabled (set in production!)');
+}
+
+function requireAuth(req, res, next) {
+  if (!DASHBOARD_API_KEY) return next();
+
+  const auth = req.headers.authorization;
+  if (!auth || auth !== `Bearer ${DASHBOARD_API_KEY}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+const apiLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests' },
+});
+
+const writeLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many write requests' },
+});
+
+const scanLimiter = rateLimit({
+  windowMs: 300_000,
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Scan rate limit exceeded' },
+});
+
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'script-src': ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', 'https://unpkg.com'],
+      'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
+      'img-src': ["'self'", 'data:', 'https:'],
+    },
+  },
+}));
 
 // ── Serve static dashboard files (frontend) ──
 const FRONTEND_DIR = path.join(__dirname, '..', 'public');
@@ -65,10 +123,21 @@ app.use(express.static(FRONTEND_DIR));
 
 // ── CORS for dev ──
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  const origin = req.headers.origin;
+  if (origin === ALLOWED_ORIGIN) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.vary('Origin');
+  }
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
+});
+
+app.use('/api', apiLimiter);
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next();
+  requireAuth(req, res, next);
 });
 
 // ═══════════════════════════════════════════════
@@ -83,7 +152,7 @@ app.get('/api/health', (req, res) => {
     uptime: process.uptime(),
     lastScan: scheduler.getLastScanTime()?.toISOString() || null,
     isScanning: scheduler.getIsScanning(),
-    autonomousMode: config.rules.autonomousMode,
+    autonomousMode: runtimeSettings.getRules().autonomousMode,
   });
 });
 
@@ -108,14 +177,12 @@ app.get('/api/scans', (req, res) => {
     history: scheduler.getScanHistory().reverse(),
     lastScan: scheduler.getLastScanResult(),
     isScanning: scheduler.getIsScanning(),
-    nextScan: scheduler.getLastScanTime()
-      ? new Date(scheduler.getLastScanTime().getTime() + config.scheduler.scanIntervalMinutes * 60 * 1000).toISOString()
-      : null,
+    nextScan: scheduler.getNextScheduledRunAt()?.toISOString() || null,
   }));
 });
 
 // ── Trigger manual scan ──
-app.post('/api/scan', async (req, res) => {
+app.post('/api/scan', scanLimiter, async (req, res) => {
   if (scheduler.getIsScanning()) {
     return res.json({ status: 'busy', message: 'Scan already in progress' });
   }
@@ -125,9 +192,9 @@ app.post('/api/scan', async (req, res) => {
 });
 
 // ── Campaign actions (write operations — require Telegram approval) ──
-app.post('/api/campaigns/:id/status', async (req, res) => {
+app.post('/api/campaigns/:id/status', writeLimiter, validateMetaIdParam, async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status } = req.body || {};
     if (!['ACTIVE', 'PAUSED'].includes(status)) {
       return res.status(400).json({ error: 'Status must be ACTIVE or PAUSED' });
     }
@@ -163,13 +230,16 @@ app.post('/api/campaigns/:id/status', async (req, res) => {
       await telegram.sendMessage(`✅ Campaign "${name}" ${status === 'PAUSED' ? 'paused' : 'resumed'} successfully.`);
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleInternalError(req, res, err);
   }
 });
 
-app.post('/api/campaigns/:id/budget', async (req, res) => {
+app.post('/api/campaigns/:id/budget', writeLimiter, validateMetaIdParam, async (req, res) => {
   try {
-    const { dailyBudget } = req.body;
+    const { dailyBudget } = req.body || {};
+    if (!isFiniteNumberInRange(dailyBudget, 0.01, 10000)) {
+      return res.status(400).json({ error: 'dailyBudget must be a positive number up to 10000' });
+    }
     const cents = Math.round(dailyBudget * 100);
 
     const data = scheduler.getLatestData();
@@ -200,14 +270,14 @@ app.post('/api/campaigns/:id/budget', async (req, res) => {
       await telegram.sendMessage(`✅ Budget for "${name}" updated to $${dailyBudget}/day.`);
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleInternalError(req, res, err);
   }
 });
 
 // ── Ad set actions (require Telegram approval) ──
-app.post('/api/adsets/:id/status', async (req, res) => {
+app.post('/api/adsets/:id/status', writeLimiter, validateMetaIdParam, async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status } = req.body || {};
     if (!['ACTIVE', 'PAUSED'].includes(status)) {
       return res.status(400).json({ error: 'Status must be ACTIVE or PAUSED' });
     }
@@ -239,14 +309,14 @@ app.post('/api/adsets/:id/status', async (req, res) => {
       await telegram.sendMessage(`✅ Ad set "${name}" ${status === 'PAUSED' ? 'paused' : 'resumed'} successfully.`);
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleInternalError(req, res, err);
   }
 });
 
 // ── Ad actions (require Telegram approval) ──
-app.post('/api/ads/:id/status', async (req, res) => {
+app.post('/api/ads/:id/status', writeLimiter, validateMetaIdParam, async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status } = req.body || {};
     if (!['ACTIVE', 'PAUSED'].includes(status)) {
       return res.status(400).json({ error: 'Status must be ACTIVE or PAUSED' });
     }
@@ -278,12 +348,12 @@ app.post('/api/ads/:id/status', async (req, res) => {
       await telegram.sendMessage(`✅ Ad "${name}" ${status === 'PAUSED' ? 'paused' : 'resumed'} successfully.`);
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleInternalError(req, res, err);
   }
 });
 
 // ── Execute specific optimization ──
-app.post('/api/optimizations/:id/execute', async (req, res) => {
+app.post('/api/optimizations/:id/execute', writeLimiter, async (req, res) => {
   try {
     const opts = scheduler.getAllOptimizations();
     const opt = opts.find(o => o.id === req.params.id);
@@ -296,14 +366,14 @@ app.post('/api/optimizations/:id/execute', async (req, res) => {
     const result = await engine.executeAction(opt);
     res.json({ success: true, optimization: result });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleInternalError(req, res, err);
   }
 });
 
 // ── Seed Imweb token (one-time, secured by Telegram chat ID) ──
-app.post('/api/seed-token', async (req, res) => {
+app.post('/api/seed-token', writeLimiter, async (req, res) => {
   try {
-    const { chatId, refreshToken } = req.body;
+    const { chatId, refreshToken } = req.body || {};
     if (!chatId || chatId !== config.telegram.chatId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
@@ -311,10 +381,10 @@ app.post('/api/seed-token', async (req, res) => {
       return res.status(400).json({ error: 'refreshToken required' });
     }
     // Write token file so imwebClient.loadTokens() can pick it up
-    const dir = path.dirname(config.imweb.tokenFile);
+    const dir = path.dirname(runtimePaths.imwebTokenFile);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const tokenData = { data: { accessToken: null, refreshToken } };
-    fs.writeFileSync(config.imweb.tokenFile, JSON.stringify(tokenData, null, 2));
+    fs.writeFileSync(runtimePaths.imwebTokenFile, JSON.stringify(tokenData, null, 2));
     // Load + refresh via imwebClient (loadTokens reads the file, refreshAccessToken gets a valid pair)
     const imweb = require('./modules/imwebClient');
     imweb.loadTokens();
@@ -325,15 +395,16 @@ app.post('/api/seed-token', async (req, res) => {
     }
     res.json({ success: true, message: 'Token seeded and refreshed. Scan started.' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    handleInternalError(req, res, err);
   }
 });
 
 // ── Settings ──
 app.get('/api/settings', (req, res) => {
+  const settings = runtimeSettings.getSettings();
   res.json(contracts.settings({
-    rules: config.rules,
-    scheduler: config.scheduler,
+    rules: settings.rules,
+    scheduler: settings.scheduler,
     meta: {
       adAccountId: config.meta.adAccountId,
       apiVersion: config.meta.apiVersion,
@@ -346,15 +417,19 @@ app.get('/api/settings', (req, res) => {
   }));
 });
 
-app.put('/api/settings', (req, res) => {
+app.put('/api/settings', writeLimiter, (req, res) => {
   const updates = req.body;
-  // Update in-memory config (not persisted to file for safety)
-  if (updates.autonomousMode !== undefined) config.rules.autonomousMode = updates.autonomousMode;
-  if (updates.maxBudgetChangePercent !== undefined) config.rules.maxBudgetChangePercent = updates.maxBudgetChangePercent;
-  if (updates.cpaPauseThreshold !== undefined) config.rules.cpaPauseThreshold = updates.cpaPauseThreshold;
-  if (updates.scanIntervalMinutes !== undefined) config.scheduler.scanIntervalMinutes = updates.scanIntervalMinutes;
-  if (updates.budgetReallocationEnabled !== undefined) config.rules.budgetReallocationEnabled = updates.budgetReallocationEnabled;
-  res.json({ success: true, settings: { rules: config.rules, scheduler: config.scheduler } });
+  if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+    return res.status(400).json({ error: 'Settings payload must be an object' });
+  }
+
+  const errors = runtimeSettings.validateSettingsPatch(updates);
+  if (errors.length > 0) {
+    return res.status(400).json({ error: errors.join('; ') });
+  }
+
+  const result = runtimeSettings.updateSettings(updates);
+  res.json({ success: true, settings: result.settings });
 });
 
 // ── Post-mortem analysis for paused ads ──
@@ -371,7 +446,12 @@ app.get('/api/optimizations/timeline', (req, res) => {
 app.get('/api/spend-daily', async (req, res) => {
   try {
     const data = scheduler.getLatestData();
-    const result = transforms.buildSpendDaily(data.campaignInsights);
+    const dailyMerged = transforms.buildDailyMerged(
+      data.revenueData?.dailyRevenue,
+      data.campaignInsights,
+      data.cogsData?.dailyCOGS
+    );
+    const result = transforms.buildSpendDaily(dailyMerged);
     res.json(contracts.spendDaily(result));
   } catch (err) {
     console.error('Spend daily error:', err.message);
@@ -413,8 +493,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('  AdPilot Backend Server');
   console.log(`  Port: ${PORT}`);
   console.log(`  Data: ${DATA_DIR}`);
-  console.log(`  Mode: ${config.rules.autonomousMode ? 'AUTONOMOUS' : 'SUGGESTION ONLY'}`);
-  console.log(`  Scan interval: ${config.scheduler.scanIntervalMinutes} min`);
+  console.log(`  Mode: ${runtimeSettings.getRules().autonomousMode ? 'AUTONOMOUS' : 'SUGGESTION ONLY'}`);
+  console.log(`  Scan interval: ${runtimeSettings.getSchedulerSettings().scanIntervalMinutes} min`);
   console.log('='.repeat(60) + '\n');
 
   // Start the scheduler

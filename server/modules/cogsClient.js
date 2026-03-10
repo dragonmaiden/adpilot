@@ -1,13 +1,31 @@
 // ═══════════════════════════════════════════════════════
 // AdPilot — COGS Client (Google Sheets Integration)
-// Reads Cost of Goods Sold data from a public Google Sheet.
-// Sheet: SHUE - Cost of goods sold (COGS)
+// Reads cost, purchase, and refund markers from the public
+// Google Sheet. Red text in the workbook is treated as a
+// refund marker, with note keywords as a fallback.
 // ═══════════════════════════════════════════════════════
 
+const AdmZip = require('adm-zip');
+const { XMLParser } = require('fast-xml-parser');
 const config = require('../config');
 
 const SPREADSHEET_ID = config.cogs.spreadsheetId;
-const SHEET_GIDS = config.cogs.sheetGids; // { feb: '0', mar: '456791124', ... }
+const SHEET_GIDS = config.cogs.sheetGids;
+const PRIMARY_REFUND_COLUMNS = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']);
+const REFUND_NOTE_KEYWORDS = ['취소', '환불', '반환'];
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: '',
+  parseAttributeValue: false,
+  parseTagValue: false,
+  trimValues: false,
+});
+
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  return value == null ? [] : [value];
+}
 
 /**
  * Fetch a single sheet tab as CSV and parse into rows.
@@ -23,6 +41,103 @@ async function fetchSheetCSV(gid) {
   return parseCSV(text);
 }
 
+async function fetchWorkbookZip() {
+  const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=xlsx`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Google Sheets XLSX export failed: HTTP ${res.status}`);
+  }
+
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return new AdmZip(buffer);
+}
+
+function parseWorkbookSheets(zip) {
+  const workbook = xmlParser.parse(zip.readAsText('xl/workbook.xml'));
+  const rels = xmlParser.parse(zip.readAsText('xl/_rels/workbook.xml.rels'));
+
+  const relMap = new Map(
+    asArray(rels.Relationships?.Relationship).map(rel => [rel.Id, rel.Target])
+  );
+
+  return asArray(workbook.workbook?.sheets?.sheet).map(sheet => {
+    const target = relMap.get(sheet['r:id']);
+    return {
+      name: sheet.name || '',
+      path: target ? `xl/${target}` : null,
+    };
+  }).filter(sheet => sheet.path);
+}
+
+function parseWorkbookStyles(zip) {
+  const styles = xmlParser.parse(zip.readAsText('xl/styles.xml')).styleSheet || {};
+
+  const fonts = asArray(styles.fonts?.font).map(font => {
+    const rgb = String(font?.color?.rgb || '').toUpperCase();
+    return {
+      isRed: rgb.endsWith('FF0000'),
+      isStruck: font?.strike !== undefined,
+    };
+  });
+
+  const cellFormats = asArray(styles.cellXfs?.xf).map(format => ({
+    fontId: Number.parseInt(format.fontId || '0', 10) || 0,
+  }));
+
+  return { fonts, cellFormats };
+}
+
+function getColumnFromCellRef(ref) {
+  return String(ref || '').replace(/[0-9]/g, '');
+}
+
+function hasRefundStyle(cell, styles) {
+  const styleIndex = Number.parseInt(cell?.s || '0', 10) || 0;
+  const fontId = styles.cellFormats[styleIndex]?.fontId || 0;
+  const font = styles.fonts[fontId] || {};
+  return !!(font.isRed || font.isStruck);
+}
+
+function readWorksheetRefundRows(zip, sheetPath, styles) {
+  const worksheet = xmlParser.parse(zip.readAsText(sheetPath)).worksheet || {};
+  const rows = asArray(worksheet.sheetData?.row);
+  const refundRows = new Set();
+
+  for (const row of rows) {
+    const rowNumber = Number.parseInt(row.r || '0', 10);
+    if (!rowNumber) continue;
+
+    const cells = asArray(row.c);
+    const hasRefundMarker = cells.some(cell => {
+      const column = getColumnFromCellRef(cell.r);
+      const value = cell.v == null ? '' : String(cell.v).trim();
+      return PRIMARY_REFUND_COLUMNS.has(column) && value !== '' && hasRefundStyle(cell, styles);
+    });
+
+    if (hasRefundMarker) {
+      refundRows.add(rowNumber);
+    }
+  }
+
+  return refundRows;
+}
+
+async function fetchWorkbookRefundMarkers() {
+  const zip = await fetchWorkbookZip();
+  const workbookSheets = parseWorkbookSheets(zip);
+  const styles = parseWorkbookStyles(zip);
+  const markerMap = {};
+  const sheetEntries = Object.entries(SHEET_GIDS);
+
+  sheetEntries.forEach(([label], index) => {
+    const sheet = workbookSheets.find(entry => entry.name.includes(label)) || workbookSheets[index];
+    if (!sheet) return;
+    markerMap[label] = readWorksheetRefundRows(zip, sheet.path, styles);
+  });
+
+  return markerMap;
+}
+
 /**
  * RFC 4180-compliant CSV parser.
  * Single-pass: handles quoted fields with embedded commas, newlines, and escaped quotes.
@@ -34,21 +149,17 @@ function parseCSV(text) {
 
   while (i < len) {
     const row = [];
-    // Parse one row (may span multiple lines if fields contain newlines)
     while (i < len) {
       if (text[i] === '"') {
-        // Quoted field — collect until closing quote
-        i++; // skip opening quote
+        i++;
         let field = '';
         while (i < len) {
           if (text[i] === '"') {
             if (i + 1 < len && text[i + 1] === '"') {
-              // Escaped quote
               field += '"';
               i += 2;
             } else {
-              // Closing quote
-              i++; // skip closing quote
+              i++;
               break;
             }
           } else {
@@ -57,23 +168,19 @@ function parseCSV(text) {
           }
         }
         row.push(field.trim());
-        // After closing quote, expect comma or end-of-row
         if (i < len && text[i] === ',') {
-          i++; // skip comma, continue to next field
+          i++;
         } else {
-          // End of row (newline or EOF)
           if (i < len && text[i] === '\r') i++;
           if (i < len && text[i] === '\n') i++;
           break;
         }
       } else if (text[i] === '\r' || text[i] === '\n') {
-        // Empty trailing field at end of row
         row.push('');
         if (text[i] === '\r') i++;
         if (i < len && text[i] === '\n') i++;
         break;
       } else {
-        // Unquoted field — collect until comma or newline
         let field = '';
         while (i < len && text[i] !== ',' && text[i] !== '\r' && text[i] !== '\n') {
           field += text[i];
@@ -81,16 +188,15 @@ function parseCSV(text) {
         }
         row.push(field.trim());
         if (i < len && text[i] === ',') {
-          i++; // skip comma, continue to next field
+          i++;
         } else {
-          // End of row
           if (i < len && text[i] === '\r') i++;
           if (i < len && text[i] === '\n') i++;
           break;
         }
       }
     }
-    // Skip empty rows
+
     if (row.length > 1 || (row.length === 1 && row[0] !== '')) {
       rows.push(row);
     }
@@ -105,20 +211,42 @@ function parseCSV(text) {
 function parseKRW(str) {
   if (!str || typeof str !== 'string') return 0;
   const cleaned = str.replace(/[₩,\s]/g, '');
-  const num = parseInt(cleaned, 10);
-  return isNaN(num) ? 0 : num;
+  const num = Number.parseInt(cleaned, 10);
+  return Number.isNaN(num) ? 0 : num;
+}
+
+function normalizeSheetDate(value) {
+  const input = String(value || '').trim();
+  if (!input) return '';
+
+  const isoMatch = input.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  const usMatch = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (usMatch) {
+    const [, month, day, year] = usMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  return input;
+}
+
+function hasRefundNoteKeyword(note) {
+  const text = String(note || '').trim();
+  return REFUND_NOTE_KEYWORDS.some(keyword => text.includes(keyword));
 }
 
 /**
  * Parse rows from a sheet tab into structured order items.
  * Handles multi-row orders (continuation rows with no order number).
- *
- * Returns: [{ orderNo, date, name, cost, shipping, payment, delivery, productName }, ...]
  */
-function parseOrderItems(rows) {
-  // Row 0 = title row ("SHUE 2월 주문")
-  // Row 1 = headers (No, date, name, order number, products urk, seller no, product name, Cost, Shipping cost, payment, delivery, note)
-  // Row 2+ = data
+function parseOrderItems(rows, options = {}) {
+  const sheetLabel = options.sheetLabel || '';
+  const refundRows = options.refundRows instanceof Set ? options.refundRows : new Set();
+
   if (rows.length < 3) return [];
 
   const items = [];
@@ -126,124 +254,254 @@ function parseOrderItems(rows) {
 
   for (let i = 2; i < rows.length; i++) {
     const row = rows[i];
-    if (!row || row.length < 8) continue;
+    if (!row || row.length === 0) continue;
 
-    const no = row[0];
-    const date = row[1];
-    const name = row[2];
-    const orderNumber = row[3];
-    const productName = row[6] || '';
+    const sheetRowNumber = i + 1;
+    const sequenceNo = String(row[0] || '').trim();
+    const date = normalizeSheetDate(row[1]);
+    const name = String(row[2] || '').trim();
+    const orderNumber = String(row[3] || '').trim();
+    const productUrl = String(row[4] || '').trim();
+    const sellerNo = String(row[5] || '').trim();
+    const productName = String(row[6] || '').trim();
     const cost = parseKRW(row[7]);
     const shipping = parseKRW(row[8]);
-    const payment = (row[9] || '').toUpperCase() === 'TRUE';
-    const delivery = (row[10] || '').toUpperCase() === 'TRUE';
-    const note = row[11] || '';
+    const payment = String(row[9] || '').toUpperCase() === 'TRUE';
+    const delivery = String(row[10] || '').toUpperCase() === 'TRUE';
+    const note = String(row[11] || '').trim();
 
-    // Skip cancelled orders (note contains 취소)
-    const isCancelled = note.includes('취소');
-
-    if (no && date) {
-      // New order line
-      currentOrder = { no, date, name, orderNumber };
+    if (sequenceNo && date) {
+      currentOrder = {
+        sequenceNo,
+        date,
+        name,
+        orderNumber: orderNumber || sequenceNo,
+      };
     }
 
-    // Skip if no cost data or cancelled
-    if (cost === 0 || isCancelled) continue;
+    if (!currentOrder) continue;
+
+    const refundSignals = {
+      redText: refundRows.has(sheetRowNumber),
+      noteKeyword: hasRefundNoteKeyword(note),
+    };
+    const isRefund = refundSignals.redText || refundSignals.noteKeyword;
+    const hasMonetaryValue = cost > 0 || shipping > 0;
+    const hasContent = hasMonetaryValue || productName || note || isRefund;
+
+    if (!hasContent) continue;
 
     items.push({
-      orderNo: currentOrder ? currentOrder.no : '',
-      date: currentOrder ? currentOrder.date : '',
-      name: currentOrder ? currentOrder.name : '',
+      sheetLabel,
+      rowNumber: sheetRowNumber,
+      sequenceNo: currentOrder.sequenceNo,
+      orderNumber: currentOrder.orderNumber,
+      orderKey: currentOrder.orderNumber || `${sheetLabel}:${currentOrder.sequenceNo}`,
+      date: currentOrder.date,
+      name: currentOrder.name,
+      productUrl,
+      sellerNo,
+      productName,
       cost,
       shipping,
       payment,
       delivery,
-      productName,
+      note,
+      isRefund,
+      refundSignals,
     });
   }
 
   return items;
 }
 
+function createOrderSummary(item) {
+  return {
+    orderKey: item.orderKey,
+    orderNumber: item.orderNumber,
+    sequenceNo: item.sequenceNo,
+    date: item.date,
+    name: item.name,
+    sheetLabel: item.sheetLabel,
+    purchaseItemCount: 0,
+    refundItemCount: 0,
+    cost: 0,
+    shipping: 0,
+    items: [],
+  };
+}
+
+function createPeriodAggregate() {
+  return {
+    cost: 0,
+    shipping: 0,
+    items: 0,
+    purchases: 0,
+    refunds: 0,
+    refundOnlyOrders: 0,
+    partiallyRefundedOrders: 0,
+  };
+}
+
+function aggregateCOGSItems(items) {
+  const orderMap = new Map();
+
+  for (const item of items) {
+    const orderKey = item.orderKey || `${item.sheetLabel}:${item.rowNumber}`;
+    const order = orderMap.get(orderKey) || createOrderSummary(item);
+
+    order.items.push(item);
+    if (item.isRefund) {
+      order.refundItemCount++;
+    } else if (item.cost > 0 || item.shipping > 0) {
+      order.purchaseItemCount++;
+      order.cost += item.cost;
+      order.shipping += item.shipping;
+    }
+
+    orderMap.set(orderKey, order);
+  }
+
+  let totalCOGS = 0;
+  let totalShipping = 0;
+  let itemCount = 0;
+  let purchaseCount = 0;
+  let refundCount = 0;
+  let refundOnlyOrderCount = 0;
+  let partiallyRefundedOrderCount = 0;
+
+  const dailyCOGS = {};
+  const monthlyCOGS = {};
+  const orders = [];
+
+  for (const order of orderMap.values()) {
+    const hasPurchase = order.purchaseItemCount > 0 || order.cost > 0 || order.shipping > 0;
+    const hasRefund = order.refundItemCount > 0;
+
+    const summary = {
+      orderKey: order.orderKey,
+      orderNumber: order.orderNumber,
+      sequenceNo: order.sequenceNo,
+      date: order.date,
+      name: order.name,
+      sheetLabel: order.sheetLabel,
+      itemCount: order.purchaseItemCount,
+      refundItemCount: order.refundItemCount,
+      cost: order.cost,
+      shipping: order.shipping,
+      hasPurchase,
+      hasRefund,
+      isRefundOnly: hasRefund && !hasPurchase,
+      isPartiallyRefunded: hasRefund && hasPurchase,
+    };
+    orders.push(summary);
+
+    if (!order.date || (!hasPurchase && !hasRefund)) {
+      continue;
+    }
+
+    if (!dailyCOGS[order.date]) dailyCOGS[order.date] = createPeriodAggregate();
+    const monthKey = order.date.slice(0, 7);
+    if (!monthlyCOGS[monthKey]) monthlyCOGS[monthKey] = createPeriodAggregate();
+
+    if (hasPurchase) {
+      totalCOGS += order.cost;
+      totalShipping += order.shipping;
+      itemCount += order.purchaseItemCount;
+      purchaseCount++;
+
+      dailyCOGS[order.date].cost += order.cost;
+      dailyCOGS[order.date].shipping += order.shipping;
+      dailyCOGS[order.date].items += order.purchaseItemCount;
+      dailyCOGS[order.date].purchases++;
+
+      monthlyCOGS[monthKey].cost += order.cost;
+      monthlyCOGS[monthKey].shipping += order.shipping;
+      monthlyCOGS[monthKey].items += order.purchaseItemCount;
+      monthlyCOGS[monthKey].purchases++;
+    }
+
+    if (hasRefund) {
+      refundCount++;
+      dailyCOGS[order.date].refunds++;
+      monthlyCOGS[monthKey].refunds++;
+
+      if (summary.isRefundOnly) {
+        refundOnlyOrderCount++;
+        dailyCOGS[order.date].refundOnlyOrders++;
+        monthlyCOGS[monthKey].refundOnlyOrders++;
+      } else {
+        partiallyRefundedOrderCount++;
+        dailyCOGS[order.date].partiallyRefundedOrders++;
+        monthlyCOGS[monthKey].partiallyRefundedOrders++;
+      }
+    }
+  }
+
+  return {
+    totalCOGS,
+    totalShipping,
+    totalCOGSWithShipping: totalCOGS + totalShipping,
+    itemCount,
+    orderCount: orders.length,
+    purchaseCount,
+    refundCount,
+    refundOnlyOrderCount,
+    partiallyRefundedOrderCount,
+    dailyCOGS,
+    monthlyCOGS,
+    items,
+    orders,
+    lastFetched: new Date().toISOString(),
+  };
+}
+
 /**
- * Fetch all COGS data from all sheet tabs and compute aggregated metrics.
- *
- * Returns: {
- *   totalCOGS: number,       // sum of all product costs (₩)
- *   totalShipping: number,   // sum of all shipping costs (₩)
- *   totalCOGSWithShipping: number,
- *   itemCount: number,       // total line items
- *   orderCount: number,      // distinct order numbers
- *   dailyCOGS: { "2026-02-08": { cost, shipping, items }, ... },
- *   monthlyCOGS: { "2026-02": { cost, shipping, items }, ... },
- *   items: [...],            // all parsed items
- *   lastFetched: ISO string,
- * }
+ * Fetch all COGS data from all configured sheet tabs and compute aggregated metrics.
  */
 async function fetchAllCOGS() {
   console.log('[COGS] Fetching COGS data from Google Sheets...');
+
+  let refundMarkers = {};
+  try {
+    refundMarkers = await fetchWorkbookRefundMarkers();
+  } catch (err) {
+    console.warn('[COGS]   ⚠ Workbook style parse failed, falling back to note-only refund detection:', err.message);
+  }
 
   const allItems = [];
 
   for (const [label, gid] of Object.entries(SHEET_GIDS)) {
     try {
       const rows = await fetchSheetCSV(gid);
-      const items = parseOrderItems(rows);
+      const items = parseOrderItems(rows, {
+        sheetLabel: label,
+        refundRows: refundMarkers[label] || new Set(),
+      });
       allItems.push(...items);
-      console.log(`[COGS]   → Sheet "${label}": ${items.length} line items`);
+      console.log(`[COGS]   → Sheet "${label}": ${items.length} rows`);
     } catch (err) {
       console.warn(`[COGS]   ⚠ Sheet "${label}" (gid=${gid}) failed:`, err.message);
     }
   }
 
-  // Aggregate
-  let totalCOGS = 0;
-  let totalShipping = 0;
-  const dailyCOGS = {};
-  const monthlyCOGS = {};
-  const orderNos = new Set();
+  const result = aggregateCOGSItems(allItems);
 
-  for (const item of allItems) {
-    totalCOGS += item.cost;
-    totalShipping += item.shipping;
-    if (item.orderNo) orderNos.add(item.orderNo);
+  console.log(
+    `[COGS] Total: ₩${result.totalCOGS.toLocaleString()} product + ` +
+    `₩${result.totalShipping.toLocaleString()} shipping ` +
+    `(${result.purchaseCount} purchase orders, ${result.refundCount} refund-marked orders)`
+  );
 
-    // Daily aggregation
-    if (item.date) {
-      if (!dailyCOGS[item.date]) dailyCOGS[item.date] = { cost: 0, shipping: 0, items: 0 };
-      dailyCOGS[item.date].cost += item.cost;
-      dailyCOGS[item.date].shipping += item.shipping;
-      dailyCOGS[item.date].items++;
-
-      // Monthly
-      const mKey = item.date.slice(0, 7);
-      if (!monthlyCOGS[mKey]) monthlyCOGS[mKey] = { cost: 0, shipping: 0, items: 0 };
-      monthlyCOGS[mKey].cost += item.cost;
-      monthlyCOGS[mKey].shipping += item.shipping;
-      monthlyCOGS[mKey].items++;
-    }
-  }
-
-  const result = {
-    totalCOGS,
-    totalShipping,
-    totalCOGSWithShipping: totalCOGS + totalShipping,
-    itemCount: allItems.length,
-    orderCount: orderNos.size,
-    dailyCOGS,
-    monthlyCOGS,
-    items: allItems,
-    lastFetched: new Date().toISOString(),
-  };
-
-  console.log(`[COGS] Total: ₩${totalCOGS.toLocaleString()} product + ₩${totalShipping.toLocaleString()} shipping (${allItems.length} items, ${orderNos.size} orders)`);
   return result;
 }
 
 module.exports = {
   fetchAllCOGS,
   fetchSheetCSV,
+  fetchWorkbookRefundMarkers,
   parseOrderItems,
   parseCSV,
   parseKRW,
+  aggregateCOGSItems,
 };

@@ -5,10 +5,19 @@
 
 const path = require('path');
 
-// Data directory — uses Render persistent disk if mounted, otherwise local
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+function deepFreeze(obj) {
+  Object.freeze(obj);
 
-module.exports = {
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+      deepFreeze(value);
+    }
+  }
+
+  return obj;
+}
+
+const config = {
   // Meta Ads API
   meta: {
     accessToken: process.env.META_ACCESS_TOKEN,
@@ -25,7 +34,6 @@ module.exports = {
     siteCode: process.env.IMWEB_SITE_CODE || 'S20260108741f7ad4afc71',
     unitCode: process.env.IMWEB_UNIT_CODE || 'u20260108695f4cab3dea1',
     baseUrl: 'https://openapi.imweb.me',
-    tokenFile: path.join(DATA_DIR, 'imweb_tokens.json'),
   },
 
   // Optimization Rules
@@ -46,6 +54,11 @@ module.exports = {
   scheduler: {
     scanIntervalMinutes: parseInt(process.env.SCAN_INTERVAL_MINUTES || '60', 10),
     dataRetentionDays: 90,
+  },
+
+  // Business history
+  business: {
+    startDate: process.env.BUSINESS_START_DATE || '2026-02-01',
   },
 
   // COGS (Google Sheets)
@@ -81,6 +94,8 @@ module.exports = {
 
   // Paths
   paths: {
-    dataDir: DATA_DIR,
+    defaultDataDir: process.env.DATA_DIR || path.join(__dirname, 'data'),
   },
 };
+
+module.exports = deepFreeze(config);

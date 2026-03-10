@@ -6,14 +6,73 @@
 const API_BASE = window.location.origin + '/api';
 let pollInterval = null;
 let liveMode = false;
-let USD_TO_KRW = 1450; // default; overwritten from /api/settings on load
+let apiKeyPrompted = false;
+
+const SAFE_OPT_TYPES = new Set(['budget', 'bid', 'creative', 'status', 'schedule', 'targeting']);
+const SAFE_CONFIDENCE_LEVELS = new Set(['high', 'medium', 'low']);
+
+function esc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+function getApiKey() {
+  return (sessionStorage.getItem('adpilot_key') || '').trim();
+}
+
+function promptForApiKey() {
+  if (apiKeyPrompted) return;
+  apiKeyPrompted = true;
+
+  const key = window.prompt('Enter your AdPilot API key:');
+  const trimmed = key ? key.trim() : '';
+  if (trimmed) {
+    sessionStorage.setItem('adpilot_key', trimmed);
+    window.location.reload();
+  }
+}
+
+function safeOptType(type) {
+  return SAFE_OPT_TYPES.has(type) ? type : 'bid';
+}
+
+function safeConfidenceLevel(level) {
+  return SAFE_CONFIDENCE_LEVELS.has(level) ? level : 'low';
+}
+
+function formatOptimizationScope(level) {
+  const labels = {
+    account: 'Account',
+    campaign: 'Campaign',
+    adset: 'Ad Set',
+    ad: 'Ad',
+  };
+  return labels[level] || '—';
+}
 
 // ── API Helper ──
 async function api(path, method = 'GET', body = null) {
   try {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    const key = getApiKey();
+    const opts = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(key ? { Authorization: `Bearer ${key}` } : {}),
+      },
+    };
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch(`${API_BASE}${path}`, opts);
+    if (res.status === 401) {
+      sessionStorage.removeItem('adpilot_key');
+      promptForApiKey();
+      return null;
+    }
     if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
     return res.json();
   } catch (err) {
@@ -148,8 +207,8 @@ async function updateOverviewKPIs() {
     }
     const revenueSubEl = document.querySelector('[data-kpi="revenue"] .kpi-delta span');
     if (revenueSubEl) {
-      const orders = k.purchases || 0;
-      const aov = orders > 0 ? Math.round((k.revenue || 0) / orders) : 0;
+      const orders = k.totalOrders || 0;
+      const aov = Math.round(k.aov || 0);
       revenueSubEl.textContent = orders + ' orders · ₩' + aov.toLocaleString() + ' AOV';
     }
 
@@ -159,9 +218,8 @@ async function updateOverviewKPIs() {
       cogsEl.textContent = k.cogs != null ? '₩' + Math.round(k.cogs).toLocaleString() : '—';
     }
     const cogsSubEl = document.querySelector('[data-kpi="cogs"] .kpi-delta span');
-    if (cogsSubEl && k.cogs != null && k.revenue) {
-      const cogsPct = ((k.cogs / k.revenue) * 100).toFixed(1);
-      cogsSubEl.textContent = cogsPct + '% of revenue · Google Sheets';
+    if (cogsSubEl && k.cogs != null) {
+      cogsSubEl.textContent = (k.cogsRate || 0).toFixed(1) + '% of revenue · Google Sheets';
     }
 
     // ── KPI Card 3: Ad Spend ──
@@ -173,15 +231,13 @@ async function updateOverviewKPIs() {
     }
     const spendSubEl = document.querySelector('[data-kpi="adspend"] .kpi-delta span');
     if (spendSubEl) {
-      const krw = Math.round((k.adSpend || 0) * USD_TO_KRW);
-      spendSubEl.textContent = '₩' + (krw / 1000000).toFixed(2) + 'M · ' + (data.days || '—') + ' days';
+      spendSubEl.textContent = '₩' + ((k.adSpendKRW || 0) / 1000000).toFixed(2) + 'M · ' + (data.days || '—') + ' days';
     }
 
     // ── KPI Card 4: Gross Profit ──
     const profitEl = document.querySelector('[data-kpi="profit"] .kpi-value');
     if (profitEl) {
-      // Use netRevenue (after refunds), not gross revenue
-      const profit = (k.netRevenue || 0) - (k.cogs || 0) - ((k.adSpend || 0) * USD_TO_KRW);
+      const profit = k.grossProfit || 0;
       profitEl.textContent = profit >= 0
         ? '₩' + (profit / 1000).toFixed(0) + 'K'
         : '-₩' + (Math.abs(profit) / 1000).toFixed(0) + 'K';
@@ -247,16 +303,13 @@ async function updateOverviewKPIs() {
       if (typeof spendRevenueChart !== 'undefined' && spendRevenueChart) {
         spendRevenueChart.data.labels = labels;
         spendRevenueChart.data.datasets[0].data = allDays.map(d => d.revenue || 0);
-        spendRevenueChart.data.datasets[1].data = allDays.map(d => Math.round((d.spend || 0) * USD_TO_KRW));
+        spendRevenueChart.data.datasets[1].data = allDays.map(d => d.spendKrw || 0);
         spendRevenueChart.update();
       }
 
       // roasChart
       if (typeof roasChart !== 'undefined' && roasChart) {
-        const roasData = allDays.map(d => {
-          const spendKrw = (d.spend || 0) * USD_TO_KRW;
-          return spendKrw > 0 ? parseFloat(((d.revenue || 0) / spendKrw).toFixed(2)) : 0;
-        });
+        const roasData = allDays.map(d => d.roas || 0);
         const c = typeof getChartColors === 'function' ? getChartColors() : {};
         const gold = c.gold || '#FFC553';
         roasChart.data.labels = labels;
@@ -287,13 +340,10 @@ async function updateOverviewKPIs() {
       if (typeof createSparkline === 'function') {
         createSparkline('sparkRevenue', last12.map(d => d.revenue || 0), '#4ade80');
         createSparkline('sparkSpend', last12.map(d => d.spend || 0), c.primary);
-        createSparkline('sparkRoas', last12.map(d => {
-          const sk = (d.spend || 0) * USD_TO_KRW;
-          return sk > 0 ? (d.revenue || 0) / sk : 0;
-        }), c.primary);
+        createSparkline('sparkRoas', last12.map(d => d.roas || 0), c.primary);
         createSparkline('sparkPurchases', last12.map(d => d.purchases || 0), '#4ade80');
         createSparkline('sparkCtr', last12.map(d => d.ctr || 0), c.primary);
-        createSparkline('sparkCpa', last12.map(d => (d.spend || 0) / Math.max(d.purchases || 1, 1)), c.secondary);
+        createSparkline('sparkCpa', last12.map(d => d.cpa || 0), c.secondary);
       }
     }
 
@@ -329,12 +379,12 @@ async function updateActivityFeed() {
 
     feed.innerHTML = data.optimizations.slice(0, 8).map(opt => `
       <div class="activity-item">
-        <div class="activity-icon ${opt.type || 'bid'}">
-          <i data-lucide="${iconMap[opt.type] || 'zap'}"></i>
+        <div class="activity-icon ${safeOptType(opt.type)}">
+          <i data-lucide="${iconMap[safeOptType(opt.type)] || 'zap'}"></i>
         </div>
         <div class="activity-content">
-          <div class="activity-title">${opt.action || opt.title || '—'}</div>
-          <div class="activity-detail">${opt.reason || opt.impact || ''}</div>
+          <div class="activity-title">${esc(opt.action || opt.title || '—')}</div>
+          <div class="activity-detail">${esc(opt.reason || opt.impact || '')}</div>
         </div>
         <div class="activity-time">${timeSince(new Date(opt.timestamp))}</div>
       </div>
@@ -359,6 +409,8 @@ async function updateOptimizationLog() {
   }
 
   container.innerHTML = data.optimizations.map(opt => {
+    const type = safeOptType(opt.type);
+    const priority = opt.priority || 'low';
     const iconMap = {
       budget: 'wallet',
       bid: 'gavel',
@@ -377,17 +429,17 @@ async function updateOptimizationLog() {
     return `
       <div class="optimization-item ${opt.executed ? 'executed' : 'pending'}">
         <div class="opt-icon">
-          <i data-lucide="${iconMap[opt.type] || 'zap'}"></i>
+          <i data-lucide="${iconMap[type] || 'zap'}"></i>
         </div>
         <div class="opt-content">
           <div class="opt-header">
-            <span class="opt-action">${opt.action}</span>
-            <span class="badge ${priorityClass[opt.priority] || ''}">${opt.priority}</span>
-            ${opt.executed ? '<span class="badge badge-success">Executed</span>' : `<button class="btn btn-sm btn-primary execute-opt" data-opt-id="${opt.id}">Execute</button>`}
+            <span class="opt-action">${esc(opt.action)}</span>
+            <span class="badge ${priorityClass[priority] || ''}">${esc(priority)}</span>
+            ${opt.executed ? '<span class="badge badge-success">Executed</span>' : `<button class="btn btn-sm btn-primary execute-opt" data-opt-id="${esc(opt.id)}">Execute</button>`}
           </div>
-          <div class="opt-target">${opt.targetName}</div>
-          <div class="opt-reason">${opt.reason}</div>
-          <div class="opt-impact">${opt.impact}</div>
+          <div class="opt-target">${esc(opt.targetName)}</div>
+          <div class="opt-reason">${esc(opt.reason)}</div>
+          <div class="opt-impact">${esc(opt.impact)}</div>
           <div class="opt-time">${timeSince(new Date(opt.timestamp))}</div>
         </div>
       </div>
@@ -420,10 +472,13 @@ async function updateOptimizationLog() {
   // Update stats
   const statsEl = document.getElementById('optStats');
   if (statsEl && data.stats) {
+    const total = Number(data.total) || 0;
+    const executed = Number(data.stats.executed) || 0;
+    const pending = Number(data.stats.pending) || 0;
     statsEl.innerHTML = `
-      <span>Total: ${data.total}</span> ·
-      <span>Executed: ${data.stats.executed}</span> ·
-      <span>Pending: ${data.stats.pending}</span>
+      <span>Total: ${total}</span> ·
+      <span>Executed: ${executed}</span> ·
+      <span>Pending: ${pending}</span>
     `;
   }
 }
@@ -439,24 +494,25 @@ async function updateLiveCampaigns() {
   if (body && campaignData) {
     body.innerHTML = campaignData.campaigns.map(c => {
       const m = c.metrics7d || {};
-      const statusClass = c.status === 'ACTIVE' ? 'badge-success' : c.status === 'PAUSED' ? 'badge-warning' : '';
+      const status = c.status === 'ACTIVE' || c.status === 'PAUSED' ? c.status : 'UNKNOWN';
+      const statusClass = status === 'ACTIVE' ? 'badge-success' : status === 'PAUSED' ? 'badge-warning' : '';
       const budget = c.daily_budget ? `$${(parseInt(c.daily_budget) / 100).toFixed(2)}` : '-';
+      const actionButton = status === 'ACTIVE'
+        ? `<button class="btn btn-sm btn-ghost campaign-action" data-id="${esc(c.id)}" data-action="PAUSED">Pause</button>`
+        : status === 'PAUSED'
+        ? `<button class="btn btn-sm btn-primary campaign-action" data-id="${esc(c.id)}" data-action="ACTIVE">Resume</button>`
+        : '—';
 
       return `
         <tr>
-          <td style="font-weight:600">${c.name}</td>
-          <td><span class="badge ${statusClass}">${c.status}</span></td>
+          <td style="font-weight:600">${esc(c.name)}</td>
+          <td><span class="badge ${statusClass}">${esc(status)}</span></td>
           <td>${budget}/day</td>
           <td>$${(m.spend || 0).toFixed(2)}</td>
-          <td>${m.purchases || 0}</td>
+          <td>${m.metaPurchases || 0}</td>
           <td>${m.cpa ? '$' + m.cpa.toFixed(2) : '-'}</td>
           <td>${m.ctr ? m.ctr.toFixed(2) + '%' : '-'}</td>
-          <td>
-            ${c.status === 'ACTIVE'
-              ? `<button class="btn btn-sm btn-ghost campaign-action" data-id="${c.id}" data-action="PAUSED">Pause</button>`
-              : `<button class="btn btn-sm btn-primary campaign-action" data-id="${c.id}" data-action="ACTIVE">Resume</button>`
-            }
-          </td>
+          <td>${actionButton}</td>
         </tr>
       `;
     }).join('');
@@ -504,18 +560,18 @@ async function updateLiveCampaigns() {
             return `
               <div style="background:var(--color-surface-alt);border-radius:12px;padding:16px;border:1px solid var(--color-divider)">
                 <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px">
-                  <div style="font-weight:600;font-size:0.9rem;line-height:1.3">${ad.name}</div>
+                  <div style="font-weight:600;font-size:0.9rem;line-height:1.3">${esc(ad.name)}</div>
                   <span class="badge badge-success" style="flex-shrink:0;margin-left:8px">LIVE</span>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.82rem">
                   <div><span style="color:var(--color-text-muted)">Spend</span><br><strong>$${ad.spend.toFixed(2)}</strong></div>
-                  <div><span style="color:var(--color-text-muted)">Purchases</span><br><strong>${ad.purchases}</strong></div>
+                  <div><span style="color:var(--color-text-muted)">Pixel Purchases</span><br><strong>${ad.metaPurchases || 0}</strong></div>
                   <div><span style="color:var(--color-text-muted)">CPA</span><br><strong style="color:${cpaColor}">${cpaStr}</strong></div>
                   <div><span style="color:var(--color-text-muted)">CTR</span><br><strong>${ad.avgCTR.toFixed(2)}%</strong></div>
                   <div><span style="color:var(--color-text-muted)">CPM</span><br><strong>$${ad.avgCPM.toFixed(2)}</strong></div>
                   <div><span style="color:var(--color-text-muted)">Freq</span><br><strong>${ad.lastFrequency.toFixed(1)}</strong></div>
                 </div>
-                <div style="margin-top:10px;font-size:0.75rem;color:var(--color-text-faint)">${ad.daysOfData} days of data · ${ad.campaignName}</div>
+                <div style="margin-top:10px;font-size:0.75rem;color:var(--color-text-faint)">${ad.daysOfData} days of data · ${esc(ad.campaignName)}</div>
               </div>
             `;
           }).join('')}
@@ -544,11 +600,12 @@ async function updateLiveCampaigns() {
         <div class="lessons-summary-grid">
           ${keys.map(k => {
             const info = lessonLabels[k] || { icon: 'ℹ️', title: k, color: '#94a3b8', tip: '' };
+            const count = Number(summary[k].count) || 0;
             return `
               <div style="background:${info.color}15;border:1px solid ${info.color}30;border-radius:10px;padding:12px 16px;flex:1;min-width:200px">
-                <div style="font-size:1.1rem;margin-bottom:4px">${info.icon} <strong style="color:${info.color}">${summary[k].count}</strong></div>
-                <div style="font-weight:600;font-size:0.85rem;margin-bottom:4px">${info.title}</div>
-                <div style="font-size:0.78rem;color:var(--color-text-muted);line-height:1.4">${info.tip}</div>
+                <div style="font-size:1.1rem;margin-bottom:4px">${info.icon} <strong style="color:${info.color}">${count}</strong></div>
+                <div style="font-weight:600;font-size:0.85rem;margin-bottom:4px">${esc(info.title)}</div>
+                <div style="font-size:0.78rem;color:var(--color-text-muted);line-height:1.4">${esc(info.tip)}</div>
               </div>
             `;
           }).join('')}
@@ -578,24 +635,24 @@ async function updateLiveCampaigns() {
                 no_conversions: '⚠️', high_cpa: '💸', ctr_decay: '📉',
                 high_frequency: '🔁', clicks_no_purchase: '🛒', general: '📝', no_data: '💭'
               };
-              return `<div style="font-size:0.8rem;color:var(--color-text-muted);margin-top:4px">${typeIcons[l.type] || '•'} ${l.text}</div>`;
+              return `<div style="font-size:0.8rem;color:var(--color-text-muted);margin-top:4px">${typeIcons[l.type] || '•'} ${esc(l.text)}</div>`;
             }).join('');
 
             return `
               <div style="background:var(--color-surface-alt);border-radius:10px;padding:14px 16px;border:1px solid var(--color-divider);opacity:0.85">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                  <div style="font-weight:600;font-size:0.88rem">${ad.name}</div>
+                  <div style="font-weight:600;font-size:0.88rem">${esc(ad.name)}</div>
                   <div class="inactive-ad-meta">
                     <span>$${ad.spend.toFixed(2)} spent</span>
                     <span>·</span>
-                    <span>${ad.purchases} purchase${ad.purchases !== 1 ? 's' : ''}</span>
+                    <span>${ad.metaPurchases || 0} pixel purchase${(ad.metaPurchases || 0) !== 1 ? 's' : ''}</span>
                     <span>·</span>
                     <span>${ad.avgCTR.toFixed(2)}% CTR</span>
                     ${ad.cpa ? `<span>·</span><span>$${ad.cpa.toFixed(2)} CPA</span>` : ''}
                   </div>
                 </div>
                 ${lessonHTML}
-                <div style="font-size:0.72rem;color:var(--color-text-faint);margin-top:6px">${ad.daysOfData} days of data · ${ad.campaignName}</div>
+                <div style="font-size:0.72rem;color:var(--color-text-faint);margin-top:6px">${ad.daysOfData} days of data · ${esc(ad.campaignName)}</div>
               </div>
             `;
           }).join('')}
@@ -603,7 +660,7 @@ async function updateLiveCampaigns() {
             <div style="margin-top:8px;padding:12px 16px;background:var(--color-surface-alt);border-radius:10px;border:1px solid var(--color-divider);opacity:0.6">
               <div style="font-weight:600;font-size:0.85rem;margin-bottom:6px">💭 ${noData.length} Archived Ads (no recent data)</div>
               <div style="font-size:0.78rem;color:var(--color-text-faint);line-height:1.6">
-                ${noData.map(a => a.name).join(' · ')}
+                ${noData.map(a => esc(a.name)).join(' · ')}
               </div>
             </div>
           ` : ''}
@@ -642,9 +699,8 @@ async function updateAnalyticsPage() {
       cancelRateEl.textContent = data.cancelRate.toFixed(1) + '%';
     }
     const cancelSubEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-delta span');
-    if (cancelSubEl && data.totalOrders) {
-      const cancelledSections = Math.round(data.cancelRate / 100 * data.totalOrders);
-      cancelSubEl.textContent = cancelledSections + ' cancelled of ' + data.totalOrders + ' orders';
+    if (cancelSubEl && data.totalSections != null) {
+      cancelSubEl.textContent = (data.cancelledSections || 0) + ' cancelled of ' + (data.totalSections || 0) + ' sections';
     }
 
     const febRefundEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-value');
@@ -753,7 +809,7 @@ async function updateAnalyticsPage() {
           const cpa = d.cpa || 0;
           const cpaBadge = cpa > 0 && cpa <= bestCpa + 3 ? 'badge-success' : cpa >= worstCpa - 3 ? 'badge-danger' : '';
           return `<tr>
-            <td style="font-weight:600">${d.day}</td>
+            <td style="font-weight:600">${esc(d.day)}</td>
             <td>${d.orders || 0}</td>
             <td>\u20a9${Math.round(d.paid || 0).toLocaleString()}</td>
             <td style="color:var(--color-danger)">\u20a9${Math.round(d.refunded || 0).toLocaleString()}</td>
@@ -804,7 +860,7 @@ async function updateProfitPage() {
 
     if (confEl && coverage.confidence) {
       confEl.textContent = coverage.confidence.label;
-      confEl.className = 'confidence-badge confidence-' + coverage.confidence.level;
+      confEl.className = 'confidence-badge confidence-' + safeConfidenceLevel(coverage.confidence.level);
     }
 
     if (heroSubEl && todaySummary) {
@@ -843,7 +899,7 @@ async function updateProfitPage() {
     if (waterfall.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
       const gold = '#FFC553';
       profitWaterfallChart.data.labels = waterfall.map(d => d.date);
-      profitWaterfallChart.data.datasets[0].data = waterfall.map(d => d.netRevenue);
+      profitWaterfallChart.data.datasets[0].data = waterfall.map(d => d.revenue);
       profitWaterfallChart.data.datasets[1].data = waterfall.map(d => -d.refunded);
       profitWaterfallChart.data.datasets[2].data = waterfall.map(d => -(d.cogs + d.cogsShipping));
       profitWaterfallChart.data.datasets[3].data = waterfall.map(d => -d.adSpendKRW);
@@ -869,8 +925,8 @@ async function updateProfitPage() {
         const statusClass = c.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral';
         const profitColor = c.grossProfit >= 0 ? 'var(--color-success)' : 'var(--color-error)';
         return `<tr>
-          <td title="${c.campaignId}">${c.campaignName}</td>
-          <td><span class="badge ${statusClass}">${c.status}</span></td>
+          <td title="${esc(c.campaignId)}">${esc(c.campaignName)}</td>
+          <td><span class="badge ${statusClass}">${esc(c.status || '—')}</span></td>
           <td>$${c.spend.toFixed(2)}<br><span style="font-size:0.7rem;color:var(--color-text-faint)">\u20a9${c.spendKRW.toLocaleString()}</span></td>
           <td>${c.metaPurchases}</td>
           <td>\u20a9${c.estimatedRevenue.toLocaleString()}</td>
@@ -885,15 +941,16 @@ async function updateProfitPage() {
     const coverageContent = document.getElementById('dataCoverageContent');
     if (coverageContent && coverage.confidence) {
       const conf = coverage.confidence;
+      const confLevel = safeConfidenceLevel(conf.level);
       const coveredRange = coverage.cogsCoveredRange || {};
       const missing = coverage.missingRanges || [];
       coverageContent.innerHTML = `
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <span class="confidence-badge confidence-${conf.level}">${conf.label}</span>
+          <span class="confidence-badge confidence-${confLevel}">${esc(conf.label)}</span>
           <span style="font-size:0.85rem;color:var(--color-text-muted)">${coverage.daysWithCOGS} of ${coverage.totalDays} days have COGS data (${(coverage.coverageRatio * 100).toFixed(0)}%)</span>
         </div>
-        ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">Covered: <strong>${coveredRange.from}</strong> to <strong>${coveredRange.to}</strong></p>` : ''}
-        ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">Missing: ${missing.join(', ')}</p>` : ''}
+        ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">Covered: <strong>${esc(coveredRange.from)}</strong> to <strong>${esc(coveredRange.to)}</strong></p>` : ''}
+        ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">Missing: ${missing.map(item => esc(item)).join(', ')}</p>` : ''}
         <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">Days without COGS data are shown dimmed in the waterfall chart. Profit for those days only accounts for revenue, ad spend, and payment fees.</p>
       `;
     }
@@ -960,7 +1017,7 @@ async function updateFatiguePage() {
         grid.innerHTML = fatigueAds.map(a => `
           <div class="fatigue-card ${a.status}">
             <div class="fatigue-header">
-              <span class="fatigue-name">${a.name}</span>
+              <span class="fatigue-name">${esc(a.name)}</span>
               <span class="badge badge-${a.status === 'danger' ? 'error' : a.status === 'warning' ? 'warning' : 'success'}">${a.status.charAt(0).toUpperCase() + a.status.slice(1)}</span>
             </div>
             <div class="fatigue-metrics">
@@ -983,7 +1040,7 @@ async function updateFatiguePage() {
             </div>
             <div class="fatigue-action">
               <i data-lucide="${a.status === 'danger' ? 'alert-triangle' : a.status === 'warning' ? 'eye' : 'check-circle'}"></i>
-              <span>${a.action}</span>
+              <span>${esc(a.action)}</span>
             </div>
           </div>
         `).join('');
@@ -992,15 +1049,14 @@ async function updateFatiguePage() {
       }
     }
 
-    // ── Fatigue chart: CTR & Frequency trend from analytics daily data ──
+    // ── Fatigue chart: daily CTR & frequency trend ──
     const analyticsData = await fetchAnalytics();
-    if (analyticsData && analyticsData.adInsights && typeof fatigueChart !== 'undefined' && fatigueChart) {
-      const insights = analyticsData.adInsights || [];
-      if (insights.length >= 2) {
-        const last7 = insights.slice(-7);
-        fatigueChart.data.labels = last7.map(d => d.date || d.label || '');
-        fatigueChart.data.datasets[0].data = last7.map(d => d.ctr || 0);
-        fatigueChart.data.datasets[1].data = last7.map(d => d.frequency || 0);
+    if (analyticsData && typeof fatigueChart !== 'undefined' && fatigueChart) {
+      const trend = analyticsData.charts?.fatigueTrend || [];
+      if (trend.length >= 2) {
+        fatigueChart.data.labels = trend.map(d => d.date || '');
+        fatigueChart.data.datasets[0].data = trend.map(d => d.ctr || 0);
+        fatigueChart.data.datasets[1].data = trend.map(d => d.frequency || 0);
         fatigueChart.update();
       }
     }
@@ -1024,6 +1080,10 @@ async function updateBudgetPage() {
     if (campaignData && campaignData.campaigns) {
       const campaigns = campaignData.campaigns;
       const active = campaigns.filter(c => c.status === 'ACTIVE');
+      const dailySpendSeries = analyticsData?.charts?.dailyMerged || [];
+      const referenceDate = analyticsData?.profitAnalysis?.todaySummary?.date || (dailySpendSeries.length > 0 ? dailySpendSeries[dailySpendSeries.length - 1].date : null);
+      const todaySpendRow = dailySpendSeries.find(d => d.date === referenceDate) || (dailySpendSeries.length > 0 ? dailySpendSeries[dailySpendSeries.length - 1] : null);
+      const latestDailySpend = todaySpendRow ? (todaySpendRow.spend || 0) : 0;
       const totalDailyBudget = active.reduce((sum, c) => {
         return sum + (c.daily_budget ? parseInt(c.daily_budget) / 100 : 0);
       }, 0);
@@ -1049,13 +1109,11 @@ async function updateBudgetPage() {
       // Budget remaining (daily)
       const remainingEl = document.querySelector('[data-budget-kpi="remaining"] .kpi-value');
       if (remainingEl) {
-        // Estimate: daily budget minus today's pace
-        const todaySpend = analyticsData && analyticsData.todaySpend != null ? analyticsData.todaySpend : null;
-        if (todaySpend != null && totalDailyBudget > 0) {
-          const remaining = Math.max(0, totalDailyBudget - todaySpend);
+        if (totalDailyBudget > 0) {
+          const remaining = Math.max(0, totalDailyBudget - latestDailySpend);
           remainingEl.textContent = '$' + remaining.toFixed(2) + '/day';
         } else {
-          remainingEl.textContent = totalDailyBudget > 0 ? '$' + totalDailyBudget.toFixed(2) + '/day' : '—';
+          remainingEl.textContent = '—';
         }
       }
 
@@ -1069,8 +1127,7 @@ async function updateBudgetPage() {
       // Budget fill bar
       const budgetFill = document.querySelector('.budget-fill');
       if (budgetFill && totalDailyBudget > 0) {
-        const todaySpend = analyticsData && analyticsData.todaySpend != null ? analyticsData.todaySpend : 0;
-        const pct = Math.min(100, (todaySpend / totalDailyBudget) * 100);
+        const pct = Math.min(100, (latestDailySpend / totalDailyBudget) * 100);
         budgetFill.style.width = pct + '%';
       }
 
@@ -1086,8 +1143,8 @@ async function updateBudgetPage() {
     }
 
     // ── Budget Pace Chart ──
-    if (analyticsData && analyticsData.dailySpend && typeof budgetPaceChart !== 'undefined' && budgetPaceChart) {
-      const spendData = analyticsData.dailySpend;
+    if (analyticsData && analyticsData.charts?.dailyMerged && typeof budgetPaceChart !== 'undefined' && budgetPaceChart) {
+      const spendData = analyticsData.charts.dailyMerged;
       const totalDailyBudget = campaignData ? campaignData.campaigns
         .filter(c => c.status === 'ACTIVE')
         .reduce((sum, c) => sum + (c.daily_budget ? parseInt(c.daily_budget) / 100 : 0), 0) : 110;
@@ -1119,10 +1176,10 @@ async function updateBudgetPage() {
         budgetHistoryEl.innerHTML = budgetOpts.map(o => `
           <tr>
             <td>${timeSince(new Date(o.timestamp))}</td>
-            <td>${o.targetName || '—'}</td>
-            <td>${o.campaign || '—'}</td>
-            <td style="font-weight:600">${o.impact || '—'}</td>
-            <td style="color:var(--color-text-muted)">${o.reason || '—'}</td>
+            <td>${esc(o.targetName || '—')}</td>
+            <td>${esc(formatOptimizationScope(o.level))}</td>
+            <td style="font-weight:600">${esc(o.action || '—')}</td>
+            <td style="color:var(--color-text-muted)">${esc(o.reason || '—')}</td>
           </tr>
         `).join('');
       }
@@ -1147,15 +1204,18 @@ async function updateSettingsPage() {
     // ── Imweb stats ──
     const imwebOrdersEl = document.getElementById('settingsImwebOrders');
     if (imwebOrdersEl) {
-      imwebOrdersEl.textContent = (k.purchases || 0) + ' orders';
+      imwebOrdersEl.textContent = (k.totalOrders || 0) + ' orders';
     }
 
     const imwebRevenueEl = document.getElementById('settingsImwebRevenue');
     if (imwebRevenueEl) {
-      const rev = Math.round(k.revenue || 0);
-      const refunds = Math.round(k.refundAmount || 0);
-      imwebRevenueEl.textContent = '₩' + rev.toLocaleString() +
-        (refunds > 0 ? ' (net of ₩' + refunds.toLocaleString() + ' refunds)' : '');
+      const grossRevenue = Math.round(k.revenue || 0);
+      const refunded = Math.round(k.refunded || 0);
+      const netRevenue = Math.round(k.netRevenue || 0);
+
+      imwebRevenueEl.textContent = refunded > 0
+        ? '₩' + grossRevenue.toLocaleString() + ' gross · ₩' + netRevenue.toLocaleString() + ' net'
+        : '₩' + grossRevenue.toLocaleString();
     }
 
     // ── COGS stats (from analytics) ──
@@ -1295,14 +1355,6 @@ async function startLiveMode() {
 
   console.log('[LIVE] Backend connected — enabling live mode');
   liveMode = true;
-
-  // Fetch currency config from settings
-  try {
-    const settings = await api('/settings');
-    if (settings && settings.currency && settings.currency.usdToKrw) {
-      USD_TO_KRW = settings.currency.usdToKrw;
-    }
-  } catch (e) { console.warn('[LIVE] Failed to fetch settings currency:', e.message); }
 
   // Show live indicator
   showLiveIndicator();

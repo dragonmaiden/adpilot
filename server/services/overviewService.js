@@ -1,8 +1,16 @@
-const config = require('../config');
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const transforms = require('../transforms/charts');
-const { sumField, sumPurchases, calcCPA, calcCTR, calcROAS } = require('../helpers/metrics');
+const {
+  summarizeInsights,
+  calcCPA,
+  calcROAS,
+  convertUsdToKrw,
+  calcAOV,
+  calcPercent,
+  calcGrossProfit,
+  calcMargin,
+} = require('../domain/metrics');
 
 /**
  * Build the full /api/overview response.
@@ -18,19 +26,18 @@ function getOverviewResponse() {
 
   // Calculate KPIs from fresh data
   const insights = data.campaignInsights || [];
-  const totalSpend = sumField(insights, 'spend');
-  const totalPurchases = sumPurchases(insights);
-  const totalClicks = sumField(insights, 'clicks', parseInt);
-  const totalImpressions = sumField(insights, 'impressions', parseInt);
+  const insightSummary = summarizeInsights(insights);
+  const totalSpend = insightSummary.spend;
 
   const revenue = data.revenueData || {};
   const cogs = data.cogsData || null;
-  const cpa = calcCPA(totalSpend, totalPurchases) ?? 0;
-  const ctr = calcCTR(totalClicks, totalImpressions);
-  const roas = calcROAS(revenue.netRevenue || 0, totalSpend, config.currency.usdToKrw);
+  const totalPurchases = cogs?.purchaseCount ?? revenue.totalOrders ?? 0;
+  const cpa = calcCPA(totalSpend, totalPurchases, 0);
+  const ctr = insightSummary.ctr;
+  const roas = calcROAS(revenue.netRevenue || 0, totalSpend);
 
   // Build ALL chart data server-side — frontend does zero transformation
-  const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights);
+  const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights, cogs?.dailyCOGS);
   const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
   const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
   const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged);
@@ -39,8 +46,11 @@ function getOverviewResponse() {
 
   // Compute gross profit margin
   const totalCOGSWithShipping = cogs ? cogs.totalCOGSWithShipping : 0;
-  const grossProfit = (revenue.netRevenue || 0) - totalCOGSWithShipping - (totalSpend * config.currency.usdToKrw);
-  const grossMargin = (revenue.netRevenue || 0) > 0 ? (grossProfit / (revenue.netRevenue || 1) * 100) : 0;
+  const adSpendKRW = convertUsdToKrw(totalSpend);
+  const grossProfit = calcGrossProfit(revenue.netRevenue || 0, totalCOGSWithShipping, totalSpend);
+  const grossMargin = calcMargin(grossProfit, revenue.netRevenue || 0);
+  const aov = calcAOV(revenue.totalRevenue || 0, revenue.totalOrders || 0);
+  const cogsRate = calcPercent(totalCOGSWithShipping, revenue.totalRevenue || 0);
 
   return contracts.overview({
     kpis: {
@@ -49,7 +59,7 @@ function getOverviewResponse() {
       netRevenue: revenue.netRevenue || 0,
       totalOrders: revenue.totalOrders || 0,
       adSpend: totalSpend,
-      adSpendKRW: totalSpend * config.currency.usdToKrw,
+      adSpendKRW,
       purchases: totalPurchases,
       cpa,
       ctr,
@@ -57,6 +67,8 @@ function getOverviewResponse() {
       refundRate: revenue.refundRate || 0,
       cancelRate: revenue.cancelRate || 0,
       cogs: cogs ? cogs.totalCOGSWithShipping : null,
+      aov: Math.round(aov),
+      cogsRate: parseFloat(cogsRate.toFixed(1)),
       grossProfit,
       grossMargin: parseFloat(grossMargin.toFixed(1)),
     },

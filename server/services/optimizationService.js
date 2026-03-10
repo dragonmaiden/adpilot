@@ -1,5 +1,6 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
+const { OPTIMIZATION_TYPES, getOptimizationDirection, isBudgetIncreaseAction, isBudgetDecreaseAction } = require('../domain/optimizationSemantics');
 
 /**
  * Count occurrences of each value for a given key in an array of objects.
@@ -57,23 +58,18 @@ function getTimelineResponse() {
     target: o.targetName,
     executed: o.executed,
     result: o.executionResult,
-    // Derive direction: budget increase = up, budget decrease/pause = down
-    direction: o.action.includes('Increase') || o.action.includes('scale') || o.action.includes('Resume')
-      ? 'up'
-      : o.action.includes('Reduce') || o.action.includes('Pause') || o.action.includes('Reallocate')
-        ? 'down'
-        : 'neutral',
+    direction: getOptimizationDirection(o.action),
   }));
 
   // Aggregate by scan for the bar chart
   const scanTimeline = scans.map(s => {
     const scanOpts = opts.filter(o => o.scanId === s.scanId);
-    const budgetUp = scanOpts.filter(o => o.type === 'budget' && (o.action.includes('Increase') || o.action.includes('scale'))).length;
-    const budgetDown = scanOpts.filter(o => o.type === 'budget' && (o.action.includes('Reduce') || o.action.includes('Reallocate'))).length;
-    const pauses = scanOpts.filter(o => o.type === 'status').length;
-    const fatigue = scanOpts.filter(o => o.type === 'creative' || o.type === 'targeting').length;
-    const bids = scanOpts.filter(o => o.type === 'bid').length;
-    const schedule = scanOpts.filter(o => o.type === 'schedule').length;
+    const budgetUp = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.BUDGET && isBudgetIncreaseAction(o.action)).length;
+    const budgetDown = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.BUDGET && isBudgetDecreaseAction(o.action)).length;
+    const pauses = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.STATUS).length;
+    const fatigue = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.CREATIVE || o.type === OPTIMIZATION_TYPES.TARGETING).length;
+    const bids = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.BID).length;
+    const schedule = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.SCHEDULE).length;
 
     return {
       time: s.time,

@@ -1052,7 +1052,7 @@ function initProfitCharts() {
         labels: [],
         datasets: [
           {
-            label: 'Net Revenue',
+            label: 'Gross Revenue',
             data: [],
             backgroundColor: 'rgba(74, 222, 128, 0.75)',
             borderRadius: 3,
