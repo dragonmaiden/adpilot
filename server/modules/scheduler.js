@@ -12,6 +12,7 @@ const imweb = require('./imwebClient');
 const OptimizationEngine = require('./optimizer');
 const telegram = require('./telegram');
 const { validateMetaCampaigns, validateMetaInsights, validateImwebOrders, logValidation } = require('../validation/vendorSchemas');
+const cogsClient = require('./cogsClient');
 
 const DATA_DIR = config.paths.dataDir;
 const LOG_DIR = path.join(DATA_DIR, 'logs');
@@ -30,6 +31,7 @@ let latestData = {
   adInsights: [],
   revenueData: null,
   orders: [],
+  cogsData: null,
 };
 let isScanning = false;
 
@@ -158,6 +160,24 @@ async function runScan(manual = false) {
       console.error('[SCHEDULER]   ⚠ Imweb fetch failed:', err.message);
       scanResult.errors.push({ step: 'imweb_orders', error: err.message });
       // Continue with cached data if available
+    }
+
+    // ── Step 3b: Pull COGS from Google Sheets ──
+    console.log('[SCHEDULER] Step 3b: Fetching COGS from Google Sheets...');
+    try {
+      const cogsData = await cogsClient.fetchAllCOGS();
+      latestData.cogsData = cogsData;
+      scanResult.steps.push({
+        step: 'cogs_sheets',
+        totalCOGS: cogsData.totalCOGS,
+        totalShipping: cogsData.totalShipping,
+        itemCount: cogsData.itemCount,
+        orderCount: cogsData.orderCount,
+      });
+      console.log(`[SCHEDULER]   → ₩${cogsData.totalCOGS.toLocaleString()} COGS + ₩${cogsData.totalShipping.toLocaleString()} shipping (${cogsData.itemCount} items)`);
+    } catch (err) {
+      console.error('[SCHEDULER]   ⚠ COGS fetch failed:', err.message);
+      scanResult.errors.push({ step: 'cogs_sheets', error: err.message });
     }
 
     // ── Step 4: Run Optimization Engine ──

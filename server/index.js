@@ -102,6 +102,7 @@ app.get('/api/overview', (req, res) => {
   const totalImpressions = (data.campaignInsights || []).reduce((s, i) => s + parseInt(i.impressions || 0), 0);
 
   const revenue = data.revenueData || {};
+  const cogs = data.cogsData || null;
   const cpa = totalPurchases > 0 ? totalSpend / totalPurchases : 0;
   const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
   const roas = totalSpend > 0 ? revenue.netRevenue / (totalSpend * config.currency.usdToKrw) : 0;
@@ -128,6 +129,7 @@ app.get('/api/overview', (req, res) => {
       roas,
       refundRate: revenue.refundRate || 0,
       cancelRate: revenue.cancelRate || 0,
+      cogs: cogs ? cogs.totalCOGSWithShipping : null,
     },
     campaigns: data.campaigns || [],
     charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
@@ -658,12 +660,15 @@ app.get('/api/analytics', (req, res) => {
   const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
   const dailyProfit = transforms.buildDailyProfit(dailyMerged);
 
+  const cogs = data.cogsData || null;
+
   res.json(contracts.analytics({
     charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
     revenueData: revenue,
     dailyInsights: data.campaignInsights || [],
     adSetInsights: data.adSetInsights || [],
     adInsights: data.adInsights || [],
+    cogsData: cogs,
   }));
 });
 

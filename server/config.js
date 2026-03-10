@@ -48,6 +48,15 @@ module.exports = {
     dataRetentionDays: 90,
   },
 
+  // COGS (Google Sheets)
+  cogs: {
+    spreadsheetId: process.env.COGS_SPREADSHEET_ID || '1oTPHDukiO6zTuYW5Q7-hhCupFPDuR2aEGRAAdzjTslY',
+    sheetGids: {
+      '2월': process.env.COGS_GID_FEB || '0',
+      '3월': process.env.COGS_GID_MAR || '456791124',
+    },
+  },
+
   // Currency
   currency: {
     usdToKrw: 1450,

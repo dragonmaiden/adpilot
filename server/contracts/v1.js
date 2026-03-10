@@ -64,7 +64,7 @@ function overviewNotReady() {
 /**
  * Build /api/analytics response.
  */
-function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights }) {
+function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData }) {
   return {
     apiVersion: API_VERSION,
     charts: {
@@ -81,6 +81,11 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
     totalRefunded: revenueData?.totalRefunded ?? 0,
     totalRevenue: revenueData?.totalRevenue ?? 0,
     netRevenue: revenueData?.netRevenue ?? 0,
+    // COGS data from Google Sheets
+    totalCOGS: cogsData?.totalCOGS ?? 0,
+    totalShipping: cogsData?.totalShipping ?? 0,
+    cogsItems: cogsData?.itemCount ?? 0,
+    cogsOrders: cogsData?.orderCount ?? 0,
     // Raw insight rows (campaigns may still need them for tables)
     dailyInsights: dailyInsights ?? [],
     adSetInsights: adSetInsights ?? [],
