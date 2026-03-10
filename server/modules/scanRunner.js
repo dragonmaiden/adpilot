@@ -12,6 +12,152 @@ const { calcROAS } = require('../domain/metrics');
 const { getTodayInTimeZone, shiftDate } = require('../domain/time');
 const runtimeSettings = require('../runtime/runtimeSettings');
 
+function pushStep(scanResult, payload) {
+  scanResult.steps.push(payload);
+}
+
+function pushError(scanResult, step, err) {
+  scanResult.errors.push({ step, error: err.message });
+}
+
+async function fetchMetaStructure(scanResult) {
+  console.log('[SCHEDULER] Step 1: Fetching Meta Ads campaigns, ad sets, ads...');
+
+  try {
+    const [campaigns, adSets, ads] = await Promise.all([
+      meta.getCampaigns(),
+      meta.getAdSets(),
+      meta.getAds(),
+    ]);
+
+    const campaignsValidation = validateMetaCampaigns(campaigns);
+    logValidation(campaignsValidation, 'Meta campaigns');
+
+    scanStore.patchLatestData({ campaigns, adSets, ads });
+    scanStore.saveLatestData();
+
+    pushStep(scanResult, {
+      step: 'meta_structure',
+      status: 'ok',
+      campaigns: campaigns.length,
+      adSets: adSets.length,
+      ads: ads.length,
+      validation: { campaigns: campaignsValidation.valid },
+    });
+    console.log(`[SCHEDULER]   → ${campaigns.length} campaigns, ${adSets.length} ad sets, ${ads.length} ads`);
+
+    return { ok: true, campaigns, adSets, ads };
+  } catch (err) {
+    console.error('[SCHEDULER]   ⚠ Meta structure fetch failed:', err.message);
+    pushError(scanResult, 'meta_structure', err);
+    pushStep(scanResult, { step: 'meta_structure', status: 'failed' });
+    return { ok: false };
+  }
+}
+
+async function fetchMetaInsights(scanResult, since, until) {
+  console.log('[SCHEDULER] Step 2: Fetching Meta Ads insights (full history)...');
+
+  try {
+    const [campaignInsights, adSetInsights, adInsights] = await Promise.all([
+      meta.getAllCampaignInsights(since, until),
+      meta.getAllAdSetInsights(since, until),
+      meta.getAllAdInsights(since, until),
+    ]);
+
+    const campaignInsightsValid = validateMetaInsights(campaignInsights, 'campaign');
+    const adSetInsightsValid = validateMetaInsights(adSetInsights, 'adset');
+    const adInsightsValid = validateMetaInsights(adInsights, 'ad');
+    logValidation(campaignInsightsValid, 'Meta campaign insights');
+    logValidation(adSetInsightsValid, 'Meta adset insights');
+    logValidation(adInsightsValid, 'Meta ad insights');
+
+    scanStore.patchLatestData({ campaignInsights, adSetInsights, adInsights });
+    scanStore.saveLatestData();
+
+    pushStep(scanResult, {
+      step: 'meta_insights',
+      status: 'ok',
+      period: `${since} to ${until}`,
+      campaignRows: campaignInsights.length,
+      adSetRows: adSetInsights.length,
+      adRows: adInsights.length,
+      validation: {
+        campaigns: campaignInsightsValid.valid,
+        adSets: adSetInsightsValid.valid,
+        ads: adInsightsValid.valid,
+      },
+    });
+    console.log(`[SCHEDULER]   → ${campaignInsights.length} campaign, ${adSetInsights.length} ad set, ${adInsights.length} ad insight rows`);
+
+    return { ok: true, campaignInsights, adSetInsights, adInsights };
+  } catch (err) {
+    console.error('[SCHEDULER]   ⚠ Meta insights fetch failed:', err.message);
+    pushError(scanResult, 'meta_insights', err);
+    pushStep(scanResult, { step: 'meta_insights', status: 'failed', period: `${since} to ${until}` });
+    return { ok: false };
+  }
+}
+
+async function fetchImwebOrders(scanResult) {
+  console.log('[SCHEDULER] Step 3: Fetching Imweb orders...');
+
+  try {
+    const orders = await imweb.getAllOrders();
+    const ordersValid = validateImwebOrders(orders);
+    logValidation(ordersValid, 'Imweb orders');
+
+    const revenueData = imweb.processOrders(orders);
+    scanStore.patchLatestData({ orders, revenueData });
+    scanStore.saveLatestData();
+
+    pushStep(scanResult, {
+      step: 'imweb_orders',
+      status: 'ok',
+      totalOrders: orders.length,
+      revenue: revenueData.totalRevenue,
+      refunded: revenueData.totalRefunded,
+      netRevenue: revenueData.netRevenue,
+      validation: { orders: ordersValid.valid },
+    });
+    console.log(`[SCHEDULER]   → ${orders.length} orders, ₩${revenueData.netRevenue.toLocaleString()} net revenue`);
+
+    return { ok: true, orders, revenueData };
+  } catch (err) {
+    console.error('[SCHEDULER]   ⚠ Imweb fetch failed:', err.message);
+    pushError(scanResult, 'imweb_orders', err);
+    pushStep(scanResult, { step: 'imweb_orders', status: 'failed' });
+    return { ok: false };
+  }
+}
+
+async function fetchCogs(scanResult) {
+  console.log('[SCHEDULER] Step 3b: Fetching COGS from Google Sheets...');
+
+  try {
+    const cogsData = await cogsClient.fetchAllCOGS();
+    scanStore.patchLatestData({ cogsData });
+    scanStore.saveLatestData();
+
+    pushStep(scanResult, {
+      step: 'cogs_sheets',
+      status: 'ok',
+      totalCOGS: cogsData.totalCOGS,
+      totalShipping: cogsData.totalShipping,
+      itemCount: cogsData.itemCount,
+      orderCount: cogsData.orderCount,
+    });
+    console.log(`[SCHEDULER]   → ₩${cogsData.totalCOGS.toLocaleString()} COGS + ₩${cogsData.totalShipping.toLocaleString()} shipping (${cogsData.itemCount} items)`);
+
+    return { ok: true, cogsData };
+  } catch (err) {
+    console.error('[SCHEDULER]   ⚠ COGS fetch failed:', err.message);
+    pushError(scanResult, 'cogs_sheets', err);
+    pushStep(scanResult, { step: 'cogs_sheets', status: 'failed' });
+    return { ok: false };
+  }
+}
+
 async function runScan(manual = false) {
   if (scanStore.getIsScanning()) {
     console.log('[SCHEDULER] Scan already in progress, skipping');
@@ -36,174 +182,125 @@ async function runScan(manual = false) {
     optimizations: [],
     errors: [],
     stats: {},
+    status: 'running',
   };
 
-  let campaigns = [];
-  let adSets = [];
-  let ads = [];
-  let campaignInsights = [];
-  let adSetInsights = [];
-  let adInsights = [];
+  const since = config.business.startDate;
+  const until = getTodayInTimeZone();
+
+  const sourceStatus = {
+    metaStructure: false,
+    metaInsights: false,
+    imweb: false,
+    cogs: false,
+  };
 
   try {
-    console.log('[SCHEDULER] Step 1: Fetching Meta Ads campaigns, ad sets, ads...');
-    [campaigns, adSets, ads] = await Promise.all([
-      meta.getCampaigns(),
-      meta.getAdSets(),
-      meta.getAds(),
-    ]);
+    const metaStructureResult = await fetchMetaStructure(scanResult);
+    sourceStatus.metaStructure = metaStructureResult.ok;
 
-    const campValid = validateMetaCampaigns(campaigns);
-    logValidation(campValid, 'Meta campaigns');
+    const metaInsightsResult = await fetchMetaInsights(scanResult, since, until);
+    sourceStatus.metaInsights = metaInsightsResult.ok;
 
-    scanStore.patchLatestData({ campaigns, adSets, ads });
-    scanResult.steps.push({
-      step: 'meta_structure',
-      campaigns: campaigns.length,
-      adSets: adSets.length,
-      ads: ads.length,
-      validation: { campaigns: campValid.valid },
-    });
-    console.log(`[SCHEDULER]   → ${campaigns.length} campaigns, ${adSets.length} ad sets, ${ads.length} ads`);
+    const imwebResult = await fetchImwebOrders(scanResult);
+    sourceStatus.imweb = imwebResult.ok;
 
-    console.log('[SCHEDULER] Step 2: Fetching Meta Ads insights (full history)...');
-    const since = config.business.startDate;
-    const until = getTodayInTimeZone();
-    [campaignInsights, adSetInsights, adInsights] = await Promise.all([
-      meta.getAllCampaignInsights(since, until),
-      meta.getAllAdSetInsights(since, until),
-      meta.getAllAdInsights(since, until),
-    ]);
+    const cogsResult = await fetchCogs(scanResult);
+    sourceStatus.cogs = cogsResult.ok;
 
-    const campaignInsightsValid = validateMetaInsights(campaignInsights, 'campaign');
-    const adSetInsightsValid = validateMetaInsights(adSetInsights, 'adset');
-    const adInsightsValid = validateMetaInsights(adInsights, 'ad');
-    logValidation(campaignInsightsValid, 'Meta campaign insights');
-    logValidation(adSetInsightsValid, 'Meta adset insights');
-    logValidation(adInsightsValid, 'Meta ad insights');
+    if (sourceStatus.metaStructure && sourceStatus.metaInsights) {
+      console.log('[SCHEDULER] Step 4: Running optimization engine...');
+      const latestData = scanStore.getLatestData();
+      const optimizer = new OptimizationEngine();
+      const optimizations = await optimizer.analyze(
+        metaStructureResult.campaigns,
+        metaStructureResult.adSets,
+        metaStructureResult.ads,
+        metaInsightsResult.campaignInsights,
+        metaInsightsResult.adSetInsights,
+        metaInsightsResult.adInsights,
+        latestData.revenueData
+      );
 
-    scanStore.patchLatestData({
-      campaignInsights,
-      adSetInsights,
-      adInsights,
-    });
-    scanResult.steps.push({
-      step: 'meta_insights',
-      period: `${since} to ${until}`,
-      campaignRows: campaignInsights.length,
-      adSetRows: adSetInsights.length,
-      adRows: adInsights.length,
-      validation: {
-        campaigns: campaignInsightsValid.valid,
-        adSets: adSetInsightsValid.valid,
-        ads: adInsightsValid.valid,
-      },
-    });
-    console.log(`[SCHEDULER]   → ${campaignInsights.length} campaign, ${adSetInsights.length} ad set, ${adInsights.length} ad insight rows`);
+      scanResult.optimizations = optimizations;
+      pushStep(scanResult, { step: 'optimizer', status: 'ok', totalOptimizations: optimizations.length });
+      console.log(`[SCHEDULER]   → ${optimizations.length} optimizations generated`);
 
-    console.log('[SCHEDULER] Step 3: Fetching Imweb orders...');
-    try {
-      const orders = await imweb.getAllOrders();
-      const ordersValid = validateImwebOrders(orders);
-      logValidation(ordersValid, 'Imweb orders');
+      await telegram.sendScanSummary(scanResult);
 
-      const revenueData = imweb.processOrders(orders);
-      scanStore.patchLatestData({ orders, revenueData });
-      scanResult.steps.push({
-        step: 'imweb_orders',
-        totalOrders: orders.length,
-        revenue: revenueData.totalRevenue,
-        refunded: revenueData.totalRefunded,
-        netRevenue: revenueData.netRevenue,
-        validation: { orders: ordersValid.valid },
-      });
-      console.log(`[SCHEDULER]   → ${orders.length} orders, ₩${revenueData.netRevenue.toLocaleString()} net revenue`);
-    } catch (err) {
-      console.error('[SCHEDULER]   ⚠ Imweb fetch failed:', err.message);
-      scanResult.errors.push({ step: 'imweb_orders', error: err.message });
-    }
+      const byType = {};
+      const byPriority = {};
+      for (const optimization of optimizations) {
+        byType[optimization.type] = (byType[optimization.type] || 0) + 1;
+        byPriority[optimization.priority] = (byPriority[optimization.priority] || 0) + 1;
+      }
+      console.log(`[SCHEDULER]   Types: ${JSON.stringify(byType)}`);
+      console.log(`[SCHEDULER]   Priority: ${JSON.stringify(byPriority)}`);
 
-    console.log('[SCHEDULER] Step 3b: Fetching COGS from Google Sheets...');
-    try {
-      const cogsData = await cogsClient.fetchAllCOGS();
-      scanStore.patchLatestData({ cogsData });
-      scanResult.steps.push({
-        step: 'cogs_sheets',
-        totalCOGS: cogsData.totalCOGS,
-        totalShipping: cogsData.totalShipping,
-        itemCount: cogsData.itemCount,
-        orderCount: cogsData.orderCount,
-      });
-      console.log(`[SCHEDULER]   → ₩${cogsData.totalCOGS.toLocaleString()} COGS + ₩${cogsData.totalShipping.toLocaleString()} shipping (${cogsData.itemCount} items)`);
-    } catch (err) {
-      console.error('[SCHEDULER]   ⚠ COGS fetch failed:', err.message);
-      scanResult.errors.push({ step: 'cogs_sheets', error: err.message });
-    }
+      if (runtimeSettings.getRules().autonomousMode) {
+        console.log('[SCHEDULER] Step 5: Executing high-priority optimizations...');
+        const executed = await optimizer.executeHighPriority();
+        pushStep(scanResult, {
+          step: 'execution',
+          status: 'ok',
+          attempted: executed.length,
+          succeeded: executed.filter(action => action.executed).length,
+          failed: executed.filter(action => !action.executed).length,
+        });
+        console.log(`[SCHEDULER]   → ${executed.filter(action => action.executed).length} executed, ${executed.filter(action => !action.executed).length} failed`);
+      } else {
+        console.log('[SCHEDULER] Step 5: Autonomous mode OFF — suggestions only');
+        pushStep(scanResult, { step: 'execution', status: 'skipped', note: 'Autonomous mode disabled' });
+      }
 
-    console.log('[SCHEDULER] Step 4: Running optimization engine...');
-    const latestData = scanStore.getLatestData();
-    const optimizer = new OptimizationEngine();
-    const optimizations = await optimizer.analyze(
-      campaigns,
-      adSets,
-      ads,
-      campaignInsights,
-      adSetInsights,
-      adInsights,
-      latestData.revenueData
-    );
-    scanResult.optimizations = optimizations;
-    scanResult.steps.push({ step: 'optimizer', totalOptimizations: optimizations.length });
-    console.log(`[SCHEDULER]   → ${optimizations.length} optimizations generated`);
-
-    await telegram.sendScanSummary(scanResult);
-
-    const byType = {};
-    const byPriority = {};
-    for (const opt of optimizations) {
-      byType[opt.type] = (byType[opt.type] || 0) + 1;
-      byPriority[opt.priority] = (byPriority[opt.priority] || 0) + 1;
-    }
-    console.log(`[SCHEDULER]   Types: ${JSON.stringify(byType)}`);
-    console.log(`[SCHEDULER]   Priority: ${JSON.stringify(byPriority)}`);
-
-    if (runtimeSettings.getRules().autonomousMode) {
-      console.log('[SCHEDULER] Step 5: Executing high-priority optimizations...');
-      const executed = await optimizer.executeHighPriority();
-      scanResult.steps.push({
-        step: 'execution',
-        attempted: executed.length,
-        succeeded: executed.filter(action => action.executed).length,
-        failed: executed.filter(action => !action.executed).length,
-      });
-      console.log(`[SCHEDULER]   → ${executed.filter(action => action.executed).length} executed, ${executed.filter(action => !action.executed).length} failed`);
+      scanStore.appendOptimizations(optimizations);
     } else {
-      console.log('[SCHEDULER] Step 5: Autonomous mode OFF — suggestions only');
-      scanResult.steps.push({ step: 'execution', note: 'Autonomous mode disabled' });
+      console.log('[SCHEDULER] Step 4: Skipping optimizer — Meta refresh incomplete');
+      pushStep(scanResult, {
+        step: 'optimizer',
+        status: 'skipped',
+        note: 'Meta structure and insight refresh are both required before optimization can run',
+      });
+      pushStep(scanResult, {
+        step: 'execution',
+        status: 'skipped',
+        note: 'Optimizer did not run',
+      });
     }
 
-    scanStore.appendOptimizations(optimizations);
+    const latestData = scanStore.getLatestData();
+    const anySourceUpdated = Object.values(sourceStatus).some(Boolean);
 
-    try {
-      snapshotRepository.saveSnapshot(scanId, {
-        campaigns,
-        adSets,
-        ads,
-        campaignInsights,
-        adSetInsights,
-        adInsights,
-        orders: latestData.orders,
-        revenueData: latestData.revenueData,
-        cogsData: latestData.cogsData,
-      });
-      console.log(`[SCHEDULER]   → Snapshot ${scanId} saved`);
-    } catch (err) {
-      console.warn('[SCHEDULER]   ⚠ Snapshot save failed:', err.message);
+    if (anySourceUpdated) {
+      try {
+        snapshotRepository.saveSnapshot(scanId, {
+          ...(sourceStatus.metaStructure ? {
+            campaigns: latestData.campaigns,
+            adSets: latestData.adSets,
+            ads: latestData.ads,
+          } : {}),
+          ...(sourceStatus.metaInsights ? {
+            campaignInsights: latestData.campaignInsights,
+            adSetInsights: latestData.adSetInsights,
+            adInsights: latestData.adInsights,
+          } : {}),
+          ...(sourceStatus.imweb ? {
+            orders: latestData.orders,
+            revenueData: latestData.revenueData,
+          } : {}),
+          ...(sourceStatus.cogs ? {
+            cogsData: latestData.cogsData,
+          } : {}),
+        });
+        console.log(`[SCHEDULER]   → Snapshot ${scanId} saved`);
+      } catch (err) {
+        console.warn('[SCHEDULER]   ⚠ Snapshot save failed:', err.message);
+      }
     }
 
     const dailyMerged = transforms.buildDailyMerged(
       latestData.revenueData?.dailyRevenue,
-      campaignInsights,
+      latestData.campaignInsights,
       latestData.cogsData?.dailyCOGS
     );
     const trailingSevenDays = dailyMerged.filter(day => day.date >= shiftDate(until, -6));
@@ -216,13 +313,13 @@ async function runScan(manual = false) {
       totalSpend7d: totalSpend7d.toFixed(2),
       totalPurchases7d,
       avgCPA7d: avgCPA7d != null ? avgCPA7d.toFixed(2) : 'N/A',
-      activeCampaigns: campaigns.filter(c => c.status === 'ACTIVE').length,
-      activeAds: ads.filter(a => a.effective_status === 'ACTIVE').length,
+      activeCampaigns: (latestData.campaigns || []).filter(campaign => campaign.status === 'ACTIVE').length,
+      activeAds: (latestData.ads || []).filter(ad => ad.effective_status === 'ACTIVE').length,
       roas: trailingSevenDays.length > 0 ? calcROAS(totalNetRevenue7d, totalSpend7d).toFixed(2) + 'x' : 'N/A',
     };
   } catch (err) {
     console.error('[SCHEDULER] SCAN FAILED:', err.message);
-    scanResult.errors.push({ step: 'fatal', error: err.message });
+    pushError(scanResult, 'fatal', err);
   } finally {
     scanResult.endTime = new Date().toISOString();
     scanResult.durationMs = Date.now() - scanStart;
@@ -236,6 +333,12 @@ async function runScan(manual = false) {
       optimizations: scanResult.optimizations.length,
       errors: scanResult.errors.length,
     });
+
+    scanResult.status = scanResult.errors.length === 0
+      ? 'success'
+      : scanResult.steps.some(step => step.status === 'ok')
+      ? 'partial'
+      : 'failed';
 
     try {
       scanStore.saveLatestArtifacts(scanResult);

@@ -249,6 +249,10 @@ function setIsScanning(isScanning) {
 
 function saveLatestArtifacts(scanResult) {
   saveData(LATEST_SCAN_FILE, scanResult);
+  saveLatestData();
+}
+
+function saveLatestData() {
   saveData(LATEST_DATA_FILE, {
     ...state.latestData,
     timestamp: new Date().toISOString(),
@@ -268,5 +272,6 @@ module.exports = {
   appendOptimizations,
   getIsScanning,
   setIsScanning,
+  saveLatestData,
   saveLatestArtifacts,
 };

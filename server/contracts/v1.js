@@ -6,6 +6,17 @@
 
 const API_VERSION = 'v1';
 
+function buildRateMetric({ rate = 0, numerator = 0, denominator = 0, unit = '', numeratorLabel = '', denominatorLabel = '' }) {
+  return {
+    rate,
+    numerator,
+    denominator,
+    unit,
+    numeratorLabel,
+    denominatorLabel,
+  };
+}
+
 /**
  * Build /api/overview response.
  */
@@ -70,6 +81,23 @@ function overviewNotReady() {
  * Build /api/analytics response.
  */
 function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData, monthlyRates, profitAnalysis }) {
+  const refundMetric = buildRateMetric({
+    rate: revenueData?.refundRate ?? 0,
+    numerator: revenueData?.totalRefunded ?? 0,
+    denominator: revenueData?.totalRevenue ?? 0,
+    unit: 'currency',
+    numeratorLabel: 'refunded',
+    denominatorLabel: 'revenue',
+  });
+  const cancellationMetric = buildRateMetric({
+    rate: revenueData?.cancelRate ?? 0,
+    numerator: revenueData?.cancelledSections ?? 0,
+    denominator: revenueData?.totalSections ?? 0,
+    unit: 'sections',
+    numeratorLabel: 'cancelled',
+    denominatorLabel: 'sections',
+  });
+
   return {
     apiVersion: API_VERSION,
     charts: {
@@ -82,14 +110,18 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
       fatigueTrend: charts.fatigueTrend ?? [],
     },
     // Flat metrics for non-chart consumers
-    refundRate: revenueData?.refundRate ?? 0,
-    cancelRate: revenueData?.cancelRate ?? 0,
-    cancelledSections: revenueData?.cancelledSections ?? 0,
-    totalSections: revenueData?.totalSections ?? 0,
-    totalRefunded: revenueData?.totalRefunded ?? 0,
-    totalRevenue: revenueData?.totalRevenue ?? 0,
+    refundRate: refundMetric.rate,
+    cancelRate: cancellationMetric.rate,
+    cancelledSections: cancellationMetric.numerator,
+    totalSections: cancellationMetric.denominator,
+    totalRefunded: refundMetric.numerator,
+    totalRevenue: refundMetric.denominator,
     netRevenue: revenueData?.netRevenue ?? 0,
     totalOrders: revenueData?.totalOrders ?? 0,
+    metrics: {
+      refunds: refundMetric,
+      cancellations: cancellationMetric,
+    },
     // Per-month refund rates
     febRefundRate: monthlyRates?.['2026-02'] ?? null,
     marRefundRate: monthlyRates?.['2026-03'] ?? null,
@@ -109,6 +141,7 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
       campaignProfit: profitAnalysis?.campaignProfit ?? [],
       coverage: profitAnalysis?.coverage ?? {},
       todaySummary: profitAnalysis?.todaySummary ?? null,
+      runRate: profitAnalysis?.runRate ?? null,
     },
   };
 }

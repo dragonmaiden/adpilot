@@ -36,24 +36,33 @@ function cleanupSnapshots(maxScanSets = 48) {
 function saveSnapshot(scanId, snapshotData) {
   ensureSnapshotDir();
 
-  saveSnapshotFile(`${scanId}_meta_structure.json`, {
-    campaigns: snapshotData.campaigns,
-    adSets: snapshotData.adSets,
-    ads: snapshotData.ads,
-  });
-  saveSnapshotFile(`${scanId}_meta_insights.json`, {
-    campaignInsights: snapshotData.campaignInsights,
-    adSetInsights: snapshotData.adSetInsights,
-    adInsights: snapshotData.adInsights,
-  });
+  if (Array.isArray(snapshotData.campaigns) || Array.isArray(snapshotData.adSets) || Array.isArray(snapshotData.ads)) {
+    saveSnapshotFile(`${scanId}_meta_structure.json`, {
+      campaigns: snapshotData.campaigns ?? [],
+      adSets: snapshotData.adSets ?? [],
+      ads: snapshotData.ads ?? [],
+    });
+  }
+
+  if (Array.isArray(snapshotData.campaignInsights) || Array.isArray(snapshotData.adSetInsights) || Array.isArray(snapshotData.adInsights)) {
+    saveSnapshotFile(`${scanId}_meta_insights.json`, {
+      campaignInsights: snapshotData.campaignInsights ?? [],
+      adSetInsights: snapshotData.adSetInsights ?? [],
+      adInsights: snapshotData.adInsights ?? [],
+    });
+  }
+
   if (snapshotData.orders && snapshotData.orders.length > 0) {
     saveSnapshotFile(`${scanId}_imweb_orders.json`, snapshotData.orders);
   }
-  saveSnapshotFile(`${scanId}_normalized.json`, {
-    revenueData: snapshotData.revenueData,
-    cogsData: snapshotData.cogsData ?? null,
-    timestamp: new Date().toISOString(),
-  });
+
+  if (snapshotData.revenueData !== undefined || snapshotData.cogsData !== undefined) {
+    saveSnapshotFile(`${scanId}_normalized.json`, {
+      revenueData: snapshotData.revenueData,
+      cogsData: snapshotData.cogsData ?? null,
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   cleanupSnapshots(48);
 }

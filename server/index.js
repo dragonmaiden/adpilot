@@ -7,11 +7,11 @@ const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-const fs = require('fs');
 const config = require('./config');
 const runtimePaths = require('./runtime/paths');
 const runtimeSettings = require('./runtime/runtimeSettings');
 const scheduler = require('./modules/scheduler');
+const imweb = require('./modules/imwebClient');
 const meta = require('./modules/metaClient');
 const telegram = require('./modules/telegram');
 const contracts = require('./contracts/v1');
@@ -153,6 +153,7 @@ app.get('/api/health', (req, res) => {
     lastScan: scheduler.getLastScanTime()?.toISOString() || null,
     isScanning: scheduler.getIsScanning(),
     autonomousMode: runtimeSettings.getRules().autonomousMode,
+    imwebAuth: imweb.getAuthState().status,
   });
 });
 
@@ -380,15 +381,7 @@ app.post('/api/seed-token', writeLimiter, async (req, res) => {
     if (!refreshToken) {
       return res.status(400).json({ error: 'refreshToken required' });
     }
-    // Write token file so imwebClient.loadTokens() can pick it up
-    const dir = path.dirname(runtimePaths.imwebTokenFile);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const tokenData = { data: { accessToken: null, refreshToken } };
-    fs.writeFileSync(runtimePaths.imwebTokenFile, JSON.stringify(tokenData, null, 2));
-    // Load + refresh via imwebClient (loadTokens reads the file, refreshAccessToken gets a valid pair)
-    const imweb = require('./modules/imwebClient');
-    imweb.loadTokens();
-    await imweb.refreshAccessToken();
+    await imweb.seedRefreshToken(refreshToken);
     // Trigger a scan to get data flowing
     if (!scheduler.getIsScanning()) {
       scheduler.runScan(true);
@@ -412,6 +405,8 @@ app.get('/api/settings', (req, res) => {
     },
     imweb: {
       siteCode: config.imweb.siteCode,
+      unitCode: config.imweb.unitCode,
+      auth: imweb.getAuthState(),
     },
     currency: config.currency,
   }));

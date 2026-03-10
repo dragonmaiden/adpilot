@@ -633,6 +633,11 @@
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
         </div>
+        <div class="kpi-card" data-profit-kpi="runRate30d">
+          <div class="kpi-label">30d Profit Run Rate</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="calendar-range"></i><span>—</span></div>
+        </div>
       </div>
 
       <!-- Waterfall Chart -->
@@ -796,7 +801,7 @@
         <div class="api-status">
           <div class="api-row">
             <span class="api-label">Connection Status</span>
-            <span class="badge badge-success">Connected</span>
+            <span class="badge badge-neutral" id="settingsImwebStatus">Unknown</span>
           </div>
           <div class="api-row">
             <span class="api-label">Store</span>
@@ -804,11 +809,23 @@
           </div>
           <div class="api-row">
             <span class="api-label">Site Code</span>
-            <span class="api-value">S20260108741f7ad4afc71</span>
+            <span class="api-value" id="settingsImwebSiteCode">S20260108741f7ad4afc71</span>
           </div>
           <div class="api-row">
             <span class="api-label">Scopes</span>
             <span class="api-value">site-info:read/write, order:read, product:read</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Token Source</span>
+            <span class="api-value" id="settingsImwebTokenSource">—</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Token Expiry</span>
+            <span class="api-value" id="settingsImwebTokenExpiry">—</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Auth Note</span>
+            <span class="api-value" id="settingsImwebAuthNote">—</span>
           </div>
           <div class="api-row">
             <span class="api-label">Total Orders</span>

@@ -5,6 +5,57 @@ const transforms = require('../transforms/charts');
 const { calcAOV } = require('../domain/metrics');
 const { getTodayInTimeZone } = require('../domain/time');
 
+function buildFeaturedProfitSummary(profitWaterfall, coverage, todayStr) {
+  const rows = Array.isArray(profitWaterfall) ? profitWaterfall : [];
+  if (rows.length === 0) return null;
+
+  const todayRow = rows.find(row => row.date === todayStr) || null;
+  const latestCoveredRow = rows.slice().reverse().find(row => row.hasCOGS) || null;
+  const fallbackRow = rows[rows.length - 1] || null;
+
+  let row = fallbackRow;
+  let summaryType = 'latest';
+
+  if (todayRow && todayRow.hasCOGS) {
+    row = todayRow;
+    summaryType = 'today';
+  } else if (latestCoveredRow) {
+    row = latestCoveredRow;
+    summaryType = latestCoveredRow.date === todayStr ? 'today' : 'latest_completed';
+  } else if (todayRow) {
+    row = todayRow;
+    summaryType = 'estimated';
+  }
+
+  return row ? {
+    date: row.date,
+    trueNetProfit: row.trueNetProfit,
+    hasCOGS: row.hasCOGS,
+    confidence: coverage.confidence,
+    verdict: row.trueNetProfit >= 0 ? 'Profitable' : 'Unprofitable',
+    summaryType,
+    isEstimated: !row.hasCOGS,
+  } : null;
+}
+
+function buildProfitRunRate(profitWaterfall, windowDays = 14) {
+  const coveredRows = (Array.isArray(profitWaterfall) ? profitWaterfall : []).filter(row => row.hasCOGS);
+  if (coveredRows.length === 0) return null;
+
+  const window = coveredRows.slice(-windowDays);
+  const totalNetProfit = window.reduce((sum, row) => sum + (row.trueNetProfit || 0), 0);
+  const avgDailyNetProfit = totalNetProfit / window.length;
+
+  return {
+    windowDays,
+    daysUsed: window.length,
+    from: window[0].date,
+    to: window[window.length - 1].date,
+    avgDailyNetProfit: Math.round(avgDailyNetProfit),
+    projectedMonthlyNetProfit: Math.round(avgDailyNetProfit * 30),
+  };
+}
+
 /**
  * Build the /api/analytics response — charts, refund rates, profit analysis.
  */
@@ -17,9 +68,7 @@ function getAnalyticsResponse() {
   const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights, cogs?.dailyCOGS);
   const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
   const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
-  const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged);
   const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
-  const dailyProfit = transforms.buildDailyProfit(dailyMerged);
   const fatigueTrend = transforms.buildFatigueTrend(data.adInsights || []);
 
   // Compute per-month refund rates from monthly data
@@ -33,20 +82,16 @@ function getAnalyticsResponse() {
   // ── Profit Analysis transforms ──
   const dailyCOGS = cogs ? cogs.dailyCOGS : {};
   const profitWaterfall = transforms.buildProfitWaterfall(dailyMerged, dailyCOGS, config.fees.paymentFeeRate);
+  const dailyProfit = transforms.buildDailyProfit(dailyMerged, profitWaterfall);
+  const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged, profitWaterfall);
   const avgAOV = calcAOV(revenue.netRevenue || 0, revenue.totalOrders || 0);
   const campaignProfit = transforms.buildCampaignProfit(data.campaignInsights, data.campaigns, avgAOV, cogs, revenue.netRevenue || 0);
   const dataCoverage = transforms.buildDataCoverage(dailyMerged, dailyCOGS);
+  const profitRunRate = buildProfitRunRate(profitWaterfall, 14);
 
-  // Today's summary from last waterfall row
+  // Featured summary prefers a fully-covered current day, otherwise the latest completed covered day.
   const todayStr = getTodayInTimeZone();
-  const todayRow = profitWaterfall.find(r => r.date === todayStr) || (profitWaterfall.length > 0 ? profitWaterfall[profitWaterfall.length - 1] : null);
-  const todaySummary = todayRow ? {
-    date: todayRow.date,
-    trueNetProfit: todayRow.trueNetProfit,
-    hasCOGS: todayRow.hasCOGS,
-    confidence: dataCoverage.confidence,
-    verdict: todayRow.trueNetProfit >= 0 ? 'Profitable' : 'Unprofitable',
-  } : null;
+  const todaySummary = buildFeaturedProfitSummary(profitWaterfall, dataCoverage, todayStr);
 
   return contracts.analytics({
     charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit, fatigueTrend },
@@ -61,6 +106,7 @@ function getAnalyticsResponse() {
       campaignProfit,
       coverage: dataCoverage,
       todaySummary,
+      runRate: profitRunRate,
     },
   });
 }

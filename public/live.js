@@ -55,6 +55,66 @@ function formatOptimizationScope(level) {
   return labels[level] || '—';
 }
 
+function formatCompactKrw(value) {
+  const amount = Number.isFinite(value) ? value : 0;
+  if (Math.abs(amount) >= 1_000_000) {
+    return '₩' + (amount / 1_000_000).toFixed(1) + 'M';
+  }
+  return '₩' + (amount / 1000).toFixed(0) + 'K';
+}
+
+function formatRateMetricDetail(metric, fallback) {
+  if (!metric || metric.numerator == null || metric.denominator == null) {
+    return fallback;
+  }
+
+  if (metric.unit === 'currency') {
+    return `${formatCompactKrw(metric.numerator)} of ${formatCompactKrw(metric.denominator)}`;
+  }
+
+  if (metric.unit === 'sections') {
+    return `${metric.numerator} ${metric.numeratorLabel || 'cancelled'} of ${metric.denominator} ${metric.denominatorLabel || 'sections'}`;
+  }
+
+  return fallback;
+}
+
+function formatImwebAuthSource(source) {
+  const labels = {
+    none: 'No token loaded',
+    disk: 'Persisted token file',
+    env: 'Environment refresh token',
+    seed: 'Manual seed token',
+  };
+  return labels[source] || source || '—';
+}
+
+function formatImwebAuthStatus(status) {
+  const map = {
+    connected: { text: 'Connected', badge: 'badge-success' },
+    degraded: { text: 'Degraded', badge: 'badge-warning' },
+    error: { text: 'Auth Error', badge: 'badge-error' },
+    refresh_only: { text: 'Needs Refresh', badge: 'badge-warning' },
+    access_only: { text: 'Token Loaded', badge: 'badge-warning' },
+    misconfigured: { text: 'Misconfigured', badge: 'badge-danger' },
+    missing: { text: 'Missing Token', badge: 'badge-neutral' },
+  };
+  return map[status] || { text: status || 'Unknown', badge: 'badge-neutral' };
+}
+
+function formatImwebExpiry(expiresAt) {
+  if (!expiresAt) return '—';
+  const dt = new Date(expiresAt);
+  if (Number.isNaN(dt.getTime())) return '—';
+  return dt.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 // ── API Helper ──
 async function api(path, method = 'GET', body = null) {
   try {
@@ -114,6 +174,10 @@ async function fetchCampaigns() {
 
 async function fetchPostmortem() {
   return api('/postmortem');
+}
+
+async function fetchSettings() {
+  return api('/settings');
 }
 
 // ── Write operations ──
@@ -690,8 +754,11 @@ async function updateAnalyticsPage() {
       refundRateEl.textContent = data.refundRate.toFixed(1) + '%';
     }
     const refundSubEl = document.querySelector('[data-kpi-analytics="refundRate"] .kpi-delta span');
-    if (refundSubEl && data.totalRefunded != null) {
-      refundSubEl.textContent = '₩' + (data.totalRefunded / 1000).toFixed(0) + 'K of ₩' + ((data.totalRevenue || 0) / 1000000).toFixed(1) + 'M';
+    if (refundSubEl) {
+      refundSubEl.textContent = formatRateMetricDetail(
+        data.metrics?.refunds,
+        '₩' + (data.totalRefunded / 1000).toFixed(0) + 'K of ₩' + ((data.totalRevenue || 0) / 1000000).toFixed(1) + 'M'
+      );
     }
 
     const cancelRateEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-value');
@@ -699,8 +766,11 @@ async function updateAnalyticsPage() {
       cancelRateEl.textContent = data.cancelRate.toFixed(1) + '%';
     }
     const cancelSubEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-delta span');
-    if (cancelSubEl && data.totalSections != null) {
-      cancelSubEl.textContent = (data.cancelledSections || 0) + ' cancelled of ' + (data.totalSections || 0) + ' sections';
+    if (cancelSubEl) {
+      cancelSubEl.textContent = formatRateMetricDetail(
+        data.metrics?.cancellations,
+        (data.cancelledSections || 0) + ' cancelled of ' + (data.totalSections || 0) + ' sections'
+      );
     }
 
     const febRefundEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-value');
@@ -841,6 +911,7 @@ async function updateProfitPage() {
     const campaignProfit = pa.campaignProfit || [];
     const coverage = pa.coverage || {};
     const todaySummary = pa.todaySummary;
+    const runRate = pa.runRate;
 
     // ── Hero Card ──
     const heroEl = document.getElementById('profitHero');
@@ -864,8 +935,15 @@ async function updateProfitPage() {
     }
 
     if (heroSubEl && todaySummary) {
-      const cogsNote = todaySummary.hasCOGS ? 'COGS included' : 'COGS estimated (no data for this date)';
-      heroSubEl.textContent = todaySummary.date + ' \u2014 ' + cogsNote;
+      let summaryLabel = 'Latest profit signal';
+      if (todaySummary.summaryType === 'today') summaryLabel = 'Today';
+      if (todaySummary.summaryType === 'latest_completed') summaryLabel = 'Latest completed day';
+      if (todaySummary.summaryType === 'estimated') summaryLabel = 'Current estimate';
+      const cogsNote = todaySummary.hasCOGS ? 'COGS included' : 'COGS not yet available';
+      const runRateText = runRate
+        ? ` · 14d avg ₩${runRate.avgDailyNetProfit.toLocaleString()}/day · est. ₩${runRate.projectedMonthlyNetProfit.toLocaleString()}/30d`
+        : '';
+      heroSubEl.textContent = `${todaySummary.date} — ${summaryLabel} · ${cogsNote}${runRateText}`;
     }
 
     // ── KPI Cards ──
@@ -894,6 +972,29 @@ async function updateProfitPage() {
     if (roasKpi) roasKpi.textContent = trueRoas.toFixed(2) + 'x';
     const roasSub = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-delta span');
     if (roasSub) roasSub.textContent = 'Net Revenue / Ad Spend';
+
+    const runRateKpi = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-value');
+    if (runRateKpi) {
+      const projected = runRate ? runRate.projectedMonthlyNetProfit : null;
+      if (projected == null) {
+        runRateKpi.textContent = '—';
+      } else {
+        runRateKpi.textContent = projected >= 0
+          ? '\u20a9' + projected.toLocaleString()
+          : '-\u20a9' + Math.abs(projected).toLocaleString();
+      }
+    }
+    const runRateSub = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-delta span');
+    if (runRateSub) {
+      if (runRate) {
+        const avgDaily = runRate.avgDailyNetProfit >= 0
+          ? '\u20a9' + runRate.avgDailyNetProfit.toLocaleString()
+          : '-\u20a9' + Math.abs(runRate.avgDailyNetProfit).toLocaleString();
+        runRateSub.textContent = `${runRate.daysUsed}d used · ${avgDaily}/day`;
+      } else {
+        runRateSub.textContent = 'Waiting for covered days';
+      }
+    }
 
     // ── Waterfall Chart ──
     if (waterfall.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
@@ -1196,12 +1297,52 @@ async function updateBudgetPage() {
 
 async function updateSettingsPage() {
   try {
-    const overview = await fetchOverview();
-    if (!overview) return;
-
-    const k = overview.kpis || {};
+    const [overview, analyticsData, settingsData] = await Promise.all([
+      fetchOverview(),
+      fetchAnalytics(),
+      fetchSettings(),
+    ]);
+    const k = overview?.kpis || {};
+    const imwebAuth = settingsData?.imweb?.auth || null;
 
     // ── Imweb stats ──
+    const imwebStatusEl = document.getElementById('settingsImwebStatus');
+    if (imwebStatusEl) {
+      const statusMeta = formatImwebAuthStatus(imwebAuth?.status);
+      imwebStatusEl.className = `badge ${statusMeta.badge}`;
+      imwebStatusEl.textContent = statusMeta.text;
+    }
+
+    const imwebSiteCodeEl = document.getElementById('settingsImwebSiteCode');
+    if (imwebSiteCodeEl && settingsData?.imweb?.siteCode) {
+      imwebSiteCodeEl.textContent = settingsData.imweb.siteCode;
+    }
+
+    const imwebTokenSourceEl = document.getElementById('settingsImwebTokenSource');
+    if (imwebTokenSourceEl) {
+      imwebTokenSourceEl.textContent = formatImwebAuthSource(imwebAuth?.tokenSource);
+    }
+
+    const imwebTokenExpiryEl = document.getElementById('settingsImwebTokenExpiry');
+    if (imwebTokenExpiryEl) {
+      imwebTokenExpiryEl.textContent = formatImwebExpiry(imwebAuth?.expiresAt);
+    }
+
+    const imwebAuthNoteEl = document.getElementById('settingsImwebAuthNote');
+    if (imwebAuthNoteEl) {
+      if (imwebAuth?.lastError) {
+        imwebAuthNoteEl.textContent = imwebAuth.lastError;
+      } else if (imwebAuth?.status === 'connected') {
+        imwebAuthNoteEl.textContent = 'Refreshable token is healthy';
+      } else if (imwebAuth?.status === 'misconfigured') {
+        imwebAuthNoteEl.textContent = 'IMWEB_CLIENT_ID / IMWEB_CLIENT_SECRET missing';
+      } else if (imwebAuth?.status === 'missing') {
+        imwebAuthNoteEl.textContent = 'No persisted or env refresh token available';
+      } else {
+        imwebAuthNoteEl.textContent = 'Waiting for first successful token refresh';
+      }
+    }
+
     const imwebOrdersEl = document.getElementById('settingsImwebOrders');
     if (imwebOrdersEl) {
       imwebOrdersEl.textContent = (k.totalOrders || 0) + ' orders';
@@ -1219,7 +1360,6 @@ async function updateSettingsPage() {
     }
 
     // ── COGS stats (from analytics) ──
-    const analyticsData = await fetchAnalytics();
     if (analyticsData) {
       const cogsItemsEl = document.getElementById('settingsCogsItems');
       if (cogsItemsEl) {

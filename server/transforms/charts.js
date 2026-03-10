@@ -163,21 +163,32 @@ function buildHourlyOrders(hourlyArr) {
   return hourlyArr.map((count, index) => ({ hour: index, orders: count ?? 0 }));
 }
 
+function getWeekKey(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  const weekday = (date.getDay() + 6) % 7;
+  const weekStart = new Date(date);
+  weekStart.setDate(date.getDate() - weekday);
+  return weekStart.toISOString().slice(0, 10);
+}
+
 /**
- * Build weekly aggregates from daily data.
+ * Build weekly aggregates from daily data plus optional profit waterfall rows.
  */
-function buildWeeklyAgg(daily) {
+function buildWeeklyAgg(daily, profitWaterfall = null) {
   const weeks = {};
 
   for (const day of daily) {
-    const date = new Date(`${day.date}T00:00:00`);
-    const weekday = (date.getDay() + 6) % 7;
-    const weekStart = new Date(date);
-    weekStart.setDate(date.getDate() - weekday);
-    const weekKey = weekStart.toISOString().slice(0, 10);
+    const weekKey = getWeekKey(day.date);
 
     if (!weeks[weekKey]) {
-      weeks[weekKey] = { week: weekKey, revenue: 0, refunded: 0, spend: 0, purchases: 0 };
+      weeks[weekKey] = {
+        week: weekKey,
+        revenue: 0,
+        refunded: 0,
+        spend: 0,
+        purchases: 0,
+        profit: 0,
+      };
     }
 
     weeks[weekKey].revenue += day.revenue;
@@ -186,11 +197,32 @@ function buildWeeklyAgg(daily) {
     weeks[weekKey].purchases += day.purchases;
   }
 
+  if (Array.isArray(profitWaterfall)) {
+    for (const row of profitWaterfall) {
+      const weekKey = getWeekKey(row.date);
+      if (!weeks[weekKey]) {
+        weeks[weekKey] = {
+          week: weekKey,
+          revenue: 0,
+          refunded: 0,
+          spend: 0,
+          purchases: 0,
+          profit: 0,
+        };
+      }
+      weeks[weekKey].profit += row.trueNetProfit || 0;
+    }
+  } else {
+    for (const week of Object.values(weeks)) {
+      week.profit = Math.round(calcGrossProfit(week.revenue - week.refunded, 0, week.spend));
+    }
+  }
+
   return Object.values(weeks)
     .sort((a, b) => a.week.localeCompare(b.week))
     .map(week => ({
       week: week.week,
-      profit: Math.round(calcGrossProfit(week.revenue - week.refunded, 0, week.spend)),
+      profit: Math.round(week.profit || 0),
       revenue: week.revenue,
       refunded: week.refunded,
       spend: week.spend,
@@ -216,9 +248,16 @@ function buildMonthlyRefunds(daily) {
 }
 
 /**
- * Build daily profit from merged data.
+ * Build daily profit from either merged daily rows or the canonical profit waterfall.
  */
-function buildDailyProfit(daily) {
+function buildDailyProfit(daily, profitWaterfall = null) {
+  if (Array.isArray(profitWaterfall)) {
+    return profitWaterfall.map(day => ({
+      date: day.date,
+      profit: Math.round(day.trueNetProfit || 0),
+    }));
+  }
+
   return daily.map(day => ({
     date: day.date,
     profit: Math.round(calcGrossProfit(day.netRevenue ?? (day.revenue - day.refunded), 0, day.spend)),
