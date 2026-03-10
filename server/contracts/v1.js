@@ -9,12 +9,13 @@ const API_VERSION = 'v1';
 /**
  * Build /api/overview response.
  */
-function overview({ kpis, campaigns, charts, scanStats, lastScan, isScanning }) {
+function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanning }) {
   return {
     apiVersion: API_VERSION,
     ready: true,
     lastScan: lastScan ?? null,
     isScanning: isScanning ?? false,
+    days: days ?? 0,
     kpis: {
       revenue: kpis.revenue ?? 0,
       refunded: kpis.refunded ?? 0,
@@ -29,6 +30,8 @@ function overview({ kpis, campaigns, charts, scanStats, lastScan, isScanning }) 
       refundRate: kpis.refundRate ?? 0,
       cancelRate: kpis.cancelRate ?? 0,
       cogs: kpis.cogs ?? null,
+      grossProfit: kpis.grossProfit ?? 0,
+      grossMargin: kpis.grossMargin ?? 0,
     },
     campaigns: (campaigns || []).map(c => ({
       id: c.id ?? '',
