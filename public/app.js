@@ -83,6 +83,7 @@ navItems.forEach(item => {
     if (target === 'analytics' && !analyticsChartsInitialized) initAnalyticsCharts();
     if (target === 'fatigue' && !fatigueChartInitialized) initFatigueChart();
     if (target === 'budget' && !budgetChartsInitialized) initBudgetCharts();
+    if (target === 'optimizations' && !optTimelineInitialized) initOptTimeline();
   });
 });
 
@@ -165,12 +166,14 @@ Chart.defaults.responsive = true;
 Chart.defaults.maintainAspectRatio = false;
 
 let spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart;
+let optTimelineChart, optTypeChart, optPriorityChart;
 let fatigueChartInitialized = false;
 let budgetChartsInitialized = false;
+let optTimelineInitialized = false;
 
 function updateChartColors() {
   const c = getChartColors();
-  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart];
+  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart, optTimelineChart, optTypeChart, optPriorityChart];
   allCharts.forEach(chart => {
     if (!chart) return;
     if (chart.options.scales) {
@@ -900,6 +903,205 @@ function renderBudgetHistory() {
       <td style="color:var(--color-text-muted)">${h.reason}</td>
     </tr>
   `).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+// ── OPTIMIZATION TIMELINE PAGE ──
+// ═══════════════════════════════════════════════════════
+
+// Static fallback data: simulates what hourly scans would generate
+// Each entry = one scan session with breakdown of optimization types
+const staticScanTimeline = [
+  { time: '03/04 00:00', budgetUp: 0, budgetDown: 1, pauses: 1, fatigue: 0, bids: 1, schedule: 1 },
+  { time: '03/04 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
+  { time: '03/04 12:00', budgetUp: 0, budgetDown: 0, pauses: 0, fatigue: 1, bids: 1, schedule: 0 },
+  { time: '03/04 18:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 1 },
+  { time: '03/05 00:00', budgetUp: 0, budgetDown: 0, pauses: 1, fatigue: 0, bids: 0, schedule: 0 },
+  { time: '03/05 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
+  { time: '03/05 12:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
+  { time: '03/05 18:00', budgetUp: 0, budgetDown: 1, pauses: 0, fatigue: 0, bids: 1, schedule: 0 },
+  { time: '03/06 00:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 1 },
+  { time: '03/06 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
+  { time: '03/06 12:00', budgetUp: 0, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
+  { time: '03/06 18:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 1, schedule: 0 },
+  { time: '03/07 00:00', budgetUp: 0, budgetDown: 1, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
+  { time: '03/07 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
+  { time: '03/07 12:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 1 },
+  { time: '03/07 18:00', budgetUp: 0, budgetDown: 0, pauses: 1, fatigue: 0, bids: 0, schedule: 0 },
+  { time: '03/08 00:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 1, schedule: 0 },
+  { time: '03/08 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
+  { time: '03/08 12:00', budgetUp: 0, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
+  { time: '03/08 18:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 1 },
+  { time: '03/09 00:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
+  { time: '03/09 06:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 1, bids: 0, schedule: 0 },
+  { time: '03/09 12:00', budgetUp: 0, budgetDown: 1, pauses: 0, fatigue: 0, bids: 1, schedule: 0 },
+  { time: '03/09 18:00', budgetUp: 1, budgetDown: 0, pauses: 0, fatigue: 0, bids: 0, schedule: 0 },
+];
+
+// Aggregate from static optimizations data (type + priority counts)
+const staticOptCounts = {
+  byType: { budget: 4, creative: 3, bid: 2, status: 3, schedule: 1, targeting: 1 },
+  byPriority: { critical: 2, high: 5, medium: 4, low: 3 },
+};
+
+function initOptTimeline() {
+  optTimelineInitialized = true;
+  const c = getChartColors();
+
+  // ── Stacked bar timeline chart ──
+  const tlCtx = document.getElementById('optTimelineChart');
+  if (tlCtx) {
+    optTimelineChart = new Chart(tlCtx, {
+      type: 'bar',
+      data: {
+        labels: staticScanTimeline.map(s => s.time),
+        datasets: [
+          {
+            label: 'Budget \u2191',
+            data: staticScanTimeline.map(s => s.budgetUp),
+            backgroundColor: 'rgba(74, 222, 128, 0.85)',
+            borderRadius: 2,
+            stack: 'positive',
+          },
+          {
+            label: 'Budget \u2193 / Pause',
+            data: staticScanTimeline.map(s => -(s.budgetDown + s.pauses)),
+            backgroundColor: 'rgba(239, 68, 68, 0.75)',
+            borderRadius: 2,
+            stack: 'negative',
+          },
+          {
+            label: 'Fatigue / Creative',
+            data: staticScanTimeline.map(s => s.fatigue),
+            backgroundColor: 'rgba(251, 146, 60, 0.75)',
+            borderRadius: 2,
+            stack: 'positive',
+          },
+          {
+            label: 'Bid / Schedule',
+            data: staticScanTimeline.map(s => s.bids + s.schedule),
+            backgroundColor: 'rgba(56, 189, 248, 0.6)',
+            borderRadius: 2,
+            stack: 'positive',
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: {
+              color: c.textFaint,
+              usePointStyle: true,
+              pointStyle: 'rectRounded',
+              padding: 16,
+              font: { size: 11 },
+            }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(ctx) {
+                const v = Math.abs(ctx.raw);
+                return v > 0 ? `${ctx.dataset.label}: ${v}` : null;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            grid: { display: false },
+            ticks: {
+              color: c.textFaint,
+              maxRotation: 45,
+              font: { size: 9 },
+              callback: function(val, idx) {
+                return idx % 4 === 0 ? this.getLabelForValue(val) : '';
+              },
+            },
+          },
+          y: {
+            stacked: true,
+            grid: { color: c.grid },
+            ticks: {
+              color: c.textFaint,
+              stepSize: 1,
+              callback: v => Math.abs(v),
+            },
+            title: { display: true, text: 'Actions per scan', color: c.textFaint, font: { size: 11 } },
+          },
+        },
+      },
+    });
+  }
+
+  // ── Type breakdown donut ──
+  const typeCtx = document.getElementById('optTypeChart');
+  if (typeCtx) {
+    const types = staticOptCounts.byType;
+    optTypeChart = new Chart(typeCtx, {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(types).map(t => t.charAt(0).toUpperCase() + t.slice(1)),
+        datasets: [{
+          data: Object.values(types),
+          backgroundColor: [
+            '#20808D', // budget
+            '#fb923c', // creative
+            '#38bdf8', // bid
+            '#ef4444', // status
+            '#a78bfa', // schedule
+            '#facc15', // targeting
+          ],
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        plugins: {
+          legend: {
+            display: true,
+            position: 'right',
+            labels: { color: c.textFaint, usePointStyle: true, padding: 10, font: { size: 11 } },
+          },
+        },
+        cutout: '60%',
+      },
+    });
+  }
+
+  // ── Priority breakdown donut ──
+  const prioCtx = document.getElementById('optPriorityChart');
+  if (prioCtx) {
+    const prios = staticOptCounts.byPriority;
+    const prioColors = {
+      critical: '#ef4444',
+      high: '#fb923c',
+      medium: '#20808D',
+      low: '#64748b',
+    };
+    optPriorityChart = new Chart(prioCtx, {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(prios).map(p => p.charAt(0).toUpperCase() + p.slice(1)),
+        datasets: [{
+          data: Object.values(prios),
+          backgroundColor: Object.keys(prios).map(p => prioColors[p] || '#94a3b8'),
+          borderWidth: 0,
+        }],
+      },
+      options: {
+        plugins: {
+          legend: {
+            display: true,
+            position: 'right',
+            labels: { color: c.textFaint, usePointStyle: true, padding: 10, font: { size: 11 } },
+          },
+        },
+        cutout: '60%',
+      },
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════════

@@ -570,6 +570,70 @@ app.get('/api/postmortem', (req, res) => {
   });
 });
 
+// ── Optimization Timeline (for micro-adjustment chart) ──
+app.get('/api/optimizations/timeline', (req, res) => {
+  const opts = scheduler.getAllOptimizations();
+  const scans = scheduler.getScanHistory();
+
+  // Group optimizations by scan
+  const scanMap = {};
+  for (const scan of scans) {
+    scanMap[scan.scanId] = {
+      time: scan.time,
+      optimizations: scan.optimizations,
+      errors: scan.errors,
+    };
+  }
+
+  // Group all opts by type for the timeline
+  const timeline = opts.map(o => ({
+    time: o.timestamp,
+    scanId: o.scanId,
+    type: o.type,
+    priority: o.priority,
+    action: o.action,
+    target: o.targetName,
+    executed: o.executed,
+    result: o.executionResult,
+    // Derive direction: budget increase = up, budget decrease/pause = down
+    direction: o.action.includes('Increase') || o.action.includes('scale') || o.action.includes('Resume')
+      ? 'up'
+      : o.action.includes('Reduce') || o.action.includes('Pause') || o.action.includes('Reallocate')
+        ? 'down'
+        : 'neutral',
+  }));
+
+  // Aggregate by scan for the bar chart
+  const scanTimeline = scans.map(s => {
+    const scanOpts = opts.filter(o => o.scanId === s.scanId);
+    const budgetUp = scanOpts.filter(o => o.type === 'budget' && (o.action.includes('Increase') || o.action.includes('scale'))).length;
+    const budgetDown = scanOpts.filter(o => o.type === 'budget' && (o.action.includes('Reduce') || o.action.includes('Reallocate'))).length;
+    const pauses = scanOpts.filter(o => o.type === 'status').length;
+    const fatigue = scanOpts.filter(o => o.type === 'creative' || o.type === 'targeting').length;
+    const bids = scanOpts.filter(o => o.type === 'bid').length;
+    const schedule = scanOpts.filter(o => o.type === 'schedule').length;
+
+    return {
+      time: s.time,
+      scanId: s.scanId,
+      total: s.optimizations,
+      budgetUp,
+      budgetDown,
+      pauses,
+      fatigue,
+      bids,
+      schedule,
+    };
+  });
+
+  res.json({
+    timeline,
+    scanTimeline,
+    totalOptimizations: opts.length,
+    totalScans: scans.length,
+  });
+});
+
 // ── Analytics deep data ──
 app.get('/api/analytics', (req, res) => {
   const data = scheduler.getLatestData();

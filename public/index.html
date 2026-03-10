@@ -440,6 +440,41 @@
           <div class="kpi-value" id="optScans" data-target="0" data-prefix="">—</div>
         </div>
       </div>
+
+      <!-- Micro-Optimization Timeline -->
+      <div class="charts-grid">
+        <div class="card chart-card" style="grid-column: 1 / -1">
+          <div class="card-header">
+            <h2>Micro-Optimization Timeline</h2>
+            <span class="badge" style="background:rgba(32,128,141,0.15);color:#20808D">Per-scan breakdown</span>
+          </div>
+          <p class="card-desc" style="padding:0 20px;margin-top:-8px;font-size:0.8rem;color:var(--color-text-faint)">Each bar represents one hourly scan. Green = budget increases / scaling up. Red = budget cuts / pauses. Orange = fatigue & creative alerts. Blue = bid & schedule optimizations.</p>
+          <div class="chart-container" style="height:300px;padding:0 8px">
+            <canvas id="optTimelineChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Breakdown by Type -->
+      <div class="charts-grid">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Actions by Type</h2>
+          </div>
+          <div class="chart-container" style="height:260px">
+            <canvas id="optTypeChart"></canvas>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>Actions by Priority</h2>
+          </div>
+          <div class="chart-container" style="height:260px">
+            <canvas id="optPriorityChart"></canvas>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <h2>Live Optimization Log</h2>

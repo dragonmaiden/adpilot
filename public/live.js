@@ -397,6 +397,61 @@ async function updateLiveCampaigns() {
 }
 
 // ═══════════════════════════════════════════════
+// LIVE OPTIMIZATION TIMELINE
+// ═══════════════════════════════════════════════
+
+async function updateOptTimeline() {
+  const data = await api('/optimizations/timeline');
+  if (!data || !data.scanTimeline || data.scanTimeline.length === 0) return;
+
+  // Update the timeline chart if it exists
+  if (typeof optTimelineChart !== 'undefined' && optTimelineChart) {
+    const st = data.scanTimeline;
+    const labels = st.map(s => {
+      const d = new Date(s.time);
+      return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' })
+        + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    });
+
+    optTimelineChart.data.labels = labels;
+    optTimelineChart.data.datasets[0].data = st.map(s => s.budgetUp);
+    optTimelineChart.data.datasets[1].data = st.map(s => -(s.budgetDown + s.pauses));
+    optTimelineChart.data.datasets[2].data = st.map(s => s.fatigue);
+    optTimelineChart.data.datasets[3].data = st.map(s => s.bids + s.schedule);
+    optTimelineChart.update();
+  }
+
+  // Update type + priority donuts from live optimization stats
+  const optData = await api('/optimizations?limit=500');
+  if (optData && optData.stats) {
+    if (typeof optTypeChart !== 'undefined' && optTypeChart) {
+      const types = optData.stats.byType || {};
+      optTypeChart.data.labels = Object.keys(types).map(t => t.charAt(0).toUpperCase() + t.slice(1));
+      optTypeChart.data.datasets[0].data = Object.values(types);
+      optTypeChart.update();
+    }
+    if (typeof optPriorityChart !== 'undefined' && optPriorityChart) {
+      const prios = optData.stats.byPriority || {};
+      const prioColors = { critical: '#ef4444', high: '#fb923c', medium: '#20808D', low: '#64748b' };
+      optPriorityChart.data.labels = Object.keys(prios).map(p => p.charAt(0).toUpperCase() + p.slice(1));
+      optPriorityChart.data.datasets[0].data = Object.values(prios);
+      optPriorityChart.data.datasets[0].backgroundColor = Object.keys(prios).map(p => prioColors[p] || '#94a3b8');
+      optPriorityChart.update();
+    }
+
+    // Update KPI cards
+    const totalEl = document.getElementById('optTotal');
+    const execEl = document.getElementById('optExecuted');
+    const pendEl = document.getElementById('optPending');
+    const scansEl = document.getElementById('optScans');
+    if (totalEl) totalEl.textContent = optData.total || 0;
+    if (execEl) execEl.textContent = optData.stats.executed || 0;
+    if (pendEl) pendEl.textContent = optData.stats.pending || 0;
+    if (scansEl) scansEl.textContent = data.totalScans || 0;
+  }
+}
+
+// ═══════════════════════════════════════════════
 // POLLING & LIFECYCLE
 // ═══════════════════════════════════════════════
 
@@ -523,6 +578,7 @@ async function startLiveMode() {
   await updateDashboard();
   await updateOptimizationLog();
   await updateLiveCampaigns();
+  await updateOptTimeline();
 
   // Wire up scan button for live scans
   const scanBtn = document.getElementById('runScanBtn');
@@ -545,6 +601,7 @@ async function startLiveMode() {
           await updateDashboard();
           await updateOptimizationLog();
           await updateLiveCampaigns();
+          await updateOptTimeline();
         }
       }, 3000);
     });
@@ -555,9 +612,10 @@ async function startLiveMode() {
     await updateDashboard();
   }, 30000);
 
-  // Update optimization log every 60 seconds
+  // Update optimization log and timeline every 60 seconds
   setInterval(async () => {
     await updateOptimizationLog();
+    await updateOptTimeline();
   }, 60000);
 
   return true;
