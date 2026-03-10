@@ -21,10 +21,28 @@ if (missing.length > 0) {
 }
 
 // ── Ensure data directory exists ──
-const DATA_DIR = config.paths.dataDir;
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  console.log(`[INIT] Created data directory: ${DATA_DIR}`);
+// If the configured DATA_DIR (e.g. /data) isn't writable (no persistent disk attached),
+// fall back to a local directory so the server can still start.
+let DATA_DIR = config.paths.dataDir;
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  // Test write access
+  const testFile = path.join(DATA_DIR, '.write-test');
+  fs.writeFileSync(testFile, 'ok');
+  fs.unlinkSync(testFile);
+  console.log(`[INIT] Data directory ready: ${DATA_DIR}`);
+} catch (err) {
+  const fallback = path.join(__dirname, 'data');
+  console.warn(`[INIT] ⚠️  Cannot write to ${DATA_DIR} (${err.code}) — falling back to ${fallback}`);
+  console.warn('[INIT] Data will NOT persist across deploys. Attach a Render Disk at /data for persistence.');
+  DATA_DIR = fallback;
+  config.paths.dataDir = fallback;
+  config.imweb.tokenFile = path.join(fallback, 'imweb_tokens.json');
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
 }
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 if (!fs.existsSync(LOG_DIR)) {
