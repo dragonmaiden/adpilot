@@ -400,6 +400,35 @@ app.post('/api/optimizations/:id/execute', async (req, res) => {
   }
 });
 
+// ── Seed Imweb token (one-time, secured by Telegram chat ID) ──
+app.post('/api/seed-token', async (req, res) => {
+  try {
+    const { chatId, refreshToken } = req.body;
+    if (!chatId || chatId !== config.telegram.chatId) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'refreshToken required' });
+    }
+    // Write token file so imwebClient.loadTokens() can pick it up
+    const dir = path.dirname(config.imweb.tokenFile);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const tokenData = { data: { accessToken: null, refreshToken } };
+    fs.writeFileSync(config.imweb.tokenFile, JSON.stringify(tokenData, null, 2));
+    // Load + refresh via imwebClient (loadTokens reads the file, refreshAccessToken gets a valid pair)
+    const imweb = require('./modules/imwebClient');
+    imweb.loadTokens();
+    await imweb.refreshAccessToken();
+    // Trigger a scan to get data flowing
+    if (!scheduler.getIsScanning()) {
+      scheduler.runScan(true);
+    }
+    res.json({ success: true, message: 'Token seeded and refreshed. Scan started.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Settings ──
 app.get('/api/settings', (req, res) => {
   res.json({
