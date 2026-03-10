@@ -909,28 +909,32 @@ function renderBudgetHistory() {
 // ── OPTIMIZATION TIMELINE PAGE ──
 // ═══════════════════════════════════════════════════════
 
-// ── Candlestick Chart.js Plugin ──
+// ── Candlestick drawing via Chart.js plugin ──
+// Stores OHLC data externally so plugin can draw candles independently of datasets
+let _candlestickOHLC = [];
+
 const candlestickPlugin = {
   id: 'candlestick',
-  beforeDatasetsDraw(chart) {
-    // Only run on charts that have OHLC data (candlestick chart)
-    const dataset = chart.data.datasets[0];
-    if (!dataset || !dataset.data || !dataset.data.length) return;
-    if (!dataset.data[0] || dataset.data[0].o === undefined) return;
-
-    const meta = chart.getDatasetMeta(0);
-    if (!meta || !meta.data.length) return;
-    const ctx = chart.ctx;
-    const data = dataset.data;
+  afterDatasetsDraw(chart) {
+    if (!_candlestickOHLC.length) return;
+    // Only draw on the candlestick chart (optTimelineChart)
+    if (chart.canvas.id !== 'optTimelineChart') return;
+    const xScale = chart.scales.x;
     const yScale = chart.scales.y;
+    if (!xScale || !yScale) return;
 
-    meta.data.forEach((bar, i) => {
-      const d = data[i];
+    const ctx = chart.ctx;
+    const chartArea = chart.chartArea;
+    const totalBars = _candlestickOHLC.length;
+    // Calculate bar width from chart area
+    const availableWidth = chartArea.right - chartArea.left;
+    const barW = Math.max(Math.floor((availableWidth / totalBars) * 0.45), 4);
+    const halfW = barW / 2;
+
+    _candlestickOHLC.forEach((d, i) => {
       if (!d || d.o == null) return;
-      const x = bar.x;
-      const barW = Math.max(bar.width * 0.7, 6);
-      const halfW = barW / 2;
-
+      // Get the x pixel from the category scale
+      const x = xScale.getPixelForValue(i);
       const oY = yScale.getPixelForValue(d.o);
       const cY = yScale.getPixelForValue(d.c);
       const hY = yScale.getPixelForValue(d.h);
@@ -939,7 +943,6 @@ const candlestickPlugin = {
       const color = isUp ? '#4ade80' : '#ef6461';
 
       ctx.save();
-      // Wick (high-low line)
       ctx.beginPath();
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
@@ -947,68 +950,62 @@ const candlestickPlugin = {
       ctx.lineTo(x, lY);
       ctx.stroke();
 
-      // Body (open-close rect)
       const top = Math.min(oY, cY);
-      const bodyH = Math.max(Math.abs(oY - cY), 1);
+      const bodyH = Math.max(Math.abs(oY - cY), 2);
       ctx.fillStyle = color;
-      ctx.globalAlpha = 0.9;
+      ctx.globalAlpha = 0.85;
       ctx.fillRect(x - halfW, top, barW, bodyH);
       ctx.globalAlpha = 1;
       ctx.restore();
     });
-  },
-  afterDatasetsDraw(chart) {
-    // Draw Target CPA label on the dashed line
-    const dataset = chart.data.datasets[0];
-    if (!dataset || !dataset.data || !dataset.data.length) return;
-    if (!dataset.data[0] || dataset.data[0].o === undefined) return;
 
-    const ctx = chart.ctx;
+    // Draw Target CPA label pill
     const y1Scale = chart.scales.y1;
-    if (!y1Scale) return;
-
-    // Find the Target CPA dataset (index 2)
-    const targetDs = chart.data.datasets[2];
-    if (!targetDs || !targetDs.data || !targetDs.data.length) return;
-    const targetVal = targetDs.data[0];
-    const yPos = y1Scale.getPixelForValue(targetVal);
-    const chartArea = chart.chartArea;
-
-    ctx.save();
-    // Background pill for label
-    const labelText = 'Target CAC ' + formatKRW(targetVal);
-    ctx.font = "11px 'JetBrains Mono', monospace";
-    const textW = ctx.measureText(labelText).width;
-    const pillX = chartArea.right - textW - 16;
-    const pillY = yPos - 10;
-    ctx.fillStyle = 'rgba(239, 100, 97, 0.15)';
-    ctx.roundRect(pillX - 4, pillY - 2, textW + 12, 16, 3);
-    ctx.fill();
-    ctx.fillStyle = '#ef6461';
-    ctx.fillText(labelText, pillX + 2, pillY + 10);
-    ctx.restore();
+    if (y1Scale) {
+      const targetDs = chart.data.datasets[2];
+      if (targetDs && targetDs.data && targetDs.data.length) {
+        const targetVal = targetDs.data[0];
+        const yPos = y1Scale.getPixelForValue(targetVal);
+        ctx.save();
+        const labelText = 'Target CAC ' + formatKRW(targetVal);
+        ctx.font = "11px 'JetBrains Mono', monospace";
+        const textW = ctx.measureText(labelText).width;
+        const pillX = chartArea.right - textW - 16;
+        const pillY = yPos - 10;
+        ctx.fillStyle = 'rgba(239, 100, 97, 0.2)';
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(pillX - 4, pillY - 2, textW + 12, 16, 3);
+          ctx.fill();
+        } else {
+          ctx.fillRect(pillX - 4, pillY - 2, textW + 12, 16);
+        }
+        ctx.fillStyle = '#ef6461';
+        ctx.fillText(labelText, pillX + 2, pillY + 10);
+        ctx.restore();
+      }
+    }
   }
 };
 Chart.register(candlestickPlugin);
 
 // Static fallback: daily spend data with OHLC + CAC
-// (replaced by live API data when available)
 const staticSpendDaily = [
-  { date: '2026-02-23', o: 85000, h: 92000, l: 78000, c: 89000, spend: 89000, cac: 42000, orders: 2 },
-  { date: '2026-02-24', o: 89000, h: 95000, l: 82000, c: 84000, spend: 84000, cac: 38000, orders: 2 },
-  { date: '2026-02-25', o: 84000, h: 98000, l: 80000, c: 95000, spend: 95000, cac: 45000, orders: 2 },
-  { date: '2026-02-26', o: 95000, h: 105000, l: 88000, c: 92000, spend: 92000, cac: 40000, orders: 2 },
-  { date: '2026-02-27', o: 92000, h: 110000, l: 85000, c: 108000, spend: 108000, cac: 48000, orders: 2 },
-  { date: '2026-02-28', o: 108000, h: 115000, l: 90000, c: 96000, spend: 96000, cac: 44000, orders: 2 },
-  { date: '2026-03-01', o: 96000, h: 102000, l: 82000, c: 88000, spend: 88000, cac: 41000, orders: 2 },
-  { date: '2026-03-02', o: 88000, h: 100000, l: 78000, c: 97000, spend: 97000, cac: 43000, orders: 2 },
-  { date: '2026-03-03', o: 97000, h: 108000, l: 90000, c: 103000, spend: 103000, cac: 46000, orders: 2 },
-  { date: '2026-03-04', o: 103000, h: 112000, l: 95000, c: 99000, spend: 99000, cac: 42000, orders: 2 },
-  { date: '2026-03-05', o: 99000, h: 106000, l: 85000, c: 87000, spend: 87000, cac: 39000, orders: 2 },
-  { date: '2026-03-06', o: 87000, h: 95000, l: 80000, c: 93000, spend: 93000, cac: 44000, orders: 2 },
-  { date: '2026-03-07', o: 93000, h: 100000, l: 88000, c: 91000, spend: 91000, cac: 41000, orders: 2 },
-  { date: '2026-03-08', o: 91000, h: 98000, l: 82000, c: 86000, spend: 86000, cac: 38000, orders: 2 },
-  { date: '2026-03-09', o: 86000, h: 105000, l: 83000, c: 102000, spend: 102000, cac: 45000, orders: 2 },
+  { date: '2026-02-23', o: 85000, h: 97000, l: 76000, c: 89000, spend: 89000, cac: 42000, orders: 2 },
+  { date: '2026-02-24', o: 89000, h: 94000, l: 72000, c: 78000, spend: 78000, cac: 38000, orders: 2 },
+  { date: '2026-02-25', o: 78000, h: 102000, l: 75000, c: 98000, spend: 98000, cac: 45000, orders: 2 },
+  { date: '2026-02-26', o: 98000, h: 108000, l: 88000, c: 92000, spend: 92000, cac: 40000, orders: 2 },
+  { date: '2026-02-27', o: 92000, h: 118000, l: 90000, c: 115000, spend: 115000, cac: 48000, orders: 2 },
+  { date: '2026-02-28', o: 115000, h: 120000, l: 85000, c: 90000, spend: 90000, cac: 44000, orders: 2 },
+  { date: '2026-03-01', o: 90000, h: 96000, l: 70000, c: 75000, spend: 75000, cac: 41000, orders: 2 },
+  { date: '2026-03-02', o: 75000, h: 105000, l: 72000, c: 100000, spend: 100000, cac: 43000, orders: 2 },
+  { date: '2026-03-03', o: 100000, h: 112000, l: 95000, c: 110000, spend: 110000, cac: 46000, orders: 2 },
+  { date: '2026-03-04', o: 110000, h: 115000, l: 88000, c: 93000, spend: 93000, cac: 42000, orders: 2 },
+  { date: '2026-03-05', o: 93000, h: 98000, l: 68000, c: 72000, spend: 72000, cac: 39000, orders: 2 },
+  { date: '2026-03-06', o: 72000, h: 95000, l: 70000, c: 90000, spend: 90000, cac: 44000, orders: 2 },
+  { date: '2026-03-07', o: 90000, h: 100000, l: 78000, c: 82000, spend: 82000, cac: 41000, orders: 2 },
+  { date: '2026-03-08', o: 82000, h: 88000, l: 65000, c: 70000, spend: 70000, cac: 38000, orders: 3 },
+  { date: '2026-03-09', o: 70000, h: 108000, l: 68000, c: 105000, spend: 105000, cac: 45000, orders: 2 },
 ];
 
 // Aggregate from static optimizations data (type + priority counts)
@@ -1047,17 +1044,16 @@ function initOptTimeline() {
   optTimelineInitialized = true;
   const c = getChartColors();
   const data = staticSpendDaily;
-  const targetCPA = 45000; // Target CPA in KRW
-  const budgetLine = 90000; // Daily budget target in KRW
+  const targetCPA = 45000;
+  const budgetLine = 90000;
 
-  // Format date labels
+  // Store OHLC for the plugin to draw
+  _candlestickOHLC = data.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
+
   const labels = data.map(d => {
     const dt = new Date(d.date);
     return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   });
-
-  // Prepare OHLC data for candlestick plugin
-  const ohlcData = data.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
 
   // Compute previous-day changes for tooltip
   const changes = data.map((d, i) => {
@@ -1067,27 +1063,35 @@ function initOptTimeline() {
     return { pct: Math.abs(pct), dir: d.spend >= prev ? '\u25b2' : '\u25bc' };
   });
 
+  // Y-axis range for spend: we want candles to fill most of the chart
+  const allVals = data.flatMap(d => [d.o, d.h, d.l, d.c]);
+  const minSpend = Math.min(...allVals);
+  const maxSpend = Math.max(...allVals);
+  const spendPad = (maxSpend - minSpend) * 0.15;
+  const yMin = Math.max(0, minSpend - spendPad * 2);
+  const yMax = maxSpend + spendPad;
+
   const tlCtx = document.getElementById('optTimelineChart');
   if (tlCtx) {
     optTimelineChart = new Chart(tlCtx, {
-      type: 'bar',
+      type: 'line',
       data: {
         labels: labels,
         datasets: [
           {
+            // Hidden dataset just for Spend tooltip — candles drawn by plugin
             label: 'Spend',
-            data: ohlcData,
-            backgroundColor: 'transparent',
+            data: data.map(d => d.c),
             borderColor: 'transparent',
-            barPercentage: 0.6,
-            categoryPercentage: 0.8,
+            backgroundColor: 'transparent',
+            pointRadius: 0,
+            pointHitRadius: 15,
             yAxisID: 'y',
-            parsing: { yAxisKey: 'c' },
+            fill: false,
           },
           {
             label: 'CAC',
             data: data.map(d => d.cac),
-            type: 'line',
             borderColor: '#38bdf8',
             backgroundColor: 'rgba(56, 189, 248, 0.08)',
             pointBackgroundColor: '#38bdf8',
@@ -1095,14 +1099,13 @@ function initOptTimeline() {
             pointRadius: 4,
             pointHoverRadius: 6,
             borderWidth: 2,
-            tension: 0.25,
+            tension: 0.3,
             fill: false,
             yAxisID: 'y1',
           },
           {
             label: 'Target CPA',
             data: data.map(() => targetCPA),
-            type: 'line',
             borderColor: '#ef6461',
             borderDash: [6, 4],
             borderWidth: 1.5,
@@ -1114,7 +1117,6 @@ function initOptTimeline() {
           {
             label: 'Budget',
             data: data.map(() => budgetLine),
-            type: 'line',
             borderColor: '#d4a44a',
             borderDash: [6, 4],
             borderWidth: 1.5,
@@ -1136,10 +1138,11 @@ function initOptTimeline() {
           legend: { display: false },
           tooltip: {
             backgroundColor: 'rgba(15, 15, 17, 0.95)',
-            borderColor: 'rgba(255,255,255,0.1)',
+            borderColor: 'rgba(255,255,255,0.12)',
             borderWidth: 1,
             titleFont: { size: 13, weight: 'bold', family: "'DM Sans', sans-serif" },
             bodyFont: { size: 12, family: "'JetBrains Mono', monospace" },
+            bodySpacing: 6,
             padding: 14,
             cornerRadius: 6,
             displayColors: true,
@@ -1195,7 +1198,8 @@ function initOptTimeline() {
               callback: v => formatKRW(v),
             },
             border: { display: false },
-            min: 0,
+            min: yMin,
+            max: yMax,
           },
           y1: {
             position: 'right',
@@ -1206,7 +1210,6 @@ function initOptTimeline() {
               callback: v => formatKRW(v),
             },
             border: { display: false },
-            min: 0,
           },
         },
       },

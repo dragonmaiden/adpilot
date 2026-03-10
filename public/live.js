@@ -410,12 +410,22 @@ async function updateOptTimeline() {
       const dt = new Date(d.date);
       return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
-    const ohlcData = spendData.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
+
+    // Update the global OHLC array that the candlestick plugin reads
+    if (typeof _candlestickOHLC !== 'undefined') {
+      _candlestickOHLC = spendData.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
+    }
 
     optTimelineChart.data.labels = labels;
-    optTimelineChart.data.datasets[0].data = ohlcData;
+    optTimelineChart.data.datasets[0].data = spendData.map(d => d.c); // close values for tooltip
     optTimelineChart.data.datasets[1].data = spendData.map(d => d.cac);
-    // Target CPA + Budget lines stay constant (datasets 2 & 3)
+    // Recalculate y-axis range
+    const allVals = spendData.flatMap(d => [d.o, d.h, d.l, d.c]);
+    const minV = Math.min(...allVals);
+    const maxV = Math.max(...allVals);
+    const pad = (maxV - minV) * 0.15;
+    optTimelineChart.options.scales.y.min = Math.max(0, minV - pad * 2);
+    optTimelineChart.options.scales.y.max = maxV + pad;
     optTimelineChart.update();
 
     // Update stats bar
