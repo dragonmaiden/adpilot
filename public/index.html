@@ -41,37 +41,37 @@
     <nav class="sidebar-nav">
       <a href="#" class="nav-item active" data-page="overview">
         <i data-lucide="layout-dashboard"></i>
-        <span>Overview</span>
+        <span data-i18n="nav.overview">Overview</span>
       </a>
       <a href="#" class="nav-item" data-page="campaigns">
         <i data-lucide="megaphone"></i>
-        <span>Campaigns</span>
+        <span data-i18n="nav.campaigns">Campaigns</span>
       </a>
       <a href="#" class="nav-item" data-page="analytics">
         <i data-lucide="bar-chart-3"></i>
-        <span>Analytics</span>
+        <span data-i18n="nav.analytics">Analytics</span>
       </a>
       <a href="#" class="nav-item" data-page="optimizations">
         <i data-lucide="zap"></i>
-        <span>Optimizations</span>
+        <span data-i18n="nav.optimizations">Optimizations</span>
       </a>
       <a href="#" class="nav-item" data-page="fatigue">
         <i data-lucide="activity"></i>
-        <span>Fatigue Detection</span>
+        <span data-i18n="nav.fatigue">Fatigue Detection</span>
       </a>
       <a href="#" class="nav-item" data-page="budget">
         <i data-lucide="wallet"></i>
-        <span>Budget Manager</span>
+        <span data-i18n="nav.budget">Budget Manager</span>
       </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="settings"></i>
-        <span>Settings</span>
+        <span data-i18n="nav.settings">Settings</span>
       </a>
     </nav>
     <div class="sidebar-footer">
       <div class="agent-status">
         <span class="status-dot active"></span>
-        <span class="status-label">Agent Active</span>
+        <span class="status-label" data-i18n="header.agentActive">Agent Active</span>
       </div>
       <div class="scan-info">Next scan in <span id="countdown">47m</span></div>
     </div>
@@ -105,8 +105,12 @@
       </div>
       <button class="btn btn-primary" id="runScanBtn">
         <i data-lucide="radar"></i>
-        <span>Run Scan Now</span>
+        <span data-i18n="header.runScan">Run Scan Now</span>
       </button>
+      <div class="lang-toggle" id="langToggle">
+        <button class="lang-btn active" id="langEn">EN</button>
+        <button class="lang-btn" id="langKr">KR</button>
+      </div>
       <button data-theme-toggle aria-label="Toggle theme">
         <i data-lucide="moon"></i>
       </button>
@@ -121,7 +125,7 @@
       <!-- KPI Row 1: Revenue & Profitability -->
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card" data-kpi="revenue">
-          <div class="kpi-label">Revenue (Imweb)</div>
+          <div class="kpi-label" data-i18n="kpi.revenue">Revenue (Imweb)</div>
           <div class="kpi-value" data-target="0" data-prefix="₩">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
@@ -130,7 +134,7 @@
           <div class="kpi-spark" id="sparkRevenue"></div>
         </div>
         <div class="kpi-card" data-kpi="cogs">
-          <div class="kpi-label">COGS</div>
+          <div class="kpi-label" data-i18n="kpi.cogs">COGS</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="package"></i>
@@ -139,7 +143,7 @@
           <div class="kpi-spark" id="sparkCogs"></div>
         </div>
         <div class="kpi-card" data-kpi="adspend">
-          <div class="kpi-label">Ad Spend (Meta)</div>
+          <div class="kpi-label" data-i18n="kpi.adspend">Ad Spend (Meta)</div>
           <div class="kpi-value" data-target="0" data-prefix="$">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="calendar"></i>
@@ -148,7 +152,7 @@
           <div class="kpi-spark" id="sparkSpend"></div>
         </div>
         <div class="kpi-card highlight" data-kpi="profit">
-          <div class="kpi-label">Gross Profit</div>
+          <div class="kpi-label" data-i18n="kpi.profit">Gross Profit</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="info"></i>
@@ -160,7 +164,7 @@
       <!-- KPI Row 2: Performance Metrics -->
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card" data-kpi="roas">
-          <div class="kpi-label">ROAS</div>
+          <div class="kpi-label" data-i18n="kpi.roas">ROAS</div>
           <div class="kpi-value" data-target="0" data-prefix="" data-suffix="x">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
@@ -169,7 +173,7 @@
           <div class="kpi-spark" id="sparkRoas"></div>
         </div>
         <div class="kpi-card" data-kpi="purchases">
-          <div class="kpi-label">Purchases (Meta)</div>
+          <div class="kpi-label" data-i18n="kpi.purchases">Purchases (Meta)</div>
           <div class="kpi-value" data-target="0" data-prefix="">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
@@ -178,7 +182,7 @@
           <div class="kpi-spark" id="sparkPurchases"></div>
         </div>
         <div class="kpi-card" data-kpi="ctr">
-          <div class="kpi-label">CTR</div>
+          <div class="kpi-label" data-i18n="kpi.ctr">CTR</div>
           <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
@@ -187,7 +191,7 @@
           <div class="kpi-spark" id="sparkCtr"></div>
         </div>
         <div class="kpi-card" data-kpi="cpa">
-          <div class="kpi-label">Cost per Purchase</div>
+          <div class="kpi-label" data-i18n="kpi.cpa">Cost per Purchase</div>
           <div class="kpi-value" data-target="0" data-prefix="$">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="target"></i>
@@ -201,7 +205,7 @@
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Revenue vs Ad Spend (14d)</h2>
+            <h2><span data-i18n="chart.revenueVsSpend">Revenue vs Ad Spend</span> <span class="chart-days">(14d)</span></h2>
           </div>
           <div class="chart-container">
             <canvas id="spendRevenueChart"></canvas>
@@ -209,7 +213,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Daily ROAS (14d)</h2>
+            <h2><span data-i18n="chart.dailyRoas">Daily ROAS</span> <span class="chart-days">(14d)</span></h2>
           </div>
           <div class="chart-container">
             <canvas id="roasChart"></canvas>
@@ -221,7 +225,7 @@
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2>CTR & CPC Trend (14d)</h2>
+            <h2><span data-i18n="chart.ctrCpc">CTR & CPC Trend</span> <span class="chart-days">(14d)</span></h2>
           </div>
           <div class="chart-container">
             <canvas id="impactChart"></canvas>
@@ -229,7 +233,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Revenue by Brand</h2>
+            <h2 data-i18n="chart.revenueByBrand">Revenue by Brand</h2>
           </div>
           <div class="chart-container">
             <canvas id="brandChart"></canvas>
@@ -240,8 +244,8 @@
       <!-- Recent Activity -->
       <div class="card">
         <div class="card-header">
-          <h2>Recent AI Actions</h2>
-          <button class="btn btn-ghost">View All</button>
+          <h2 data-i18n="chart.recentAI">Recent AI Actions</h2>
+          <button class="btn btn-ghost" data-i18n="btn.viewAll">View All</button>
         </div>
         <div class="activity-feed" id="activityFeed"></div>
       </div>
@@ -252,7 +256,7 @@
       <!-- Refund & Order KPIs -->
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card" data-kpi-analytics="refundRate">
-          <div class="kpi-label">Refund Rate (₩)</div>
+          <div class="kpi-label" data-i18n="kpi.refundRate">Refund Rate (₩)</div>
           <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta negative">
             <i data-lucide="alert-triangle"></i>
@@ -260,7 +264,7 @@
           </div>
         </div>
         <div class="kpi-card" data-kpi-analytics="cancelRate">
-          <div class="kpi-label">Cancel Rate (Sections)</div>
+          <div class="kpi-label" data-i18n="kpi.cancelRate">Cancel Rate (Sections)</div>
           <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta negative">
             <i data-lucide="x-circle"></i>
@@ -268,7 +272,7 @@
           </div>
         </div>
         <div class="kpi-card" data-kpi-analytics="febRefundRate">
-          <div class="kpi-label">Feb Refund Rate</div>
+          <div class="kpi-label" data-i18n="kpi.febRefund">Feb Refund Rate</div>
           <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta negative">
             <i data-lucide="trending-down"></i>
@@ -276,7 +280,7 @@
           </div>
         </div>
         <div class="kpi-card" data-kpi-analytics="marRefundRate">
-          <div class="kpi-label">Mar Refund Rate</div>
+          <div class="kpi-label" data-i18n="kpi.marRefund">Mar Refund Rate</div>
           <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-down"></i>
@@ -289,7 +293,7 @@
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Daily Profit Trend</h2>
+            <h2 data-i18n="chart.dailyProfit">Daily Profit Trend</h2>
           </div>
           <div class="chart-container" style="height:320px">
             <canvas id="profitTrendChart"></canvas>
@@ -297,7 +301,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Weekly Profit</h2>
+            <h2 data-i18n="chart.weeklyProfit">Weekly Profit</h2>
           </div>
           <div class="chart-container" style="height:320px">
             <canvas id="weeklyProfitChart"></canvas>
@@ -309,7 +313,7 @@
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Ad Performance by Weekday</h2>
+            <h2 data-i18n="chart.weekdayPerf">Ad Performance by Weekday</h2>
           </div>
           <div class="chart-container" style="height:320px">
             <canvas id="weekdayChart"></canvas>
@@ -317,7 +321,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Order Volume by Hour (KST)</h2>
+            <h2 data-i18n="chart.hourVolume">Order Volume by Hour (KST)</h2>
           </div>
           <div class="chart-container" style="height:320px">
             <canvas id="hourChart"></canvas>
@@ -329,7 +333,7 @@
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Main Campaign Weekly CPA</h2>
+            <h2 data-i18n="chart.weeklyCpa">Main Campaign Weekly CPA</h2>
           </div>
           <div class="chart-container" style="height:300px">
             <canvas id="weeklyCpaChart"></canvas>
@@ -337,7 +341,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Monthly Refund Comparison</h2>
+            <h2 data-i18n="chart.monthlyRefund">Monthly Refund Comparison</h2>
           </div>
           <div class="chart-container" style="height:300px">
             <canvas id="refundChart"></canvas>
@@ -348,20 +352,20 @@
       <!-- Weekday Revenue Table -->
       <div class="card">
         <div class="card-header">
-          <h2>Revenue by Day of Week</h2>
+          <h2 data-i18n="chart.weekdayRevenue">Revenue by Day of Week</h2>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="weekdayTable">
             <thead>
               <tr>
-                <th>Day</th>
-                <th>Orders</th>
-                <th>Revenue (Paid)</th>
-                <th>Refunded</th>
-                <th>Net Revenue</th>
-                <th>Ad Spend</th>
-                <th>Purchases (Pixel)</th>
-                <th>CPA</th>
+                <th data-i18n="th.day">Day</th>
+                <th data-i18n="th.orders">Orders</th>
+                <th data-i18n="th.revenuePaid">Revenue (Paid)</th>
+                <th data-i18n="th.refunded">Refunded</th>
+                <th data-i18n="th.netRevenue">Net Revenue</th>
+                <th data-i18n="th.adSpend">Ad Spend</th>
+                <th data-i18n="th.purchasesPixel">Purchases (Pixel)</th>
+                <th data-i18n="th.cpa">CPA</th>
               </tr>
             </thead>
             <tbody id="weekdayBody"></tbody>
@@ -375,7 +379,7 @@
       <!-- Live / Active Section -->
       <div class="card" id="activeCampaignsCard">
         <div class="card-header">
-          <h2><span style="display:inline-block;width:8px;height:8px;background:#4ade80;border-radius:50%;margin-right:8px;animation:livePulse 2s infinite"></span>Live Ads</h2>
+          <h2><span style="display:inline-block;width:8px;height:8px;background:#4ade80;border-radius:50%;margin-right:8px;animation:livePulse 2s infinite"></span><span data-i18n="campaigns.liveAds">Live Ads</span></h2>
           <span id="activeCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
         </div>
         <div id="activeAdsContainer" style="padding:0 20px 20px">
@@ -386,20 +390,20 @@
       <!-- Campaign Overview -->
       <div class="card" id="campaignOverviewCard">
         <div class="card-header">
-          <h2>Campaigns Overview</h2>
+          <h2 data-i18n="campaigns.overview">Campaigns Overview</h2>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="campaignTable">
             <thead>
               <tr>
-                <th>Campaign</th>
-                <th>Status</th>
-                <th>Daily Budget</th>
-                <th>Spend (7d)</th>
-                <th>Purchases</th>
-                <th>CPA</th>
-                <th>CTR</th>
-                <th>Actions</th>
+                <th data-i18n="th.campaign">Campaign</th>
+                <th data-i18n="th.status">Status</th>
+                <th data-i18n="th.dailyBudget">Daily Budget</th>
+                <th data-i18n="th.spend7d">Spend (7d)</th>
+                <th data-i18n="th.purchases">Purchases</th>
+                <th data-i18n="th.cpa">CPA</th>
+                <th data-i18n="th.ctr">CTR</th>
+                <th data-i18n="th.actions">Actions</th>
               </tr>
             </thead>
             <tbody id="campaignBody"></tbody>
@@ -410,7 +414,7 @@
       <!-- Inactive Ads + Lessons -->
       <div class="card" id="inactiveAdsCard" style="margin-top:0">
         <div class="card-header">
-          <h2>Paused Ads — Performance Lessons</h2>
+          <h2 data-i18n="campaigns.pausedLessons">Paused Ads — Performance Lessons</h2>
           <span id="inactiveCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
         </div>
         <!-- Lessons Summary -->
@@ -424,19 +428,19 @@
     <section class="page" data-page="optimizations">
       <div class="kpi-grid small">
         <div class="kpi-card">
-          <div class="kpi-label">Total Optimizations</div>
+          <div class="kpi-label" data-i18n="kpi.totalOpt">Total Optimizations</div>
           <div class="kpi-value" id="optTotal" data-target="0" data-prefix="">—</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">Auto-Executed</div>
+          <div class="kpi-label" data-i18n="kpi.autoExec">Auto-Executed</div>
           <div class="kpi-value" id="optExecuted" data-target="0" data-prefix="">—</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">Pending Approval</div>
+          <div class="kpi-label" data-i18n="kpi.pending">Pending Approval</div>
           <div class="kpi-value" id="optPending" data-target="0" data-prefix="">—</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">Scans Completed</div>
+          <div class="kpi-label" data-i18n="kpi.scans">Scans Completed</div>
           <div class="kpi-value" id="optScans" data-target="0" data-prefix="">—</div>
         </div>
       </div>
@@ -471,7 +475,7 @@
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Actions by Type</h2>
+            <h2 data-i18n="chart.actionType">Actions by Type</h2>
           </div>
           <div class="chart-container" style="height:260px">
             <canvas id="optTypeChart"></canvas>
@@ -479,7 +483,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Actions by Priority</h2>
+            <h2 data-i18n="chart.actionPriority">Actions by Priority</h2>
           </div>
           <div class="chart-container" style="height:260px">
             <canvas id="optPriorityChart"></canvas>
@@ -489,7 +493,7 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Live Optimization Log</h2>
+          <h2 data-i18n="opt.liveLog">Live Optimization Log</h2>
           <div style="display:flex;align-items:center;gap:12px">
             <span id="optStats"></span>
             <div class="filter-group">
@@ -515,15 +519,15 @@
     <section class="page" data-page="fatigue">
       <div class="card">
         <div class="card-header">
-          <h2>Ad Fatigue Monitor</h2>
+          <h2 data-i18n="fatigue.monitor">Ad Fatigue Monitor</h2>
           <span class="badge badge-warning" data-fatigue-badge>— ads · — healthy</span>
         </div>
-        <p class="card-desc">The agent monitors frequency, CTR decay, and CPM rise to detect ad fatigue before it damages performance.</p>
+        <p class="card-desc" data-i18n="fatigue.desc">The agent monitors frequency, CTR decay, and CPM rise to detect ad fatigue before it damages performance.</p>
         <div class="fatigue-grid" id="fatigueGrid"></div>
       </div>
       <div class="card chart-card">
         <div class="card-header">
-          <h2>Fatigue Indicators Over Time</h2>
+          <h2 data-i18n="fatigue.indicators">Fatigue Indicators Over Time</h2>
         </div>
         <div class="chart-container">
           <canvas id="fatigueChart"></canvas>
@@ -535,27 +539,27 @@
     <section class="page" data-page="budget">
       <div class="kpi-grid small">
         <div class="kpi-card" data-budget-kpi="daily">
-          <div class="kpi-label">Daily Budget (Active)</div>
+          <div class="kpi-label" data-i18n="budget.daily">Daily Budget (Active)</div>
           <div class="kpi-value">—</div>
         </div>
         <div class="kpi-card" data-budget-kpi="periodSpend">
-          <div class="kpi-label">Period Spend</div>
+          <div class="kpi-label" data-i18n="budget.periodSpend">Period Spend</div>
           <div class="kpi-value" data-target="0" data-prefix="$">—</div>
           <div class="budget-bar"><div class="budget-fill" style="width:0%"></div></div>
         </div>
         <div class="kpi-card" data-budget-kpi="remaining">
-          <div class="kpi-label">Budget Remaining</div>
+          <div class="kpi-label" data-i18n="budget.remaining">Budget Remaining</div>
           <div class="kpi-value">—</div>
         </div>
         <div class="kpi-card" data-budget-kpi="pace">
-          <div class="kpi-label">Pace</div>
+          <div class="kpi-label" data-i18n="budget.pace">Pace</div>
           <div class="kpi-value">—</div>
         </div>
       </div>
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Budget Allocation by Campaign</h2>
+            <h2 data-i18n="chart.budgetAlloc">Budget Allocation by Campaign</h2>
           </div>
           <div class="chart-container">
             <canvas id="budgetPieChart"></canvas>
@@ -563,7 +567,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2>Daily Spend Pace</h2>
+            <h2 data-i18n="chart.dailyPace">Daily Spend Pace</h2>
           </div>
           <div class="chart-container">
             <canvas id="budgetPaceChart"></canvas>
@@ -572,17 +576,17 @@
       </div>
       <div class="card">
         <div class="card-header">
-          <h2>Budget Reallocation History</h2>
+          <h2 data-i18n="budget.history">Budget Reallocation History</h2>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Time</th>
-                <th>From Campaign</th>
-                <th>To Campaign</th>
-                <th>Amount</th>
-                <th>Reason</th>
+                <th data-i18n="th.time">Time</th>
+                <th data-i18n="th.fromCampaign">From Campaign</th>
+                <th data-i18n="th.toCampaign">To Campaign</th>
+                <th data-i18n="th.amount">Amount</th>
+                <th data-i18n="th.reason">Reason</th>
               </tr>
             </thead>
             <tbody id="budgetHistory"></tbody>
@@ -595,11 +599,11 @@
     <section class="page" data-page="settings">
       <div class="card">
         <div class="card-header">
-          <h2>Agent Configuration</h2>
+          <h2 data-i18n="settings.agentConfig">Agent Configuration</h2>
         </div>
         <div class="settings-grid">
           <div class="setting-group">
-            <label class="setting-label">Scan Frequency</label>
+            <label class="setting-label" data-i18n="settings.scanFreq">Scan Frequency</label>
             <select class="select-input">
               <option>Every 15 minutes</option>
               <option>Every 30 minutes</option>
@@ -607,59 +611,59 @@
               <option>Every 2 hours</option>
               <option>Every 4 hours</option>
             </select>
-            <span class="setting-desc">How often the agent scans your campaigns for optimization opportunities</span>
+            <span class="setting-desc" data-i18n="settings.scanFreqDesc">How often the agent scans your campaigns for optimization opportunities</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label">Max Daily Budget Change</label>
+            <label class="setting-label" data-i18n="settings.maxBudgetChange">Max Daily Budget Change</label>
             <div class="input-with-unit">
               <input type="number" class="text-input" value="20" min="1" max="100">
               <span class="unit">%</span>
             </div>
-            <span class="setting-desc">Maximum percentage the agent can adjust a campaign's daily budget per scan</span>
+            <span class="setting-desc" data-i18n="settings.maxBudgetDesc">Maximum percentage the agent can adjust a campaign's daily budget per scan</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label">Auto-pause Threshold (CPA)</label>
+            <label class="setting-label" data-i18n="settings.autoPause">Auto-pause Threshold (CPA)</label>
             <div class="input-with-unit">
               <input type="number" class="text-input" value="15" min="1">
               <span class="unit">$</span>
             </div>
-            <span class="setting-desc">Pause campaigns when CPA exceeds this amount for 24+ hours</span>
+            <span class="setting-desc" data-i18n="settings.autoPauseDesc">Pause campaigns when CPA exceeds this amount for 24+ hours</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label">Fatigue Detection Sensitivity</label>
+            <label class="setting-label" data-i18n="settings.fatigueSens">Fatigue Detection Sensitivity</label>
             <select class="select-input">
               <option>Low</option>
               <option selected>Medium</option>
               <option>High</option>
             </select>
-            <span class="setting-desc">How aggressively the agent flags creatives for fatigue</span>
+            <span class="setting-desc" data-i18n="settings.fatigueSensDesc">How aggressively the agent flags creatives for fatigue</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label">Autonomous Mode</label>
+            <label class="setting-label" data-i18n="settings.autoMode">Autonomous Mode</label>
             <div class="toggle-switch">
               <input type="checkbox" id="autoMode" checked>
               <label for="autoMode" class="toggle-track"></label>
             </div>
-            <span class="setting-desc">When enabled, the agent applies optimizations automatically. When disabled, it only suggests changes.</span>
+            <span class="setting-desc" data-i18n="settings.autoModeDesc">When enabled, the agent applies optimizations automatically. When disabled, it only suggests changes.</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label">Budget Reallocation</label>
+            <label class="setting-label" data-i18n="settings.budgetRealloc">Budget Reallocation</label>
             <div class="toggle-switch">
               <input type="checkbox" id="budgetRealloc" checked>
               <label for="budgetRealloc" class="toggle-track"></label>
             </div>
-            <span class="setting-desc">Allow the agent to move budget between campaigns based on performance</span>
+            <span class="setting-desc" data-i18n="settings.budgetReallocDesc">Allow the agent to move budget between campaigns based on performance</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label">Creative Rotation</label>
+            <label class="setting-label" data-i18n="settings.creativeRotation">Creative Rotation</label>
             <div class="toggle-switch">
               <input type="checkbox" id="creativeRotation" checked>
               <label for="creativeRotation" class="toggle-track"></label>
             </div>
-            <span class="setting-desc">Automatically rotate underperforming creatives when fatigue is detected</span>
+            <span class="setting-desc" data-i18n="settings.creativeRotDesc">Automatically rotate underperforming creatives when fatigue is detected</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label">Notification Channel</label>
+            <label class="setting-label" data-i18n="settings.notifChannel">Notification Channel</label>
             <select class="select-input">
               <option selected>Email + In-App</option>
               <option>Email Only</option>
@@ -667,13 +671,13 @@
               <option>Slack</option>
               <option>Webhook</option>
             </select>
-            <span class="setting-desc">Where to send alerts about significant changes or issues</span>
+            <span class="setting-desc" data-i18n="settings.notifChannelDesc">Where to send alerts about significant changes or issues</span>
           </div>
         </div>
       </div>
       <div class="card">
         <div class="card-header">
-          <h2>Meta Ads API Connection</h2>
+          <h2 data-i18n="settings.metaApi">Meta Ads API Connection</h2>
         </div>
         <div class="api-status">
           <div class="api-row">
@@ -700,7 +704,7 @@
       </div>
       <div class="card">
         <div class="card-header">
-          <h2>Imweb Store Connection</h2>
+          <h2 data-i18n="settings.imwebStore">Imweb Store Connection</h2>
         </div>
         <div class="api-status">
           <div class="api-row">
@@ -731,7 +735,7 @@
       </div>
       <div class="card">
         <div class="card-header">
-          <h2>COGS Data (Google Sheets)</h2>
+          <h2 data-i18n="settings.cogsData">COGS Data (Google Sheets)</h2>
         </div>
         <div class="api-status">
           <div class="api-row">
@@ -771,6 +775,7 @@
 <!-- Mobile overlay -->
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
+<script src="./i18n.js"></script>
 <script src="./app.js"></script>
 <script src="./live.js"></script>
 </body>

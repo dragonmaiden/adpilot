@@ -53,6 +53,17 @@ const navItems = document.querySelectorAll('.nav-item');
 const pages = document.querySelectorAll('.page');
 const pageTitle = document.getElementById('pageTitle');
 
+const pageTitleKeys = {
+  overview: 'page.overview',
+  analytics: 'page.analytics',
+  campaigns: 'page.campaigns',
+  optimizations: 'page.optimizations',
+  fatigue: 'page.fatigue',
+  budget: 'page.budget',
+  settings: 'page.settings'
+};
+
+// Fallback for when i18n hasn't loaded yet
 const pageTitles = {
   overview: 'Overview',
   analytics: 'Analytics',
@@ -75,7 +86,11 @@ navItems.forEach(item => {
     const targetPage = document.querySelector(`.page[data-page="${target}"]`);
     if (targetPage) targetPage.classList.add('active');
 
-    if (pageTitle) pageTitle.textContent = pageTitles[target] || target;
+    if (pageTitle) {
+      pageTitle.textContent = (typeof t === 'function' && pageTitleKeys[target])
+        ? t(pageTitleKeys[target])
+        : (pageTitles[target] || target);
+    }
 
     sidebar.classList.remove('open');
     overlay.classList.remove('active');

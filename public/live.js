@@ -245,10 +245,8 @@ async function updateOverviewKPIs() {
       // Update chart titles with actual date range
       const dateRange = allDays[0].date.slice(5) + ' → ' + allDays[allDays.length - 1].date.slice(5);
       const dayCount = allDays.length;
-      document.querySelectorAll('.chart-card h2').forEach(h => {
-        if (h.textContent.includes('14d')) {
-          h.textContent = h.textContent.replace('(14d)', '(' + dayCount + 'd)');
-        }
+      document.querySelectorAll('.chart-days').forEach(span => {
+        span.textContent = '(' + dayCount + 'd)';
       });
 
       // spendRevenueChart
