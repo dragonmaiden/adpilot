@@ -201,11 +201,26 @@
         </div>
       </div>
 
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker">Overview Trends</div>
+          <h2>Daily revenue and efficiency</h2>
+        </div>
+        <div class="range-toolbar">
+          <span class="range-toolbar-label">Window</span>
+          <div class="range-switch" data-series-window-group="overview" role="group" aria-label="Overview trend window">
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Charts Row -->
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2><span data-i18n="chart.revenueVsSpend">Revenue vs Ad Spend</span> <span class="chart-days">(14d)</span></h2>
+            <h2><span data-i18n="chart.revenueVsSpend">Revenue vs Ad Spend</span> <span class="chart-days" data-series-window-badge="overview">(14d)</span></h2>
           </div>
           <div class="chart-container">
             <canvas id="spendRevenueChart"></canvas>
@@ -213,7 +228,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2><span data-i18n="chart.dailyRoas">Daily ROAS</span> <span class="chart-days">(14d)</span></h2>
+            <h2><span data-i18n="chart.dailyRoas">Daily ROAS</span> <span class="chart-days" data-series-window-badge="overview">(14d)</span></h2>
           </div>
           <div class="chart-container">
             <canvas id="roasChart"></canvas>
@@ -225,7 +240,7 @@
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
-            <h2><span data-i18n="chart.ctrCpc">CTR & CPC Trend</span> <span class="chart-days">(14d)</span></h2>
+            <h2><span data-i18n="chart.ctrCpc">CTR & CPC Trend</span> <span class="chart-days" data-series-window-badge="overview">(14d)</span></h2>
           </div>
           <div class="chart-container">
             <canvas id="impactChart"></canvas>
@@ -244,6 +259,7 @@
       <div class="card chart-card">
         <div class="card-header">
           <h2 data-i18n="chart.hourVolume">Order Volume by Hour (KST)</h2>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)">All available data</span>
         </div>
         <div class="chart-container" style="height:300px">
           <canvas id="hourChart"></canvas>
@@ -347,6 +363,14 @@
           <div class="section-kicker">Profit Structure</div>
           <h2>How net profit is formed over time</h2>
         </div>
+        <div class="range-toolbar">
+          <span class="range-toolbar-label">Window</span>
+          <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure window">
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+          </div>
+        </div>
       </div>
 
       <div class="charts-grid">
@@ -371,7 +395,7 @@
       <div class="card chart-card">
         <div class="card-header">
           <h2>Daily Profit Waterfall</h2>
-          <span class="chart-days" id="profitWaterfallDays"></span>
+          <span class="chart-days" id="profitWaterfallDays" data-series-window-badge="profit-structure"></span>
         </div>
         <div class="chart-container" style="height:380px">
           <canvas id="profitWaterfallChart"></canvas>
@@ -391,6 +415,14 @@
         <div>
           <div class="section-kicker">Media Profitability</div>
           <h2>Which traffic patterns and campaigns create profit</h2>
+        </div>
+        <div class="range-toolbar">
+          <span class="range-toolbar-label">Window</span>
+          <div class="range-switch" data-series-window-group="media-profitability" role="group" aria-label="Media profitability window">
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+          </div>
         </div>
       </div>
 
@@ -416,7 +448,7 @@
       <div class="card">
         <div class="card-header">
           <h2>Campaign Profit Leaderboard</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)">Revenue estimated (pixel-attributed)</span>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)">Revenue estimated (pixel-attributed) · all available data</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="campaignProfitTable">
@@ -465,6 +497,14 @@
         <div>
           <div class="section-kicker">Revenue Quality</div>
           <h2>Refund pressure and settlement validation</h2>
+        </div>
+        <div class="range-toolbar">
+          <span class="range-toolbar-label">Window</span>
+          <div class="range-switch" data-series-window-group="revenue-quality" role="group" aria-label="Revenue quality window">
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+          </div>
         </div>
       </div>
 

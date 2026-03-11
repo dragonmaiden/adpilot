@@ -104,7 +104,6 @@ navItems.forEach(item => {
     if (typeof liveMode !== 'undefined' && liveMode) {
       if (target === 'analytics') {
         if (typeof updateAnalyticsPage === 'function') updateAnalyticsPage();
-        if (typeof updateProfitPage === 'function') updateProfitPage();
       }
     }
   });
@@ -1169,10 +1168,6 @@ function initProfitCharts() {
     });
   }
 
-  // Trigger live data population if already in live mode
-  if (typeof liveMode !== 'undefined' && liveMode && typeof updateProfitPage === 'function') {
-    updateProfitPage();
-  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1383,10 +1378,6 @@ function initAnalyticsCharts() {
     });
   }
 
-  // Trigger live data population if already in live mode
-  if (typeof liveMode !== 'undefined' && liveMode && typeof updateAnalyticsPage === 'function') {
-    updateAnalyticsPage();
-  }
 }
 
 function renderWeekdayTable() {

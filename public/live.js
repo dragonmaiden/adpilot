@@ -129,6 +129,306 @@ function formatImwebExpiry(expiresAt) {
   });
 }
 
+const SERIES_WINDOW_OPTIONS = Object.freeze({
+  '14d': { label: '14D', days: 14 },
+  '30d': { label: '30D', days: 30 },
+  all: { label: 'All', days: null },
+});
+
+const DEFAULT_SERIES_WINDOWS = Object.freeze({
+  overview: '30d',
+  'profit-structure': '30d',
+  'media-profitability': '30d',
+  'revenue-quality': 'all',
+});
+
+const seriesWindowState = { ...DEFAULT_SERIES_WINDOWS };
+const seriesWindowRefreshers = new Map();
+
+function summarizeBy(values, selector) {
+  return (Array.isArray(values) ? values : []).reduce((summary, value) => {
+    const key = selector(value);
+    summary[key] = (summary[key] || 0) + 1;
+    return summary;
+  }, {});
+}
+
+function toFiniteNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function calcClientCpa(spend, purchases) {
+  return purchases > 0 ? spend / purchases : 0;
+}
+
+function getSeriesWindowMeta(group) {
+  const selectedKey = seriesWindowState[group] || DEFAULT_SERIES_WINDOWS[group] || 'all';
+  return {
+    key: selectedKey,
+    ...(SERIES_WINDOW_OPTIONS[selectedKey] || SERIES_WINDOW_OPTIONS.all),
+  };
+}
+
+function sortRowsByDate(rows, dateKey = 'date') {
+  return (Array.isArray(rows) ? rows : [])
+    .filter(row => row && row[dateKey])
+    .slice()
+    .sort((left, right) => String(left[dateKey]).localeCompare(String(right[dateKey])));
+}
+
+function sliceRowsByWindow(rows, group, dateKey = 'date') {
+  const sorted = sortRowsByDate(rows, dateKey);
+  const { days } = getSeriesWindowMeta(group);
+  if (!days || sorted.length <= days) {
+    return sorted;
+  }
+  return sorted.slice(-days);
+}
+
+function updateSeriesWindowBadges(group, rows) {
+  const label = rows.length > 0 ? `(${rows.length}d)` : '(—)';
+  document.querySelectorAll(`[data-series-window-badge="${group}"]`).forEach(el => {
+    el.textContent = label;
+  });
+}
+
+function syncSeriesWindowControls() {
+  document.querySelectorAll('[data-series-window-group]').forEach(groupEl => {
+    const group = groupEl.dataset.seriesWindowGroup;
+    const activeValue = getSeriesWindowMeta(group).key;
+    groupEl.querySelectorAll('[data-series-window-value]').forEach(button => {
+      const isActive = button.dataset.seriesWindowValue === activeValue;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  });
+}
+
+function registerSeriesWindowRefresher(group, refresher) {
+  if (typeof refresher === 'function') {
+    seriesWindowRefreshers.set(group, refresher);
+  }
+}
+
+async function refreshSeriesWindowGroup(group) {
+  const refresher = seriesWindowRefreshers.get(group);
+  if (typeof refresher === 'function') {
+    await refresher();
+  }
+}
+
+function initSeriesWindowControls() {
+  if (document.body.dataset.seriesWindowControlsReady === 'true') {
+    return;
+  }
+
+  document.body.dataset.seriesWindowControlsReady = 'true';
+  syncSeriesWindowControls();
+
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-series-window-value]');
+    if (!button) return;
+
+    const groupEl = button.closest('[data-series-window-group]');
+    const group = groupEl?.dataset.seriesWindowGroup;
+    const nextValue = button.dataset.seriesWindowValue;
+    if (!group || !SERIES_WINDOW_OPTIONS[nextValue]) return;
+    if (seriesWindowState[group] === nextValue) return;
+
+    seriesWindowState[group] = nextValue;
+    syncSeriesWindowControls();
+    await refreshSeriesWindowGroup(group);
+  });
+}
+
+function getUtcWeekKey(dateKey) {
+  const [year, month, day] = String(dateKey || '').split('-').map(value => Number.parseInt(value, 10));
+  if (!year || !month || !day) return '';
+
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekday = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - weekday);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildWeeklyAggFromDaily(dailyRows, profitRows = []) {
+  const weeks = {};
+
+  for (const row of dailyRows) {
+    const weekKey = getUtcWeekKey(row.date);
+    if (!weekKey) continue;
+    if (!weeks[weekKey]) {
+      weeks[weekKey] = {
+        week: weekKey,
+        revenue: 0,
+        refunded: 0,
+        spend: 0,
+        purchases: 0,
+        profit: 0,
+      };
+    }
+
+    weeks[weekKey].revenue += toFiniteNumber(row.revenue);
+    weeks[weekKey].refunded += toFiniteNumber(row.refunded);
+    weeks[weekKey].spend += toFiniteNumber(row.spend);
+    weeks[weekKey].purchases += toFiniteNumber(row.purchases);
+  }
+
+  for (const row of profitRows) {
+    const weekKey = getUtcWeekKey(row.date);
+    if (!weekKey) continue;
+    if (!weeks[weekKey]) {
+      weeks[weekKey] = {
+        week: weekKey,
+        revenue: 0,
+        refunded: 0,
+        spend: 0,
+        purchases: 0,
+        profit: 0,
+      };
+    }
+
+    weeks[weekKey].profit += toFiniteNumber(row.trueNetProfit ?? row.profit);
+  }
+
+  return Object.values(weeks)
+    .sort((left, right) => left.week.localeCompare(right.week))
+    .map(week => ({
+      week: week.week,
+      profit: Math.round(week.profit),
+      revenue: week.revenue,
+      refunded: week.refunded,
+      spend: week.spend,
+      purchases: week.purchases,
+      cpa: Number.parseFloat(calcClientCpa(week.spend, week.purchases).toFixed(2)),
+    }));
+}
+
+function buildWeekdayPerfFromDaily(dailyRows) {
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const aggregates = dayNames.map(day => ({
+    day,
+    spend: 0,
+    purchases: 0,
+    revenue: 0,
+    refunded: 0,
+    orders: 0,
+  }));
+
+  for (const row of dailyRows) {
+    const [year, month, day] = String(row.date || '').split('-').map(value => Number.parseInt(value, 10));
+    if (!year || !month || !day) continue;
+
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    const aggregate = aggregates[weekday];
+    aggregate.spend += toFiniteNumber(row.spend);
+    aggregate.purchases += toFiniteNumber(row.purchases);
+    aggregate.revenue += toFiniteNumber(row.revenue);
+    aggregate.refunded += toFiniteNumber(row.refunded);
+    aggregate.orders += toFiniteNumber(row.orders);
+  }
+
+  return aggregates.map(aggregate => ({
+    day: aggregate.day,
+    spend: aggregate.spend,
+    purchases: aggregate.purchases,
+    cpa: Number.parseFloat(calcClientCpa(aggregate.spend, aggregate.purchases).toFixed(2)),
+    revenue: aggregate.revenue,
+    refunded: aggregate.refunded,
+    orders: aggregate.orders,
+    paid: aggregate.revenue,
+    net: aggregate.revenue - aggregate.refunded,
+  }));
+}
+
+function buildMonthlyRefundsFromDaily(dailyRows) {
+  const months = {};
+
+  for (const row of dailyRows) {
+    const monthKey = String(row.date || '').slice(0, 7);
+    if (!monthKey) continue;
+    if (!months[monthKey]) {
+      months[monthKey] = { month: monthKey, revenue: 0, refunded: 0 };
+    }
+    months[monthKey].revenue += toFiniteNumber(row.revenue);
+    months[monthKey].refunded += toFiniteNumber(row.refunded);
+  }
+
+  return Object.values(months).sort((left, right) => left.month.localeCompare(right.month));
+}
+
+function buildCoverageMeta(waterfallRows) {
+  const rows = sortRowsByDate(waterfallRows, 'date');
+  if (rows.length === 0) {
+    return {
+      totalDays: 0,
+      daysWithCOGS: 0,
+      coverageRatio: 0,
+      cogsCoveredRange: {},
+      missingRanges: [],
+      confidence: { level: 'low', label: 'Waiting for data' },
+    };
+  }
+
+  const coveredRows = rows.filter(row => row.hasCOGS);
+  const missingRows = rows.filter(row => !row.hasCOGS);
+  const coverageRatio = coveredRows.length / rows.length;
+
+  let confidence = { level: 'low', label: 'Low confidence' };
+  if (coverageRatio >= 0.9) {
+    confidence = { level: 'high', label: 'High confidence' };
+  } else if (coverageRatio >= 0.6) {
+    confidence = { level: 'medium', label: 'Medium confidence' };
+  }
+
+  return {
+    totalDays: rows.length,
+    daysWithCOGS: coveredRows.length,
+    coverageRatio,
+    cogsCoveredRange: coveredRows.length > 0
+      ? { from: coveredRows[0].date, to: coveredRows[coveredRows.length - 1].date }
+      : {},
+    missingRanges: missingRows.map(row => row.date),
+    confidence,
+  };
+}
+
+function buildReconciliationOverlap(dailyRows, matches, unmatchedSettlements, unmatchedImwebPayments) {
+  const mismatchMatches = matches.filter(match => match.methodMismatch);
+  return {
+    matchedCount: matches.length,
+    netAmount: dailyRows.reduce((sum, day) => sum + toFiniteNumber(day.matched?.netAmount), 0),
+    methodMismatchCount: mismatchMatches.length,
+    methodMismatchAmount: mismatchMatches.reduce((sum, match) => sum + toFiniteNumber(match.amount), 0),
+    confidence: summarizeBy(matches, match => match.confidence || 'low'),
+    unmatchedSettlementCount: unmatchedSettlements.length,
+    unmatchedImwebCount: unmatchedImwebPayments.length,
+  };
+}
+
+function buildVisibleReconciliationReport(report, group) {
+  const daily = sliceRowsByWindow(report?.daily || [], group);
+  const visibleDates = new Set(daily.map(day => day.date));
+  const matches = (report?.matches || []).filter(match =>
+    visibleDates.has(match?.settlement?.tradedDate || match?.imwebPayment?.completedDate)
+  );
+  const unmatchedSettlements = (report?.unmatchedSettlements || []).filter(item => visibleDates.has(item?.tradedDate));
+  const unmatchedImwebPayments = (report?.unmatchedImwebPayments || []).filter(item => visibleDates.has(item?.completedDate));
+
+  return {
+    ...report,
+    daily,
+    summary: {
+      ...(report?.summary || {}),
+      overlap: buildReconciliationOverlap(daily, matches, unmatchedSettlements, unmatchedImwebPayments),
+    },
+    matches,
+    unmatchedSettlements,
+    unmatchedImwebPayments,
+  };
+}
+
 // ── API Helper ──
 async function api(path, method = 'GET', body = null) {
   try {
@@ -222,9 +522,8 @@ async function updateSettings(settings) {
 // ═══════════════════════════════════════════
 // DATA TRANSFORMATION HELPERS
 // ═══════════════════════════════════════════
-// NOTE: All transforms are now computed server-side.
-// The API returns chart-ready arrays in data.charts.*
-// No client-side transformation needed.
+// The API provides canonical chart arrays. The client only applies
+// reusable date-window filtering and lightweight rollups for the UI.
 
 // ═══════════════════════════════════════════
 // UPDATE DASHBOARD WITH LIVE DATA
@@ -369,33 +668,25 @@ async function updateOverviewKPIs() {
     }
 
     // ── Chart data comes pre-computed from the server ──
-    const dailyMerged = (data.charts && data.charts.dailyMerged) || [];
+    const dailyMerged = sliceRowsByWindow((data.charts && data.charts.dailyMerged) || [], 'overview');
     const hourlyOrders = analyticsData?.charts?.hourlyOrders || [];
+    updateSeriesWindowBadges('overview', dailyMerged);
 
     // ── Overview Charts: Revenue vs Ad Spend, ROAS, CTR/CPC ──
     if (dailyMerged.length > 0) {
-      // Show ALL data since inception (no slicing)
-      const allDays = dailyMerged;
-      const labels = allDays.map(d => d.date);
-
-      // Update chart titles with actual date range
-      const dateRange = allDays[0].date.slice(5) + ' → ' + allDays[allDays.length - 1].date.slice(5);
-      const dayCount = allDays.length;
-      document.querySelectorAll('.chart-days').forEach(span => {
-        span.textContent = '(' + dayCount + 'd)';
-      });
+      const labels = dailyMerged.map(d => d.date);
 
       // spendRevenueChart
       if (typeof spendRevenueChart !== 'undefined' && spendRevenueChart) {
         spendRevenueChart.data.labels = labels;
-        spendRevenueChart.data.datasets[0].data = allDays.map(d => d.revenue || 0);
-        spendRevenueChart.data.datasets[1].data = allDays.map(d => d.spendKrw || 0);
+        spendRevenueChart.data.datasets[0].data = dailyMerged.map(d => d.revenue || 0);
+        spendRevenueChart.data.datasets[1].data = dailyMerged.map(d => d.spendKrw || 0);
         spendRevenueChart.update();
       }
 
       // roasChart
       if (typeof roasChart !== 'undefined' && roasChart) {
-        const roasData = allDays.map(d => d.roas || 0);
+        const roasData = dailyMerged.map(d => d.roas || 0);
         const c = typeof getChartColors === 'function' ? getChartColors() : {};
         const gold = c.gold || '#FFC553';
         roasChart.data.labels = labels;
@@ -407,8 +698,8 @@ async function updateOverviewKPIs() {
       // impactChart (CTR + CPC)
       if (typeof impactChart !== 'undefined' && impactChart) {
         impactChart.data.labels = labels;
-        impactChart.data.datasets[0].data = allDays.map(d => d.ctr || 0);
-        impactChart.data.datasets[1].data = allDays.map(d => d.cpc || 0);
+        impactChart.data.datasets[0].data = dailyMerged.map(d => d.ctr || 0);
+        impactChart.data.datasets[1].data = dailyMerged.map(d => d.cpc || 0);
         impactChart.update();
       }
     }
@@ -784,8 +1075,6 @@ async function updateAnalyticsPage() {
     if (!data) return;
 
     const c = typeof getChartColors === 'function' ? getChartColors() : {};
-    const gold = c.gold || '#FFC553';
-    const secondary = c.secondary || '#A84B2F';
     const primary = c.primary || '#20808D';
 
     // ── KPI Cards: Refund/Cancel Rates ──
@@ -835,12 +1124,21 @@ async function updateAnalyticsPage() {
 
     // ── Chart data comes pre-computed from the server ──
     const charts = data.charts || {};
-    const dailyMerged = charts.dailyMerged || [];
-    const dailyProfit = charts.dailyProfit || [];
-    const weeklyAgg = charts.weeklyAgg || [];
-    const weekdayPerf = charts.weekdayPerf || [];
-    const hourlyOrders = charts.hourlyOrders || [];
-    const monthlyRefunds = charts.monthlyRefunds || [];
+    const allDailyMerged = charts.dailyMerged || [];
+    const allProfitWaterfall = data.profitAnalysis?.waterfall || [];
+    const profitDaily = sliceRowsByWindow(allDailyMerged, 'profit-structure');
+    const profitWaterfall = sliceRowsByWindow(allProfitWaterfall, 'profit-structure');
+    const dailyProfit = profitWaterfall.length > 0
+      ? profitWaterfall.map(row => ({ date: row.date, profit: row.trueNetProfit || 0 }))
+      : sliceRowsByWindow(charts.dailyProfit || [], 'profit-structure');
+    const profitWeeklyAgg = buildWeeklyAggFromDaily(profitDaily, profitWaterfall);
+    const mediaDaily = sliceRowsByWindow(allDailyMerged, 'media-profitability');
+    const mediaWeeklyAgg = buildWeeklyAggFromDaily(mediaDaily);
+    const weekdayPerf = buildWeekdayPerfFromDaily(mediaDaily);
+    const qualityDaily = sliceRowsByWindow(allDailyMerged, 'revenue-quality');
+    const monthlyRefunds = buildMonthlyRefundsFromDaily(qualityDaily);
+
+    renderProfitAnalysisSection(data);
 
     // ── Daily Profit Trend ──
     if (dailyProfit.length > 0 && typeof profitTrendChart !== 'undefined' && profitTrendChart) {
@@ -857,22 +1155,22 @@ async function updateAnalyticsPage() {
     }
 
     // ── Weekly Profit + CPA ──
-    if (weeklyAgg.length > 0 && typeof weeklyProfitChart !== 'undefined' && weeklyProfitChart) {
-      weeklyProfitChart.data.labels = weeklyAgg.map(d => d.week);
-      weeklyProfitChart.data.datasets[0].data = weeklyAgg.map(d => d.profit || 0);
-      weeklyProfitChart.data.datasets[0].backgroundColor = weeklyAgg.map(d =>
+    if (profitWeeklyAgg.length > 0 && typeof weeklyProfitChart !== 'undefined' && weeklyProfitChart) {
+      weeklyProfitChart.data.labels = profitWeeklyAgg.map(d => d.week);
+      weeklyProfitChart.data.datasets[0].data = profitWeeklyAgg.map(d => d.profit || 0);
+      weeklyProfitChart.data.datasets[0].backgroundColor = profitWeeklyAgg.map(d =>
         (d.profit || 0) >= 0 ? 'rgba(32, 128, 141, 0.8)' : 'rgba(239, 68, 68, 0.6)'
       );
       weeklyProfitChart.update();
     }
 
-    if (weeklyAgg.length > 0 && typeof weeklyCpaChartInstance !== 'undefined' && weeklyCpaChartInstance) {
-      weeklyCpaChartInstance.data.labels = weeklyAgg.map(d => d.week);
-      weeklyCpaChartInstance.data.datasets[0].data = weeklyAgg.map(d => d.cpa || 0);
-      weeklyCpaChartInstance.data.datasets[0].pointBackgroundColor = weeklyAgg.map(d =>
+    if (mediaWeeklyAgg.length > 0 && typeof weeklyCpaChartInstance !== 'undefined' && weeklyCpaChartInstance) {
+      weeklyCpaChartInstance.data.labels = mediaWeeklyAgg.map(d => d.week);
+      weeklyCpaChartInstance.data.datasets[0].data = mediaWeeklyAgg.map(d => d.cpa || 0);
+      weeklyCpaChartInstance.data.datasets[0].pointBackgroundColor = mediaWeeklyAgg.map(d =>
         (d.cpa || 0) > 20 ? 'rgba(239, 68, 68, 0.9)' : primary
       );
-      weeklyCpaChartInstance.data.datasets[1].data = weeklyAgg.map(d => d.purchases || 0);
+      weeklyCpaChartInstance.data.datasets[1].data = mediaWeeklyAgg.map(d => d.purchases || 0);
       weeklyCpaChartInstance.update();
     }
 
@@ -882,22 +1180,6 @@ async function updateAnalyticsPage() {
       weekdayChartInstance.data.datasets[0].data = weekdayPerf.map(d => d.purchases || 0);
       weekdayChartInstance.data.datasets[1].data = weekdayPerf.map(d => d.cpa || 0);
       weekdayChartInstance.update();
-    }
-
-    // ── Hourly Orders ──
-    if (hourlyOrders.length > 0 && typeof hourChartInstance !== 'undefined' && hourChartInstance) {
-      const peakHours = hourlyOrders
-        .slice()
-        .sort((a, b) => (b.orders || 0) - (a.orders || 0))
-        .slice(0, 3)
-        .map(d => d.hour);
-
-      hourChartInstance.data.labels = hourlyOrders.map(d => d.hour + ':00');
-      hourChartInstance.data.datasets[0].data = hourlyOrders.map(d => d.orders || 0);
-      hourChartInstance.data.datasets[0].backgroundColor = hourlyOrders.map(d =>
-        peakHours.includes(d.hour) ? 'rgba(255, 197, 83, 0.9)' : 'rgba(32, 128, 141, 0.6)'
-      );
-      hourChartInstance.update();
     }
 
     // ── Monthly Refund Comparison ──
@@ -941,16 +1223,171 @@ async function updateAnalyticsPage() {
   }
 }
 
+function renderProfitAnalysisSection(data) {
+  if (!data || !data.profitAnalysis) return;
+
+  const pa = data.profitAnalysis;
+  const waterfall = sliceRowsByWindow(pa.waterfall || [], 'profit-structure');
+  const campaignProfit = pa.campaignProfit || [];
+  const coverage = buildCoverageMeta(waterfall);
+  const todaySummary = pa.todaySummary;
+  const runRate = pa.runRate;
+
+  updateSeriesWindowBadges('profit-structure', waterfall);
+
+  // ── Hero Card ──
+  const heroEl = document.getElementById('profitHero');
+  const verdictEl = document.getElementById('profitVerdict');
+  const amountEl = document.getElementById('profitAmount');
+  const confEl = document.getElementById('profitConfidence');
+  const heroSubEl = document.getElementById('profitHeroSub');
+
+  if (todaySummary && verdictEl) {
+    const isPositive = todaySummary.trueNetProfit >= 0;
+    verdictEl.textContent = todaySummary.verdict;
+    verdictEl.className = 'profit-verdict ' + (isPositive ? 'verdict-positive' : 'verdict-negative');
+    amountEl.textContent = '\u20a9' + todaySummary.trueNetProfit.toLocaleString();
+    amountEl.className = 'profit-amount ' + (isPositive ? 'verdict-positive' : 'verdict-negative');
+    if (heroEl) heroEl.className = 'profit-hero ' + (isPositive ? 'hero-positive' : 'hero-negative');
+  }
+
+  if (confEl && coverage.confidence) {
+    confEl.textContent = coverage.confidence.label;
+    confEl.className = 'confidence-badge confidence-' + safeConfidenceLevel(coverage.confidence.level);
+  }
+
+  if (heroSubEl && todaySummary) {
+    let summaryLabel = 'Latest profit signal';
+    if (todaySummary.summaryType === 'today') summaryLabel = 'Today';
+    if (todaySummary.summaryType === 'latest_completed') summaryLabel = 'Latest completed day';
+    if (todaySummary.summaryType === 'estimated') summaryLabel = 'Current estimate';
+    const cogsNote = todaySummary.hasCOGS ? 'COGS included' : 'COGS not yet available';
+    const runRateText = runRate
+      ? ` · 14d avg ₩${runRate.avgDailyNetProfit.toLocaleString()}/day · est. ₩${runRate.projectedMonthlyNetProfit.toLocaleString()}/30d`
+      : '';
+    heroSubEl.textContent = `${todaySummary.date} — ${summaryLabel} · ${cogsNote}${runRateText}`;
+  }
+
+  // ── KPI Cards ──
+  const totalProfit = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.trueNetProfit), 0);
+  const totalNetRev = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.netRevenue), 0);
+  const totalAdSpend = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.adSpendKRW), 0);
+  const blendedMargin = totalNetRev > 0 ? (totalProfit / totalNetRev * 100) : 0;
+  const trueRoas = totalAdSpend > 0 ? totalNetRev / totalAdSpend : 0;
+
+  const profitKpi = document.querySelector('[data-profit-kpi="trueNetProfit"] .kpi-value');
+  if (profitKpi) profitKpi.textContent = '\u20a9' + totalProfit.toLocaleString();
+  const profitSub = document.querySelector('[data-profit-kpi="trueNetProfit"] .kpi-delta span');
+  if (profitSub) profitSub.textContent = waterfall.length + ' days';
+
+  const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
+  if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';
+  const cogsSub = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-delta span');
+  if (cogsSub) cogsSub.textContent = coverage.daysWithCOGS + ' of ' + coverage.totalDays + ' days';
+
+  const marginKpi = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-value');
+  if (marginKpi) marginKpi.textContent = blendedMargin.toFixed(1) + '%';
+  const marginSub = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-delta span');
+  if (marginSub) marginSub.textContent = totalProfit >= 0 ? 'Profitable' : 'Unprofitable';
+
+  const roasKpi = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-value');
+  if (roasKpi) roasKpi.textContent = trueRoas.toFixed(2) + 'x';
+  const roasSub = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-delta span');
+  if (roasSub) roasSub.textContent = 'Net Revenue / Ad Spend';
+
+  const runRateKpi = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-value');
+  if (runRateKpi) {
+    const projected = runRate ? runRate.projectedMonthlyNetProfit : null;
+    if (projected == null) {
+      runRateKpi.textContent = '—';
+    } else {
+      runRateKpi.textContent = projected >= 0
+        ? '\u20a9' + projected.toLocaleString()
+        : '-\u20a9' + Math.abs(projected).toLocaleString();
+    }
+  }
+  const runRateSub = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-delta span');
+  if (runRateSub) {
+    if (runRate) {
+      const avgDaily = runRate.avgDailyNetProfit >= 0
+        ? '\u20a9' + runRate.avgDailyNetProfit.toLocaleString()
+        : '-\u20a9' + Math.abs(runRate.avgDailyNetProfit).toLocaleString();
+      runRateSub.textContent = `${runRate.daysUsed}d used · ${avgDaily}/day`;
+    } else {
+      runRateSub.textContent = 'Waiting for covered days';
+    }
+  }
+
+  // ── Waterfall Chart ──
+  if (waterfall.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
+    profitWaterfallChart.data.labels = waterfall.map(d => d.date);
+    profitWaterfallChart.data.datasets[0].data = waterfall.map(d => d.revenue);
+    profitWaterfallChart.data.datasets[1].data = waterfall.map(d => -d.refunded);
+    profitWaterfallChart.data.datasets[2].data = waterfall.map(d => -(d.cogs + d.cogsShipping));
+    profitWaterfallChart.data.datasets[3].data = waterfall.map(d => -d.adSpendKRW);
+    profitWaterfallChart.data.datasets[4].data = waterfall.map(d => -d.paymentFees);
+    profitWaterfallChart.data.datasets[5].data = waterfall.map(d => d.trueNetProfit);
+    profitWaterfallChart.data.datasets[5].pointBackgroundColor = waterfall.map(d =>
+      d.trueNetProfit >= 0 ? '#4ade80' : '#f87171'
+    );
+    profitWaterfallChart.data.datasets[0].backgroundColor = waterfall.map(d =>
+      d.hasCOGS ? 'rgba(74, 222, 128, 0.75)' : 'rgba(74, 222, 128, 0.35)'
+    );
+    profitWaterfallChart.update();
+  }
+
+  // ── Campaign Profit Leaderboard ──
+  const tbody = document.getElementById('campaignProfitBody');
+  if (tbody) {
+    tbody.innerHTML = campaignProfit.map(campaign => {
+      const statusClass = campaign.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral';
+      const profitColor = campaign.grossProfit >= 0 ? 'var(--color-success)' : 'var(--color-error)';
+      return `<tr>
+        <td title="${esc(campaign.campaignId)}">${esc(campaign.campaignName)}</td>
+        <td><span class="badge ${statusClass}">${esc(campaign.status || '—')}</span></td>
+        <td>$${campaign.spend.toFixed(2)}<br><span style="font-size:0.7rem;color:var(--color-text-faint)">\u20a9${campaign.spendKRW.toLocaleString()}</span></td>
+        <td>${campaign.metaPurchases}</td>
+        <td>\u20a9${campaign.estimatedRevenue.toLocaleString()}</td>
+        <td>\u20a9${campaign.allocatedCOGS.toLocaleString()}</td>
+        <td style="color:${profitColor};font-weight:600">\u20a9${campaign.grossProfit.toLocaleString()}</td>
+        <td style="color:${profitColor}">${campaign.margin.toFixed(1)}%</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Data Coverage Card ──
+  const coverageContent = document.getElementById('dataCoverageContent');
+  if (coverageContent && coverage.confidence) {
+    const conf = coverage.confidence;
+    const confLevel = safeConfidenceLevel(conf.level);
+    const coveredRange = coverage.cogsCoveredRange || {};
+    const missing = coverage.missingRanges || [];
+    coverageContent.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <span class="confidence-badge confidence-${confLevel}">${esc(conf.label)}</span>
+        <span style="font-size:0.85rem;color:var(--color-text-muted)">${coverage.daysWithCOGS} of ${coverage.totalDays} days have COGS data (${(coverage.coverageRatio * 100).toFixed(0)}%)</span>
+      </div>
+      ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">Covered: <strong>${esc(coveredRange.from)}</strong> to <strong>${esc(coveredRange.to)}</strong></p>` : ''}
+      ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">Missing: ${missing.map(item => esc(item)).join(', ')}</p>` : ''}
+      <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">Days without COGS data are shown dimmed in the waterfall chart. Profit for those days only accounts for revenue, ad spend, and payment fees.</p>
+    `;
+  }
+}
+
 function updateReconciliationSection(report) {
   const statusEl = document.getElementById('reconciliationStatus');
   const noteEl = document.getElementById('reconciliationNote');
   const windowEl = document.getElementById('reconciliationWindow');
   const bodyEl = document.getElementById('reconciliationBody');
+  const visibleReport = report && report.ready !== false
+    ? buildVisibleReconciliationReport(report, 'revenue-quality')
+    : report;
+  const rangeMeta = getSeriesWindowMeta('revenue-quality');
 
   if (windowEl) {
     windowEl.textContent = report?.matchWindowMinutes
-      ? `Match window ${report.matchWindowMinutes}m`
-      : 'Match window —';
+      ? `Match window ${report.matchWindowMinutes}m · ${rangeMeta.label} view`
+      : `${rangeMeta.label} view`;
   }
 
   if (!report || report.ready === false) {
@@ -967,7 +1404,7 @@ function updateReconciliationSection(report) {
     return;
   }
 
-  const overlap = report.summary?.overlap || {};
+  const overlap = visibleReport.summary?.overlap || {};
   const matchedNet = overlap.netAmount || 0;
   const unmatchedSettlementCount = overlap.unmatchedSettlementCount || 0;
   const unmatchedImwebCount = overlap.unmatchedImwebCount || 0;
@@ -994,11 +1431,11 @@ function updateReconciliationSection(report) {
     },
     unmatchedSettlement: {
       value: String(unmatchedSettlementCount),
-      sub: `${formatSignedCompactKrw((report.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))} settlement gap`,
+      sub: `${formatSignedCompactKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))} settlement gap`,
     },
     unmatchedImweb: {
       value: String(unmatchedImwebCount),
-      sub: `${formatSignedCompactKrw((report.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))} imweb gap`,
+      sub: `${formatSignedCompactKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))} imweb gap`,
     },
     methodMismatch: {
       value: String(methodMismatchCount),
@@ -1018,13 +1455,15 @@ function updateReconciliationSection(report) {
     const high = confidence.high || 0;
     const medium = confidence.medium || 0;
     const low = confidence.low || 0;
-    noteEl.textContent = methodMismatchCount > 0
+    noteEl.textContent = visibleReport.daily.length === 0
+      ? 'No reconciliation rows fall inside the selected window.'
+      : methodMismatchCount > 0
       ? `${high} high / ${medium} medium / ${low} low-confidence matches. Matched settlement rows are currently colliding with non-card IMWEB payment labels, so treat this as a validation signal rather than a direct payment-method map.`
-      : `${high} high / ${medium} medium / ${low} low-confidence matches across the current settlement sheet.`;
+      : `${high} high / ${medium} medium / ${low} low-confidence matches across the selected settlement window.`;
   }
 
   if (bodyEl) {
-    const rows = (report.daily || []).slice(-14).reverse();
+    const rows = (visibleReport.daily || []).slice().reverse();
     bodyEl.innerHTML = rows.length > 0
       ? rows.map(day => `
           <tr>
@@ -1037,170 +1476,6 @@ function updateReconciliationSection(report) {
           </tr>
         `).join('')
       : '<tr><td colspan="6" style="color:var(--color-text-faint)">No reconciliation rows available.</td></tr>';
-  }
-}
-
-// ═══════════════════════════════════════════
-// PROFIT ANALYSIS PAGE
-// ═══════════════════════════════════════════
-
-async function updateProfitPage() {
-  try {
-    const data = await fetchAnalytics();
-    if (!data || !data.profitAnalysis) return;
-
-    const pa = data.profitAnalysis;
-    const waterfall = pa.waterfall || [];
-    const campaignProfit = pa.campaignProfit || [];
-    const coverage = pa.coverage || {};
-    const todaySummary = pa.todaySummary;
-    const runRate = pa.runRate;
-
-    // ── Hero Card ──
-    const heroEl = document.getElementById('profitHero');
-    const verdictEl = document.getElementById('profitVerdict');
-    const amountEl = document.getElementById('profitAmount');
-    const confEl = document.getElementById('profitConfidence');
-    const heroSubEl = document.getElementById('profitHeroSub');
-
-    if (todaySummary && verdictEl) {
-      const isPositive = todaySummary.trueNetProfit >= 0;
-      verdictEl.textContent = todaySummary.verdict;
-      verdictEl.className = 'profit-verdict ' + (isPositive ? 'verdict-positive' : 'verdict-negative');
-      amountEl.textContent = '\u20a9' + todaySummary.trueNetProfit.toLocaleString();
-      amountEl.className = 'profit-amount ' + (isPositive ? 'verdict-positive' : 'verdict-negative');
-      if (heroEl) heroEl.className = 'profit-hero ' + (isPositive ? 'hero-positive' : 'hero-negative');
-    }
-
-    if (confEl && coverage.confidence) {
-      confEl.textContent = coverage.confidence.label;
-      confEl.className = 'confidence-badge confidence-' + safeConfidenceLevel(coverage.confidence.level);
-    }
-
-    if (heroSubEl && todaySummary) {
-      let summaryLabel = 'Latest profit signal';
-      if (todaySummary.summaryType === 'today') summaryLabel = 'Today';
-      if (todaySummary.summaryType === 'latest_completed') summaryLabel = 'Latest completed day';
-      if (todaySummary.summaryType === 'estimated') summaryLabel = 'Current estimate';
-      const cogsNote = todaySummary.hasCOGS ? 'COGS included' : 'COGS not yet available';
-      const runRateText = runRate
-        ? ` · 14d avg ₩${runRate.avgDailyNetProfit.toLocaleString()}/day · est. ₩${runRate.projectedMonthlyNetProfit.toLocaleString()}/30d`
-        : '';
-      heroSubEl.textContent = `${todaySummary.date} — ${summaryLabel} · ${cogsNote}${runRateText}`;
-    }
-
-    // ── KPI Cards ──
-    const totalProfit = waterfall.reduce((s, r) => s + r.trueNetProfit, 0);
-    const totalNetRev = waterfall.reduce((s, r) => s + r.netRevenue, 0);
-    const totalAdSpend = waterfall.reduce((s, r) => s + r.adSpendKRW, 0);
-    const blendedMargin = totalNetRev > 0 ? (totalProfit / totalNetRev * 100) : 0;
-    const trueRoas = totalAdSpend > 0 ? totalNetRev / totalAdSpend : 0;
-
-    const profitKpi = document.querySelector('[data-profit-kpi="trueNetProfit"] .kpi-value');
-    if (profitKpi) profitKpi.textContent = '\u20a9' + totalProfit.toLocaleString();
-    const profitSub = document.querySelector('[data-profit-kpi="trueNetProfit"] .kpi-delta span');
-    if (profitSub) profitSub.textContent = waterfall.length + ' days';
-
-    const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
-    if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';
-    const cogsSub = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-delta span');
-    if (cogsSub) cogsSub.textContent = (coverage.daysWithCOGS || 0) + ' of ' + (coverage.totalDays || 0) + ' days';
-
-    const marginKpi = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-value');
-    if (marginKpi) marginKpi.textContent = blendedMargin.toFixed(1) + '%';
-    const marginSub = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-delta span');
-    if (marginSub) marginSub.textContent = totalProfit >= 0 ? 'Profitable' : 'Unprofitable';
-
-    const roasKpi = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-value');
-    if (roasKpi) roasKpi.textContent = trueRoas.toFixed(2) + 'x';
-    const roasSub = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-delta span');
-    if (roasSub) roasSub.textContent = 'Net Revenue / Ad Spend';
-
-    const runRateKpi = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-value');
-    if (runRateKpi) {
-      const projected = runRate ? runRate.projectedMonthlyNetProfit : null;
-      if (projected == null) {
-        runRateKpi.textContent = '—';
-      } else {
-        runRateKpi.textContent = projected >= 0
-          ? '\u20a9' + projected.toLocaleString()
-          : '-\u20a9' + Math.abs(projected).toLocaleString();
-      }
-    }
-    const runRateSub = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-delta span');
-    if (runRateSub) {
-      if (runRate) {
-        const avgDaily = runRate.avgDailyNetProfit >= 0
-          ? '\u20a9' + runRate.avgDailyNetProfit.toLocaleString()
-          : '-\u20a9' + Math.abs(runRate.avgDailyNetProfit).toLocaleString();
-        runRateSub.textContent = `${runRate.daysUsed}d used · ${avgDaily}/day`;
-      } else {
-        runRateSub.textContent = 'Waiting for covered days';
-      }
-    }
-
-    // ── Waterfall Chart ──
-    if (waterfall.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
-      const gold = '#FFC553';
-      profitWaterfallChart.data.labels = waterfall.map(d => d.date);
-      profitWaterfallChart.data.datasets[0].data = waterfall.map(d => d.revenue);
-      profitWaterfallChart.data.datasets[1].data = waterfall.map(d => -d.refunded);
-      profitWaterfallChart.data.datasets[2].data = waterfall.map(d => -(d.cogs + d.cogsShipping));
-      profitWaterfallChart.data.datasets[3].data = waterfall.map(d => -d.adSpendKRW);
-      profitWaterfallChart.data.datasets[4].data = waterfall.map(d => -d.paymentFees);
-      profitWaterfallChart.data.datasets[5].data = waterfall.map(d => d.trueNetProfit);
-      profitWaterfallChart.data.datasets[5].pointBackgroundColor = waterfall.map(d =>
-        d.trueNetProfit >= 0 ? '#4ade80' : '#f87171'
-      );
-      // Dim bars where COGS is missing
-      profitWaterfallChart.data.datasets[0].backgroundColor = waterfall.map(d =>
-        d.hasCOGS ? 'rgba(74, 222, 128, 0.75)' : 'rgba(74, 222, 128, 0.35)'
-      );
-      profitWaterfallChart.update();
-
-      const daysEl = document.getElementById('profitWaterfallDays');
-      if (daysEl) daysEl.textContent = '(' + waterfall.length + 'd)';
-    }
-
-    // ── Campaign Profit Leaderboard ──
-    const tbody = document.getElementById('campaignProfitBody');
-    if (tbody) {
-      tbody.innerHTML = campaignProfit.map(c => {
-        const statusClass = c.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral';
-        const profitColor = c.grossProfit >= 0 ? 'var(--color-success)' : 'var(--color-error)';
-        return `<tr>
-          <td title="${esc(c.campaignId)}">${esc(c.campaignName)}</td>
-          <td><span class="badge ${statusClass}">${esc(c.status || '—')}</span></td>
-          <td>$${c.spend.toFixed(2)}<br><span style="font-size:0.7rem;color:var(--color-text-faint)">\u20a9${c.spendKRW.toLocaleString()}</span></td>
-          <td>${c.metaPurchases}</td>
-          <td>\u20a9${c.estimatedRevenue.toLocaleString()}</td>
-          <td>\u20a9${c.allocatedCOGS.toLocaleString()}</td>
-          <td style="color:${profitColor};font-weight:600">\u20a9${c.grossProfit.toLocaleString()}</td>
-          <td style="color:${profitColor}">${c.margin.toFixed(1)}%</td>
-        </tr>`;
-      }).join('');
-    }
-
-    // ── Data Coverage Card ──
-    const coverageContent = document.getElementById('dataCoverageContent');
-    if (coverageContent && coverage.confidence) {
-      const conf = coverage.confidence;
-      const confLevel = safeConfidenceLevel(conf.level);
-      const coveredRange = coverage.cogsCoveredRange || {};
-      const missing = coverage.missingRanges || [];
-      coverageContent.innerHTML = `
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <span class="confidence-badge confidence-${confLevel}">${esc(conf.label)}</span>
-          <span style="font-size:0.85rem;color:var(--color-text-muted)">${coverage.daysWithCOGS} of ${coverage.totalDays} days have COGS data (${(coverage.coverageRatio * 100).toFixed(0)}%)</span>
-        </div>
-        ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">Covered: <strong>${esc(coveredRange.from)}</strong> to <strong>${esc(coveredRange.to)}</strong></p>` : ''}
-        ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">Missing: ${missing.map(item => esc(item)).join(', ')}</p>` : ''}
-        <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">Days without COGS data are shown dimmed in the waterfall chart. Profit for those days only accounts for revenue, ad spend, and payment fees.</p>
-      `;
-    }
-
-  } catch (err) {
-    console.warn('[LIVE] Profit page error:', err.message);
   }
 }
 
@@ -1649,7 +1924,6 @@ async function startLiveMode() {
   try { await updateLiveCampaigns(); } catch (e) { console.warn('[LIVE] updateLiveCampaigns error:', e.message); }
   try { await updateOptTimeline(); } catch (e) { console.warn('[LIVE] updateOptTimeline error:', e.message); }
   try { await updateAnalyticsPage(); } catch (e) { console.warn('[LIVE] updateAnalyticsPage error:', e.message); }
-  try { await updateProfitPage(); } catch (e) { console.warn('[LIVE] updateProfitPage error:', e.message); }
   try { await updateSettingsPage(); } catch (e) { console.warn('[LIVE] updateSettingsPage error:', e.message); }
 
   // Wire up scan button for live scans
@@ -1676,7 +1950,6 @@ async function startLiveMode() {
           await updateLiveCampaigns();
           await updateOptTimeline();
           await updateAnalyticsPage();
-          await updateProfitPage();
         }
       }, 3000);
     });
@@ -1699,14 +1972,19 @@ async function startLiveMode() {
     if (typeof analyticsChartsInitialized !== 'undefined' && analyticsChartsInitialized) {
       await updateAnalyticsPage();
     }
+    if (
+      typeof analyticsChartsInitialized !== 'undefined' &&
+      !analyticsChartsInitialized &&
+      typeof profitChartsInitialized !== 'undefined' &&
+      profitChartsInitialized
+    ) {
+      await updateAnalyticsPage();
+    }
     if (typeof fatigueChartInitialized !== 'undefined' && fatigueChartInitialized) {
       await updateFatiguePage();
     }
     if (typeof budgetChartsInitialized !== 'undefined' && budgetChartsInitialized) {
       await updateBudgetPage();
-    }
-    if (typeof profitChartsInitialized !== 'undefined' && profitChartsInitialized) {
-      await updateProfitPage();
     }
   }, 120000);
 
@@ -1771,6 +2049,12 @@ function timeSince(date) {
 // ═══════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', () => {
+  registerSeriesWindowRefresher('overview', updateOverviewKPIs);
+  registerSeriesWindowRefresher('profit-structure', updateAnalyticsPage);
+  registerSeriesWindowRefresher('media-profitability', updateAnalyticsPage);
+  registerSeriesWindowRefresher('revenue-quality', updateAnalyticsPage);
+  initSeriesWindowControls();
+
   // Attempt live connection after static content loads
   setTimeout(() => startLiveMode(), 1500);
 });
