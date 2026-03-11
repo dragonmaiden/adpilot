@@ -122,9 +122,6 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
       refunds: refundMetric,
       cancellations: cancellationMetric,
     },
-    // Per-month refund rates
-    febRefundRate: monthlyRates?.['2026-02'] ?? null,
-    marRefundRate: monthlyRates?.['2026-03'] ?? null,
     monthlyRates: monthlyRates ?? {},
     // COGS data from Google Sheets
     totalCOGS: cogsData?.totalCOGS ?? 0,
@@ -187,10 +184,10 @@ function campaigns({ campaigns: enriched }) {
       id: c.id ?? '',
       name: c.name ?? '',
       status: c.status ?? 'UNKNOWN',
-      effective_status: c.effective_status ?? c.status ?? 'UNKNOWN',
-      daily_budget: c.daily_budget ?? null,
+      effectiveStatus: c.effective_status ?? c.status ?? 'UNKNOWN',
+      dailyBudget: c.daily_budget ?? c.dailyBudget ?? null,
       objective: c.objective ?? '',
-      bid_strategy: c.bid_strategy ?? '',
+      bidStrategy: c.bid_strategy ?? c.bidStrategy ?? '',
       metrics7d: {
         spend: c.metrics7d?.spend ?? 0,
         metaPurchases: c.metrics7d?.metaPurchases ?? 0,
