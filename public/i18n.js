@@ -79,7 +79,7 @@ const I18N = {
   'th.campaign':        { en: 'Campaign',          kr: '캠페인' },
   'th.status':          { en: 'Status',            kr: '상태' },
   'th.dailyBudget':     { en: 'Daily Budget',      kr: '일일 예산' },
-  'th.spend7d':         { en: 'Spend (7d)',        kr: '지출 (7일)' },
+  'th.spendWindow':     { en: 'Spend',             kr: '지출' },
   'th.purchases':       { en: 'Purchases',         kr: '구매' },
   'th.ctr':             { en: 'CTR',               kr: 'CTR' },
   'th.actions':         { en: 'Actions',           kr: '관리' },

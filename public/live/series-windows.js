@@ -6,6 +6,7 @@
   }
 
   const SERIES_WINDOW_OPTIONS = Object.freeze({
+    '7d': { label: '7D', days: 7 },
     '14d': { label: '14D', days: 14 },
     '30d': { label: '30D', days: 30 },
     all: { label: 'All', days: null },
@@ -13,6 +14,7 @@
 
   const DEFAULT_SERIES_WINDOWS = Object.freeze({
     overview: '30d',
+    campaigns: '7d',
     'profit-structure': '30d',
     'media-profitability': '30d',
     'revenue-quality': 'all',

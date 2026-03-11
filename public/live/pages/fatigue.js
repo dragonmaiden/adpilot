@@ -2,45 +2,52 @@
   const live = window.AdPilotLive;
   const { esc } = live.shared;
   const { fetchPostmortem, fetchAnalytics } = live.api;
+  const ANALYSIS_WINDOW_KEY = '14d';
 
   async function refreshFatiguePage() {
     try {
-      const postmortem = await fetchPostmortem();
+      const postmortem = await fetchPostmortem(ANALYSIS_WINDOW_KEY);
       if (!postmortem) return;
 
       const grid = document.getElementById('fatigueGrid');
+      const windowNoteEl = document.getElementById('fatigueWindowNote');
+      if (windowNoteEl) {
+        windowNoteEl.textContent = postmortem.windowDays
+          ? `Recent ${postmortem.windowDays} day fatigue view`
+          : 'All available fatigue history';
+      }
       if (grid) {
         const active = postmortem.active || [];
+        const fatigueBadgeEl = document.querySelector('[data-fatigue-badge]');
 
         if (active.length === 0) {
           grid.innerHTML = '<div class="empty-state">No active ads to analyze for fatigue.</div>';
+          if (fatigueBadgeEl) {
+            fatigueBadgeEl.textContent = '0 ads need attention · 0 healthy';
+          }
         } else {
           const fatigueAds = active.map(ad => {
-            let status = 'healthy';
-
-            const freq = ad.lastFrequency || 1;
-            const ctr = ad.avgCTR || 0;
-            const cpm = ad.avgCPM || 0;
-
-            if (freq > 2.5 || ctr < 5) status = 'danger';
-            else if (freq > 1.8 || ctr < 8) status = 'warning';
+            const fatigue = ad.fatigue || {};
+            const status = fatigue.status || 'healthy';
+            const freq = Number(fatigue.lastFrequency ?? ad.lastFrequency ?? 0);
+            const ctrDecay = Number(fatigue.ctrDecayPercent || 0);
+            const cpmRise = Number(fatigue.cpmRisePercent || 0);
+            const recentCtr = Number(fatigue.recentCTR ?? ad.lastCTR ?? ad.avgCTR ?? 0);
+            const days = Number(fatigue.daysOfData ?? ad.daysOfData ?? 0);
+            const actionBase = fatigue.summary || `Recent CTR ${recentCtr.toFixed(2)}%, frequency ${freq.toFixed(1)}.`;
 
             return {
               name: ad.name,
               status,
               frequency: freq.toFixed(2),
-              ctrDecay: ctr.toFixed(2),
-              cpmRise: cpm.toFixed(2),
-              days: ad.daysOfData || 0,
-              action: status === 'danger'
-                ? `Frequency ${freq.toFixed(1)} is high. CTR at ${ctr.toFixed(1)}% — consider pausing or refreshing.`
-                : status === 'warning'
-                ? `Frequency ${freq.toFixed(1)} — monitor closely. ${ctr.toFixed(1)}% CTR.`
-                : `Healthy. ${ctr.toFixed(1)}% CTR, ${freq.toFixed(1)}x frequency. No fatigue signs.`,
+              ctrDecay: ctrDecay.toFixed(1),
+              cpmRise: cpmRise.toFixed(1),
+              recentCtr: recentCtr.toFixed(2),
+              days,
+              action: `${actionBase} Recent CTR ${recentCtr.toFixed(2)}%.`,
             };
           });
 
-          const fatigueBadgeEl = document.querySelector('[data-fatigue-badge]');
           if (fatigueBadgeEl) {
             const needsAttention = fatigueAds.filter(ad => ad.status !== 'healthy').length;
             const healthy = fatigueAds.filter(ad => ad.status === 'healthy').length;
@@ -59,16 +66,16 @@
                   <span class="fatigue-metric-value">${ad.frequency}</span>
                 </div>
                 <div class="fatigue-metric">
-                  <span class="fatigue-metric-label">Avg CTR</span>
-                  <span class="fatigue-metric-value" style="color:${parseFloat(ad.ctrDecay) < 5 ? 'var(--color-error)' : parseFloat(ad.ctrDecay) < 8 ? 'var(--color-warning)' : 'var(--color-success)'}">${ad.ctrDecay}%</span>
+                  <span class="fatigue-metric-label">CTR Decay</span>
+                  <span class="fatigue-metric-value" style="color:${parseFloat(ad.ctrDecay) >= 30 ? 'var(--color-error)' : parseFloat(ad.ctrDecay) >= 20 ? 'var(--color-warning)' : 'var(--color-success)'}">${ad.ctrDecay}%</span>
                 </div>
                 <div class="fatigue-metric">
-                  <span class="fatigue-metric-label">Avg CPM</span>
-                  <span class="fatigue-metric-value">$${ad.cpmRise}</span>
+                  <span class="fatigue-metric-label">CPM Rise</span>
+                  <span class="fatigue-metric-value" style="color:${parseFloat(ad.cpmRise) >= 40 ? 'var(--color-error)' : parseFloat(ad.cpmRise) >= 20 ? 'var(--color-warning)' : 'var(--color-success)'}">${ad.cpmRise}%</span>
                 </div>
                 <div class="fatigue-metric">
-                  <span class="fatigue-metric-label">Active Days</span>
-                  <span class="fatigue-metric-value">${ad.days}d</span>
+                  <span class="fatigue-metric-label">Recent CTR</span>
+                  <span class="fatigue-metric-value">${ad.recentCtr}%</span>
                 </div>
               </div>
               <div class="fatigue-action">

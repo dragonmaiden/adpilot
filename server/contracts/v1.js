@@ -20,7 +20,7 @@ function buildRateMetric({ rate = 0, numerator = 0, denominator = 0, unit = '', 
 /**
  * Build /api/overview response.
  */
-function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanning }) {
+function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanning, dataSources }) {
   return {
     apiVersion: API_VERSION,
     ready: true,
@@ -63,6 +63,7 @@ function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanni
       dailyProfit: charts.dailyProfit ?? [],
     },
     scanStats: scanStats ?? {},
+    dataSources: dataSources ?? {},
   };
 }
 
@@ -80,7 +81,7 @@ function overviewNotReady() {
 /**
  * Build /api/analytics response.
  */
-function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData, monthlyRates, profitAnalysis }) {
+function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData, monthlyRates, profitAnalysis, dataSources }) {
   const refundMetric = buildRateMetric({
     rate: revenueData?.refundRate ?? 0,
     numerator: revenueData?.totalRefunded ?? 0,
@@ -132,6 +133,7 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
     dailyInsights: dailyInsights ?? [],
     adSetInsights: adSetInsights ?? [],
     adInsights: adInsights ?? [],
+    dataSources: dataSources ?? {},
     // Profit Analysis
     profitAnalysis: {
       waterfall: profitAnalysis?.waterfall ?? [],
@@ -177,9 +179,11 @@ function calendarAnalysis({ ready, viewport, calendarDays, selection }) {
 /**
  * Build /api/campaigns response.
  */
-function campaigns({ campaigns: enriched }) {
+function campaigns({ campaigns: enriched, windowKey, windowDays }) {
   return {
     apiVersion: API_VERSION,
+    windowKey: windowKey ?? '7d',
+    windowDays: windowDays ?? 7,
     campaigns: (enriched || []).map(c => ({
       id: c.id ?? '',
       name: c.name ?? '',
@@ -188,13 +192,13 @@ function campaigns({ campaigns: enriched }) {
       dailyBudget: c.daily_budget ?? c.dailyBudget ?? null,
       objective: c.objective ?? '',
       bidStrategy: c.bid_strategy ?? c.bidStrategy ?? '',
-      metrics7d: {
-        spend: c.metrics7d?.spend ?? 0,
-        metaPurchases: c.metrics7d?.metaPurchases ?? 0,
-        cpa: c.metrics7d?.cpa ?? null,
-        clicks: c.metrics7d?.clicks ?? 0,
-        impressions: c.metrics7d?.impressions ?? 0,
-        ctr: c.metrics7d?.ctr ?? 0,
+      metricsWindow: {
+        spend: c.metricsWindow?.spend ?? 0,
+        metaPurchases: c.metricsWindow?.metaPurchases ?? 0,
+        cpa: c.metricsWindow?.cpa ?? null,
+        clicks: c.metricsWindow?.clicks ?? 0,
+        impressions: c.metricsWindow?.impressions ?? 0,
+        ctr: c.metricsWindow?.ctr ?? 0,
       },
     })),
   };
@@ -278,9 +282,11 @@ function reconciliation({ ready, matchWindowMinutes, summary, daily, matches, un
 /**
  * Build /api/postmortem response.
  */
-function postmortem({ active, inactive, noData, lessonsSummary, totals }) {
+function postmortem({ active, inactive, noData, lessonsSummary, totals, windowKey, windowDays }) {
   return {
     apiVersion: API_VERSION,
+    windowKey: windowKey ?? '14d',
+    windowDays: windowDays ?? 14,
     active: active ?? [],
     inactive: inactive ?? [],
     noData: noData ?? [],
@@ -310,13 +316,15 @@ function optimizationTimeline({ timeline, scanTimeline, totalOptimizations, tota
 /**
  * Build /api/settings response.
  */
-function settings({ rules, scheduler, meta, imweb, currency }) {
+function settings({ rules, scheduler, meta, imweb, telegram, sources, currency }) {
   return {
     apiVersion: API_VERSION,
     rules: rules ?? {},
     scheduler: scheduler ?? {},
     meta: meta ?? {},
     imweb: imweb ?? {},
+    telegram: telegram ?? {},
+    sources: sources ?? {},
     currency: currency ?? {},
   };
 }

@@ -128,6 +128,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     live.setPageActivatedHandler(handlePageActivated);
     registerSeriesWindowRefresher('overview', () => live.refresh('overview'));
+    registerSeriesWindowRefresher('campaigns', () => live.refresh('campaigns'));
     registerSeriesWindowRefresher('profit-structure', () => live.refresh('analytics'));
     registerSeriesWindowRefresher('media-profitability', () => live.refresh('analytics'));
     registerSeriesWindowRefresher('revenue-quality', () => live.refresh('analytics'));

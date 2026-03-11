@@ -78,6 +78,7 @@ function getOverviewResponse() {
     scanStats: scan.stats || {},
     lastScan: scheduler.getLastScanTime()?.toISOString(),
     isScanning: scheduler.getIsScanning(),
+    dataSources: scheduler.getSourceHealth(),
   });
 }
 

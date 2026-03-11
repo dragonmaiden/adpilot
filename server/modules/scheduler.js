@@ -13,6 +13,7 @@ module.exports = {
   stopScheduler: schedulerLoop.stopScheduler,
   getNextScheduledRunAt: schedulerLoop.getNextScheduledRunAt,
   getLatestData: scanStore.getLatestData,
+  getSourceHealth: scanStore.getSourceHealth,
   getLastScanResult: scanStore.getLastScanResult,
   getLastScanTime: scanStore.getLastScanTime,
   getScanHistory: scanStore.getScanHistory,

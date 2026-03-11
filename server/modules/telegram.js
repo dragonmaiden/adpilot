@@ -5,15 +5,127 @@
 
 const config = require('../config');
 
-const BOT_TOKEN = config.telegram.botToken;
-const CHAT_ID = config.telegram.chatId;
-const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const BOT_TOKEN = typeof config.telegram.botToken === 'string'
+  ? config.telegram.botToken.trim()
+  : '';
+const CHAT_ID = config.telegram.chatId != null
+  ? String(config.telegram.chatId).trim()
+  : '';
+const API_BASE = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : '';
+const BOT_TOKEN_PATTERN = /^\d{6,}:[A-Za-z0-9_-]{20,}$/;
 
 // Pending approvals waiting for user response
 const pendingApprovals = new Map();
+const statusState = {
+  status: 'unknown',
+  botTokenConfigured: Boolean(BOT_TOKEN),
+  chatIdConfigured: Boolean(CHAT_ID),
+  botTokenFormatValid: BOT_TOKEN_PATTERN.test(BOT_TOKEN),
+  chatId: CHAT_ID || null,
+  botUsername: null,
+  botId: null,
+  lastCheckedAt: null,
+  lastOkAt: null,
+  lastError: null,
+};
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function getConfigurationError() {
+  if (!BOT_TOKEN) return 'TELEGRAM_BOT_TOKEN missing';
+  if (!BOT_TOKEN_PATTERN.test(BOT_TOKEN)) return 'TELEGRAM_BOT_TOKEN format is invalid';
+  if (!CHAT_ID) return 'TELEGRAM_CHAT_ID missing';
+  return null;
+}
+
+function syncStatus(patch = {}) {
+  Object.assign(statusState, patch, {
+    botTokenConfigured: Boolean(BOT_TOKEN),
+    chatIdConfigured: Boolean(CHAT_ID),
+    botTokenFormatValid: BOT_TOKEN_PATTERN.test(BOT_TOKEN),
+    chatId: CHAT_ID || null,
+  });
+
+  const configError = getConfigurationError();
+  if (configError) {
+    statusState.status = 'misconfigured';
+    statusState.lastError = configError;
+  } else if (!statusState.status || statusState.status === 'misconfigured') {
+    statusState.status = 'unknown';
+  }
+
+  return statusState;
+}
+
+function getStatus() {
+  return { ...syncStatus() };
+}
+
+function describeTelegramFailure(data, fallback = 'Telegram request failed') {
+  const description = typeof data?.description === 'string' && data.description.trim()
+    ? data.description.trim()
+    : fallback;
+
+  if (description === 'Not Found') {
+    return 'Telegram API returned 404 Not Found. Check TELEGRAM_BOT_TOKEN.';
+  }
+  if (description.toLowerCase() === 'chat not found') {
+    return 'Telegram chat not found. Check TELEGRAM_CHAT_ID and whether the bot can access that chat.';
+  }
+  return description;
+}
+
+async function probeConnection() {
+  const configError = getConfigurationError();
+  if (configError) {
+    syncStatus({ status: 'misconfigured', lastCheckedAt: nowIso(), lastError: configError });
+    return null;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/getMe`);
+    const data = await res.json();
+    const checkedAt = nowIso();
+
+    if (!data.ok) {
+      syncStatus({
+        status: 'error',
+        lastCheckedAt: checkedAt,
+        lastError: describeTelegramFailure(data, 'Telegram getMe failed'),
+      });
+      return null;
+    }
+
+    syncStatus({
+      status: 'connected',
+      botUsername: data.result?.username || null,
+      botId: data.result?.id || null,
+      lastCheckedAt: checkedAt,
+      lastOkAt: checkedAt,
+      lastError: null,
+    });
+    return data.result;
+  } catch (err) {
+    syncStatus({
+      status: 'error',
+      lastCheckedAt: nowIso(),
+      lastError: `Telegram connectivity check failed: ${err.message}`,
+    });
+    return null;
+  }
+}
 
 // ── Send a plain text message ──
 async function sendMessage(text, parseMode = 'HTML') {
+  const configError = getConfigurationError();
+  if (configError) {
+    syncStatus({ status: 'misconfigured', lastCheckedAt: nowIso(), lastError: configError });
+    console.error('[TELEGRAM] Send skipped:', configError);
+    return null;
+  }
+
   try {
     const res = await fetch(`${API_BASE}/sendMessage`, {
       method: 'POST',
@@ -25,9 +137,26 @@ async function sendMessage(text, parseMode = 'HTML') {
       }),
     });
     const data = await res.json();
-    if (!data.ok) console.error('[TELEGRAM] Send failed:', data.description);
+    if (!data.ok) {
+      const message = describeTelegramFailure(data, 'Telegram sendMessage failed');
+      syncStatus({ status: 'error', lastCheckedAt: nowIso(), lastError: message });
+      console.error('[TELEGRAM] Send failed:', message);
+    } else {
+      const checkedAt = nowIso();
+      syncStatus({
+        status: 'connected',
+        lastCheckedAt: checkedAt,
+        lastOkAt: checkedAt,
+        lastError: null,
+      });
+    }
     return data;
   } catch (err) {
+    syncStatus({
+      status: 'error',
+      lastCheckedAt: nowIso(),
+      lastError: `Telegram sendMessage failed: ${err.message}`,
+    });
     console.error('[TELEGRAM] Send error:', err.message);
     return null;
   }
@@ -35,6 +164,13 @@ async function sendMessage(text, parseMode = 'HTML') {
 
 // ── Send approval request with inline buttons ──
 async function requestApproval(optimization) {
+  const configError = getConfigurationError();
+  if (configError) {
+    syncStatus({ status: 'misconfigured', lastCheckedAt: nowIso(), lastError: configError });
+    console.error('[TELEGRAM] Approval request skipped:', configError);
+    return null;
+  }
+
   const approvalId = `approve_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   const priorityEmoji = {
@@ -91,9 +227,19 @@ ${optimization.impact}
 
     const data = await res.json();
     if (!data.ok) {
-      console.error('[TELEGRAM] Approval request failed:', data.description);
+      const message = describeTelegramFailure(data, 'Telegram approval request failed');
+      syncStatus({ status: 'error', lastCheckedAt: nowIso(), lastError: message });
+      console.error('[TELEGRAM] Approval request failed:', message);
       return null;
     }
+
+    const checkedAt = nowIso();
+    syncStatus({
+      status: 'connected',
+      lastCheckedAt: checkedAt,
+      lastOkAt: checkedAt,
+      lastError: null,
+    });
 
     // Store pending approval
     pendingApprovals.set(approvalId, {
@@ -107,6 +253,11 @@ ${optimization.impact}
     console.log(`[TELEGRAM] Approval requested: ${approvalId} for "${optimization.action}"`);
     return approvalId;
   } catch (err) {
+    syncStatus({
+      status: 'error',
+      lastCheckedAt: nowIso(),
+      lastError: `Telegram approval request failed: ${err.message}`,
+    });
     console.error('[TELEGRAM] Approval request error:', err.message);
     return null;
   }
@@ -264,10 +415,22 @@ async function pollUpdates() {
   pollingActive = true;
 
   try {
+    if (!API_BASE) {
+      syncStatus({ status: 'misconfigured', lastCheckedAt: nowIso(), lastError: getConfigurationError() });
+      return;
+    }
+
     const res = await fetch(`${API_BASE}/getUpdates?offset=${lastUpdateId + 1}&timeout=5`);
     const data = await res.json();
 
     if (data.ok && data.result) {
+      const checkedAt = nowIso();
+      syncStatus({
+        status: 'connected',
+        lastCheckedAt: checkedAt,
+        lastOkAt: checkedAt,
+        lastError: null,
+      });
       for (const update of data.result) {
         lastUpdateId = update.update_id;
 
@@ -277,25 +440,48 @@ async function pollUpdates() {
           processCallback(cb.data, cb.id);
         }
       }
+    } else if (!data.ok) {
+      syncStatus({
+        status: 'error',
+        lastCheckedAt: nowIso(),
+        lastError: describeTelegramFailure(data, 'Telegram getUpdates failed'),
+      });
     }
   } catch (err) {
     // Polling error — will retry on next interval
+    syncStatus({
+      status: 'error',
+      lastCheckedAt: nowIso(),
+      lastError: `Telegram polling failed: ${err.message}`,
+    });
+  } finally {
+    pollingActive = false;
   }
-
-  pollingActive = false;
 }
 
 // Start polling loop
 let pollTimer = null;
 
 function startPolling() {
+  const configError = getConfigurationError();
+  if (configError) {
+    syncStatus({ status: 'misconfigured', lastCheckedAt: nowIso(), lastError: configError });
+    console.warn('[TELEGRAM] Polling not started:', configError);
+    return null;
+  }
+  if (pollTimer) {
+    return pollTimer;
+  }
   console.log('[TELEGRAM] Starting callback polling...');
+  probeConnection().catch(() => {});
   pollTimer = setInterval(pollUpdates, 2000); // Poll every 2 seconds
+  return pollTimer;
 }
 
 function stopPolling() {
   if (pollTimer) {
     clearInterval(pollTimer);
+    pollTimer = null;
     console.log('[TELEGRAM] Polling stopped');
   }
 }
@@ -315,6 +501,8 @@ module.exports = {
   waitForApproval,
   processCallback,
   sendScanSummary,
+  getStatus,
+  probeConnection,
   startPolling,
   stopPolling,
   getPendingApprovals,

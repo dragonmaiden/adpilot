@@ -87,12 +87,18 @@
     return api(`/calendar-analysis?${search.toString()}`, 'GET', null, { timeoutMs: 15000 });
   }
 
-  function fetchCampaigns() {
-    return api('/campaigns');
+  function fetchCampaigns(windowKey) {
+    const search = new URLSearchParams();
+    if (windowKey) search.set('days', windowKey);
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return api(`/campaigns${suffix}`);
   }
 
-  function fetchPostmortem() {
-    return api('/postmortem');
+  function fetchPostmortem(windowKey) {
+    const search = new URLSearchParams();
+    if (windowKey) search.set('days', windowKey);
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return api(`/postmortem${suffix}`);
   }
 
   function fetchSettings() {

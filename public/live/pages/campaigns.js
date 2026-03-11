@@ -2,17 +2,26 @@
   const live = window.AdPilotLive;
   const { esc } = live.shared;
   const { fetchCampaigns, fetchPostmortem, updateCampaignStatus } = live.api;
+  const { getSeriesWindowMeta } = live.seriesWindows;
 
   async function refreshCampaignsPage() {
+    const windowMeta = getSeriesWindowMeta('campaigns');
     const [campaignData, postmortem] = await Promise.all([
-      fetchCampaigns(),
-      fetchPostmortem(),
+      fetchCampaigns(windowMeta.key),
+      fetchPostmortem(windowMeta.key),
     ]);
+    const windowLabel = (campaignData?.windowDays || postmortem?.windowDays)
+      ? `Last ${campaignData?.windowDays || postmortem?.windowDays} days`
+      : 'All available data';
+    const windowNoteEl = document.getElementById('campaignWindowNote');
+    if (windowNoteEl) {
+      windowNoteEl.textContent = `${windowLabel.toLowerCase()} · live actions still apply immediately`;
+    }
 
     const body = document.getElementById('campaignBody');
     if (body && campaignData) {
       body.innerHTML = campaignData.campaigns.map(campaign => {
-        const metrics = campaign.metrics7d || {};
+        const metrics = campaign.metricsWindow || {};
         const status = campaign.status === 'ACTIVE' || campaign.status === 'PAUSED' ? campaign.status : 'UNKNOWN';
         const statusClass = status === 'ACTIVE' ? 'badge-success' : status === 'PAUSED' ? 'badge-warning' : '';
         const budget = campaign.dailyBudget ? `$${(parseInt(campaign.dailyBudget, 10) / 100).toFixed(2)}` : '-';
@@ -64,7 +73,7 @@
     const activeCount = document.getElementById('activeCount');
     if (activeContainer) {
       const active = postmortem.active || [];
-      if (activeCount) activeCount.textContent = `${active.length} ad${active.length !== 1 ? 's' : ''} running`;
+      if (activeCount) activeCount.textContent = `${active.length} ad${active.length !== 1 ? 's' : ''} running · ${windowLabel}`;
 
       if (active.length === 0) {
         activeContainer.innerHTML = '<div class="empty-state">No active ads right now</div>';
@@ -137,7 +146,7 @@
     if (inactiveContainer) {
       const inactive = postmortem.inactive || [];
       const noData = postmortem.noData || [];
-      if (inactiveCount) inactiveCount.textContent = `${inactive.length} with data · ${noData.length} archived`;
+      if (inactiveCount) inactiveCount.textContent = `${inactive.length} with data · ${noData.length} archived · ${windowLabel}`;
 
       if (inactive.length === 0 && noData.length === 0) {
         inactiveContainer.innerHTML = '<div class="empty-state">No paused ads</div>';

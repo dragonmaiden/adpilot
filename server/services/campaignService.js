@@ -3,14 +3,31 @@ const contracts = require('../contracts/v1');
 const { summarizeInsights } = require('../domain/metrics');
 const { getTodayInTimeZone, shiftDate } = require('../domain/time');
 
+const WINDOW_DAYS = Object.freeze({
+  '7d': 7,
+  '14d': 14,
+  '30d': 30,
+  all: null,
+});
+
+function resolveWindow(query) {
+  const key = typeof query?.days === 'string' ? query.days : '7d';
+  const normalized = WINDOW_DAYS[key] === undefined ? '7d' : key;
+  return {
+    key: normalized,
+    days: WINDOW_DAYS[normalized],
+  };
+}
+
 /**
  * Build the /api/campaigns response with 7-day metrics per campaign.
  */
-function getEnrichedCampaigns() {
+function getEnrichedCampaigns(query = {}) {
   const data = scheduler.getLatestData();
   const campaigns = data.campaigns || [];
   const insights = data.campaignInsights || [];
-  const windowStart = shiftDate(getTodayInTimeZone(), -6);
+  const windowMeta = resolveWindow(query);
+  const windowStart = windowMeta.days ? shiftDate(getTodayInTimeZone(), -(windowMeta.days - 1)) : null;
 
   const enriched = campaigns.map(c => {
     const cInsights = insights.filter(i => i.campaign_id === c.id && (!windowStart || i.date_start >= windowStart));
@@ -18,7 +35,7 @@ function getEnrichedCampaigns() {
 
     return {
       ...c,
-      metrics7d: {
+      metricsWindow: {
         spend: metrics.spend,
         metaPurchases: metrics.purchases,
         cpa: metrics.cpa,
@@ -29,7 +46,11 @@ function getEnrichedCampaigns() {
     };
   });
 
-  return contracts.campaigns({ campaigns: enriched });
+  return contracts.campaigns({
+    campaigns: enriched,
+    windowKey: windowMeta.key,
+    windowDays: windowMeta.days,
+  });
 }
 
 module.exports = { getEnrichedCampaigns };

@@ -12,6 +12,10 @@ const { calcROAS } = require('../domain/metrics');
 const { getTodayInTimeZone, shiftDate } = require('../domain/time');
 const runtimeSettings = require('../runtime/runtimeSettings');
 
+function nowIso() {
+  return new Date().toISOString();
+}
+
 function pushStep(scanResult, payload) {
   scanResult.steps.push(payload);
 }
@@ -20,8 +24,30 @@ function pushError(scanResult, step, err) {
   scanResult.errors.push({ step, error: err.message });
 }
 
+function markSourceSuccess(sourceKey, attemptedAt, { hasData = false } = {}) {
+  scanStore.updateSourceHealth(sourceKey, {
+    status: 'connected',
+    stale: false,
+    hasData: Boolean(hasData),
+    lastAttemptAt: attemptedAt,
+    lastSuccessAt: nowIso(),
+    lastError: null,
+  });
+}
+
+function markSourceFailure(sourceKey, attemptedAt, err, { hasData = false } = {}) {
+  scanStore.updateSourceHealth(sourceKey, {
+    status: 'error',
+    stale: Boolean(hasData),
+    hasData: Boolean(hasData),
+    lastAttemptAt: attemptedAt,
+    lastError: err.message,
+  });
+}
+
 async function fetchMetaStructure(scanResult) {
   console.log('[SCHEDULER] Step 1: Fetching Meta Ads campaigns, ad sets, ads...');
+  const attemptedAt = nowIso();
 
   try {
     const [campaigns, adSets, ads] = await Promise.all([
@@ -34,6 +60,9 @@ async function fetchMetaStructure(scanResult) {
     logValidation(campaignsValidation, 'Meta campaigns');
 
     scanStore.patchLatestData({ campaigns, adSets, ads });
+    markSourceSuccess('metaStructure', attemptedAt, {
+      hasData: campaigns.length > 0 || adSets.length > 0 || ads.length > 0,
+    });
     scanStore.saveLatestData();
 
     pushStep(scanResult, {
@@ -51,12 +80,18 @@ async function fetchMetaStructure(scanResult) {
     console.error('[SCHEDULER]   ⚠ Meta structure fetch failed:', err.message);
     pushError(scanResult, 'meta_structure', err);
     pushStep(scanResult, { step: 'meta_structure', status: 'failed' });
+    const latestData = scanStore.getLatestData();
+    markSourceFailure('metaStructure', attemptedAt, err, {
+      hasData: (latestData.campaigns || []).length > 0 || (latestData.adSets || []).length > 0 || (latestData.ads || []).length > 0,
+    });
+    scanStore.saveLatestData();
     return { ok: false };
   }
 }
 
 async function fetchMetaInsights(scanResult, since, until) {
   console.log('[SCHEDULER] Step 2: Fetching Meta Ads insights (full history)...');
+  const attemptedAt = nowIso();
 
   try {
     const [campaignInsights, adSetInsights, adInsights] = await Promise.all([
@@ -73,6 +108,9 @@ async function fetchMetaInsights(scanResult, since, until) {
     logValidation(adInsightsValid, 'Meta ad insights');
 
     scanStore.patchLatestData({ campaignInsights, adSetInsights, adInsights });
+    markSourceSuccess('metaInsights', attemptedAt, {
+      hasData: campaignInsights.length > 0 || adSetInsights.length > 0 || adInsights.length > 0,
+    });
     scanStore.saveLatestData();
 
     pushStep(scanResult, {
@@ -95,12 +133,18 @@ async function fetchMetaInsights(scanResult, since, until) {
     console.error('[SCHEDULER]   ⚠ Meta insights fetch failed:', err.message);
     pushError(scanResult, 'meta_insights', err);
     pushStep(scanResult, { step: 'meta_insights', status: 'failed', period: `${since} to ${until}` });
+    const latestData = scanStore.getLatestData();
+    markSourceFailure('metaInsights', attemptedAt, err, {
+      hasData: (latestData.campaignInsights || []).length > 0 || (latestData.adSetInsights || []).length > 0 || (latestData.adInsights || []).length > 0,
+    });
+    scanStore.saveLatestData();
     return { ok: false };
   }
 }
 
 async function fetchImwebOrders(scanResult) {
   console.log('[SCHEDULER] Step 3: Fetching Imweb orders...');
+  const attemptedAt = nowIso();
 
   try {
     const orders = await imweb.getAllOrders();
@@ -109,6 +153,9 @@ async function fetchImwebOrders(scanResult) {
 
     const revenueData = imweb.processOrders(orders);
     scanStore.patchLatestData({ orders, revenueData });
+    markSourceSuccess('imweb', attemptedAt, {
+      hasData: Boolean(revenueData) || orders.length > 0,
+    });
     scanStore.saveLatestData();
 
     pushStep(scanResult, {
@@ -127,16 +174,25 @@ async function fetchImwebOrders(scanResult) {
     console.error('[SCHEDULER]   ⚠ Imweb fetch failed:', err.message);
     pushError(scanResult, 'imweb_orders', err);
     pushStep(scanResult, { step: 'imweb_orders', status: 'failed' });
+    const latestData = scanStore.getLatestData();
+    markSourceFailure('imweb', attemptedAt, err, {
+      hasData: Boolean(latestData.revenueData) || (latestData.orders || []).length > 0,
+    });
+    scanStore.saveLatestData();
     return { ok: false };
   }
 }
 
 async function fetchCogs(scanResult) {
   console.log('[SCHEDULER] Step 3b: Fetching COGS from Google Sheets...');
+  const attemptedAt = nowIso();
 
   try {
     const cogsData = await cogsClient.fetchAllCOGS();
     scanStore.patchLatestData({ cogsData });
+    markSourceSuccess('cogs', attemptedAt, {
+      hasData: Boolean(cogsData),
+    });
     scanStore.saveLatestData();
 
     pushStep(scanResult, {
@@ -154,6 +210,11 @@ async function fetchCogs(scanResult) {
     console.error('[SCHEDULER]   ⚠ COGS fetch failed:', err.message);
     pushError(scanResult, 'cogs_sheets', err);
     pushStep(scanResult, { step: 'cogs_sheets', status: 'failed' });
+    const latestData = scanStore.getLatestData();
+    markSourceFailure('cogs', attemptedAt, err, {
+      hasData: Boolean(latestData.cogsData),
+    });
+    scanStore.saveLatestData();
     return { ok: false };
   }
 }
@@ -211,7 +272,7 @@ async function runScan(manual = false) {
     if (sourceStatus.metaStructure && sourceStatus.metaInsights) {
       console.log('[SCHEDULER] Step 4: Running optimization engine...');
       const latestData = scanStore.getLatestData();
-      const optimizer = new OptimizationEngine();
+      const optimizer = new OptimizationEngine(scanId);
       const optimizations = await optimizer.analyze(
         metaStructureResult.campaigns,
         metaStructureResult.adSets,
@@ -219,7 +280,8 @@ async function runScan(manual = false) {
         metaInsightsResult.campaignInsights,
         metaInsightsResult.adSetInsights,
         metaInsightsResult.adInsights,
-        latestData.revenueData
+        latestData.revenueData,
+        latestData.sources?.imweb || null
       );
 
       scanResult.optimizations = optimizations;
@@ -317,6 +379,7 @@ async function runScan(manual = false) {
       activeAds: (latestData.ads || []).filter(ad => ad.effective_status === 'ACTIVE').length,
       roas: trailingSevenDays.length > 0 ? calcROAS(totalNetRevenue7d, totalSpend7d).toFixed(2) + 'x' : 'N/A',
     };
+    scanResult.sourceHealth = scanStore.getSourceHealth();
   } catch (err) {
     console.error('[SCHEDULER] SCAN FAILED:', err.message);
     pushError(scanResult, 'fatal', err);

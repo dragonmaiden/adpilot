@@ -10,6 +10,25 @@ const ALL_OPTIMIZATIONS_FILE = 'all_optimizations.json';
 const LATEST_SCAN_FILE = 'latest_scan.json';
 const LATEST_DATA_FILE = 'latest_data.json';
 const SCAN_HISTORY_FILE = 'scan_history.json';
+const SOURCE_KEYS = ['metaStructure', 'metaInsights', 'imweb', 'cogs'];
+
+function createSourceState() {
+  return {
+    status: 'unknown',
+    stale: false,
+    hasData: false,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    lastError: null,
+  };
+}
+
+function createSourcesState() {
+  return SOURCE_KEYS.reduce((result, key) => {
+    result[key] = createSourceState();
+    return result;
+  }, {});
+}
 
 function createLatestDataState() {
   return {
@@ -22,6 +41,7 @@ function createLatestDataState() {
     revenueData: null,
     orders: [],
     cogsData: null,
+    sources: createSourcesState(),
   };
 }
 
@@ -47,13 +67,52 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizeSourceEntry(raw) {
+  return {
+    ...createSourceState(),
+    ...(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}),
+    stale: Boolean(raw?.stale),
+    hasData: Boolean(raw?.hasData),
+    lastAttemptAt: typeof raw?.lastAttemptAt === 'string' ? raw.lastAttemptAt : null,
+    lastSuccessAt: typeof raw?.lastSuccessAt === 'string' ? raw.lastSuccessAt : null,
+    lastError: typeof raw?.lastError === 'string' && raw.lastError.trim() ? raw.lastError.trim() : null,
+  };
+}
+
+function normalizeSources(raw, latestData) {
+  const sources = createSourcesState();
+  const sourceMap = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+
+  for (const key of SOURCE_KEYS) {
+    sources[key] = normalizeSourceEntry(sourceMap[key]);
+  }
+
+  const derivedFlags = {
+    metaStructure: asArray(latestData.campaigns).length > 0 || asArray(latestData.adSets).length > 0 || asArray(latestData.ads).length > 0,
+    metaInsights: asArray(latestData.campaignInsights).length > 0 || asArray(latestData.adSetInsights).length > 0 || asArray(latestData.adInsights).length > 0,
+    imweb: Boolean(latestData.revenueData) || asArray(latestData.orders).length > 0,
+    cogs: Boolean(latestData.cogsData),
+  };
+
+  for (const key of SOURCE_KEYS) {
+    if (derivedFlags[key]) {
+      sources[key].hasData = true;
+      if (sources[key].status === 'unknown') {
+        sources[key].status = 'loaded';
+      }
+    }
+  }
+
+  return sources;
+}
+
 function normalizeLatestData(raw) {
   const base = createLatestDataState();
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return base;
   }
 
-  return {
+  const normalized = {
     ...base,
     campaigns: asArray(raw.campaigns),
     adSets: asArray(raw.adSets),
@@ -66,6 +125,9 @@ function normalizeLatestData(raw) {
     cogsData: raw.cogsData && typeof raw.cogsData === 'object' ? raw.cogsData : null,
     timestamp: typeof raw.timestamp === 'string' ? raw.timestamp : null,
   };
+
+  normalized.sources = normalizeSources(raw.sources, normalized);
+  return normalized;
 }
 
 function normalizeLastScanResult(raw) {
@@ -155,6 +217,53 @@ function normalizeScanHistory(entries, fallbackLastScan) {
   return fallbackEntry ? [fallbackEntry] : [];
 }
 
+function applyLastScanSourceHealth(latestData, lastScanResult) {
+  if (!lastScanResult || !latestData?.sources) {
+    return latestData;
+  }
+
+  const attemptedAt = lastScanResult.endTime || lastScanResult.startTime || null;
+  const errorsByStep = new Map(
+    asArray(lastScanResult.errors).map(entry => [entry?.step, entry?.error || null])
+  );
+  const mappings = [
+    { step: 'meta_structure', source: 'metaStructure' },
+    { step: 'meta_insights', source: 'metaInsights' },
+    { step: 'imweb_orders', source: 'imweb' },
+    { step: 'cogs_sheets', source: 'cogs' },
+  ];
+
+  for (const { step, source } of mappings) {
+    const stepResult = asArray(lastScanResult.steps).find(entry => entry?.step === step);
+    if (!stepResult) continue;
+
+    const sourceState = latestData.sources[source] || createSourceState();
+    if (stepResult.status === 'ok') {
+      latestData.sources[source] = {
+        ...sourceState,
+        status: 'connected',
+        stale: false,
+        lastAttemptAt: sourceState.lastAttemptAt || attemptedAt,
+        lastSuccessAt: sourceState.lastSuccessAt || attemptedAt,
+        lastError: null,
+      };
+      continue;
+    }
+
+    if (stepResult.status === 'failed') {
+      latestData.sources[source] = {
+        ...sourceState,
+        status: 'error',
+        stale: Boolean(sourceState.hasData),
+        lastAttemptAt: sourceState.lastAttemptAt || attemptedAt,
+        lastError: sourceState.lastError || errorsByStep.get(step) || null,
+      };
+    }
+  }
+
+  return latestData;
+}
+
 function parseLastScanTime(lastScanResult, latestData) {
   const candidate = lastScanResult?.endTime || lastScanResult?.startTime || latestData?.timestamp;
   if (!candidate) return null;
@@ -165,9 +274,12 @@ function parseLastScanTime(lastScanResult, latestData) {
 
 function createState() {
   const lastScanResult = normalizeLastScanResult(loadData(LATEST_SCAN_FILE, null));
-  const latestData = hydrateLatestDataFromSnapshot(
+  const latestData = applyLastScanSourceHealth(
+    hydrateLatestDataFromSnapshot(
     lastScanResult?.scanId,
     normalizeLatestData(loadData(LATEST_DATA_FILE, null))
+    ),
+    lastScanResult
   );
   return {
     lastScanTime: parseLastScanTime(lastScanResult, latestData),
@@ -188,6 +300,33 @@ function getLatestData() {
 function patchLatestData(patch) {
   Object.assign(state.latestData, patch);
   return state.latestData;
+}
+
+function getSourceHealth() {
+  return SOURCE_KEYS.reduce((result, key) => {
+    result[key] = {
+      ...state.latestData.sources[key],
+    };
+    return result;
+  }, {});
+}
+
+function updateSourceHealth(sourceKey, patch) {
+  if (!SOURCE_KEYS.includes(sourceKey)) {
+    return getSourceHealth();
+  }
+
+  if (!state.latestData.sources || typeof state.latestData.sources !== 'object') {
+    state.latestData.sources = createSourcesState();
+  }
+
+  state.latestData.sources[sourceKey] = {
+    ...createSourceState(),
+    ...state.latestData.sources[sourceKey],
+    ...(patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {}),
+  };
+
+  return getSourceHealth();
 }
 
 function getLastScanResult() {
@@ -262,6 +401,8 @@ function saveLatestData() {
 module.exports = {
   getLatestData,
   patchLatestData,
+  getSourceHealth,
+  updateSourceHealth,
   getLastScanResult,
   setLastScanResult,
   getLastScanTime,

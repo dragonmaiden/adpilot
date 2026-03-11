@@ -63,6 +63,7 @@ function getAnalyticsResponse() {
   const data = scheduler.getLatestData();
   const revenue = data.revenueData || {};
   const cogs = data.cogsData || null;
+  const dataSources = scheduler.getSourceHealth();
 
   // Build chart-ready arrays server-side
   const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights, cogs?.dailyCOGS);
@@ -99,6 +100,7 @@ function getAnalyticsResponse() {
     dailyInsights: data.campaignInsights || [],
     adSetInsights: data.adSetInsights || [],
     adInsights: data.adInsights || [],
+    dataSources,
     cogsData: cogs,
     monthlyRates,
     profitAnalysis: {

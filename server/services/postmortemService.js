@@ -1,19 +1,43 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const { summarizeInsights, extractPositiveFieldValues } = require('../domain/metrics');
+const { buildFatigueSnapshot, classifyFatigue } = require('../domain/fatigue');
+const runtimeSettings = require('../runtime/runtimeSettings');
+const { getTodayInTimeZone, shiftDate } = require('../domain/time');
+
+const WINDOW_DAYS = Object.freeze({
+  '7d': 7,
+  '14d': 14,
+  '30d': 30,
+  all: null,
+});
+
+function resolveWindow(query) {
+  const key = typeof query?.days === 'string' ? query.days : '14d';
+  const normalized = WINDOW_DAYS[key] === undefined ? '14d' : key;
+  return {
+    key: normalized,
+    days: WINDOW_DAYS[normalized],
+  };
+}
 
 /**
  * Build the /api/postmortem response — ad performance data with lessons for paused ads.
  */
-function getPostmortemResponse() {
+function getPostmortemResponse(query = {}) {
   const data = scheduler.getLatestData();
   const ads = data.ads || [];
   const adInsights = data.adInsights || [];
   const campaigns = data.campaigns || [];
+  const rules = runtimeSettings.getRules();
+  const windowMeta = resolveWindow(query);
+  const windowStart = windowMeta.days ? shiftDate(getTodayInTimeZone(), -(windowMeta.days - 1)) : null;
 
   // Build performance data for ALL ads (active + paused)
   const adPerformance = ads.map(ad => {
-    const adIns = adInsights.filter(i => i.ad_id === ad.id);
+    const adIns = adInsights
+      .filter(i => i.ad_id === ad.id && (!windowStart || i.date_start >= windowStart))
+      .sort((left, right) => String(left?.date_start || '').localeCompare(String(right?.date_start || '')));
     const metrics = summarizeInsights(adIns);
     const totalSpend = metrics.spend;
     const totalClicks = metrics.clicks;
@@ -30,6 +54,12 @@ function getPostmortemResponse() {
     const avgCPM = cpms.length > 0 ? cpms.reduce((a, b) => a + b, 0) / cpms.length : 0;
     const lastFreq = freqs.length > 0 ? freqs[freqs.length - 1] : 0;
     const cpa = metrics.cpa;
+    const fatigueSnapshot = buildFatigueSnapshot(adIns);
+    const fatigue = classifyFatigue(fatigueSnapshot, {
+      frequencyThreshold: rules.fatigueFrequencyThreshold,
+      ctrDecayPercent: rules.fatigueCtrDecayPercent,
+      minDataDays: rules.minDataDays,
+    });
 
     // Generate lessons for paused ads
     const lessons = [];
@@ -50,7 +80,7 @@ function getPostmortemResponse() {
         lessons.push({ type: 'clicks_no_purchase', text: `Good CTR (${avgCTR.toFixed(2)}%) but no pixel purchases — landing page or pricing may be the issue` });
       }
       if (totalSpend === 0) {
-        lessons.push({ type: 'no_data', text: 'No spend data in the last 7 days — was paused before this period' });
+        lessons.push({ type: 'no_data', text: 'No spend data in the selected window — was paused before this period' });
       }
       if (lessons.length === 0 && totalSpend > 0) {
         lessons.push({ type: 'general', text: `Spent $${totalSpend.toFixed(2)} with ${totalMetaPurchases} pixel purchase${totalMetaPurchases !== 1 ? 's' : ''} — manually paused or replaced by better creative` });
@@ -78,6 +108,10 @@ function getPostmortemResponse() {
       lastCTR,
       avgCPM,
       lastFrequency: lastFreq,
+      fatigue: {
+        ...fatigueSnapshot,
+        ...fatigue,
+      },
       lessons,
     };
   });
@@ -105,6 +139,8 @@ function getPostmortemResponse() {
     inactive,
     noData,
     lessonsSummary,
+    windowKey: windowMeta.key,
+    windowDays: windowMeta.days,
     totals: {
       activeCount: active.length,
       inactiveWithData: inactive.length,

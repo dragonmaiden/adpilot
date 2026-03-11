@@ -33,6 +33,40 @@
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  function buildWeekdayPerformance(rows) {
+    const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const buckets = labels.map(day => ({
+      day,
+      spend: 0,
+      purchases: 0,
+      paid: 0,
+      refunded: 0,
+      net: 0,
+      orders: 0,
+    }));
+
+    (Array.isArray(rows) ? rows : []).forEach(row => {
+      if (!row?.date) return;
+      const weekdayIndex = new Date(`${row.date}T00:00:00`).getDay();
+      const bucket = buckets[weekdayIndex];
+      if (!bucket) return;
+
+      const paid = toFiniteNumber(row.revenue);
+      const refunded = toFiniteNumber(row.refunded);
+      bucket.spend += toFiniteNumber(row.spend);
+      bucket.purchases += toFiniteNumber(row.purchases);
+      bucket.paid += paid;
+      bucket.refunded += refunded;
+      bucket.net += paid - refunded;
+      bucket.orders += toFiniteNumber(row.orders);
+    });
+
+    return buckets.map(bucket => ({
+      ...bucket,
+      cpa: bucket.purchases > 0 ? bucket.spend / bucket.purchases : 0,
+    }));
+  }
+
   function buildReconciliationOverlap(dailyRows, matches, unmatchedSettlements, unmatchedImwebPayments) {
     const mismatchMatches = matches.filter(match => match.methodMismatch);
     return {
@@ -397,11 +431,36 @@
         : sliceRowsByWindow(charts.dailyProfit || [], 'profit-structure');
       const profitCutoff = profitDaily[0]?.date || '';
       const profitWeeklyAgg = (charts.weeklyAgg || []).filter(week => week.week >= profitCutoff);
-      const mediaCutoff = sliceRowsByWindow(allDailyMerged, 'media-profitability')[0]?.date || '';
+      const mediaDaily = sliceRowsByWindow(allDailyMerged, 'media-profitability');
+      const mediaCutoff = mediaDaily[0]?.date || '';
       const mediaWeeklyAgg = (charts.weeklyAgg || []).filter(week => week.week >= mediaCutoff);
-      const weekdayPerf = charts.weekdayPerf || [];
+      const weekdayPerf = buildWeekdayPerformance(mediaDaily);
       const qualityCutoff = sliceRowsByWindow(allDailyMerged, 'revenue-quality')[0]?.date || '';
       const monthlyRefunds = (charts.monthlyRefunds || []).filter(month => month.month >= qualityCutoff.slice(0, 7));
+      const imwebSource = data.dataSources?.imweb || null;
+      const analyticsNoticeEl = document.getElementById('analyticsFreshnessNotice');
+      const weekdayChartWindowEl = document.getElementById('weekdayChartWindowNote');
+      const weekdayTableWindowEl = document.getElementById('weekdayTableWindowNote');
+      const mediaWindowMeta = getSeriesWindowMeta('media-profitability');
+
+      if (weekdayChartWindowEl) {
+        weekdayChartWindowEl.textContent = `${mediaWindowMeta.label} window`;
+      }
+      if (weekdayTableWindowEl) {
+        weekdayTableWindowEl.textContent = `Net revenue, ad spend, and CPA by weekday · ${mediaWindowMeta.label} window`;
+      }
+      if (analyticsNoticeEl) {
+        if (imwebSource?.stale) {
+          analyticsNoticeEl.hidden = false;
+          analyticsNoticeEl.textContent = 'Revenue-backed analytics are using cached Imweb data. Weekday revenue, refunds, and ROAS are directional until the next successful sync.';
+        } else if (imwebSource?.status === 'error') {
+          analyticsNoticeEl.hidden = false;
+          analyticsNoticeEl.textContent = 'Imweb sync is unavailable. Revenue-backed analytics may be incomplete.';
+        } else {
+          analyticsNoticeEl.hidden = true;
+          analyticsNoticeEl.textContent = '';
+        }
+      }
 
       renderProfitAnalysisSection(data);
 

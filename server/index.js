@@ -148,6 +148,7 @@ app.use('/api', (req, res, next) => {
 
 // ── Health check ──
 app.get('/api/health', (req, res) => {
+  const sourceHealth = scheduler.getSourceHealth();
   res.json({
     status: 'ok',
     version: '1.0.0',
@@ -156,6 +157,8 @@ app.get('/api/health', (req, res) => {
     isScanning: scheduler.getIsScanning(),
     autonomousMode: runtimeSettings.getRules().autonomousMode,
     imwebAuth: imweb.getAuthState().status,
+    telegram: telegram.getStatus(),
+    sources: sourceHealth,
   });
 });
 
@@ -166,7 +169,7 @@ app.get('/api/overview', (req, res) => {
 
 // ── Campaigns list with live data ──
 app.get('/api/campaigns', (req, res) => {
-  res.json(campaignService.getEnrichedCampaigns());
+  res.json(campaignService.getEnrichedCampaigns(req.query));
 });
 
 // ── Optimizations log ──
@@ -397,6 +400,7 @@ app.post('/api/seed-token', writeLimiter, async (req, res) => {
 // ── Settings ──
 app.get('/api/settings', (req, res) => {
   const settings = runtimeSettings.getSettings();
+  const sourceHealth = scheduler.getSourceHealth();
   res.json(contracts.settings({
     rules: settings.rules,
     scheduler: settings.scheduler,
@@ -409,7 +413,10 @@ app.get('/api/settings', (req, res) => {
       siteCode: config.imweb.siteCode,
       unitCode: config.imweb.unitCode,
       auth: imweb.getAuthState(),
+      data: sourceHealth.imweb || {},
     },
+    telegram: telegram.getStatus(),
+    sources: sourceHealth,
     currency: config.currency,
   }));
 });
@@ -431,7 +438,7 @@ app.put('/api/settings', writeLimiter, (req, res) => {
 
 // ── Post-mortem analysis for paused ads ──
 app.get('/api/postmortem', (req, res) => {
-  res.json(postmortemService.getPostmortemResponse());
+  res.json(postmortemService.getPostmortemResponse(req.query));
 });
 
 // ── Optimization Timeline (for micro-adjustment chart) ──

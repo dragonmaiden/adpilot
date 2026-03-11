@@ -37,7 +37,7 @@
         }
 
         const totalSpend = campaigns.reduce((sum, campaign) => {
-          const metrics = campaign.metrics7d || {};
+          const metrics = campaign.metricsWindow || {};
           return sum + (metrics.spend || 0);
         }, 0);
 
@@ -73,7 +73,7 @@
         if (typeof budgetPieChart !== 'undefined' && budgetPieChart) {
           budgetPieChart.data.labels = campaigns.map(campaign => campaign.name);
           budgetPieChart.data.datasets[0].data = campaigns.map(campaign => {
-            const metrics = campaign.metrics7d || {};
+            const metrics = campaign.metricsWindow || {};
             return metrics.spend || 0;
           });
           budgetPieChart.update();

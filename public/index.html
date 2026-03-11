@@ -90,6 +90,7 @@
       <div class="page-title">
         <h1 id="pageTitle">Overview</h1>
         <span class="last-scan">Last scan: <span id="lastScan">12 min ago</span></span>
+        <span class="last-scan-warning" id="dataFreshnessNotice" hidden></span>
       </div>
     </div>
     <div class="header-right">
@@ -100,12 +101,12 @@
         </svg>
         <span>Meta Ads</span>
       </div>
-      <div class="connected-badge">
+      <div class="connected-badge" id="imwebConnectedBadge">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
           <rect x="1" y="1" width="14" height="14" rx="3" stroke="#4ade80" stroke-width="1.5"/>
           <text x="8" y="11.5" text-anchor="middle" font-size="8" font-weight="700" fill="#4ade80">iw</text>
         </svg>
-        <span>Imweb</span>
+        <span id="imwebConnectedLabel">Imweb</span>
       </div>
       <button class="btn btn-primary" id="runScanBtn">
         <i data-lucide="radar"></i>
@@ -289,6 +290,7 @@
         </div>
         <p class="section-note">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
       </div>
+      <div class="analytics-inline-notice" id="analyticsFreshnessNotice" hidden></div>
 
       <div class="profit-hero" id="profitHero">
         <div class="profit-hero-inner">
@@ -434,6 +436,7 @@
         <div class="card chart-card">
           <div class="card-header">
             <h2 data-i18n="chart.weekdayPerf">Ad Performance by Weekday</h2>
+            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="weekdayChartWindowNote">30D window</span>
           </div>
           <div class="chart-container" style="height:320px">
             <canvas id="weekdayChart"></canvas>
@@ -476,7 +479,7 @@
       <div class="card">
         <div class="card-header">
           <h2 data-i18n="chart.weekdayRevenue">Revenue by Day of Week</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)">Net revenue, ad spend, and CPA by weekday</span>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)" id="weekdayTableWindowNote">Net revenue, ad spend, and CPA by weekday</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="weekdayTable">
@@ -624,6 +627,23 @@
 
     <!-- Campaigns Page -->
     <section class="page" data-page="campaigns">
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker">Campaign Performance</div>
+          <h2>Control and diagnose live delivery</h2>
+        </div>
+        <div class="range-toolbar">
+          <span class="range-toolbar-label">Window</span>
+          <div class="range-switch" data-series-window-group="campaigns" role="group" aria-label="Campaign performance window">
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="7d">7D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+          </div>
+        </div>
+      </div>
+      <p class="section-note" id="campaignWindowNote">last 7 days · live actions still apply immediately</p>
+
       <!-- Live / Active Section -->
       <div class="card" id="activeCampaignsCard">
         <div class="card-header">
@@ -647,7 +667,7 @@
                 <th data-i18n="th.campaign">Campaign</th>
                 <th data-i18n="th.status">Status</th>
                 <th data-i18n="th.dailyBudget">Daily Budget</th>
-                <th data-i18n="th.spend7d">Spend (7d)</th>
+                <th data-i18n="th.spendWindow">Spend</th>
                 <th data-i18n="th.purchasesPixel">Pixel Purchases</th>
                 <th data-i18n="th.cpa">CPA</th>
                 <th data-i18n="th.ctr">CTR</th>
@@ -768,7 +788,10 @@
       <div class="card">
         <div class="card-header">
           <h2 data-i18n="fatigue.monitor">Ad Fatigue Monitor</h2>
-          <span class="badge badge-warning" data-fatigue-badge>— ads · — healthy</span>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="fatigueWindowNote">Recent 14 day fatigue view</span>
+            <span class="badge badge-warning" data-fatigue-badge>— ads · — healthy</span>
+          </div>
         </div>
         <p class="card-desc" data-i18n="fatigue.desc">The agent monitors frequency, CTR decay, and CPM rise to detect ad fatigue before it damages performance.</p>
         <div class="fatigue-grid" id="fatigueGrid"></div>
@@ -984,12 +1007,47 @@
             <span class="api-value" id="settingsImwebAuthNote">—</span>
           </div>
           <div class="api-row">
+            <span class="api-label">Data Freshness</span>
+            <span class="api-value" id="settingsImwebDataStatus">—</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Last Revenue Sync</span>
+            <span class="api-value" id="settingsImwebLastSync">—</span>
+          </div>
+          <div class="api-row">
             <span class="api-label">Total Orders</span>
             <span class="api-value" id="settingsImwebOrders">—</span>
           </div>
           <div class="api-row">
             <span class="api-label">Revenue</span>
             <span class="api-value" id="settingsImwebRevenue">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Telegram Approval Bot</h2>
+        </div>
+        <div class="api-status">
+          <div class="api-row">
+            <span class="api-label">Connection Status</span>
+            <span class="badge badge-neutral" id="settingsTelegramStatus">Unknown</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Bot</span>
+            <span class="api-value" id="settingsTelegramBot">—</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Chat</span>
+            <span class="api-value" id="settingsTelegramChat">—</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Last Check</span>
+            <span class="api-value" id="settingsTelegramLastCheck">—</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label">Bot Note</span>
+            <span class="api-value" id="settingsTelegramNote">—</span>
           </div>
         </div>
       </div>

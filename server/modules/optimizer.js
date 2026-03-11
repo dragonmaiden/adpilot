@@ -10,10 +10,10 @@ const {
   averagePositiveField,
   calcROAS,
   convertUsdToKrw,
-  extractPositiveFieldValues,
   getPurchases,
   summarizeInsights,
 } = require('../domain/metrics');
+const { buildFatigueSnapshot, classifyFatigue } = require('../domain/fatigue');
 const {
   OPTIMIZATION_TYPES,
   isBudgetDecreaseAction,
@@ -21,15 +21,50 @@ const {
   requiresApproval,
 } = require('../domain/optimizationSemantics');
 const runtimeSettings = require('../runtime/runtimeSettings');
+const { getTodayInTimeZone, shiftDate } = require('../domain/time');
+
+const PERFORMANCE_LOOKBACK_DAYS = 7;
+const SCHEDULE_LOOKBACK_DAYS = 28;
 
 // ═══════════════════════════════════════════════
 // OPTIMIZATION RULES
 // ═══════════════════════════════════════════════
 
+function getWindowStart(days) {
+  return shiftDate(getTodayInTimeZone(), -(days - 1));
+}
+
+function filterRecentInsights(insights, idKey, idValue, days = PERFORMANCE_LOOKBACK_DAYS) {
+  const windowStart = getWindowStart(days);
+  return (Array.isArray(insights) ? insights : [])
+    .filter(row => row?.[idKey] === idValue && row?.date_start >= windowStart)
+    .sort((left, right) => String(left?.date_start || '').localeCompare(String(right?.date_start || '')));
+}
+
+function filterAllRecentInsights(insights, days = PERFORMANCE_LOOKBACK_DAYS) {
+  const windowStart = getWindowStart(days);
+  return (Array.isArray(insights) ? insights : [])
+    .filter(row => row?.date_start >= windowStart)
+    .sort((left, right) => String(left?.date_start || '').localeCompare(String(right?.date_start || '')));
+}
+
+function sumRecentNetRevenue(revenueData, days = PERFORMANCE_LOOKBACK_DAYS) {
+  const dailyRevenue = revenueData?.dailyRevenue;
+  const windowStart = getWindowStart(days);
+  if (!dailyRevenue || typeof dailyRevenue !== 'object') return 0;
+
+  return Object.entries(dailyRevenue).reduce((sum, [date, value]) => {
+    if (date < windowStart) return sum;
+    const paid = Number(value?.revenue || 0);
+    const refunded = Number(value?.refunded || 0);
+    return sum + paid - refunded;
+  }, 0);
+}
+
 class OptimizationEngine {
-  constructor() {
+  constructor(scanId = Date.now()) {
     this.actions = []; // Generated actions for this scan
-    this.scanId = Date.now();
+    this.scanId = scanId;
   }
 
   getRules() {
@@ -56,10 +91,9 @@ class OptimizationEngine {
   }
 
   // ── Run all optimization checks ──
-  async analyze(campaignData, adSetData, adData, campaignInsights, adSetInsights, adInsights, revenueData) {
+  async analyze(campaignData, adSetData, adData, campaignInsights, adSetInsights, adInsights, revenueData, revenueSource = null) {
     const rules = this.getRules();
     this.actions = [];
-    this.scanId = Date.now();
 
     console.log(`[OPTIMIZER] Starting scan ${this.scanId}...`);
 
@@ -81,7 +115,7 @@ class OptimizationEngine {
     this.analyzeScheduling(adSetInsights);
 
     // 6. ROAS-based optimizations
-    this.analyzeROAS(campaignInsights, revenueData);
+    this.analyzeROAS(campaignInsights, revenueData, revenueSource);
 
     console.log(`[OPTIMIZER] Scan complete. Generated ${this.actions.length} optimizations.`);
     return this.actions;
@@ -94,53 +128,53 @@ class OptimizationEngine {
       if (campaign.status !== 'ACTIVE') continue;
 
       // Get recent insights for this campaign (last 7 days)
-      const cInsights = insights.filter(i => i.campaign_id === campaign.id);
+      const cInsights = filterRecentInsights(insights, 'campaign_id', campaign.id);
       if (cInsights.length === 0) continue;
 
       const totals = summarizeInsights(cInsights);
       const totalSpend = totals.spend;
       const totalPurchases = totals.purchases;
       const avgCPA = totals.cpa;
-      const avgCTR = averagePositiveField(cInsights, 'ctr');
       const avgFrequency = averagePositiveField(cInsights, 'frequency');
+      const hasDecisionData = cInsights.length >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
 
       // Rule: High CPA warning
-      if (avgCPA && avgCPA > rules.cpaWarningThreshold) {
+      if (hasDecisionData && avgCPA && avgCPA > rules.cpaWarningThreshold) {
         this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', campaign.id, campaign.name,
           `Reduce daily budget by ${Math.min(rules.maxBudgetChangePercent, 15)}%`,
-          `CPA is $${avgCPA.toFixed(2)} (above $${rules.cpaWarningThreshold} threshold) over ${cInsights.length} days`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} (above $${rules.cpaWarningThreshold} threshold)`,
           `Expected to reduce wasted spend by ~$${(totalSpend * 0.15 / cInsights.length).toFixed(2)}/day`,
           avgCPA > rules.cpaPauseThreshold ? 'critical' : 'high'
         );
       }
 
       // Rule: CPA too high — pause campaign
-      if (avgCPA && avgCPA > rules.cpaPauseThreshold && cInsights.length >= rules.minDataDays) {
+      if (hasDecisionData && avgCPA && avgCPA > rules.cpaPauseThreshold) {
         this.addAction(OPTIMIZATION_TYPES.STATUS, 'campaign', campaign.id, campaign.name,
           `Pause campaign — CPA critically high`,
-          `CPA $${avgCPA.toFixed(2)} exceeds $${rules.cpaPauseThreshold} threshold for ${cInsights.length} consecutive days`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA $${avgCPA.toFixed(2)} exceeds $${rules.cpaPauseThreshold} threshold`,
           `Save ~$${(totalSpend / cInsights.length).toFixed(2)}/day in wasted spend`,
           'critical'
         );
       }
 
       // Rule: Campaign performing well — increase budget
-      if (avgCPA && avgCPA < rules.cpaWarningThreshold * 0.5 && totalPurchases >= 5) {
+      if (hasDecisionData && avgCPA && avgCPA < rules.cpaWarningThreshold * 0.5 && totalPurchases >= 5) {
         const currentBudget = parseInt(campaign.daily_budget || 0);
         const increase = Math.round(currentBudget * rules.maxBudgetChangePercent / 100);
         this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', campaign.id, campaign.name,
           `Increase daily budget by $${(increase / 100).toFixed(2)} (${rules.maxBudgetChangePercent}%)`,
-          `Strong CPA of $${avgCPA.toFixed(2)} with ${totalPurchases} purchases — room to scale`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} with ${totalPurchases} purchases — room to scale`,
           `Potential ${Math.round(increase / 100 / avgCPA)} additional purchases/day`,
           'medium'
         );
       }
 
       // Rule: High frequency warning (audience saturation)
-      if (avgFrequency > rules.fatigueFrequencyThreshold) {
+      if (hasDecisionData && avgFrequency > rules.fatigueFrequencyThreshold) {
         this.addAction(OPTIMIZATION_TYPES.TARGETING, 'campaign', campaign.id, campaign.name,
           `Expand audience — frequency is ${avgFrequency.toFixed(1)}`,
-          `Average frequency of ${avgFrequency.toFixed(1)} indicates audience saturation (threshold: ${rules.fatigueFrequencyThreshold})`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d average frequency of ${avgFrequency.toFixed(1)} indicates audience saturation (threshold: ${rules.fatigueFrequencyThreshold})`,
           `Reduce frequency by expanding lookalike or interest targeting`,
           'high'
         );
@@ -154,20 +188,20 @@ class OptimizationEngine {
     for (const adSet of adSets) {
       if (adSet.effective_status !== 'ACTIVE') continue;
 
-      const asInsights = insights.filter(i => i.adset_id === adSet.id);
+      const asInsights = filterRecentInsights(insights, 'adset_id', adSet.id);
       if (asInsights.length === 0) continue;
 
       const totals = summarizeInsights(asInsights);
       const totalSpend = totals.spend;
       const totalPurchases = totals.purchases;
       const avgCPA = totals.cpa;
-      const avgCTR = averagePositiveField(asInsights, 'ctr');
+      const hasDecisionData = asInsights.length >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
 
       // Rule: Ad set spending with zero conversions
-      if (totalSpend > rules.minSpendForDecision && totalPurchases === 0) {
+      if (hasDecisionData && totalPurchases === 0) {
         this.addAction(OPTIMIZATION_TYPES.STATUS, 'adset', adSet.id, adSet.name,
           `Pause ad set — $${totalSpend.toFixed(2)} spent with 0 purchases`,
-          `${asInsights.length} days of data, $${totalSpend.toFixed(2)} total spend, zero conversions`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d: $${totalSpend.toFixed(2)} spend, zero purchases`,
           `Save $${(totalSpend / asInsights.length).toFixed(2)}/day`,
           'critical'
         );
@@ -193,8 +227,8 @@ class OptimizationEngine {
 
       // Rule: Ad set CPA much higher than campaign average
       const parentCampaign = campaigns.find(c => c.id === adSet.campaign_id);
-      if (parentCampaign && avgCPA) {
-        const campaignInsights = insights.filter(i => i.campaign_id === adSet.campaign_id);
+      if (parentCampaign && hasDecisionData && avgCPA) {
+        const campaignInsights = filterRecentInsights(insights, 'campaign_id', adSet.campaign_id);
         const campaignTotals = summarizeInsights(campaignInsights);
         const campaignCPA = campaignTotals.cpa;
 
@@ -216,56 +250,43 @@ class OptimizationEngine {
     for (const ad of ads) {
       if (ad.effective_status !== 'ACTIVE') continue;
 
-      const adInsights = insights.filter(i => i.ad_id === ad.id);
+      const adInsights = filterRecentInsights(insights, 'ad_id', ad.id);
       if (adInsights.length < 3) continue;
 
       const totals = summarizeInsights(adInsights);
       const totalSpend = totals.spend;
       const totalPurchases = totals.purchases;
+      const fatigueSnapshot = buildFatigueSnapshot(adInsights);
+      const fatigue = classifyFatigue(fatigueSnapshot, {
+        frequencyThreshold: rules.fatigueFrequencyThreshold,
+        ctrDecayPercent: rules.fatigueCtrDecayPercent,
+        minDataDays: rules.minDataDays,
+      });
 
-      // Frequency trend
-      const frequencies = extractPositiveFieldValues(adInsights, 'frequency');
-      const latestFreq = frequencies.length > 0 ? frequencies[frequencies.length - 1] : 0;
-      const avgFreq = frequencies.length > 0 ? frequencies.reduce((a, b) => a + b, 0) / frequencies.length : 0;
-
-      // CTR trend
-      const ctrs = extractPositiveFieldValues(adInsights, 'ctr');
-      const peakCTR = Math.max(...ctrs, 0);
-      const recentCTR = ctrs.length >= 3 ? ctrs.slice(-3).reduce((a, b) => a + b, 0) / 3 : ctrs[ctrs.length - 1] || 0;
-
-      // CPM trend
-      const cpms = extractPositiveFieldValues(adInsights, 'cpm');
-      const avgCPM = cpms.length > 0 ? cpms.reduce((a, b) => a + b, 0) / cpms.length : 0;
-      const recentCPM = cpms.length >= 3 ? cpms.slice(-3).reduce((a, b) => a + b, 0) / 3 : cpms[cpms.length - 1] || 0;
-
-      // Fatigue: High frequency + CTR decay
-      if (latestFreq > rules.fatigueFrequencyThreshold && peakCTR > 0) {
-        const ctrDecay = ((peakCTR - recentCTR) / peakCTR) * 100;
-        if (ctrDecay > rules.fatigueCtrDecayPercent) {
-          this.addAction(OPTIMIZATION_TYPES.CREATIVE, 'ad', ad.id, ad.name,
-            `Ad fatigued — pause & replace creative`,
-            `Frequency: ${latestFreq.toFixed(1)}, CTR dropped ${ctrDecay.toFixed(0)}% from peak (${peakCTR.toFixed(2)}% → ${recentCTR.toFixed(2)}%)`,
-            `Replacing creative typically restores CTR within 3-5 days`,
-            'high'
-          );
-        }
+      if (fatigue.status === 'danger') {
+        this.addAction(OPTIMIZATION_TYPES.CREATIVE, 'ad', ad.id, ad.name,
+          `Ad fatigued — pause & replace creative`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d: frequency ${fatigueSnapshot.lastFrequency.toFixed(1)}, CTR down ${fatigueSnapshot.ctrDecayPercent.toFixed(0)}% from peak (${fatigueSnapshot.peakCTR.toFixed(2)}% → ${fatigueSnapshot.recentCTR.toFixed(2)}%)`,
+          `Replacing creative typically restores CTR within 3-5 days`,
+          'high'
+        );
       }
 
       // Fatigue: CPM rising significantly
-      if (avgCPM > 0 && recentCPM > avgCPM * 1.4) {
+      if (fatigue.flags.cpmPressure && totalSpend >= rules.minSpendForDecision) {
         this.addAction(OPTIMIZATION_TYPES.BID, 'ad', ad.id, ad.name,
-          `CPM rising ${((recentCPM / avgCPM - 1) * 100).toFixed(0)}% — review bid strategy`,
-          `Recent CPM: $${recentCPM.toFixed(2)} vs average: $${avgCPM.toFixed(2)}`,
+          `CPM rising ${fatigueSnapshot.cpmRisePercent.toFixed(0)}% — review bid strategy`,
+          `Recent CPM: $${fatigueSnapshot.recentCPM.toFixed(2)} vs average: $${fatigueSnapshot.avgCPM.toFixed(2)}`,
           `Rising CPM with stable CTR suggests increased competition or audience fatigue`,
           'medium'
         );
       }
 
       // Ad spending with no purchases
-      if (totalSpend > rules.minSpendForDecision * 1.5 && totalPurchases === 0) {
+      if (adInsights.length >= rules.minDataDays && totalSpend > rules.minSpendForDecision * 1.5 && totalPurchases === 0) {
         this.addAction(OPTIMIZATION_TYPES.STATUS, 'ad', ad.id, ad.name,
           `Pause ad — $${totalSpend.toFixed(2)} spent, 0 purchases`,
-          `No conversions after $${totalSpend.toFixed(2)} spend across ${adInsights.length} days`,
+          `No purchases after $${totalSpend.toFixed(2)} spend over the last ${PERFORMANCE_LOOKBACK_DAYS}d`,
           `Save daily spend and reallocate to converting ads`,
           'critical'
         );
@@ -281,10 +302,12 @@ class OptimizationEngine {
 
     // Calculate CPA for each active campaign
     const campaignPerf = activeCampaigns.map(c => {
-      const cInsights = insights.filter(i => i.campaign_id === c.id);
+      const cInsights = filterRecentInsights(insights, 'campaign_id', c.id);
       const totals = summarizeInsights(cInsights);
       return { ...c, spend: totals.spend, purchases: totals.purchases, cpa: totals.cpa ?? Infinity };
-    });
+    }).filter(campaign => campaign.spend >= rules.minSpendForDecision);
+
+    if (campaignPerf.length < 2) return;
 
     // Sort by CPA (best first)
     campaignPerf.sort((a, b) => a.cpa - b.cpa);
@@ -309,9 +332,12 @@ class OptimizationEngine {
   // ── 5. Scheduling Optimizations ──
   analyzeScheduling(adSetInsights) {
     const rules = this.getRules();
+    const recentInsights = filterAllRecentInsights(adSetInsights, SCHEDULE_LOOKBACK_DAYS);
+    if (recentInsights.length < 14) return;
+
     // Aggregate by day of week
     const dayPerf = {};
-    for (const insight of adSetInsights) {
+    for (const insight of recentInsights) {
       const date = new Date(insight.date_start);
       const day = date.toLocaleDateString('en-US', { weekday: 'long' });
       if (!dayPerf[day]) dayPerf[day] = { spend: 0, purchases: 0 };
@@ -333,7 +359,7 @@ class OptimizationEngine {
 
       this.addAction(OPTIMIZATION_TYPES.SCHEDULE, 'account', config.meta.adAccountId, 'SHUE Ad Account',
         `Consider dayparting: best performance on ${bestDays[0].day}`,
-        `Best days: ${bestStr}. Underperforming: ${worstStr}`,
+        `Last ${SCHEDULE_LOOKBACK_DAYS}d best days: ${bestStr}. Underperforming: ${worstStr}`,
         `Shifting more budget to high-performing days could improve overall CPA`,
         'low'
       );
@@ -341,19 +367,23 @@ class OptimizationEngine {
   }
 
   // ── 6. ROAS-Based Optimizations ──
-  analyzeROAS(campaignInsights, revenueData) {
+  analyzeROAS(campaignInsights, revenueData, revenueSource) {
     const rules = this.getRules();
     if (!revenueData) return;
+    if (revenueSource?.stale || revenueSource?.status !== 'connected') return;
 
-    const totalSpend = summarizeInsights(campaignInsights).spend;
+    const recentCampaignInsights = filterAllRecentInsights(campaignInsights, PERFORMANCE_LOOKBACK_DAYS);
+    const totalSpend = summarizeInsights(recentCampaignInsights).spend;
+    const netRevenue = sumRecentNetRevenue(revenueData, PERFORMANCE_LOOKBACK_DAYS);
+    if (totalSpend < rules.minSpendForDecision) return;
+
     const totalSpendKRW = convertUsdToKrw(totalSpend);
-    const netRevenue = revenueData.netRevenue || 0;
     const roas = calcROAS(netRevenue, totalSpend);
 
     if (roas < rules.roasMinimum) {
       this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall ROAS',
         `ROAS is ${roas.toFixed(2)}x — below ${rules.roasMinimum}x minimum`,
-        `Net revenue ₩${netRevenue.toLocaleString()} / ad spend ₩${totalSpendKRW.toLocaleString()} = ${roas.toFixed(2)}x ROAS`,
+        `Last ${PERFORMANCE_LOOKBACK_DAYS}d net revenue ₩${netRevenue.toLocaleString()} / ad spend ₩${totalSpendKRW.toLocaleString()} = ${roas.toFixed(2)}x ROAS`,
         `Consider reducing overall spend or improving conversion rate`,
         'critical'
       );
@@ -362,7 +392,7 @@ class OptimizationEngine {
     if (roas > 4) {
       this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall ROAS',
         `ROAS is ${roas.toFixed(2)}x — strong performance, room to scale`,
-        `Net revenue ₩${netRevenue.toLocaleString()} / ad spend ₩${totalSpendKRW.toLocaleString()} = ${roas.toFixed(2)}x ROAS`,
+        `Last ${PERFORMANCE_LOOKBACK_DAYS}d net revenue ₩${netRevenue.toLocaleString()} / ad spend ₩${totalSpendKRW.toLocaleString()} = ${roas.toFixed(2)}x ROAS`,
         `Consider increasing total ad spend by 10-20% to capture more volume`,
         'medium'
       );

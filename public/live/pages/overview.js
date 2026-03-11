@@ -4,6 +4,49 @@
   const { fetchOverview, fetchAnalytics, fetchOptimizations } = live.api;
   const { sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
 
+  function updateImwebSourceIndicators(source) {
+    const badgeEl = document.getElementById('imwebConnectedBadge');
+    const labelEl = document.getElementById('imwebConnectedLabel');
+    const noticeEl = document.getElementById('dataFreshnessNotice');
+
+    if (badgeEl) {
+      badgeEl.classList.remove('is-success', 'is-warning', 'is-error');
+    }
+
+    if (source?.stale) {
+      if (badgeEl) badgeEl.classList.add('is-warning');
+      if (labelEl) labelEl.textContent = 'Imweb stale';
+      if (badgeEl) {
+        const suffix = source.lastSuccessAt ? ` Last successful sync ${timeSince(new Date(source.lastSuccessAt))}.` : '';
+        badgeEl.title = `Revenue/order metrics are cached.${suffix}`;
+      }
+      if (noticeEl) {
+        noticeEl.hidden = false;
+        noticeEl.textContent = 'Revenue data is cached from the last successful Imweb sync.';
+      }
+      return;
+    }
+
+    if (source?.status === 'error') {
+      if (badgeEl) badgeEl.classList.add('is-error');
+      if (labelEl) labelEl.textContent = 'Imweb error';
+      if (badgeEl && source.lastError) badgeEl.title = source.lastError;
+      if (noticeEl) {
+        noticeEl.hidden = false;
+        noticeEl.textContent = 'Imweb sync is currently unavailable.';
+      }
+      return;
+    }
+
+    if (badgeEl) badgeEl.classList.add('is-success');
+    if (labelEl) labelEl.textContent = 'Imweb';
+    if (badgeEl) badgeEl.title = source?.lastSuccessAt ? `Last successful Imweb sync ${timeSince(new Date(source.lastSuccessAt))}.` : 'Imweb data is up to date.';
+    if (noticeEl) {
+      noticeEl.hidden = true;
+      noticeEl.textContent = '';
+    }
+  }
+
   async function updateActivityFeed() {
     try {
       const data = await fetchOptimizations(8);
@@ -56,6 +99,7 @@
       if (!data) return;
 
       const k = data.kpis;
+      updateImwebSourceIndicators(data.dataSources?.imweb || null);
 
       const revenueEl = document.querySelector('[data-kpi="revenue"] .kpi-value');
       if (revenueEl) {

@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, safeConfidenceLevel, formatSignedKrw, formatCompactKrw, formatSignedCompactKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
+  const { esc, safeConfidenceLevel, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
   const { fetchCalendarAnalysis } = live.api;
 
   const KST_TIME_ZONE = 'Asia/Seoul';
@@ -252,8 +252,8 @@
       badges.push('<span class="calendar-mini-badge coverage">No data</span>');
     }
 
-    const revenueLabel = isFuture ? '—' : formatCompactKrw(data.revenue || 0);
-    const profitLabel = isFuture ? '—' : formatSignedCompactKrw(data.trueNetProfit || 0);
+    const revenueLabel = isFuture ? '—' : formatKrw(data.revenue || 0);
+    const profitLabel = isFuture ? '—' : formatSignedKrw(data.trueNetProfit || 0);
     const ordersLabel = isFuture ? 'Future date' : `${formatCount(data.orders || 0)} orders`;
 
     return `
@@ -544,7 +544,7 @@
         <div class="calendar-reconciliation-grid">
           <div class="calendar-reconciliation-item">
             <div class="calendar-reconciliation-label">Matched Net</div>
-            <div class="calendar-reconciliation-value">${formatSignedCompactKrw(overlap.netAmount || 0)}</div>
+            <div class="calendar-reconciliation-value">${formatSignedKrw(overlap.netAmount || 0)}</div>
           </div>
           <div class="calendar-reconciliation-item">
             <div class="calendar-reconciliation-label">Settlement Gaps</div>
