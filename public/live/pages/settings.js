@@ -127,10 +127,16 @@
 
       const imwebAuthNoteEl = document.getElementById('settingsImwebAuthNote');
       if (imwebAuthNoteEl) {
+        const tokenMismatchNote = imwebAuth?.refreshTokenMismatch
+          ? ' Persisted token and IMWEB_REFRESH_TOKEN differ. Reseed one canonical token source.'
+          : '';
+
         if (imwebData?.stale && imwebAuth?.lastError) {
-          imwebAuthNoteEl.textContent = 'Using cached revenue data. Latest Imweb sync failed: ' + imwebAuth.lastError;
+          imwebAuthNoteEl.textContent = 'Using cached revenue data. Latest Imweb sync failed: ' + imwebAuth.lastError + tokenMismatchNote;
         } else if (imwebAuth?.lastError) {
-          imwebAuthNoteEl.textContent = imwebAuth.lastError;
+          imwebAuthNoteEl.textContent = imwebAuth.lastError + tokenMismatchNote;
+        } else if (imwebAuth?.refreshTokenMismatch) {
+          imwebAuthNoteEl.textContent = 'Persisted token and IMWEB_REFRESH_TOKEN differ. Keep one canonical token source and reseed before the next refresh window.';
         } else if (imwebAuth?.status === 'connected') {
           imwebAuthNoteEl.textContent = 'Refreshable token is healthy';
         } else if (imwebAuth?.status === 'misconfigured') {

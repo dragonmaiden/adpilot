@@ -153,6 +153,7 @@ async function fetchImwebOrders(scanResult) {
 
     const revenueData = imweb.processOrders(orders);
     scanStore.patchLatestData({ orders, revenueData });
+    scanStore.saveLastSuccessfulImwebData({ orders, revenueData });
     markSourceSuccess('imweb', attemptedAt, {
       hasData: Boolean(revenueData) || orders.length > 0,
     });

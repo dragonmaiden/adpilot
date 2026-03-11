@@ -43,14 +43,15 @@
 (function() {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
-  const error = params.get('error');
+  const error = params.get('error') || params.get('errorCode');
+  const message = params.get('message');
   const state = params.get('state');
   const content = document.getElementById('content');
 
   if (error) {
     content.innerHTML = `
       <h1>Authorization Failed</h1>
-      <p class="error-msg">Error: ${error}</p>
+      <p class="error-msg">Error: ${error}${message ? ` - ${message}` : ''}</p>
       <p class="subtitle">Please try the authorization process again. If the issue persists, check your Imweb app settings.</p>
     `;
     return;

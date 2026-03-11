@@ -16,6 +16,7 @@ const authState = {
   tokenFilePath: runtimePaths.imwebTokenFile,
   tokenFileExists: false,
   envRefreshTokenConfigured: false,
+  refreshTokenMismatch: false,
   clientIdConfigured: false,
   clientSecretConfigured: false,
   hasAccessToken: false,
@@ -40,6 +41,18 @@ function getEnvRefreshToken() {
   return seedRefresh;
 }
 
+function getDiskRefreshToken() {
+  try {
+    if (!fs.existsSync(runtimePaths.imwebTokenFile)) return '';
+    const raw = JSON.parse(fs.readFileSync(runtimePaths.imwebTokenFile, 'utf8'));
+    const payload = raw.data || raw;
+    const persisted = payload.refreshToken || payload.refresh_token;
+    return typeof persisted === 'string' ? persisted.trim() : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 function hasImwebClientCredentials() {
   return Boolean(config.imweb.clientId && config.imweb.clientSecret);
 }
@@ -54,9 +67,13 @@ function deriveAuthStatus() {
 }
 
 function syncAuthState(patch = {}) {
+  const envRefreshToken = getEnvRefreshToken();
+  const diskRefreshToken = getDiskRefreshToken();
+
   Object.assign(authState, patch, {
     tokenFileExists: fs.existsSync(runtimePaths.imwebTokenFile),
-    envRefreshTokenConfigured: Boolean(getEnvRefreshToken()),
+    envRefreshTokenConfigured: Boolean(envRefreshToken),
+    refreshTokenMismatch: Boolean(envRefreshToken && diskRefreshToken && envRefreshToken !== diskRefreshToken),
     clientIdConfigured: Boolean(config.imweb.clientId),
     clientSecretConfigured: Boolean(config.imweb.clientSecret),
     hasAccessToken: Boolean(accessToken),
