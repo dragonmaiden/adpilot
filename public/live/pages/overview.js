@@ -28,14 +28,14 @@
 
     if (source?.stale) {
       if (badgeEl) badgeEl.classList.add('is-warning');
-      if (labelEl) labelEl.textContent = 'Imweb stale';
+      if (labelEl) labelEl.textContent = 'Imweb cached';
       if (badgeEl) {
         const suffix = source.lastSuccessAt ? ` Last successful sync ${timeSince(new Date(source.lastSuccessAt))}.` : '';
         badgeEl.title = `Revenue/order metrics are cached.${suffix}`;
       }
       if (noticeEl) {
         noticeEl.hidden = false;
-        noticeEl.textContent = 'Revenue data is cached from the last successful Imweb sync.';
+        noticeEl.textContent = 'Using cached Imweb revenue data from the last successful sync.';
       }
       return;
     }

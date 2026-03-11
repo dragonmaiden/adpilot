@@ -7,7 +7,7 @@
 (function(){
   const t = document.querySelector('[data-theme-toggle]');
   const r = document.documentElement;
-  let d = 'dark';
+  let d = 'light';
   r.setAttribute('data-theme', d);
   updateThemeIcon();
 

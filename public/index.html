@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
 <!--
    ______                            __
@@ -784,20 +784,6 @@
         </div>
       </div>
 
-      <div class="charts-grid">
-        <div class="card" id="creativeHealthCard">
-          <div class="card-header">
-            <div>
-              <div class="section-kicker">Creative Health</div>
-              <h2>Creative alerts</h2>
-            </div>
-            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="fatigue">Open Creative Health</button>
-          </div>
-          <div class="creative-alert-list" id="liveCreativeAlerts">
-            <div class="empty-state">Loading creative alerts...</div>
-          </div>
-        </div>
-      </div>
     </section>
 
     <!-- Optimizations Page -->
@@ -876,7 +862,21 @@
 
       <div class="card">
         <div class="card-header">
-          <h2 data-i18n="opt.liveLog">Approval Queue & Decision Log</h2>
+          <div>
+            <div class="section-kicker">Open Queue</div>
+            <h2>Grouped pending suggestions</h2>
+          </div>
+          <span id="optQueueStats"></span>
+        </div>
+        <p class="card-desc">Repeated open suggestions are collapsed by target and action so the queue reflects the current decision surface, not every scan log entry.</p>
+        <div class="optimization-log optimization-log-grouped" id="optimizationQueue">
+          <div class="empty-state">Waiting for backend connection and first scan...</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2 data-i18n="opt.liveLog">Recent Decision History</h2>
           <div style="display:flex;align-items:center;gap:12px">
             <span id="optStats"></span>
             <div class="filter-group">
@@ -888,6 +888,11 @@
                 <option value="status">Status</option>
                 <option value="schedule">Schedule</option>
                 <option value="targeting">Targeting</option>
+              </select>
+              <select class="select-input" id="optStatusFilter">
+                <option value="all">All Statuses</option>
+                <option value="open">Open</option>
+                <option value="executed">Executed</option>
               </select>
             </div>
           </div>

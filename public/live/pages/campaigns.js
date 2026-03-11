@@ -401,43 +401,6 @@
     `;
   }
 
-  function renderCreativeAlerts(container, postmortem) {
-    if (!container) return;
-    const active = (postmortem?.active || []).slice().sort((left, right) => {
-      const fatigueGap = fatigueWeight(right.fatigue?.status) - fatigueWeight(left.fatigue?.status);
-      if (fatigueGap !== 0) return fatigueGap;
-      return Number(right.spend || 0) - Number(left.spend || 0);
-    });
-    const alerts = active.filter(ad => (ad.fatigue?.status || 'healthy') !== 'healthy').slice(0, 3);
-
-    if (alerts.length === 0) {
-      container.innerHTML = '<div class="empty-state">No active creative alerts right now. Use Creative Health for the full monitor.</div>';
-      return;
-    }
-
-    container.innerHTML = alerts.map(ad => {
-      const status = ad.fatigue?.status || 'healthy';
-      const badgeClass = status === 'danger' ? 'badge-error' : status === 'warning' ? 'badge-warning' : 'badge-success';
-      return `
-        <div class="creative-alert-item ${esc(status)}">
-          <div class="creative-alert-top">
-            <div>
-              <div class="creative-alert-title">${esc(ad.name)}</div>
-              <div class="creative-alert-meta">${esc(ad.campaignName)} · ${formatUsd(ad.spend || 0, 2)} spend</div>
-            </div>
-            <span class="badge ${badgeClass}">${esc(status.charAt(0).toUpperCase() + status.slice(1))}</span>
-          </div>
-          <div class="creative-alert-body">${esc(ad.fatigue?.summary || 'Creative pressure detected.')}</div>
-          <div class="creative-alert-meta-row">
-            <span>${getAttributedPurchases(ad)} Meta-attributed purchases</span>
-            <span>CTR ${Number(ad.avgCTR || 0).toFixed(2)}%</span>
-            <span>${ad.cpa ? `${formatUsd(ad.cpa, 2)} CPA` : 'No CPA yet'}</span>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
   async function refreshCampaignsPage() {
     const windowMeta = getSeriesWindowMeta('campaigns');
     const [campaignData, postmortem, optData, analyticsData, overviewData, scansData] = await Promise.all([
@@ -464,7 +427,6 @@
     renderOperatorSignals(document.getElementById('operatorSignalGrid'), campaignData, postmortem, overviewData, analyticsData);
     renderActiveAds(document.getElementById('activeAdsContainer'), document.getElementById('activeCount'), postmortem, windowLabel);
     renderCampaignTable(document.getElementById('campaignBody'), campaignData.campaigns || []);
-    renderCreativeAlerts(document.getElementById('liveCreativeAlerts'), postmortem);
 
     bindNavShortcuts(document.querySelector('.page[data-page="campaigns"]'));
 

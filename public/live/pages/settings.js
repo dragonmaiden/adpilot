@@ -53,7 +53,7 @@
 
   function formatSourceStatus(source) {
     if (!source) return { text: 'Unknown', badge: 'badge-neutral' };
-    if (source.stale) return { text: 'Stale Cached Data', badge: 'badge-warning' };
+    if (source.stale) return { text: 'Cached Data', badge: 'badge-warning' };
 
     const map = {
       connected: { text: 'Fresh', badge: 'badge-success' },

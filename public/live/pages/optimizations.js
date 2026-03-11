@@ -3,6 +3,17 @@
   const { esc, safeOptType, timeSince, formatKrw } = live.shared;
   const { api, fetchOptimizations, fetchSpendDaily, executeOptimization } = live.api;
 
+  const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
+  const EXECUTABLE_TYPES = new Set(['budget', 'bid', 'status']);
+  const ICON_MAP = {
+    budget: 'wallet',
+    bid: 'gavel',
+    creative: 'image',
+    status: 'power',
+    schedule: 'clock',
+    targeting: 'target',
+  };
+
   function renderCandlestickStats(data) {
     const el = document.getElementById('candlestickStats');
     if (!el || !data.length) return;
@@ -24,51 +35,170 @@
     }
   }
 
-  async function updateOptimizationLog() {
-    const data = await fetchOptimizations(30);
-    if (!data) return;
+  function getTypeFilter() {
+    return document.getElementById('optTypeFilter')?.value || 'all';
+  }
 
-    const container = document.getElementById('optimizationLog');
-    if (!container) return;
+  function getStatusFilter() {
+    return document.getElementById('optStatusFilter')?.value || 'all';
+  }
 
-    if (data.optimizations.length === 0) {
-      container.innerHTML = '<div class="empty-state">No optimizations yet. Waiting for first scan...</div>';
-      return;
-    }
+  function normalizeActionKey(action) {
+    return String(action || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  }
 
-    container.innerHTML = data.optimizations.map(opt => {
-      const type = safeOptType(opt.type);
-      const priority = opt.priority || 'low';
-      const iconMap = {
-        budget: 'wallet',
-        bid: 'gavel',
-        creative: 'image',
-        status: 'power',
-        schedule: 'clock',
-        targeting: 'target',
-      };
-      const priorityClass = {
+  function priorityMeta(priority) {
+    const normalized = String(priority || 'low').toLowerCase();
+    return {
+      label: normalized.charAt(0).toUpperCase() + normalized.slice(1),
+      className: {
         critical: 'badge-danger',
         high: 'badge-warning',
         medium: 'badge-info',
-        low: '',
-      };
+        low: 'badge-neutral',
+      }[normalized] || 'badge-neutral',
+      rank: PRIORITY_RANK[normalized] ?? PRIORITY_RANK.low,
+    };
+  }
+
+  function buildGroupKey(opt) {
+    return [
+      String(opt.type || ''),
+      String(opt.level || ''),
+      String(opt.targetName || ''),
+      normalizeActionKey(opt.action),
+    ].join('|');
+  }
+
+  function groupOpenOptimizations(opts, typeFilter = 'all') {
+    const open = (Array.isArray(opts) ? opts : [])
+      .filter(opt => !opt.executed)
+      .filter(opt => typeFilter === 'all' || opt.type === typeFilter)
+      .slice()
+      .sort((left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || '')));
+
+    const groups = new Map();
+    for (const opt of open) {
+      const key = buildGroupKey(opt);
+      const current = groups.get(key);
+      if (!current) {
+        groups.set(key, {
+          latest: opt,
+          repeats: 1,
+          firstSeen: opt.timestamp || null,
+          rawOpenCount: 1,
+        });
+        continue;
+      }
+
+      current.repeats += 1;
+      current.rawOpenCount += 1;
+      if (opt.timestamp && (!current.firstSeen || String(opt.timestamp).localeCompare(String(current.firstSeen)) < 0)) {
+        current.firstSeen = opt.timestamp;
+      }
+    }
+
+    return {
+      rawOpenCount: open.length,
+      groups: Array.from(groups.values()).sort((left, right) => {
+        const leftPriority = priorityMeta(left.latest.priority).rank;
+        const rightPriority = priorityMeta(right.latest.priority).rank;
+        if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+        return String(right.latest.timestamp || '').localeCompare(String(left.latest.timestamp || ''));
+      }),
+    };
+  }
+
+  function getFilteredHistory(opts) {
+    const typeFilter = getTypeFilter();
+    const statusFilter = getStatusFilter();
+
+    return (Array.isArray(opts) ? opts : []).filter(opt => {
+      if (typeFilter !== 'all' && opt.type !== typeFilter) return false;
+      if (statusFilter === 'open' && opt.executed) return false;
+      if (statusFilter === 'executed' && !opt.executed) return false;
+      return true;
+    });
+  }
+
+  function bindExecuteButtons(scope = document) {
+    scope.querySelectorAll('.execute-opt').forEach(button => {
+      if (button.dataset.bound === 'true') return;
+      button.dataset.bound = 'true';
+
+      button.addEventListener('click', async event => {
+        const optId = event.currentTarget.dataset.optId;
+        event.currentTarget.textContent = 'Sending approval...';
+        event.currentTarget.disabled = true;
+        const result = await executeOptimization(optId);
+        if (result && result.pending) {
+          event.currentTarget.textContent = 'Check Telegram';
+          event.currentTarget.title = 'Approval request sent to Telegram.';
+        } else if (result && result.success) {
+          event.currentTarget.textContent = 'Done';
+          event.currentTarget.classList.remove('btn-primary');
+          event.currentTarget.classList.add('btn-ghost');
+        } else {
+          event.currentTarget.textContent = 'Failed';
+        }
+      });
+    });
+  }
+
+  function renderOpenQueue(data) {
+    const container = document.getElementById('optimizationQueue');
+    const statsEl = document.getElementById('optQueueStats');
+    if (!container) return;
+
+    const typeFilter = getTypeFilter();
+    const grouped = groupOpenOptimizations(data.optimizations || [], typeFilter);
+    const groups = grouped.groups;
+
+    if (statsEl) {
+      const typeLabel = typeFilter === 'all' ? 'all types' : `${typeFilter} only`;
+      statsEl.textContent = `${groups.length} grouped item${groups.length === 1 ? '' : 's'} · ${grouped.rawOpenCount} raw open log${grouped.rawOpenCount === 1 ? '' : 's'} · ${typeLabel}`;
+    }
+
+    if (groups.length === 0) {
+      container.innerHTML = '<div class="empty-state">No open suggestions match the current filter.</div>';
+      return;
+    }
+
+    container.innerHTML = groups.map(group => {
+      const opt = group.latest;
+      const type = safeOptType(opt.type);
+      const priority = priorityMeta(opt.priority);
+      const canExecute = EXECUTABLE_TYPES.has(opt.type);
+      const repeatText = group.repeats > 1
+        ? `Seen ${group.repeats} times across scans`
+        : 'Single open suggestion';
+      const firstSeen = group.firstSeen ? ` · First logged ${timeSince(new Date(group.firstSeen))}` : '';
+      const lastSeen = opt.timestamp ? `Last seen ${timeSince(new Date(opt.timestamp))}` : 'Timestamp unavailable';
+      const latestScan = opt.scanId ? ` · Latest scan ${String(opt.scanId).slice(-6)}` : '';
+      const queueAction = canExecute
+        ? `<button class="btn btn-sm btn-primary execute-opt" data-opt-id="${esc(opt.id)}">Send approval</button>`
+        : '<span class="badge badge-neutral">Advisory only</span>';
 
       return `
-        <div class="optimization-item ${opt.executed ? 'executed' : 'pending'}">
+        <div class="optimization-item grouped ${type}">
           <div class="opt-icon">
-            <i data-lucide="${iconMap[type] || 'zap'}"></i>
+            <i data-lucide="${ICON_MAP[type] || 'zap'}"></i>
           </div>
           <div class="opt-content">
             <div class="opt-header">
               <span class="opt-action">${esc(opt.action)}</span>
-              <span class="badge ${priorityClass[priority] || ''}">${esc(priority)}</span>
-              ${opt.executed ? '<span class="badge badge-success">Executed</span>' : `<button class="btn btn-sm btn-primary execute-opt" data-opt-id="${esc(opt.id)}">Execute</button>`}
+              <span class="badge ${priority.className}">${esc(priority.label)}</span>
+              <span class="badge badge-warning">Open</span>
+              ${queueAction}
             </div>
-            <div class="opt-target">${esc(opt.targetName)}</div>
-            <div class="opt-reason">${esc(opt.reason)}</div>
-            <div class="opt-impact">${esc(opt.impact)}</div>
-            <div class="opt-time">${timeSince(new Date(opt.timestamp))}</div>
+            <div class="opt-target">${esc(opt.targetName || 'Account-wide')}</div>
+            <div class="opt-reason">${esc(opt.reason || 'No reason provided.')}</div>
+            <div class="opt-impact">${esc(opt.impact || 'No impact estimate provided.')}</div>
+            <div class="opt-meta">
+              <span>${esc(repeatText)}</span>
+              <span>${esc(lastSeen)}${esc(latestScan)}</span>
+            </div>
+            <div class="opt-time">${esc(group.repeats > 1 ? `${repeatText}${firstSeen}` : lastSeen)}</div>
           </div>
         </div>
       `;
@@ -77,37 +207,78 @@
     if (window.lucide) {
       lucide.createIcons();
     }
+    bindExecuteButtons(container);
+  }
 
-    container.querySelectorAll('.execute-opt').forEach(btn => {
-      btn.addEventListener('click', async event => {
-        const optId = event.target.dataset.optId;
-        event.target.textContent = 'Sending approval...';
-        event.target.disabled = true;
-        const result = await executeOptimization(optId);
-        if (result && result.pending) {
-          event.target.textContent = '⏳ Check Telegram';
-          event.target.title = 'Approval request sent to Telegram.';
-        } else if (result && result.success) {
-          event.target.textContent = 'Done';
-          event.target.classList.remove('btn-primary');
-          event.target.classList.add('btn-ghost');
-        } else {
-          event.target.textContent = 'Failed';
-        }
+  function renderOptimizationHistory(data) {
+    const container = document.getElementById('optimizationLog');
+    const statsEl = document.getElementById('optStats');
+    if (!container) return;
+
+    const filtered = getFilteredHistory(data.optimizations || []);
+    if (statsEl) {
+      statsEl.textContent = `${filtered.length} shown · ${Number(data.total || 0)} total logged`;
+    }
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="empty-state">No decisions match the current history filters.</div>';
+      return;
+    }
+
+    container.innerHTML = filtered.map(opt => {
+      const type = safeOptType(opt.type);
+      const priority = priorityMeta(opt.priority);
+      const statusBadge = opt.executed
+        ? '<span class="badge badge-success">Executed</span>'
+        : '<span class="badge badge-warning">Open</span>';
+      const scanText = opt.scanId ? ` · Scan ${String(opt.scanId).slice(-6)}` : '';
+
+      return `
+        <div class="optimization-item ${opt.executed ? 'executed' : 'pending'}">
+          <div class="opt-icon">
+            <i data-lucide="${ICON_MAP[type] || 'zap'}"></i>
+          </div>
+          <div class="opt-content">
+            <div class="opt-header">
+              <span class="opt-action">${esc(opt.action)}</span>
+              <span class="badge ${priority.className}">${esc(priority.label)}</span>
+              ${statusBadge}
+            </div>
+            <div class="opt-target">${esc(opt.targetName || 'Account-wide')}</div>
+            <div class="opt-reason">${esc(opt.reason || 'No reason provided.')}</div>
+            <div class="opt-impact">${esc(opt.impact || 'No impact estimate provided.')}</div>
+            <div class="opt-time">${opt.timestamp ? `${timeSince(new Date(opt.timestamp))}${scanText}` : 'Timestamp unavailable'}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (window.lucide) {
+      lucide.createIcons();
+    }
+  }
+
+  function bindOptimizationFilters() {
+    if (document.body.dataset.optFiltersBound === 'true') return;
+    document.body.dataset.optFiltersBound = 'true';
+
+    ['optTypeFilter', 'optStatusFilter'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('change', () => {
+        refreshOptimizationsPage();
       });
     });
+  }
 
-    const statsEl = document.getElementById('optStats');
-    if (statsEl && data.stats) {
-      const total = Number(data.total) || 0;
-      const executed = Number(data.stats.executed) || 0;
-      const pending = Number(data.stats.pending) || 0;
-      statsEl.innerHTML = `
-        <span>Total: ${total}</span> ·
-        <span>Executed: ${executed}</span> ·
-        <span>Pending: ${pending}</span>
-      `;
-    }
+  async function updateOptimizationLog() {
+    bindOptimizationFilters();
+
+    const data = await fetchOptimizations(500);
+    if (!data) return;
+
+    renderOpenQueue(data);
+    renderOptimizationHistory(data);
   }
 
   async function updateOptTimeline() {

@@ -92,7 +92,7 @@ const I18N = {
   'chart.spendCac':     { en: 'SPEND & CAC — DAILY', kr: '지출 & CAC — 일별' },
   'chart.actionType':   { en: 'Actions by Type',     kr: '유형별 활동' },
   'chart.actionPriority': { en: 'Actions by Priority', kr: '우선순위별 활동' },
-  'opt.liveLog':        { en: 'Approval Queue & Decision Log', kr: '승인 대기열 및 결정 로그' },
+  'opt.liveLog':        { en: 'Recent Decision History',  kr: '최근 결정 이력' },
   'opt.allTypes':       { en: 'All Types',           kr: '전체 유형' },
   'opt.budget':         { en: 'Budget',              kr: '예산' },
   'opt.bid':            { en: 'Bid',                 kr: '입찰' },
