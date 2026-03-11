@@ -136,7 +136,7 @@ function validateImwebOrders(orders) {
   const expectedFields = [
     'totalPaymentPrice', 'totalPrice', 'totalRefundedPrice',
     'wtime', 'sections', 'orderSections',
-    'orderNo', 'orderStatus', 'paymentMethod',
+    'orderNo', 'orderStatus', 'paymentMethod', 'payments',
   ];
 
   for (const order of orders) {

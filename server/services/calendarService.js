@@ -10,6 +10,7 @@ const {
   calcROAS,
   getPurchases,
 } = require('../domain/metrics');
+const { getOrderCashTotals } = require('../domain/imwebPayments');
 const {
   KST_TIME_ZONE,
   formatDateInTimeZone,
@@ -170,9 +171,11 @@ function getSectionItems(section) {
 }
 
 function getOrderPaymentAmounts(order) {
+  const { approvedAmount, netPaidAmount, refundedAmount } = getOrderCashTotals(order);
   return {
-    payAmount: Number(order?.totalPaymentPrice ?? order?.totalPrice ?? 0),
-    refundAmount: Number(order?.totalRefundedPrice ?? 0),
+    payAmount: approvedAmount,
+    netAmount: netPaidAmount,
+    refundAmount: refundedAmount,
   };
 }
 
@@ -315,7 +318,7 @@ function buildOrderLedgerRows(orders) {
       const date = getOrderDateKey(order);
       const sections = getOrderSections(order);
       const items = sections.flatMap(section => getSectionItems(section));
-      const { payAmount, refundAmount } = getOrderPaymentAmounts(order);
+      const { payAmount, netAmount, refundAmount } = getOrderPaymentAmounts(order);
       const payment = Array.isArray(order?.payments) && order.payments.length > 0 ? order.payments[0] : null;
       const productNames = items
         .map(item => String(item?.productInfo?.prodName || '').trim())
@@ -340,7 +343,7 @@ function buildOrderLedgerRows(orders) {
         pgName: String(payment?.pgName || '').trim(),
         paidAmount: payAmount,
         refundedAmount: refundAmount,
-        netRevenue: payAmount - refundAmount,
+        netRevenue: netAmount,
         sectionCount: sections.length,
         itemCount: items.reduce((sum, item) => sum + Number(item?.qty || 0), 0),
         recognizedOrder: isRecognizedOrder(order),

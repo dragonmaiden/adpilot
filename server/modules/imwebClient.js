@@ -5,6 +5,7 @@
 const fs = require('fs');
 const config = require('../config');
 const { formatDateInTimeZone, getHourInTimeZone } = require('../domain/time');
+const { getOrderCashTotals } = require('../domain/imwebPayments');
 const runtimePaths = require('../runtime/paths');
 
 let accessToken = null;
@@ -428,31 +429,27 @@ function processOrders(orders) {
   const hourlyOrders = new Array(24).fill(0);
 
   for (const order of orders) {
-    // Preserve an explicit 0 payment so canceled orders do not fall back to totalPrice.
-    const payAmount = order.totalPaymentPrice ?? order.totalPrice ?? 0;
-    const refundAmount = order.totalRefundedPrice ?? 0;
-    const hasRecognizedOrder = payAmount > 0 || refundAmount > 0;
+    const { approvedAmount, refundedAmount, hasRecognizedCash } = getOrderCashTotals(order);
 
     // wtime is ISO string like "2026-03-10T05:13:50.000Z"
     const orderDate = order.wtime ? new Date(order.wtime) : new Date();
     const dateKey = formatDateInTimeZone(orderDate);
     const hour = getHourInTimeZone(orderDate);
 
-    // Revenue by day
     if (!dailyRevenue[dateKey]) {
       dailyRevenue[dateKey] = { revenue: 0, refunded: 0, orders: 0 };
     }
-    if (hasRecognizedOrder) {
+
+    if (hasRecognizedCash) {
       totalOrders++;
       dailyRevenue[dateKey].orders++;
       hourlyOrders[hour]++;
     }
 
-    // Track revenue and refunds from order-level totals
-    totalRevenue += payAmount;
-    totalRefunded += refundAmount;
-    dailyRevenue[dateKey].revenue += payAmount;
-    dailyRevenue[dateKey].refunded += refundAmount;
+    totalRevenue += approvedAmount;
+    totalRefunded += refundedAmount;
+    dailyRevenue[dateKey].revenue += approvedAmount;
+    dailyRevenue[dateKey].refunded += refundedAmount;
 
     // Process sections for cancel tracking
     const sections = order.sections || order.orderSections || [];

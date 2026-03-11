@@ -2,7 +2,7 @@ const config = require('../config');
 const scheduler = require('../modules/scheduler');
 const imweb = require('../modules/imwebClient');
 const contracts = require('../contracts/v1');
-const { KST_TIME_ZONE, formatDateInTimeZone } = require('../domain/time');
+const { normalizeImwebPayments } = require('../domain/imwebPayments');
 const cardSettlementClient = require('../modules/cardSettlementClient');
 
 function createMoneySummary() {
@@ -15,12 +15,15 @@ function createMoneySummary() {
 }
 
 function accumulateMoneySummary(summary, amount, type) {
+  const magnitude = Math.abs(Number(amount || 0));
+  if (!magnitude) return;
+
   summary.count += 1;
-  summary.netAmount += amount;
+  summary.netAmount += type === 'refund' ? -magnitude : magnitude;
   if (type === 'refund') {
-    summary.grossRefundAmount += Math.abs(amount);
+    summary.grossRefundAmount += magnitude;
   } else {
-    summary.grossApprovedAmount += amount;
+    summary.grossApprovedAmount += magnitude;
   }
 }
 
@@ -31,94 +34,6 @@ function summarizeBy(values, selector) {
     counts[key] = (counts[key] || 0) + 1;
   }
   return counts;
-}
-
-function normalizeChannelGroup(method, pgName) {
-  const methodLabel = String(method || '').toUpperCase();
-  const pgLabel = String(pgName || '').toUpperCase();
-
-  if (methodLabel.includes('CARD') || pgLabel.includes('CARD')) return 'card';
-  if (methodLabel.includes('BANK') || pgLabel.includes('BANK')) return 'bank_transfer';
-  if (methodLabel.includes('VBANK') || methodLabel.includes('VIRTUAL')) return 'virtual_account';
-  if (!methodLabel && !pgLabel) return 'unknown';
-  return 'other';
-}
-
-function normalizePaymentType(payment, amount) {
-  if (amount < 0) return 'refund';
-
-  const status = String(payment?.paymentStatus || '').toUpperCase();
-  const cancelFlag = String(payment?.isCancel || '').toUpperCase();
-  if (cancelFlag === 'Y' || status.includes('REFUND') || status.includes('CANCEL')) {
-    return 'refund';
-  }
-
-  return 'approval';
-}
-
-function getPaymentTimestamp(order, payment) {
-  const candidates = [
-    payment?.paymentCompleteTime,
-    payment?.bankTransfer?.depositCompletedTime,
-    order?.mtime,
-    order?.wtime,
-  ];
-
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    const date = new Date(candidate);
-    if (!Number.isNaN(date.getTime())) {
-      return date;
-    }
-  }
-
-  return null;
-}
-
-function normalizeImwebPayments(orders) {
-  const payments = [];
-
-  for (const order of Array.isArray(orders) ? orders : []) {
-    const paymentList = Array.isArray(order.payments) ? order.payments : [];
-    for (let index = 0; index < paymentList.length; index++) {
-      const payment = paymentList[index];
-      const amount = Number(payment?.paidPrice || 0);
-      const completedAt = getPaymentTimestamp(order, payment);
-      if (!completedAt || !amount) {
-        continue;
-      }
-
-      const type = normalizePaymentType(payment, amount);
-      const method = String(payment?.method || '').trim();
-      const pgName = String(payment?.pgName || '').trim();
-      payments.push({
-        paymentId: `imweb_payment:${order.orderNo}:${payment?.paymentNo || index}:${index}`,
-        source: 'imweb',
-        orderNo: order.orderNo ?? null,
-        paymentNo: payment?.paymentNo || null,
-        amount,
-        type,
-        completedAt: completedAt.toISOString(),
-        completedDate: formatDateInTimeZone(completedAt, KST_TIME_ZONE),
-        method,
-        pgName,
-        channelGroup: normalizeChannelGroup(method, pgName),
-        paymentStatus: String(payment?.paymentStatus || '').trim(),
-        isCancel: String(payment?.isCancel || '').trim(),
-        payerName: String(
-          payment?.bankTransfer?.depositorName ||
-          order.ordererName ||
-          order.memberName ||
-          ''
-        ).trim(),
-      });
-    }
-  }
-
-  return payments.sort((left, right) => {
-    if (left.completedAt === right.completedAt) return left.paymentId.localeCompare(right.paymentId);
-    return left.completedAt.localeCompare(right.completedAt);
-  });
 }
 
 function classifyMatchConfidence(diffMs) {
@@ -133,7 +48,7 @@ function buildCandidateMatches(settlementTransactions, imwebPayments, windowMs) 
   for (const settlement of settlementTransactions) {
     const settlementTime = new Date(settlement.tradedAt).getTime();
     for (const payment of imwebPayments) {
-      if (settlement.amount !== payment.amount) continue;
+      if (Math.abs(Number(settlement.amount || 0)) !== Number(payment.amount || 0)) continue;
       if (settlement.type !== payment.type) continue;
 
       const paymentTime = new Date(payment.completedAt).getTime();
@@ -179,7 +94,7 @@ function matchTransactions(settlementTransactions, imwebPayments, matchWindowMin
       confidence: classifyMatchConfidence(candidate.diffMs),
       timeDeltaSeconds: Math.round(candidate.diffMs / 1000),
       methodMismatch: payment.channelGroup !== 'card',
-      amount: settlement.amount,
+      amount: Math.abs(Number(settlement.amount || 0)),
       type: settlement.type,
       settlement,
       imwebPayment: payment,
