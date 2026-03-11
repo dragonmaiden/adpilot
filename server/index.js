@@ -20,6 +20,7 @@ const overviewService = require('./services/overviewService');
 const campaignService = require('./services/campaignService');
 const postmortemService = require('./services/postmortemService');
 const analyticsService = require('./services/analyticsService');
+const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
 const reconciliationService = require('./services/reconciliationService');
 
@@ -458,6 +459,14 @@ app.get('/api/spend-daily', async (req, res) => {
 // ── Analytics deep data ──
 app.get('/api/analytics', (req, res) => {
   res.json(analyticsService.getAnalyticsResponse());
+});
+
+app.get('/api/calendar-analysis', async (req, res) => {
+  try {
+    res.json(await calendarService.getCalendarAnalysisResponse(req.query));
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
 });
 
 app.get('/api/reconciliation', async (req, res) => {

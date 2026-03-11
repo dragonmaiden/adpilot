@@ -147,6 +147,37 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
 }
 
 /**
+ * Build /api/calendar-analysis response.
+ */
+function calendarAnalysis({ ready, viewport, calendarDays, selection }) {
+  return {
+    apiVersion: API_VERSION,
+    ready: ready !== false,
+    viewport: {
+      today: viewport?.today ?? null,
+      visibleStart: viewport?.visibleStart ?? null,
+      visibleEnd: viewport?.visibleEnd ?? null,
+      selectionStart: viewport?.selectionStart ?? null,
+      selectionEnd: viewport?.selectionEnd ?? null,
+      months: viewport?.months ?? [],
+    },
+    calendarDays: calendarDays ?? [],
+    selection: {
+      label: selection?.label ?? '',
+      dayCount: selection?.dayCount ?? 0,
+      summary: selection?.summary ?? {},
+      days: selection?.days ?? [],
+      orders: selection?.orders ?? [],
+      products: selection?.products ?? [],
+      campaigns: selection?.campaigns ?? [],
+      operations: selection?.operations ?? [],
+      reconciliation: selection?.reconciliation ?? {},
+      coverage: selection?.coverage ?? {},
+    },
+  };
+}
+
+/**
  * Build /api/campaigns response.
  */
 function campaigns({ campaigns: enriched }) {
@@ -318,6 +349,7 @@ module.exports = {
   overview,
   overviewNotReady,
   analytics,
+  calendarAnalysis,
   campaigns,
   optimizations,
   scans,

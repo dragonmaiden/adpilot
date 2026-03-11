@@ -51,6 +51,10 @@
         <i data-lucide="bar-chart-3"></i>
         <span data-i18n="nav.analytics">Profit Analytics</span>
       </a>
+      <a href="#" class="nav-item" data-page="calendar">
+        <i data-lucide="calendar-range"></i>
+        <span data-i18n="nav.calendar">Calendar Analysis</span>
+      </a>
       <a href="#" class="nav-item" data-page="optimizations">
         <i data-lucide="zap"></i>
         <span data-i18n="nav.optimizations">Optimizations</span>
@@ -570,6 +574,50 @@
               <tr><td colspan="6" style="color:var(--color-text-faint)">Waiting for reconciliation data...</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Calendar Analysis Page -->
+    <section class="page" data-page="calendar">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Calendar Analysis</div>
+          <h2>Zoom into any day or date range</h2>
+        </div>
+        <p class="section-note">Revenue colors the calendar. Click a day or drag across dates to inspect profit, refunds, orders, campaigns, and operating events in KST.</p>
+      </div>
+
+      <div class="card calendar-shell">
+        <div class="calendar-toolbar">
+          <div class="calendar-toolbar-actions">
+            <button class="btn btn-ghost btn-sm" id="calendarPrevBtn" type="button">
+              <i data-lucide="chevron-left"></i>
+              <span>Previous</span>
+            </button>
+            <button class="btn btn-ghost btn-sm" id="calendarTodayBtn" type="button">
+              <i data-lucide="locate-fixed"></i>
+              <span>Today</span>
+            </button>
+            <button class="btn btn-ghost btn-sm" id="calendarNextBtn" type="button">
+              <span>Next</span>
+              <i data-lucide="chevron-right"></i>
+            </button>
+          </div>
+          <div class="calendar-selection-meta" id="calendarSelectionMeta">Previous month + current month · KST</div>
+        </div>
+        <div class="calendar-viewport" id="calendarViewport">
+          <div class="empty-state">Loading calendar analysis...</div>
+        </div>
+      </div>
+
+      <div class="calendar-selection-deck" id="calendarSelectionDeck">
+        <div class="card">
+          <div class="card-header">
+            <h2>Selected Range</h2>
+            <span class="badge badge-neutral">Choose a day or drag across a period</span>
+          </div>
+          <p class="card-desc">The drilldown will populate with profit, orders, refunds, campaign estimates, product mix, and operating events for the selected KST date range.</p>
         </div>
       </div>
     </section>

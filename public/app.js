@@ -56,6 +56,7 @@ const pageTitle = document.getElementById('pageTitle');
 const pageTitleKeys = {
   overview: 'page.overview',
   analytics: 'page.analytics',
+  calendar: 'page.calendar',
   campaigns: 'page.campaigns',
   optimizations: 'page.optimizations',
   fatigue: 'page.fatigue',
@@ -67,6 +68,7 @@ const pageTitleKeys = {
 const pageTitles = {
   overview: 'Overview',
   analytics: 'Profit Analytics',
+  calendar: 'Calendar Analysis',
   campaigns: 'Active Campaigns',
   optimizations: 'Optimization Log',
   fatigue: 'Fatigue Detection',
@@ -104,6 +106,9 @@ navItems.forEach(item => {
     if (typeof liveMode !== 'undefined' && liveMode) {
       if (target === 'analytics') {
         if (typeof updateAnalyticsPage === 'function') updateAnalyticsPage();
+      }
+      if (target === 'calendar') {
+        if (typeof updateCalendarAnalysisPage === 'function') updateCalendarAnalysisPage();
       }
     }
   });
