@@ -404,16 +404,17 @@ async function getAllOrders() {
 function processOrders(orders) {
   let totalRevenue = 0;
   let totalRefunded = 0;
-  let totalOrders = orders.length;
+  let totalOrders = 0;
   let cancelledSections = 0;
   let totalSections = 0;
   const dailyRevenue = {};
   const hourlyOrders = new Array(24).fill(0);
 
   for (const order of orders) {
-    // Imweb uses totalPaymentPrice (actual amount paid) and totalRefundedPrice
-    const payAmount = order.totalPaymentPrice || order.totalPrice || 0;
-    const refundAmount = order.totalRefundedPrice || 0;
+    // Preserve an explicit 0 payment so canceled orders do not fall back to totalPrice.
+    const payAmount = order.totalPaymentPrice ?? order.totalPrice ?? 0;
+    const refundAmount = order.totalRefundedPrice ?? 0;
+    const hasRecognizedOrder = payAmount > 0 || refundAmount > 0;
 
     // wtime is ISO string like "2026-03-10T05:13:50.000Z"
     const orderDate = order.wtime ? new Date(order.wtime) : new Date();
@@ -424,8 +425,11 @@ function processOrders(orders) {
     if (!dailyRevenue[dateKey]) {
       dailyRevenue[dateKey] = { revenue: 0, refunded: 0, orders: 0 };
     }
-    dailyRevenue[dateKey].orders++;
-    hourlyOrders[hour]++;
+    if (hasRecognizedOrder) {
+      totalOrders++;
+      dailyRevenue[dateKey].orders++;
+      hourlyOrders[hour]++;
+    }
 
     // Track revenue and refunds from order-level totals
     totalRevenue += payAmount;
