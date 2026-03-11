@@ -1322,6 +1322,21 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   border-color: var(--color-primary);
 }
 
+.calendar-day.is-empty {
+  opacity: 0.78;
+}
+
+.calendar-day.is-future {
+  opacity: 0.52;
+  cursor: default;
+  border-style: dashed;
+}
+
+.calendar-day.is-future:hover {
+  transform: none;
+  border-color: var(--color-divider);
+}
+
 .calendar-day.is-today {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
@@ -1415,6 +1430,11 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .calendar-mini-badge.coverage {
   background: var(--color-surface-offset);
   color: var(--color-text-muted);
+}
+
+.calendar-mini-badge.future {
+  background: var(--color-surface-offset);
+  color: var(--color-text-faint);
 }
 
 .calendar-selection-deck {

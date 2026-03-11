@@ -1748,8 +1748,15 @@ function renderCalendarDayCell(dateKey, dayData) {
     hasCOGS: false,
     revenueIntensity: 0,
   };
+  const todayKey = getKstDateKey();
+  const isFuture = compareDateKeys(dateKey, todayKey) > 0;
+  const isEmptyDay = !isFuture && (data.revenue || 0) === 0 && (data.orders || 0) === 0 && (data.adSpend || 0) === 0 && (data.refundCount || 0) === 0 && (data.opCount || 0) === 0;
   const profitClass = (data.trueNetProfit || 0) >= 0 ? 'positive' : 'negative';
   const badges = [];
+
+  if (isFuture) {
+    badges.push('<span class="calendar-mini-badge future">Future</span>');
+  }
 
   if ((data.refundCount || 0) > 0) {
     badges.push(`<span class="calendar-mini-badge refund">${formatCount(data.refundCount)} refund${data.refundCount === 1 ? '' : 's'}</span>`);
@@ -1764,20 +1771,29 @@ function renderCalendarDayCell(dateKey, dayData) {
     badges.push('<span class="calendar-mini-badge coverage">COGS open</span>');
   }
 
+  if (isEmptyDay) {
+    badges.push('<span class="calendar-mini-badge coverage">No data</span>');
+  }
+
+  const revenueLabel = isFuture ? '—' : formatCompactKrw(data.revenue || 0);
+  const profitLabel = isFuture ? '—' : formatSignedCompactKrw(data.trueNetProfit || 0);
+  const ordersLabel = isFuture ? 'Future date' : `${formatCount(data.orders || 0)} orders`;
+
   return `
     <button
       type="button"
-      class="calendar-day ${getCalendarDayClasses(dateKey)}"
+      class="calendar-day ${getCalendarDayClasses(dateKey)} ${isFuture ? 'is-future' : ''} ${isEmptyDay ? 'is-empty' : ''}"
       data-date="${esc(dateKey)}"
+      data-future="${isFuture ? '1' : '0'}"
       style="--calendar-alpha:${Number(data.revenueIntensity || 0)}"
     >
       <div class="calendar-day-top">
         <span class="calendar-day-number">${esc(String(Number(dateKey.slice(-2))))}</span>
-        ${dateKey === getKstDateKey() ? '<span class="calendar-day-label">Today</span>' : ''}
+        ${dateKey === todayKey ? '<span class="calendar-day-label">Today</span>' : ''}
       </div>
-      <div class="calendar-day-revenue">${formatCompactKrw(data.revenue || 0)}</div>
-      <div class="calendar-day-profit ${profitClass}">${formatSignedCompactKrw(data.trueNetProfit || 0)}</div>
-      <div class="calendar-day-orders">${formatCount(data.orders || 0)} orders</div>
+      <div class="calendar-day-revenue">${revenueLabel}</div>
+      <div class="calendar-day-profit ${profitClass}">${profitLabel}</div>
+      <div class="calendar-day-orders">${ordersLabel}</div>
       <div class="calendar-day-badges">${badges.join('')}</div>
     </button>
   `;
@@ -2327,6 +2343,7 @@ function initCalendarAnalysisControls() {
     viewportEl.addEventListener('pointerdown', event => {
       const dayEl = event.target.closest('.calendar-day[data-date]');
       if (!dayEl) return;
+      if (dayEl.dataset.future === '1') return;
 
       calendarState.dragging = true;
       calendarState.didDrag = false;
@@ -2340,6 +2357,7 @@ function initCalendarAnalysisControls() {
       if (!calendarState.dragging) return;
       const dayEl = event.target.closest('.calendar-day[data-date]');
       if (!dayEl) return;
+      if (dayEl.dataset.future === '1') return;
 
       const currentDate = dayEl.dataset.date;
       if (!currentDate || currentDate === calendarState.selectionEnd) return;
@@ -2358,6 +2376,7 @@ function initCalendarAnalysisControls() {
     viewportEl.addEventListener('click', async event => {
       const dayEl = event.target.closest('.calendar-day[data-date]');
       if (!dayEl) return;
+      if (dayEl.dataset.future === '1') return;
       if (calendarState.didDrag) {
         calendarState.didDrag = false;
         return;
