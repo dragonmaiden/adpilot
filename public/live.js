@@ -1588,7 +1588,7 @@ function renderCalendarDayCell(dateKey, dayData) {
   };
   const todayKey = getKstDateKey();
   const isFuture = compareDateKeys(dateKey, todayKey) > 0;
-  const isEmptyDay = !isFuture && (data.revenue || 0) === 0 && (data.orders || 0) === 0 && (data.adSpend || 0) === 0 && (data.refundCount || 0) === 0 && (data.opCount || 0) === 0;
+  const isEmptyDay = !isFuture && (data.revenue || 0) === 0 && (data.orders || 0) === 0 && (data.adSpend || 0) === 0 && (data.refundCount || 0) === 0;
   const profitClass = (data.trueNetProfit || 0) >= 0 ? 'positive' : 'negative';
   const badges = [];
 
@@ -1598,15 +1598,6 @@ function renderCalendarDayCell(dateKey, dayData) {
 
   if ((data.refundCount || 0) > 0) {
     badges.push(`<span class="calendar-mini-badge refund">${formatCount(data.refundCount)} refund${data.refundCount === 1 ? '' : 's'}</span>`);
-  }
-
-  const anomalyCount = Math.max(data.reconciliationGapCount || 0, data.opCount || 0);
-  if (anomalyCount > 0) {
-    badges.push(`<span class="calendar-mini-badge ops">${formatCount(anomalyCount)} op${anomalyCount === 1 ? '' : 's'}</span>`);
-  }
-
-  if (!data.hasCOGS && ((data.revenue || 0) > 0 || (data.orders || 0) > 0 || (data.adSpend || 0) > 0)) {
-    badges.push('<span class="calendar-mini-badge coverage">COGS open</span>');
   }
 
   if (isEmptyDay) {
@@ -1632,7 +1623,7 @@ function renderCalendarDayCell(dateKey, dayData) {
       <div class="calendar-day-revenue">${revenueLabel}</div>
       <div class="calendar-day-profit ${profitClass}">${profitLabel}</div>
       <div class="calendar-day-orders">${ordersLabel}</div>
-      <div class="calendar-day-badges">${badges.join('')}</div>
+      ${badges.length ? `<div class="calendar-day-badges">${badges.join('')}</div>` : ''}
     </button>
   `;
 }
