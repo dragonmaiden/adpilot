@@ -232,6 +232,22 @@ function spendDaily(data) {
 }
 
 /**
+ * Build /api/reconciliation response.
+ */
+function reconciliation({ ready, matchWindowMinutes, summary, daily, matches, unmatchedSettlements, unmatchedImwebPayments }) {
+  return {
+    apiVersion: API_VERSION,
+    ready: ready ?? false,
+    matchWindowMinutes: matchWindowMinutes ?? 0,
+    summary: summary ?? {},
+    daily: daily ?? [],
+    matches: matches ?? [],
+    unmatchedSettlements: unmatchedSettlements ?? [],
+    unmatchedImwebPayments: unmatchedImwebPayments ?? [],
+  };
+}
+
+/**
  * Build /api/postmortem response.
  */
 function postmortem({ active, inactive, noData, lessonsSummary, totals }) {
@@ -306,6 +322,7 @@ module.exports = {
   optimizations,
   scans,
   spendDaily,
+  reconciliation,
   postmortem,
   optimizationTimeline,
   settings,

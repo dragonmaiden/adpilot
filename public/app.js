@@ -67,12 +67,12 @@ const pageTitleKeys = {
 // Fallback for when i18n hasn't loaded yet
 const pageTitles = {
   overview: 'Overview',
-  analytics: 'Analytics',
+  analytics: 'Profit Analytics',
   campaigns: 'Active Campaigns',
   optimizations: 'Optimization Log',
   fatigue: 'Fatigue Detection',
   budget: 'Budget Manager',
-  profit: 'Profit Analysis',
+  profit: 'Profit',
   settings: 'Settings'
 };
 
@@ -98,10 +98,21 @@ navItems.forEach(item => {
     overlay.classList.remove('active');
 
     if (target === 'analytics' && !analyticsChartsInitialized) initAnalyticsCharts();
+    if (target === 'analytics' && !profitChartsInitialized) initProfitCharts();
     if (target === 'fatigue' && !fatigueChartInitialized) initFatigueChart();
     if (target === 'budget' && !budgetChartsInitialized) initBudgetCharts();
     if (target === 'optimizations' && !optTimelineInitialized) initOptTimeline();
     if (target === 'profit' && !profitChartsInitialized) initProfitCharts();
+
+    if (typeof liveMode !== 'undefined' && liveMode) {
+      if (target === 'analytics') {
+        if (typeof updateAnalyticsPage === 'function') updateAnalyticsPage();
+        if (typeof updateProfitPage === 'function') updateProfitPage();
+      }
+      if (target === 'profit' && typeof updateProfitPage === 'function') {
+        updateProfitPage();
+      }
+    }
   });
 });
 
@@ -177,7 +188,7 @@ Chart.defaults.plugins.legend.display = false;
 Chart.defaults.responsive = true;
 Chart.defaults.maintainAspectRatio = false;
 
-let spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart;
+let spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart, hourChartInstance;
 let optTimelineChart, optTypeChart, optPriorityChart;
 let profitWaterfallChart;
 let fatigueChartInitialized = false;
@@ -187,7 +198,7 @@ let profitChartsInitialized = false;
 
 function updateChartColors() {
   const c = getChartColors();
-  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart, optTimelineChart, optTypeChart, optPriorityChart, profitWaterfallChart];
+  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart, hourChartInstance, optTimelineChart, optTypeChart, optPriorityChart, profitWaterfallChart];
   allCharts.forEach(chart => {
     if (!chart) return;
     if (chart.options.scales) {
@@ -438,6 +449,32 @@ function initCharts() {
 
   // Sparklines — start empty; live.js will call createSparkline with real data
   // (no-op here — live.js handles populating them via updateOverviewKPIs)
+
+  const hourCtx = document.getElementById('hourChart');
+  if (hourCtx) {
+    hourChartInstance = new Chart(hourCtx, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Orders',
+          data: [],
+          backgroundColor: [],
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { title: ctx => ctx[0].label + ' KST' } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: c.textFaint, font: { size: 9 }, maxRotation: 0 } },
+          y: { grid: { color: c.grid }, ticks: { color: c.textFaint } },
+        }
+      }
+    });
+  }
 }
 
 // ── Activity Feed ──
@@ -1149,7 +1186,7 @@ function initProfitCharts() {
 // ═══════════════════════════════════════════════════════
 
 let analyticsChartsInitialized = false;
-let profitTrendChart, weeklyProfitChart, weekdayChartInstance, hourChartInstance, weeklyCpaChartInstance, refundChartInstance;
+let profitTrendChart, weeklyProfitChart, weekdayChartInstance, weeklyCpaChartInstance, refundChartInstance;
 
 function initAnalyticsCharts() {
   analyticsChartsInitialized = true;
@@ -1268,33 +1305,6 @@ function initAnalyticsCharts() {
           x: { grid: { display: false }, ticks: { color: c.textFaint } },
           y: { title: { display: true, text: 'Purchases', color: c.textFaint }, grid: { color: c.grid }, ticks: { color: c.textFaint } },
           y1: { position: 'right', title: { display: true, text: 'CPA ($)', color: c.textFaint }, grid: { display: false }, ticks: { color: c.secondary, callback: v => '$' + v } },
-        }
-      }
-    });
-  }
-
-  // ── Order Hour Distribution (empty) ──
-  const hCtx = document.getElementById('hourChart');
-  if (hCtx) {
-    hourChartInstance = new Chart(hCtx, {
-      type: 'bar',
-      data: {
-        labels: [],
-        datasets: [{
-          label: 'Orders',
-          data: [],
-          backgroundColor: [],
-          borderRadius: 3,
-        }]
-      },
-      options: {
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { title: ctx => ctx[0].label + ' KST' } }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: c.textFaint, font: { size: 9 }, maxRotation: 0 } },
-          y: { grid: { color: c.grid }, ticks: { color: c.textFaint } },
         }
       }
     });

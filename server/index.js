@@ -21,6 +21,7 @@ const campaignService = require('./services/campaignService');
 const postmortemService = require('./services/postmortemService');
 const analyticsService = require('./services/analyticsService');
 const optimizationService = require('./services/optimizationService');
+const reconciliationService = require('./services/reconciliationService');
 
 function isValidMetaId(id) {
   return /^\d{1,20}$/.test(String(id || ''));
@@ -457,6 +458,15 @@ app.get('/api/spend-daily', async (req, res) => {
 // ── Analytics deep data ──
 app.get('/api/analytics', (req, res) => {
   res.json(analyticsService.getAnalyticsResponse());
+});
+
+app.get('/api/reconciliation', async (req, res) => {
+  try {
+    const refresh = req.query.refresh === '1' || req.query.refresh === 'true';
+    res.json(await reconciliationService.getReconciliationResponse({ refresh }));
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
 });
 
 // ── Snapshots (debug endpoints) ──

@@ -63,6 +63,20 @@ function formatCompactKrw(value) {
   return '₩' + (amount / 1000).toFixed(0) + 'K';
 }
 
+function formatSignedKrw(value) {
+  const amount = Number.isFinite(value) ? value : 0;
+  return amount >= 0
+    ? '₩' + Math.round(amount).toLocaleString()
+    : '-₩' + Math.abs(Math.round(amount)).toLocaleString();
+}
+
+function formatSignedCompactKrw(value) {
+  const amount = Number.isFinite(value) ? value : 0;
+  return amount >= 0
+    ? formatCompactKrw(amount)
+    : '-' + formatCompactKrw(Math.abs(amount));
+}
+
 function formatRateMetricDetail(metric, fallback) {
   if (!metric || metric.numerator == null || metric.denominator == null) {
     return fallback;
@@ -180,6 +194,10 @@ async function fetchSettings() {
   return api('/settings');
 }
 
+async function fetchReconciliation() {
+  return api('/reconciliation');
+}
+
 // ── Write operations ──
 async function triggerScan() {
   return api('/scan', 'POST');
@@ -257,7 +275,10 @@ async function updateDashboard() {
 // ── Overview KPIs from /api/overview ──
 async function updateOverviewKPIs() {
   try {
-    const data = await fetchOverview();
+    const [data, analyticsData] = await Promise.all([
+      fetchOverview(),
+      fetchAnalytics(),
+    ]);
     if (!data) return;
 
     const k = data.kpis;
@@ -349,6 +370,7 @@ async function updateOverviewKPIs() {
 
     // ── Chart data comes pre-computed from the server ──
     const dailyMerged = (data.charts && data.charts.dailyMerged) || [];
+    const hourlyOrders = analyticsData?.charts?.hourlyOrders || [];
 
     // ── Overview Charts: Revenue vs Ad Spend, ROAS, CTR/CPC ──
     if (dailyMerged.length > 0) {
@@ -409,6 +431,21 @@ async function updateOverviewKPIs() {
         createSparkline('sparkCtr', last12.map(d => d.ctr || 0), c.primary);
         createSparkline('sparkCpa', last12.map(d => d.cpa || 0), c.secondary);
       }
+    }
+
+    if (hourlyOrders.length > 0 && typeof hourChartInstance !== 'undefined' && hourChartInstance) {
+      const peakHours = hourlyOrders
+        .slice()
+        .sort((a, b) => (b.orders || 0) - (a.orders || 0))
+        .slice(0, 3)
+        .map(d => d.hour);
+
+      hourChartInstance.data.labels = hourlyOrders.map(d => d.hour + ':00');
+      hourChartInstance.data.datasets[0].data = hourlyOrders.map(d => d.orders || 0);
+      hourChartInstance.data.datasets[0].backgroundColor = hourlyOrders.map(d =>
+        peakHours.includes(d.hour) ? 'rgba(255, 197, 83, 0.9)' : 'rgba(32, 128, 141, 0.6)'
+      );
+      hourChartInstance.update();
     }
 
     // ── Activity feed from optimizations ──
@@ -740,7 +777,10 @@ async function updateLiveCampaigns() {
 
 async function updateAnalyticsPage() {
   try {
-    const data = await fetchAnalytics();
+    const [data, reconciliation] = await Promise.all([
+      fetchAnalytics(),
+      fetchReconciliation(),
+    ]);
     if (!data) return;
 
     const c = typeof getChartColors === 'function' ? getChartColors() : {};
@@ -892,8 +932,111 @@ async function updateAnalyticsPage() {
       }
     }
 
+    if (reconciliation) {
+      updateReconciliationSection(reconciliation);
+    }
+
   } catch (e) {
     console.warn('[LIVE] updateAnalyticsPage error:', e.message);
+  }
+}
+
+function updateReconciliationSection(report) {
+  const statusEl = document.getElementById('reconciliationStatus');
+  const noteEl = document.getElementById('reconciliationNote');
+  const windowEl = document.getElementById('reconciliationWindow');
+  const bodyEl = document.getElementById('reconciliationBody');
+
+  if (windowEl) {
+    windowEl.textContent = report?.matchWindowMinutes
+      ? `Match window ${report.matchWindowMinutes}m`
+      : 'Match window —';
+  }
+
+  if (!report || report.ready === false) {
+    if (statusEl) {
+      statusEl.className = 'badge badge-neutral';
+      statusEl.textContent = 'Not Configured';
+    }
+    if (noteEl) {
+      noteEl.textContent = 'Add CARD_SETTLEMENT_* env vars to enable settlement validation.';
+    }
+    if (bodyEl) {
+      bodyEl.innerHTML = '<tr><td colspan="6" style="color:var(--color-text-faint)">Settlement reconciliation is not configured.</td></tr>';
+    }
+    return;
+  }
+
+  const overlap = report.summary?.overlap || {};
+  const matchedNet = overlap.netAmount || 0;
+  const unmatchedSettlementCount = overlap.unmatchedSettlementCount || 0;
+  const unmatchedImwebCount = overlap.unmatchedImwebCount || 0;
+  const methodMismatchCount = overlap.methodMismatchCount || 0;
+  const methodMismatchAmount = overlap.methodMismatchAmount || 0;
+
+  if (statusEl) {
+    if (methodMismatchCount > 0) {
+      statusEl.className = 'badge badge-warning';
+      statusEl.textContent = 'Check Mapping';
+    } else if (unmatchedSettlementCount > 0 || unmatchedImwebCount > 0) {
+      statusEl.className = 'badge badge-neutral';
+      statusEl.textContent = 'Partial Match';
+    } else {
+      statusEl.className = 'badge badge-success';
+      statusEl.textContent = 'Aligned';
+    }
+  }
+
+  const reconKpis = {
+    matchedNet: {
+      value: formatSignedCompactKrw(matchedNet),
+      sub: `${overlap.matchedCount || 0} matched events`,
+    },
+    unmatchedSettlement: {
+      value: String(unmatchedSettlementCount),
+      sub: `${formatSignedCompactKrw((report.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))} settlement gap`,
+    },
+    unmatchedImweb: {
+      value: String(unmatchedImwebCount),
+      sub: `${formatSignedCompactKrw((report.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))} imweb gap`,
+    },
+    methodMismatch: {
+      value: String(methodMismatchCount),
+      sub: methodMismatchCount > 0 ? `${formatSignedCompactKrw(methodMismatchAmount)} flagged` : 'No method drift',
+    },
+  };
+
+  Object.entries(reconKpis).forEach(([key, meta]) => {
+    const valueEl = document.querySelector(`[data-recon-kpi="${key}"] .kpi-value`);
+    const subEl = document.querySelector(`[data-recon-kpi="${key}"] .kpi-delta span`);
+    if (valueEl) valueEl.textContent = meta.value;
+    if (subEl) subEl.textContent = meta.sub;
+  });
+
+  if (noteEl) {
+    const confidence = overlap.confidence || {};
+    const high = confidence.high || 0;
+    const medium = confidence.medium || 0;
+    const low = confidence.low || 0;
+    noteEl.textContent = methodMismatchCount > 0
+      ? `${high} high / ${medium} medium / ${low} low-confidence matches. Matched settlement rows are currently colliding with non-card IMWEB payment labels, so treat this as a validation signal rather than a direct payment-method map.`
+      : `${high} high / ${medium} medium / ${low} low-confidence matches across the current settlement sheet.`;
+  }
+
+  if (bodyEl) {
+    const rows = (report.daily || []).slice(-14).reverse();
+    bodyEl.innerHTML = rows.length > 0
+      ? rows.map(day => `
+          <tr>
+            <td style="font-weight:600">${esc(day.date)}</td>
+            <td>${formatSignedKrw(day.settlement?.netAmount || 0)}</td>
+            <td>${formatSignedKrw(day.imweb?.netAmount || 0)}</td>
+            <td style="color:var(--color-success)">${formatSignedKrw(day.matched?.netAmount || 0)}</td>
+            <td style="color:${(day.unmatchedSettlement?.netAmount || 0) === 0 ? 'var(--color-text)' : 'var(--color-warning)'}">${formatSignedKrw(day.unmatchedSettlement?.netAmount || 0)}</td>
+            <td style="color:${(day.unmatchedImweb?.netAmount || 0) === 0 ? 'var(--color-text)' : 'var(--color-warning)'}">${formatSignedKrw(day.unmatchedImweb?.netAmount || 0)}</td>
+          </tr>
+        `).join('')
+      : '<tr><td colspan="6" style="color:var(--color-text-faint)">No reconciliation rows available.</td></tr>';
   }
 }
 
@@ -1505,6 +1648,8 @@ async function startLiveMode() {
   try { await updateOptimizationLog(); } catch (e) { console.warn('[LIVE] updateOptimizationLog error:', e.message); }
   try { await updateLiveCampaigns(); } catch (e) { console.warn('[LIVE] updateLiveCampaigns error:', e.message); }
   try { await updateOptTimeline(); } catch (e) { console.warn('[LIVE] updateOptTimeline error:', e.message); }
+  try { await updateAnalyticsPage(); } catch (e) { console.warn('[LIVE] updateAnalyticsPage error:', e.message); }
+  try { await updateProfitPage(); } catch (e) { console.warn('[LIVE] updateProfitPage error:', e.message); }
   try { await updateSettingsPage(); } catch (e) { console.warn('[LIVE] updateSettingsPage error:', e.message); }
 
   // Wire up scan button for live scans
@@ -1530,6 +1675,8 @@ async function startLiveMode() {
           await updateOptimizationLog();
           await updateLiveCampaigns();
           await updateOptTimeline();
+          await updateAnalyticsPage();
+          await updateProfitPage();
         }
       }, 3000);
     });

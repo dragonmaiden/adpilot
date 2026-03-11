@@ -6,10 +6,11 @@ const I18N = {
   // ── Navigation ──
   'nav.overview':       { en: 'Overview',          kr: '개요' },
   'nav.campaigns':      { en: 'Campaigns',         kr: '캠페인' },
-  'nav.analytics':      { en: 'Analytics',         kr: '분석' },
+  'nav.analytics':      { en: 'Profit Analytics',  kr: '수익 분석' },
   'nav.optimizations':  { en: 'Optimizations',     kr: '최적화' },
   'nav.fatigue':        { en: 'Fatigue Detection',  kr: '피로도 감지' },
   'nav.budget':         { en: 'Budget Manager',     kr: '예산 관리' },
+  'nav.profit':         { en: 'Profit',            kr: '수익' },
   'nav.settings':       { en: 'Settings',           kr: '설정' },
 
   // ── Header ──
@@ -21,10 +22,11 @@ const I18N = {
   // ── Page Titles ──
   'page.overview':      { en: 'Overview',          kr: '개요' },
   'page.campaigns':     { en: 'Campaigns',         kr: '캠페인' },
-  'page.analytics':     { en: 'Analytics',         kr: '분석' },
+  'page.analytics':     { en: 'Profit Analytics',  kr: '수익 분석' },
   'page.optimizations': { en: 'Optimizations',     kr: '최적화' },
   'page.fatigue':       { en: 'Fatigue Detection',  kr: '피로도 감지' },
   'page.budget':        { en: 'Budget Manager',     kr: '예산 관리' },
+  'page.profit':        { en: 'Profit',            kr: '수익' },
   'page.settings':      { en: 'Settings',           kr: '설정' },
 
   // ── Overview KPI Labels ──

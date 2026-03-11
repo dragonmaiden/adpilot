@@ -49,7 +49,7 @@
       </a>
       <a href="#" class="nav-item" data-page="analytics">
         <i data-lucide="bar-chart-3"></i>
-        <span data-i18n="nav.analytics">Analytics</span>
+        <span data-i18n="nav.analytics">Profit Analytics</span>
       </a>
       <a href="#" class="nav-item" data-page="optimizations">
         <i data-lucide="zap"></i>
@@ -245,6 +245,15 @@
         </div>
       </div>
 
+      <div class="card chart-card">
+        <div class="card-header">
+          <h2 data-i18n="chart.hourVolume">Order Volume by Hour (KST)</h2>
+        </div>
+        <div class="chart-container" style="height:300px">
+          <canvas id="hourChart"></canvas>
+        </div>
+      </div>
+
       <!-- Recent Activity -->
       <div class="card">
         <div class="card-header">
@@ -255,9 +264,16 @@
       </div>
     </section>
 
-    <!-- Analytics Page -->
+    <!-- Profit Analytics Page -->
     <section class="page" data-page="analytics">
-      <!-- Refund & Order KPIs -->
+      <div class="section-head">
+        <div>
+          <div class="section-kicker">Profit Analytics</div>
+          <h2>Deep-dive margin diagnostics</h2>
+        </div>
+        <p class="section-note">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
+      </div>
+
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card" data-kpi-analytics="refundRate">
           <div class="kpi-label" data-i18n="kpi.refundRate">Refund Rate (₩)</div>
@@ -293,7 +309,13 @@
         </div>
       </div>
 
-      <!-- Profit Trend + Weekly CPA -->
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker">Profit Structure</div>
+          <h2>How net profit is formed over time</h2>
+        </div>
+      </div>
+
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
@@ -313,7 +335,32 @@
         </div>
       </div>
 
-      <!-- Weekday Performance + Hour Distribution -->
+      <div class="card chart-card">
+        <div class="card-header">
+          <h2>Daily Profit Waterfall</h2>
+          <span class="chart-days" id="profitWaterfallDays"></span>
+        </div>
+        <div class="chart-container" style="height:380px">
+          <canvas id="profitWaterfallChart"></canvas>
+        </div>
+      </div>
+
+      <div class="card" id="dataCoverageCard">
+        <div class="card-header">
+          <h2>Data Coverage & Confidence</h2>
+        </div>
+        <div id="dataCoverageContent">
+          <p style="color:var(--color-text-faint)">Waiting for data...</p>
+        </div>
+      </div>
+
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker">Media Profitability</div>
+          <h2>Which traffic patterns and campaigns create profit</h2>
+        </div>
+      </div>
+
       <div class="charts-grid">
         <div class="card chart-card">
           <div class="card-header">
@@ -325,38 +372,42 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2 data-i18n="chart.hourVolume">Order Volume by Hour (KST)</h2>
-          </div>
-          <div class="chart-container" style="height:320px">
-            <canvas id="hourChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <!-- Campaign Weekly CPA + Refund Trend -->
-      <div class="charts-grid">
-        <div class="card chart-card">
-          <div class="card-header">
             <h2 data-i18n="chart.weeklyCpa">Main Campaign Weekly CPA</h2>
           </div>
           <div class="chart-container" style="height:300px">
             <canvas id="weeklyCpaChart"></canvas>
           </div>
         </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.monthlyRefund">Monthly Refund Comparison</h2>
-          </div>
-          <div class="chart-container" style="height:300px">
-            <canvas id="refundChart"></canvas>
-          </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>Campaign Profit Leaderboard</h2>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)">Revenue estimated (pixel-attributed)</span>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table" id="campaignProfitTable">
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>Status</th>
+                <th>Ad Spend</th>
+                <th>Meta Purchases</th>
+                <th>Est. Revenue</th>
+                <th>Est. COGS</th>
+                <th>Gross Profit</th>
+                <th>Margin %</th>
+              </tr>
+            </thead>
+            <tbody id="campaignProfitBody"></tbody>
+          </table>
         </div>
       </div>
 
-      <!-- Weekday Revenue Table -->
       <div class="card">
         <div class="card-header">
           <h2 data-i18n="chart.weekdayRevenue">Revenue by Day of Week</h2>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)">Net revenue, ad spend, and CPA by weekday</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="weekdayTable">
@@ -373,6 +424,78 @@
               </tr>
             </thead>
             <tbody id="weekdayBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker">Revenue Quality</div>
+          <h2>Refund pressure and settlement validation</h2>
+        </div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2 data-i18n="chart.monthlyRefund">Monthly Refund Comparison</h2>
+          </div>
+          <div class="chart-container" style="height:300px">
+            <canvas id="refundChart"></canvas>
+          </div>
+        </div>
+        <div class="card" id="reconciliationSummaryCard">
+          <div class="card-header">
+            <h2>Settlement Reconciliation</h2>
+            <span class="badge badge-neutral" id="reconciliationStatus">Waiting</span>
+          </div>
+          <p class="card-desc">Card settlement rows are treated as validation only. They are not added into revenue totals.</p>
+          <div class="kpi-grid small">
+            <div class="kpi-card" data-recon-kpi="matchedNet">
+              <div class="kpi-label">Matched Net</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="link"></i><span>—</span></div>
+            </div>
+            <div class="kpi-card" data-recon-kpi="unmatchedSettlement">
+              <div class="kpi-label">Unmatched Settlement</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="receipt"></i><span>—</span></div>
+            </div>
+            <div class="kpi-card" data-recon-kpi="unmatchedImweb">
+              <div class="kpi-label">Unmatched Imweb</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="shopping-bag"></i><span>—</span></div>
+            </div>
+            <div class="kpi-card" data-recon-kpi="methodMismatch">
+              <div class="kpi-label">Method Mismatch</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="shield-alert"></i><span>—</span></div>
+            </div>
+          </div>
+          <div id="reconciliationNote" class="reconciliation-note">Waiting for reconciliation data...</div>
+        </div>
+      </div>
+
+      <div class="card" id="reconciliationCard">
+        <div class="card-header">
+          <h2>Daily Reconciliation Rollup</h2>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)" id="reconciliationWindow">Match window —</span>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table" id="reconciliationTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Settlement Net</th>
+                <th>Imweb Net</th>
+                <th>Matched Net</th>
+                <th>Settlement Gap</th>
+                <th>Imweb Gap</th>
+              </tr>
+            </thead>
+            <tbody id="reconciliationBody">
+              <tr><td colspan="6" style="color:var(--color-text-faint)">Waiting for reconciliation data...</td></tr>
+            </tbody>
           </table>
         </div>
       </div>
@@ -599,9 +722,8 @@
       </div>
     </section>
 
-    <!-- Profit Analysis Page -->
+    <!-- Profit Page -->
     <section class="page" data-page="profit">
-      <!-- Hero Card -->
       <div class="profit-hero" id="profitHero">
         <div class="profit-hero-inner">
           <div class="profit-verdict" id="profitVerdict">—</div>
@@ -611,7 +733,6 @@
         <div class="profit-hero-sub" id="profitHeroSub">Waiting for data...</div>
       </div>
 
-      <!-- KPI Row -->
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card" data-profit-kpi="trueNetProfit">
           <div class="kpi-label">True Net Profit (Period)</div>
@@ -637,52 +758,6 @@
           <div class="kpi-label">30d Profit Run Rate</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="calendar-range"></i><span>—</span></div>
-        </div>
-      </div>
-
-      <!-- Waterfall Chart -->
-      <div class="card chart-card">
-        <div class="card-header">
-          <h2>Daily Profit Waterfall</h2>
-          <span class="chart-days" id="profitWaterfallDays"></span>
-        </div>
-        <div class="chart-container" style="height:380px">
-          <canvas id="profitWaterfallChart"></canvas>
-        </div>
-      </div>
-
-      <!-- Campaign Profit Leaderboard -->
-      <div class="card">
-        <div class="card-header">
-          <h2>Campaign Profit Leaderboard</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)">Revenue estimated (pixel-attributed)</span>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table" id="campaignProfitTable">
-            <thead>
-              <tr>
-                <th>Campaign</th>
-                <th>Status</th>
-                <th>Ad Spend</th>
-                <th>Meta Purchases</th>
-                <th>Est. Revenue</th>
-                <th>Est. COGS</th>
-                <th>Gross Profit</th>
-                <th>Margin %</th>
-              </tr>
-            </thead>
-            <tbody id="campaignProfitBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Data Coverage Card -->
-      <div class="card" id="dataCoverageCard">
-        <div class="card-header">
-          <h2>Data Coverage & Confidence</h2>
-        </div>
-        <div id="dataCoverageContent">
-          <p style="color:var(--color-text-faint)">Waiting for data...</p>
         </div>
       </div>
     </section>

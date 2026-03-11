@@ -71,6 +71,14 @@ const config = {
     },
   },
 
+  // Card settlement reconciliation (Google Sheets)
+  cardSettlement: {
+    spreadsheetId: process.env.CARD_SETTLEMENT_SPREADSHEET_ID || '',
+    gid: process.env.CARD_SETTLEMENT_GID || '0',
+    merchantName: process.env.CARD_SETTLEMENT_MERCHANT || 'SHUE',
+    matchWindowMinutes: parseInt(process.env.CARD_SETTLEMENT_MATCH_WINDOW_MINUTES || '3', 10),
+  },
+
   // Fees
   fees: {
     paymentFeeRate: 0.033, // Standard Korean PG rate (3.3%)
