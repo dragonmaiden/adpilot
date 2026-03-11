@@ -62,6 +62,9 @@
   --color-warning-subtle: rgba(251, 191, 36, 0.12);
   --color-error:          #f87171;
   --color-error-subtle:   rgba(248, 113, 113, 0.12);
+  --calendar-profit-positive-rgb: 74, 222, 128;
+  --calendar-profit-negative-rgb: 248, 113, 113;
+  --calendar-profit-breakeven-rgb: 148, 163, 184;
 
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
@@ -93,6 +96,9 @@
   --color-warning-subtle: rgba(217, 119, 6, 0.08);
   --color-error:          #dc2626;
   --color-error-subtle:   rgba(220, 38, 38, 0.08);
+  --calendar-profit-positive-rgb: 22, 163, 74;
+  --calendar-profit-negative-rgb: 220, 38, 38;
+  --calendar-profit-breakeven-rgb: 161, 161, 170;
 
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
@@ -121,6 +127,9 @@
     --color-warning-subtle: rgba(217, 119, 6, 0.08);
     --color-error:          #dc2626;
     --color-error-subtle:   rgba(220, 38, 38, 0.08);
+    --calendar-profit-positive-rgb: 22, 163, 74;
+    --calendar-profit-negative-rgb: 220, 38, 38;
+    --calendar-profit-breakeven-rgb: 161, 161, 170;
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
     --shadow-lg: 0 12px 32px rgba(0,0,0,0.12);
@@ -165,7 +174,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   color: var(--color-text);
 }
 
-.sidebar-logo svg { flex-shrink: 0; }
+.sidebar-logo-mark {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: block;
+}
 
 .logo-text {
   font-size: var(--text-lg);
@@ -1427,12 +1441,15 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .calendar-day {
   --calendar-alpha: 0;
+  --calendar-tint-strength: 0;
+  --calendar-tint-rgb: var(--calendar-profit-breakeven-rgb);
   min-height: 116px;
   border: 1px solid var(--color-divider);
   border-radius: var(--radius-md);
   padding: 0.6rem 0.55rem;
   background:
-    linear-gradient(180deg, rgba(32, 128, 141, calc(0.05 + var(--calendar-alpha) * 0.26)), rgba(32, 128, 141, calc(0.01 + var(--calendar-alpha) * 0.1))),
+    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.1 + var(--calendar-tint-strength) * 0.26)), transparent 68%),
+    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.08 + var(--calendar-tint-strength) * 0.32)), rgba(var(--calendar-tint-rgb), calc(0.02 + var(--calendar-tint-strength) * 0.14))),
     var(--color-surface);
   color: var(--color-text);
   display: flex;
@@ -1446,6 +1463,20 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     border-color var(--transition-interactive),
     box-shadow var(--transition-interactive),
     background var(--transition-interactive);
+}
+
+.calendar-day.profit-positive {
+  --calendar-tint-rgb: var(--calendar-profit-positive-rgb);
+  border-color: rgba(var(--calendar-profit-positive-rgb), calc(0.1 + var(--calendar-tint-strength) * 0.22));
+}
+
+.calendar-day.profit-negative {
+  --calendar-tint-rgb: var(--calendar-profit-negative-rgb);
+  border-color: rgba(var(--calendar-profit-negative-rgb), calc(0.16 + var(--calendar-tint-strength) * 0.2));
+}
+
+.calendar-day.profit-breakeven {
+  --calendar-tint-rgb: var(--calendar-profit-breakeven-rgb);
 }
 
 .calendar-day:hover {
@@ -1473,22 +1504,24 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .calendar-day.is-selected {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 1px var(--color-primary), 0 8px 20px rgba(32, 128, 141, 0.12);
+  border-color: rgba(var(--calendar-tint-rgb), 0.9);
+  box-shadow: 0 0 0 1px rgba(var(--calendar-tint-rgb), 0.88), 0 8px 20px rgba(var(--calendar-tint-rgb), 0.16);
 }
 
 .calendar-day.is-range {
   background:
-    linear-gradient(180deg, rgba(32, 128, 141, calc(0.1 + var(--calendar-alpha) * 0.28)), rgba(32, 128, 141, calc(0.05 + var(--calendar-alpha) * 0.14))),
+    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.14 + var(--calendar-tint-strength) * 0.3)), transparent 68%),
+    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.12 + var(--calendar-tint-strength) * 0.34)), rgba(var(--calendar-tint-rgb), calc(0.05 + var(--calendar-tint-strength) * 0.18))),
     var(--color-surface);
 }
 
 .calendar-day.is-selection-start,
 .calendar-day.is-selection-end,
 .calendar-day.is-selection-single {
-  border-color: var(--color-primary);
+  border-color: rgba(var(--calendar-tint-rgb), 0.95);
   background:
-    linear-gradient(180deg, rgba(32, 128, 141, calc(0.16 + var(--calendar-alpha) * 0.3)), rgba(32, 128, 141, calc(0.08 + var(--calendar-alpha) * 0.18))),
+    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.2 + var(--calendar-tint-strength) * 0.32)), transparent 68%),
+    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.16 + var(--calendar-tint-strength) * 0.36)), rgba(var(--calendar-tint-rgb), calc(0.08 + var(--calendar-tint-strength) * 0.22))),
     var(--color-surface);
 }
 
@@ -1612,6 +1645,10 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   gap: var(--space-4);
 }
 
+.calendar-summary-grid-secondary {
+  grid-template-columns: repeat(auto-fit, minmax(min(185px, 100%), 1fr));
+}
+
 .calendar-summary-grid .kpi-card {
   min-height: 0;
 }
@@ -1631,6 +1668,107 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   font-size: var(--text-sm);
   color: var(--color-text-muted);
   line-height: 1.5;
+}
+
+.calendar-waterfall {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.calendar-waterfall-row-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.calendar-waterfall-row {
+  display: grid;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.calendar-waterfall-step {
+  min-width: 0;
+}
+
+.calendar-waterfall-card {
+  width: 100%;
+  min-height: 148px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.calendar-waterfall-card.positive {
+  border-color: color-mix(in srgb, var(--color-success) 32%, var(--color-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-success-subtle) 80%, transparent), transparent 72%),
+    var(--color-surface);
+}
+
+.calendar-waterfall-card.negative {
+  border-color: color-mix(in srgb, var(--color-error) 30%, var(--color-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-error-subtle) 78%, transparent), transparent 72%),
+    var(--color-surface);
+}
+
+.calendar-waterfall-arrow {
+  width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-faint);
+}
+
+.calendar-waterfall-arrow svg,
+.calendar-waterfall-arrow i {
+  width: 18px;
+  height: 18px;
+}
+
+.calendar-waterfall-row-connector {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--color-text-faint);
+  min-height: 28px;
+}
+
+.calendar-waterfall-row-connector-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.calendar-waterfall-row-connector-line {
+  height: 1px;
+  background: color-mix(in srgb, var(--color-border) 75%, transparent);
+}
+
+.calendar-waterfall-row-connector-turn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.calendar-waterfall-row-connector-start svg,
+.calendar-waterfall-row-connector-start i,
+.calendar-waterfall-row-connector-turn svg,
+.calendar-waterfall-row-connector-turn i {
+  width: 18px;
+  height: 18px;
 }
 
 .calendar-chip-row {
@@ -1860,6 +1998,43 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
   .calendar-toolbar-actions .btn {
     flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .calendar-waterfall {
+    gap: var(--space-2);
+  }
+
+  .calendar-waterfall-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .calendar-waterfall-step {
+    width: 100%;
+  }
+
+  .calendar-waterfall-card {
+    width: 100%;
+  }
+
+  .calendar-waterfall-arrow {
+    width: 100%;
+    height: 24px;
+    transform: rotate(90deg);
+  }
+
+  .calendar-waterfall-row-connector {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 6px;
+  }
+
+  .calendar-waterfall-row-connector-line {
+    width: 1px;
+    height: 18px;
+  }
+
+  .calendar-waterfall-row-connector-turn {
     justify-content: center;
   }
 

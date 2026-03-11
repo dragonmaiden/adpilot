@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, safeConfidenceLevel, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
+  const { esc, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
   const { fetchCalendarAnalysis } = live.api;
 
   const KST_TIME_ZONE = 'Asia/Seoul';
@@ -225,7 +225,7 @@
     return classes.join(' ');
   }
 
-  function renderCalendarDayCell(dateKey, dayData) {
+  function renderCalendarDayCell(dateKey, dayData, spectrum) {
     const data = dayData || {
       revenue: 0,
       trueNetProfit: 0,
@@ -237,7 +237,29 @@
     const todayKey = getKstDateKey();
     const isFuture = compareDateKeys(dateKey, todayKey) > 0;
     const isEmptyDay = !isFuture && (data.revenue || 0) === 0 && (data.orders || 0) === 0 && (data.adSpend || 0) === 0 && (data.refundCount || 0) === 0;
-    const profitClass = (data.trueNetProfit || 0) >= 0 ? 'positive' : 'negative';
+    const netProfit = Number(data.trueNetProfit || 0);
+    const profitClass = netProfit >= 0 ? 'positive' : 'negative';
+    const maxPositiveProfit = Math.max(Number(spectrum?.maxPositiveProfit || 0), 1);
+    const maxNegativeLoss = Math.max(Number(spectrum?.maxNegativeLoss || 0), 1);
+    const profitSpectrum = netProfit > 0
+      ? Math.min(1, netProfit / maxPositiveProfit)
+      : netProfit < 0
+        ? Math.min(1, Math.abs(netProfit) / maxNegativeLoss)
+        : 0;
+    const dayToneClass = isFuture
+      ? 'profit-breakeven'
+      : netProfit > 0
+        ? 'profit-positive'
+        : netProfit < 0
+          ? 'profit-negative'
+          : 'profit-breakeven';
+    const tintStrength = isFuture
+      ? 0
+      : netProfit > 0
+        ? Math.min(1, 0.08 + profitSpectrum * 0.92)
+        : netProfit < 0
+          ? Math.min(1, 0.08 + profitSpectrum * 0.92)
+          : 0;
     const badges = [];
 
     if (isFuture) {
@@ -262,10 +284,10 @@
     return `
       <button
         type="button"
-        class="calendar-day ${getCalendarDayClasses(dateKey)} ${isFuture ? 'is-future' : ''} ${isEmptyDay ? 'is-empty' : ''}"
+        class="calendar-day ${dayToneClass} ${getCalendarDayClasses(dateKey)} ${isFuture ? 'is-future' : ''} ${isEmptyDay ? 'is-empty' : ''}"
         data-date="${esc(dateKey)}"
         data-future="${isFuture ? '1' : '0'}"
-        style="--calendar-alpha:${Number(data.revenueIntensity || 0)}"
+        style="--calendar-tint-strength:${tintStrength.toFixed(3)}"
       >
         <div class="calendar-day-top">
           <span class="calendar-day-number">${esc(String(Number(dateKey.slice(-2))))}</span>
@@ -304,6 +326,15 @@
 
     const calendarDays = hasFreshViewport ? (calendarState.data?.calendarDays || []) : [];
     const dayMap = new Map(calendarDays.map(day => [day.date, day]));
+    const tintSpectrum = calendarDays.reduce((acc, day) => {
+      const netProfit = Number(day?.trueNetProfit || 0);
+      if (netProfit > 0) {
+        acc.maxPositiveProfit = Math.max(acc.maxPositiveProfit, netProfit);
+      } else if (netProfit < 0) {
+        acc.maxNegativeLoss = Math.max(acc.maxNegativeLoss, Math.abs(netProfit));
+      }
+      return acc;
+    }, { maxPositiveProfit: 0, maxNegativeLoss: 0 });
     const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
     viewportEl.innerHTML = months.map(month => {
@@ -323,7 +354,7 @@
           </div>
           <div class="calendar-grid">
             ${Array.from({ length: leadingSpaces }, () => '<div class="calendar-spacer"></div>').join('')}
-            ${days.map(dateKey => renderCalendarDayCell(dateKey, dayMap.get(dateKey))).join('')}
+            ${days.map(dateKey => renderCalendarDayCell(dateKey, dayMap.get(dateKey), tintSpectrum)).join('')}
           </div>
         </div>
       `;
@@ -338,6 +369,65 @@
         <div class="kpi-delta ${card.tone || 'neutral'}">
           <i data-lucide="${esc(card.icon || 'minus')}"></i>
           <span>${esc(card.sub || '—')}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCalendarWaterfallCard(step) {
+    const toneClass = step.tone ? ` ${step.tone}` : '';
+    return `
+      <div class="calendar-waterfall-card${toneClass}">
+        <div class="kpi-label">${esc(step.label)}</div>
+        <div class="kpi-value">${step.value}</div>
+        <div class="kpi-delta ${step.tone || 'neutral'}">
+          <i data-lucide="${esc(step.icon || 'minus')}"></i>
+          <span>${esc(step.sub || '—')}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCalendarWaterfall(steps) {
+    if (!Array.isArray(steps) || steps.length === 0) return '';
+
+    const rowSize = 4;
+    const rows = [];
+    for (let index = 0; index < steps.length; index += rowSize) {
+      rows.push(steps.slice(index, index + rowSize));
+    }
+
+    return `
+      <div class="card">
+        <div class="card-header">
+          <h2>Profit Waterfall</h2>
+          <span class="calendar-card-note">Left to right: revenue becomes true net profit after refunds, operating costs, and media spend.</span>
+        </div>
+        <div class="calendar-waterfall">
+          ${rows.map((row, rowIndex) => `
+            <div class="calendar-waterfall-row-wrap">
+              <div class="calendar-waterfall-row" role="list" style="grid-template-columns:${row.map(() => 'minmax(0, 1fr)').join(' auto ')}">
+                ${row.map((step, stepIndex) => `
+                  <div class="calendar-waterfall-step" role="listitem">
+                    ${renderCalendarWaterfallCard(step)}
+                  </div>
+                  ${stepIndex < row.length - 1 ? '<div class="calendar-waterfall-arrow" aria-hidden="true"><i data-lucide="arrow-right"></i></div>' : ''}
+                `).join('')}
+              </div>
+              ${rowIndex < rows.length - 1 ? `
+                <div class="calendar-waterfall-row-connector" aria-hidden="true">
+                  <div class="calendar-waterfall-row-connector-start">
+                    <i data-lucide="arrow-right"></i>
+                    <span>Next row starts here</span>
+                  </div>
+                  <div class="calendar-waterfall-row-connector-line"></div>
+                  <div class="calendar-waterfall-row-connector-turn">
+                    <i data-lucide="corner-down-left"></i>
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          `).join('')}
         </div>
       </div>
     `;
@@ -436,29 +526,28 @@
 
     const selection = calendarState.data.selection || {};
     const summary = selection.summary || {};
-    const coverage = selection.coverage || {};
-    const confidence = summary.confidence || coverage.confidence || { level: 'low', label: 'Waiting for data' };
-    const confidenceClass = safeConfidenceLevel(confidence.level);
     const isProfitPositive = (summary.trueNetProfit || 0) >= 0;
     const reconciliation = selection.reconciliation || {};
     const overlap = reconciliation.summary?.overlap || {};
 
-    const summaryCards = [
+    const waterfallCards = [
       { label: 'Gross Revenue', value: formatKrw(summary.grossRevenue || 0), sub: `${formatCount(summary.recognizedOrders || 0)} recognized orders`, tone: 'positive', icon: 'shopping-bag' },
-      { label: 'Refunded', value: formatKrw(summary.refundedAmount || 0), sub: formatPercent(summary.refundRate || 0), tone: (summary.refundedAmount || 0) > 0 ? 'negative' : 'neutral', icon: 'rotate-ccw' },
+      { label: 'Refunded', value: formatSignedKrw(-(summary.refundedAmount || 0)), sub: `${formatPercent(summary.refundRate || 0)} refund rate`, tone: (summary.refundedAmount || 0) > 0 ? 'negative' : 'neutral', icon: 'rotate-ccw' },
       { label: 'Net Revenue', value: formatKrw(summary.netRevenue || 0), sub: `${formatCount(summary.dayCount || selection.dayCount || 0)} selected days`, tone: 'positive', icon: 'wallet' },
-      { label: 'Ad Spend', value: formatUsd(summary.adSpend || 0, 2), sub: formatKrw(summary.adSpendKRW || 0), tone: 'neutral', icon: 'megaphone' },
-      { label: 'COGS', value: formatKrw(summary.cogs || 0), sub: `${formatCount(summary.daysWithCOGS || 0)} covered days`, tone: 'neutral', icon: 'package' },
-      { label: 'Shipping', value: formatKrw(summary.shipping || 0), sub: 'Included in true net profit', tone: 'neutral', icon: 'truck' },
-      { label: 'Payment Fees', value: formatKrw(summary.paymentFees || 0), sub: 'Applied to net revenue', tone: 'neutral', icon: 'credit-card' },
-      { label: 'True Net Profit', value: formatSignedKrw(summary.trueNetProfit || 0), sub: isProfitPositive ? 'Profitable selection' : 'Below break-even', tone: isProfitPositive ? 'positive' : 'negative', icon: 'coins' },
+      { label: 'COGS', value: formatSignedKrw(-(summary.cogs || 0)), sub: `${formatCount(summary.daysWithCOGS || 0)} covered days`, tone: 'negative', icon: 'package' },
+      { label: 'Shipping', value: formatSignedKrw(-(summary.shipping || 0)), sub: 'Operational shipping cost', tone: 'negative', icon: 'truck' },
+      { label: 'Payment Fees', value: formatSignedKrw(-(summary.paymentFees || 0)), sub: '3.3% applied to net revenue', tone: 'negative', icon: 'credit-card' },
+      { label: 'Ad Spend', value: formatSignedKrw(-(summary.adSpendKRW || 0)), sub: `${formatUsd(summary.adSpend || 0, 2)} media spend`, tone: 'negative', icon: 'megaphone' },
+      { label: 'True Net Profit', value: formatSignedKrw(summary.trueNetProfit || 0), sub: isProfitPositive ? 'Profit after all deductions' : 'Below break-even after all deductions', tone: isProfitPositive ? 'positive' : 'negative', icon: 'coins' },
+    ];
+
+    const summaryCards = [
       { label: 'Margin', value: formatPercent(summary.margin || 0), sub: 'True net profit / net revenue', tone: (summary.margin || 0) >= 0 ? 'positive' : 'negative', icon: 'percent' },
       { label: 'ROAS', value: `${Number(summary.roas || 0).toFixed(2)}x`, sub: 'Net revenue / ad spend', tone: (summary.roas || 0) >= 1 ? 'positive' : 'negative', icon: 'trending-up' },
       { label: 'Recognized Orders', value: formatCount(summary.recognizedOrders || 0), sub: `${formatCount(summary.refundOrders || 0)} refund orders`, tone: 'neutral', icon: 'receipt' },
       { label: 'Refund Rate', value: formatPercent(summary.refundRate || 0), sub: `${formatKrw(summary.refundedAmount || 0)} refunded`, tone: (summary.refundRate || 0) > 10 ? 'negative' : 'neutral', icon: 'percent' },
       { label: 'Cancel Rate', value: formatPercent(summary.cancelRate || 0), sub: `${formatCount(summary.cancelledSections || 0)} of ${formatCount(summary.totalSections || 0)} sections`, tone: (summary.cancelRate || 0) > 10 ? 'negative' : 'neutral', icon: 'x-circle' },
       { label: 'Meta Purchases', value: formatCount(summary.metaPurchases || 0), sub: 'Selected-range campaign insights', tone: 'neutral', icon: 'mouse-pointer-2' },
-      { label: 'Confidence', value: esc(confidence.label), sub: `${formatPercent((summary.cogsCoverageRatio || 0) * 100, 0)} COGS coverage`, tone: confidenceClass === 'high' ? 'positive' : confidenceClass === 'medium' ? 'neutral' : 'negative', icon: 'shield' },
     ];
 
     const dailyRows = Array.isArray(selection.days) ? selection.days : [];
@@ -587,19 +676,13 @@
           </div>
           <div class="calendar-chip-row">
             <span class="calendar-chip ${isProfitPositive ? 'positive' : 'negative'}">${isProfitPositive ? 'Profitable window' : 'Below break-even'}</span>
-            <span class="calendar-chip ${confidenceClass === 'high' ? 'positive' : confidenceClass === 'medium' ? 'warning' : 'negative'}">${esc(confidence.label || 'Confidence')}</span>
-          </div>
-        </div>
-        <div class="calendar-callout">
-          <span class="confidence-badge confidence-${confidenceClass}">${esc(confidence.label || 'Confidence')}</span>
-          <div class="calendar-callout-note">
-            ${formatCount(coverage.daysWithCOGS || 0)} of ${formatCount(coverage.totalDays || 0)} selected days have COGS coverage.
-            ${coverage.missingRanges && coverage.missingRanges.length > 0 ? ` Missing: ${coverage.missingRanges.join(', ')}.` : ''}
           </div>
         </div>
       </div>
 
-      <div class="calendar-summary-grid">
+      ${renderCalendarWaterfall(waterfallCards)}
+
+      <div class="calendar-summary-grid calendar-summary-grid-secondary">
         ${summaryCards.map(renderCalendarSummaryCard).join('')}
       </div>
 
