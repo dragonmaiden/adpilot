@@ -55,14 +55,6 @@ function formatOptimizationScope(level) {
   return labels[level] || '—';
 }
 
-function formatCompactKrw(value) {
-  const amount = Number.isFinite(value) ? value : 0;
-  if (Math.abs(amount) >= 1_000_000) {
-    return '₩' + (amount / 1_000_000).toFixed(1) + 'M';
-  }
-  return '₩' + (amount / 1000).toFixed(0) + 'K';
-}
-
 function formatSignedKrw(value) {
   const amount = Number.isFinite(value) ? value : 0;
   return amount >= 0
@@ -73,8 +65,8 @@ function formatSignedKrw(value) {
 function formatSignedCompactKrw(value) {
   const amount = Number.isFinite(value) ? value : 0;
   return amount >= 0
-    ? formatCompactKrw(amount)
-    : '-' + formatCompactKrw(Math.abs(amount));
+    ? formatKRW(amount)
+    : '-' + formatKRW(Math.abs(amount));
 }
 
 function formatRateMetricDetail(metric, fallback) {
@@ -83,7 +75,7 @@ function formatRateMetricDetail(metric, fallback) {
   }
 
   if (metric.unit === 'currency') {
-    return `${formatCompactKrw(metric.numerator)} of ${formatCompactKrw(metric.denominator)}`;
+    return `${formatKRW(metric.numerator)} of ${formatKRW(metric.denominator)}`;
   }
 
   if (metric.unit === 'sections') {
@@ -156,10 +148,6 @@ function summarizeBy(values, selector) {
 function toFiniteNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function calcClientCpa(spend, purchases) {
-  return purchases > 0 ? spend / purchases : 0;
 }
 
 function getSeriesWindowMeta(group) {
@@ -240,158 +228,6 @@ function initSeriesWindowControls() {
     syncSeriesWindowControls();
     await refreshSeriesWindowGroup(group);
   });
-}
-
-function getUtcWeekKey(dateKey) {
-  const [year, month, day] = String(dateKey || '').split('-').map(value => Number.parseInt(value, 10));
-  if (!year || !month || !day) return '';
-
-  const date = new Date(Date.UTC(year, month - 1, day));
-  const weekday = (date.getUTCDay() + 6) % 7;
-  date.setUTCDate(date.getUTCDate() - weekday);
-  return date.toISOString().slice(0, 10);
-}
-
-function buildWeeklyAggFromDaily(dailyRows, profitRows = []) {
-  const weeks = {};
-
-  for (const row of dailyRows) {
-    const weekKey = getUtcWeekKey(row.date);
-    if (!weekKey) continue;
-    if (!weeks[weekKey]) {
-      weeks[weekKey] = {
-        week: weekKey,
-        revenue: 0,
-        refunded: 0,
-        spend: 0,
-        purchases: 0,
-        profit: 0,
-      };
-    }
-
-    weeks[weekKey].revenue += toFiniteNumber(row.revenue);
-    weeks[weekKey].refunded += toFiniteNumber(row.refunded);
-    weeks[weekKey].spend += toFiniteNumber(row.spend);
-    weeks[weekKey].purchases += toFiniteNumber(row.purchases);
-  }
-
-  for (const row of profitRows) {
-    const weekKey = getUtcWeekKey(row.date);
-    if (!weekKey) continue;
-    if (!weeks[weekKey]) {
-      weeks[weekKey] = {
-        week: weekKey,
-        revenue: 0,
-        refunded: 0,
-        spend: 0,
-        purchases: 0,
-        profit: 0,
-      };
-    }
-
-    weeks[weekKey].profit += toFiniteNumber(row.trueNetProfit ?? row.profit);
-  }
-
-  return Object.values(weeks)
-    .sort((left, right) => left.week.localeCompare(right.week))
-    .map(week => ({
-      week: week.week,
-      profit: Math.round(week.profit),
-      revenue: week.revenue,
-      refunded: week.refunded,
-      spend: week.spend,
-      purchases: week.purchases,
-      cpa: Number.parseFloat(calcClientCpa(week.spend, week.purchases).toFixed(2)),
-    }));
-}
-
-function buildWeekdayPerfFromDaily(dailyRows) {
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const aggregates = dayNames.map(day => ({
-    day,
-    spend: 0,
-    purchases: 0,
-    revenue: 0,
-    refunded: 0,
-    orders: 0,
-  }));
-
-  for (const row of dailyRows) {
-    const [year, month, day] = String(row.date || '').split('-').map(value => Number.parseInt(value, 10));
-    if (!year || !month || !day) continue;
-
-    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-    const aggregate = aggregates[weekday];
-    aggregate.spend += toFiniteNumber(row.spend);
-    aggregate.purchases += toFiniteNumber(row.purchases);
-    aggregate.revenue += toFiniteNumber(row.revenue);
-    aggregate.refunded += toFiniteNumber(row.refunded);
-    aggregate.orders += toFiniteNumber(row.orders);
-  }
-
-  return aggregates.map(aggregate => ({
-    day: aggregate.day,
-    spend: aggregate.spend,
-    purchases: aggregate.purchases,
-    cpa: Number.parseFloat(calcClientCpa(aggregate.spend, aggregate.purchases).toFixed(2)),
-    revenue: aggregate.revenue,
-    refunded: aggregate.refunded,
-    orders: aggregate.orders,
-    paid: aggregate.revenue,
-    net: aggregate.revenue - aggregate.refunded,
-  }));
-}
-
-function buildMonthlyRefundsFromDaily(dailyRows) {
-  const months = {};
-
-  for (const row of dailyRows) {
-    const monthKey = String(row.date || '').slice(0, 7);
-    if (!monthKey) continue;
-    if (!months[monthKey]) {
-      months[monthKey] = { month: monthKey, revenue: 0, refunded: 0 };
-    }
-    months[monthKey].revenue += toFiniteNumber(row.revenue);
-    months[monthKey].refunded += toFiniteNumber(row.refunded);
-  }
-
-  return Object.values(months).sort((left, right) => left.month.localeCompare(right.month));
-}
-
-function buildCoverageMeta(waterfallRows) {
-  const rows = sortRowsByDate(waterfallRows, 'date');
-  if (rows.length === 0) {
-    return {
-      totalDays: 0,
-      daysWithCOGS: 0,
-      coverageRatio: 0,
-      cogsCoveredRange: {},
-      missingRanges: [],
-      confidence: { level: 'low', label: 'Waiting for data' },
-    };
-  }
-
-  const coveredRows = rows.filter(row => row.hasCOGS);
-  const missingRows = rows.filter(row => !row.hasCOGS);
-  const coverageRatio = coveredRows.length / rows.length;
-
-  let confidence = { level: 'low', label: 'Low confidence' };
-  if (coverageRatio >= 0.9) {
-    confidence = { level: 'high', label: 'High confidence' };
-  } else if (coverageRatio >= 0.6) {
-    confidence = { level: 'medium', label: 'Medium confidence' };
-  }
-
-  return {
-    totalDays: rows.length,
-    daysWithCOGS: coveredRows.length,
-    coverageRatio,
-    cogsCoveredRange: coveredRows.length > 0
-      ? { from: coveredRows[0].date, to: coveredRows[coveredRows.length - 1].date }
-      : {},
-    missingRanges: missingRows.map(row => row.date),
-    confidence,
-  };
 }
 
 function buildReconciliationOverlap(dailyRows, matches, unmatchedSettlements, unmatchedImwebPayments) {
@@ -530,48 +366,7 @@ async function updateSettings(settings) {
 // ═══════════════════════════════════════════
 
 // ── Overview KPIs + Charts ──
-async function updateDashboard() {
-  const data = await fetchOverview();
-  if (!data) return;
-
-  const k = data.kpis;
-
-  // Update KPI cards that have data-live attributes
-  updateKPI('liveRevenue', '₩' + Math.round(k.revenue || 0).toLocaleString());
-  updateKPI('liveAdSpend', '$' + (k.adSpend || 0).toFixed(0));
-  updateKPI('liveROAS', k.roas != null ? k.roas.toFixed(2) + 'x' : '—');
-  updateKPI('livePurchases', (k.purchases || 0).toString());
-  updateKPI('liveCPA', k.cpa != null ? '$' + k.cpa.toFixed(2) : '—');
-  updateKPI('liveCTR', (k.ctr || 0).toFixed(2) + '%');
-  updateKPI('liveRefundRate', (k.refundRate || 0).toFixed(1) + '%');
-  updateKPI('liveNetRevenue', '₩' + Math.round(k.netRevenue || 0).toLocaleString());
-
-  // Update last scan time
-  if (data.lastScan) {
-    const ago = timeSince(new Date(data.lastScan));
-    const el = document.getElementById('lastScan');
-    if (el) el.textContent = ago;
-  }
-
-  // Update scanning state
-  const scanBtn = document.getElementById('runScanBtn');
-  if (scanBtn) {
-    if (data.isScanning) {
-      scanBtn.querySelector('span').textContent = 'Scanning...';
-      scanBtn.disabled = true;
-    } else {
-      scanBtn.querySelector('span').textContent = 'Run Scan Now';
-      scanBtn.disabled = false;
-    }
-  }
-
-  // Pulse the live indicator
-  const liveDot = document.getElementById('liveDot');
-  if (liveDot) liveDot.classList.add('pulse');
-  setTimeout(() => { if (liveDot) liveDot.classList.remove('pulse'); }, 1000);
-}
-
-// ── Overview KPIs from /api/overview ──
+// ── Overview KPIs + Charts + Scan state ──
 async function updateOverviewKPIs() {
   try {
     const [data, analyticsData] = await Promise.all([
@@ -666,6 +461,26 @@ async function updateOverviewKPIs() {
       cpaEl.dataset.prefix = '$';
       cpaEl.textContent = k.cpa != null ? '$' + k.cpa.toFixed(2) : '—';
     }
+
+    // ── Scan state + live indicator ──
+    if (data.lastScan) {
+      const ago = timeSince(new Date(data.lastScan));
+      const lastScanEl = document.getElementById('lastScan');
+      if (lastScanEl) lastScanEl.textContent = ago;
+    }
+    const scanBtn = document.getElementById('runScanBtn');
+    if (scanBtn) {
+      if (data.isScanning) {
+        scanBtn.querySelector('span').textContent = 'Scanning...';
+        scanBtn.disabled = true;
+      } else {
+        scanBtn.querySelector('span').textContent = 'Run Scan Now';
+        scanBtn.disabled = false;
+      }
+    }
+    const liveDot = document.getElementById('liveDot');
+    if (liveDot) liveDot.classList.add('pulse');
+    setTimeout(() => { if (liveDot) liveDot.classList.remove('pulse'); }, 1000);
 
     // ── Chart data comes pre-computed from the server ──
     const dailyMerged = sliceRowsByWindow((data.charts && data.charts.dailyMerged) || [], 'overview');
@@ -888,7 +703,7 @@ async function updateLiveCampaigns() {
       const m = c.metrics7d || {};
       const status = c.status === 'ACTIVE' || c.status === 'PAUSED' ? c.status : 'UNKNOWN';
       const statusClass = status === 'ACTIVE' ? 'badge-success' : status === 'PAUSED' ? 'badge-warning' : '';
-      const budget = c.daily_budget ? `$${(parseInt(c.daily_budget) / 100).toFixed(2)}` : '-';
+      const budget = c.dailyBudget ? `$${(parseInt(c.dailyBudget) / 100).toFixed(2)}` : '-';
       const actionButton = status === 'ACTIVE'
         ? `<button class="btn btn-sm btn-ghost campaign-action" data-id="${esc(c.id)}" data-action="PAUSED">Pause</button>`
         : status === 'PAUSED'
@@ -1102,9 +917,10 @@ async function updateAnalyticsPage() {
       );
     }
 
+    const febRate = data.monthlyRates?.['2026-02'] ?? null;
     const febRefundEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-value');
-    if (febRefundEl && data.febRefundRate != null) {
-      febRefundEl.textContent = data.febRefundRate.toFixed(1) + '%';
+    if (febRefundEl && febRate != null) {
+      febRefundEl.textContent = febRate.toFixed(1) + '%';
     }
     const febSubEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-delta span');
     if (febSubEl) {
@@ -1112,9 +928,10 @@ async function updateAnalyticsPage() {
       if (febData) febSubEl.textContent = '₩' + (febData.refunded / 1000).toFixed(0) + 'K refunded of ₩' + (febData.revenue / 1000000).toFixed(1) + 'M';
     }
 
+    const marRate = data.monthlyRates?.['2026-03'] ?? null;
     const marRefundEl = document.querySelector('[data-kpi-analytics="marRefundRate"] .kpi-value');
-    if (marRefundEl && data.marRefundRate != null) {
-      marRefundEl.textContent = data.marRefundRate.toFixed(1) + '%';
+    if (marRefundEl && marRate != null) {
+      marRefundEl.textContent = marRate.toFixed(1) + '%';
     }
     const marSubEl = document.querySelector('[data-kpi-analytics="marRefundRate"] .kpi-delta span');
     if (marSubEl) {
@@ -1131,12 +948,14 @@ async function updateAnalyticsPage() {
     const dailyProfit = profitWaterfall.length > 0
       ? profitWaterfall.map(row => ({ date: row.date, profit: row.trueNetProfit || 0 }))
       : sliceRowsByWindow(charts.dailyProfit || [], 'profit-structure');
-    const profitWeeklyAgg = buildWeeklyAggFromDaily(profitDaily, profitWaterfall);
-    const mediaDaily = sliceRowsByWindow(allDailyMerged, 'media-profitability');
-    const mediaWeeklyAgg = buildWeeklyAggFromDaily(mediaDaily);
-    const weekdayPerf = buildWeekdayPerfFromDaily(mediaDaily);
-    const qualityDaily = sliceRowsByWindow(allDailyMerged, 'revenue-quality');
-    const monthlyRefunds = buildMonthlyRefundsFromDaily(qualityDaily);
+    // Use server-computed aggregates, filtered to each section's date window
+    const profitCutoff = profitDaily[0]?.date || '';
+    const profitWeeklyAgg = (charts.weeklyAgg || []).filter(w => w.week >= profitCutoff);
+    const mediaCutoff = sliceRowsByWindow(allDailyMerged, 'media-profitability')[0]?.date || '';
+    const mediaWeeklyAgg = (charts.weeklyAgg || []).filter(w => w.week >= mediaCutoff);
+    const weekdayPerf = charts.weekdayPerf || [];
+    const qualityCutoff = sliceRowsByWindow(allDailyMerged, 'revenue-quality')[0]?.date || '';
+    const monthlyRefunds = (charts.monthlyRefunds || []).filter(m => m.month >= qualityCutoff.slice(0, 7));
 
     renderProfitAnalysisSection(data);
 
@@ -1229,7 +1048,20 @@ function renderProfitAnalysisSection(data) {
   const pa = data.profitAnalysis;
   const waterfall = sliceRowsByWindow(pa.waterfall || [], 'profit-structure');
   const campaignProfit = pa.campaignProfit || [];
-  const coverage = buildCoverageMeta(waterfall);
+  const coveredDays = waterfall.filter(r => r.hasCOGS);
+  const coverageRatio = waterfall.length > 0 ? coveredDays.length / waterfall.length : 0;
+  const coverage = waterfall.length === 0
+    ? { totalDays: 0, daysWithCOGS: 0, coverageRatio: 0, cogsCoveredRange: {}, missingRanges: [], confidence: { level: 'low', label: 'Waiting for data' } }
+    : {
+        totalDays: waterfall.length,
+        daysWithCOGS: coveredDays.length,
+        coverageRatio,
+        cogsCoveredRange: coveredDays.length > 0 ? { from: coveredDays[0].date, to: coveredDays[coveredDays.length - 1].date } : {},
+        missingRanges: waterfall.filter(r => !r.hasCOGS).map(r => r.date),
+        confidence: coverageRatio >= 0.9 ? { level: 'high', label: 'High confidence' }
+          : coverageRatio >= 0.6 ? { level: 'medium', label: 'Medium confidence' }
+          : { level: 'low', label: 'Low confidence' },
+      };
   const todaySummary = pa.todaySummary;
   const runRate = pa.runRate;
 
@@ -1604,7 +1436,7 @@ async function updateBudgetPage() {
       const todaySpendRow = dailySpendSeries.find(d => d.date === referenceDate) || (dailySpendSeries.length > 0 ? dailySpendSeries[dailySpendSeries.length - 1] : null);
       const latestDailySpend = todaySpendRow ? (todaySpendRow.spend || 0) : 0;
       const totalDailyBudget = active.reduce((sum, c) => {
-        return sum + (c.daily_budget ? parseInt(c.daily_budget) / 100 : 0);
+        return sum + (c.dailyBudget ? parseInt(c.dailyBudget) / 100 : 0);
       }, 0);
 
       // ── Budget KPI cards ──
@@ -1666,7 +1498,7 @@ async function updateBudgetPage() {
       const spendData = analyticsData.charts.dailyMerged;
       const totalDailyBudget = campaignData ? campaignData.campaigns
         .filter(c => c.status === 'ACTIVE')
-        .reduce((sum, c) => sum + (c.daily_budget ? parseInt(c.daily_budget) / 100 : 0), 0) : 110;
+        .reduce((sum, c) => sum + (c.dailyBudget ? parseInt(c.dailyBudget) / 100 : 0), 0) : 110;
 
       const daysInPeriod = spendData.length;
       const totalBudget = totalDailyBudget * daysInPeriod;
@@ -1918,7 +1750,6 @@ async function startLiveMode() {
   showLiveIndicator();
 
   // Initial fetch — each wrapped so one failure doesn't block the rest
-  try { await updateDashboard(); } catch (e) { console.warn('[LIVE] updateDashboard error:', e.message); }
   try { await updateOverviewKPIs(); } catch (e) { console.warn('[LIVE] updateOverviewKPIs error:', e.message); }
   try { await updateOptimizationLog(); } catch (e) { console.warn('[LIVE] updateOptimizationLog error:', e.message); }
   try { await updateLiveCampaigns(); } catch (e) { console.warn('[LIVE] updateLiveCampaigns error:', e.message); }
@@ -1944,7 +1775,6 @@ async function startLiveMode() {
           newBtn.querySelector('span').textContent = 'Run Scan Now';
           newBtn.disabled = false;
           document.getElementById('lastScan').textContent = 'just now';
-          await updateDashboard();
           await updateOverviewKPIs();
           await updateOptimizationLog();
           await updateLiveCampaigns();
@@ -1955,16 +1785,15 @@ async function startLiveMode() {
     });
   }
 
-  // Poll every 30 seconds
+  // Poll overview KPIs + scan state every 30 seconds
   pollInterval = setInterval(async () => {
-    await updateDashboard();
+    await updateOverviewKPIs();
   }, 30000);
 
   // Update optimization log and timeline every 60 seconds
   setInterval(async () => {
     await updateOptimizationLog();
     await updateOptTimeline();
-    await updateOverviewKPIs();
   }, 60000);
 
   // Update analytics if already on that page
@@ -2031,11 +1860,6 @@ function showLiveIndicator() {
 }
 
 // ── Helpers ──
-function updateKPI(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.textContent = value;
-}
-
 function timeSince(date) {
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
   if (seconds < 60) return 'just now';
