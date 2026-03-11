@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { timeSince } = live.shared;
+  const { timeSince, tr, getLocale, localizeSystemText } = live.shared;
   const { fetchOverview, fetchAnalytics } = live.api;
   const { sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
 
@@ -28,32 +28,36 @@
 
     if (source?.stale) {
       if (badgeEl) badgeEl.classList.add('is-warning');
-      if (labelEl) labelEl.textContent = 'Imweb cached';
+      if (labelEl) labelEl.textContent = tr('Imweb cached', 'Imweb 캐시됨');
       if (badgeEl) {
-        const suffix = source.lastSuccessAt ? ` Last successful sync ${timeSince(new Date(source.lastSuccessAt))}.` : '';
-        badgeEl.title = `Revenue/order metrics are cached.${suffix}`;
+        const suffix = source.lastSuccessAt
+          ? tr(` Last successful sync ${timeSince(new Date(source.lastSuccessAt))}.`, ` 마지막 정상 동기화 ${timeSince(new Date(source.lastSuccessAt))}.`)
+          : '';
+        badgeEl.title = tr(`Revenue/order metrics are cached.${suffix}`, `매출/주문 지표는 캐시 데이터를 사용 중입니다.${suffix}`);
       }
       if (noticeEl) {
         noticeEl.hidden = false;
-        noticeEl.textContent = 'Using cached Imweb revenue data from the last successful sync.';
+        noticeEl.textContent = tr('Using cached Imweb revenue data from the last successful sync.', '마지막 정상 동기화 기준 Imweb 캐시 매출 데이터를 사용 중입니다.');
       }
       return;
     }
 
     if (source?.status === 'error') {
       if (badgeEl) badgeEl.classList.add('is-error');
-      if (labelEl) labelEl.textContent = 'Imweb error';
-      if (badgeEl && source.lastError) badgeEl.title = source.lastError;
+      if (labelEl) labelEl.textContent = tr('Imweb error', 'Imweb 오류');
+      if (badgeEl && source.lastError) badgeEl.title = localizeSystemText(source.lastError);
       if (noticeEl) {
         noticeEl.hidden = false;
-        noticeEl.textContent = 'Imweb sync is currently unavailable.';
+        noticeEl.textContent = tr('Imweb sync is currently unavailable.', '현재 Imweb 동기화를 사용할 수 없습니다.');
       }
       return;
     }
 
     if (badgeEl) badgeEl.classList.add('is-success');
     if (labelEl) labelEl.textContent = 'Imweb';
-    if (badgeEl) badgeEl.title = source?.lastSuccessAt ? `Last successful Imweb sync ${timeSince(new Date(source.lastSuccessAt))}.` : 'Imweb data is up to date.';
+    if (badgeEl) badgeEl.title = source?.lastSuccessAt
+      ? tr(`Last successful Imweb sync ${timeSince(new Date(source.lastSuccessAt))}.`, `마지막 정상 Imweb 동기화 ${timeSince(new Date(source.lastSuccessAt))}.`)
+      : tr('Imweb data is up to date.', 'Imweb 데이터가 최신입니다.');
     if (noticeEl) {
       noticeEl.hidden = true;
       noticeEl.textContent = '';
@@ -81,7 +85,10 @@
       if (revenueSubEl) {
         const orders = k.totalOrders || 0;
         const aov = Math.round(k.aov || 0);
-        revenueSubEl.textContent = orders + ' orders · ₩' + aov.toLocaleString() + ' AOV';
+        revenueSubEl.textContent = tr(
+          `${orders} orders · ₩${aov.toLocaleString(getLocale())} AOV`,
+          `${orders.toLocaleString(getLocale())}건 주문 · 객단가 ₩${aov.toLocaleString(getLocale())}`
+        );
       }
 
       const cogsEl = document.querySelector('[data-kpi="cogs"] .kpi-value');
@@ -90,7 +97,10 @@
       }
       const cogsSubEl = document.querySelector('[data-kpi="cogs"] .kpi-delta span');
       if (cogsSubEl && k.cogs != null) {
-        cogsSubEl.textContent = (k.cogsRate || 0).toFixed(1) + '% of revenue · Google Sheets';
+        cogsSubEl.textContent = tr(
+          `${(k.cogsRate || 0).toFixed(1)}% of revenue · Google Sheets`,
+          `매출 대비 ${(k.cogsRate || 0).toFixed(1)}% · Google Sheets`
+        );
       }
 
       const spendEl = document.querySelector('[data-kpi="adspend"] .kpi-value');
@@ -105,9 +115,12 @@
         const fxDate = data.fx?.rateDate || '';
         const usdText = '$' + Number(k.adSpend || 0).toFixed(2);
         if (fxRate > 0 && fxDate) {
-          spendSubEl.textContent = `${usdText} · ${fxDate} FX ₩${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/USD`;
+          spendSubEl.textContent = tr(
+            `${usdText} · ${fxDate} FX ₩${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/USD`,
+            `${usdText} · ${fxDate} 환율 ₩${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/USD`
+          );
         } else {
-          spendSubEl.textContent = `${usdText} · ${(data.days || '—')} days`;
+          spendSubEl.textContent = tr(`${usdText} · ${data.days || '—'} days`, `${usdText} · ${data.days || '—'}일`);
         }
       }
 
@@ -120,7 +133,10 @@
       }
       const profitSubEl = document.querySelector('[data-kpi="profit"] .kpi-delta span');
       if (profitSubEl && k.grossMargin != null) {
-        profitSubEl.textContent = '₩' + Math.round(k.netRevenue || 0).toLocaleString() + ' net · ' + k.grossMargin + '% margin';
+        profitSubEl.textContent = tr(
+          `₩${Math.round(k.netRevenue || 0).toLocaleString(getLocale())} net · ${k.grossMargin}% margin`,
+          `순매출 ₩${Math.round(k.netRevenue || 0).toLocaleString(getLocale())} · 마진 ${k.grossMargin}%`
+        );
       }
 
       const roasEl = document.querySelector('[data-kpi="roas"] .kpi-value');
@@ -140,7 +156,7 @@
       const purchasesSubEl = document.querySelector('[data-kpi="purchases"] .kpi-delta span');
       if (purchasesSubEl && data.days) {
         const avgPerDay = ((k.purchases || 0) / data.days).toFixed(1);
-        purchasesSubEl.textContent = avgPerDay + ' avg/day';
+        purchasesSubEl.textContent = tr(`${avgPerDay} avg/day`, `일평균 ${avgPerDay}`);
       }
 
       const ctrEl = document.querySelector('[data-kpi="ctr"] .kpi-value');
@@ -167,10 +183,10 @@
       if (scanBtn) {
         const label = scanBtn.querySelector('span');
         if (data.isScanning) {
-          if (label) label.textContent = 'Scanning...';
+          if (label) label.textContent = tr('Scanning...', '스캔 중...');
           scanBtn.disabled = true;
         } else {
-          if (label) label.textContent = 'Run Scan Now';
+          if (label) label.textContent = typeof window.t === 'function' ? window.t('header.runScan') : tr('Run Scan Now', '스캔 실행');
           scanBtn.disabled = false;
         }
       }

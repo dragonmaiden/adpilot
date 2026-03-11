@@ -19,6 +19,8 @@ const {
   OPTIMIZATION_TYPES,
   isBudgetDecreaseAction,
   isBudgetIncreaseAction,
+  isExecutableOptimization,
+  isReallocationAction,
   requiresApproval,
 } = require('../domain/optimizationSemantics');
 const runtimeSettings = require('../runtime/runtimeSettings');
@@ -207,10 +209,6 @@ function buildProfitContext(campaignInsights, revenueData, cogsData, days = PERF
   };
 }
 
-function isReallocationAction(actionText) {
-  return /\bReallocate\b/i.test(String(actionText || ''));
-}
-
 class OptimizationEngine {
   constructor(scanId = Date.now()) {
     this.actions = []; // Generated actions for this scan
@@ -236,6 +234,8 @@ class OptimizationEngine {
       impact,     // Expected impact description
       priority,   // critical | high | medium | low
       executed: false,
+      approvalStatus: null,
+      approvalRequestedAt: null,
       executionResult: null,
     });
   }
@@ -688,24 +688,7 @@ class OptimizationEngine {
   }
 
   isExecutableAction(action) {
-    if (!action || !action.type) return false;
-
-    if (action.type === OPTIMIZATION_TYPES.STATUS) {
-      return ['campaign', 'adset', 'ad'].includes(action.level);
-    }
-
-    if (action.type === OPTIMIZATION_TYPES.BUDGET) {
-      if (isReallocationAction(action.action)) {
-        return false;
-      }
-      return ['campaign', 'adset'].includes(action.level);
-    }
-
-    if (action.type === OPTIMIZATION_TYPES.BID) {
-      return action.level === 'adset';
-    }
-
-    return false;
+    return isExecutableOptimization(action);
   }
 
   // Execute money actions after explicit approval, regardless of priority.
@@ -727,18 +710,22 @@ class OptimizationEngine {
         continue;
       }
 
+      action.approvalStatus = 'pending';
+      action.approvalRequestedAt = new Date().toISOString();
       const response = await telegram.waitForApproval(approvalId, 300000);
 
       if (response.approved) {
         console.log(`[OPTIMIZER] ✅ APPROVED: ${action.action}`);
         await this.executeAction(action);
+        action.approvalStatus = 'approved';
         const resultEmoji = action.executed ? '✅' : '❌';
         await telegram.sendMessage(
           `${resultEmoji} <b>Execution Result</b>\n\n<b>Action:</b> ${action.action}\n<b>Result:</b> ${action.executionResult}`
         );
       } else {
         action.executed = false;
-        action.executionResult = `Rejected: ${response.reason}`;
+        action.approvalStatus = String(response.reason || '').toLowerCase().includes('timeout') ? 'expired' : 'rejected';
+        action.executionResult = `${action.approvalStatus === 'expired' ? 'Expired' : 'Rejected'}: ${response.reason}`;
         console.log(`[OPTIMIZER] ❌ REJECTED: ${action.action} — ${response.reason}`);
       }
 

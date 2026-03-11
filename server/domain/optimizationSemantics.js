@@ -32,6 +32,10 @@ function isBudgetDecreaseAction(actionText) {
   return matchesAction(actionText, ACTION_PATTERNS.budgetDecrease);
 }
 
+function isReallocationAction(actionText) {
+  return /\bReallocate\b/i.test(String(actionText || ''));
+}
+
 function isPauseAction(actionText) {
   return matchesAction(actionText, ACTION_PATTERNS.pause);
 }
@@ -54,13 +58,47 @@ function requiresApproval(action) {
   return !!action && APPROVAL_REQUIRED_TYPES.has(action.type);
 }
 
+function isExecutableOptimization(action) {
+  if (!action || !action.type) return false;
+
+  if (action.type === OPTIMIZATION_TYPES.STATUS) {
+    return ['campaign', 'adset', 'ad'].includes(action.level);
+  }
+
+  if (action.type === OPTIMIZATION_TYPES.BUDGET) {
+    if (isReallocationAction(action.action)) {
+      return false;
+    }
+    return ['campaign', 'adset'].includes(action.level);
+  }
+
+  if (action.type === OPTIMIZATION_TYPES.BID) {
+    return action.level === 'adset';
+  }
+
+  return false;
+}
+
+function getOptimizationStatus(action) {
+  if (!action) return 'unknown';
+  if (action.executed) return 'executed';
+  if (action.approvalStatus === 'pending') return 'awaiting_telegram';
+  if (action.approvalStatus === 'rejected') return 'rejected';
+  if (action.approvalStatus === 'expired') return 'expired';
+  if (requiresApproval(action) && isExecutableOptimization(action)) return 'needs_approval';
+  return 'advisory';
+}
+
 module.exports = {
   OPTIMIZATION_TYPES,
   APPROVAL_REQUIRED_TYPES,
   isBudgetIncreaseAction,
   isBudgetDecreaseAction,
+  isReallocationAction,
   isPauseAction,
   isResumeAction,
   getOptimizationDirection,
   requiresApproval,
+  isExecutableOptimization,
+  getOptimizationStatus,
 };

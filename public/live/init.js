@@ -2,6 +2,7 @@
   const live = window.AdPilotLive;
   const { checkBackendAvailable, triggerScan, api } = live.api;
   const { registerSeriesWindowRefresher, initSeriesWindowControls } = live.seriesWindows;
+  const { tr } = live.shared;
 
   let overviewPollId = null;
   let optimizationPollId = null;
@@ -16,20 +17,20 @@
     const lessonsSummaryEl = document.getElementById('lessonsSummary');
 
     if (activeContainer) {
-      if (activeCount) activeCount.textContent = 'Backend offline';
-      activeContainer.innerHTML = '<div class="empty-state">Backend offline — live ad data unavailable. Start the server to connect.</div>';
+      if (activeCount) activeCount.textContent = tr('Backend offline', '백엔드 오프라인');
+      activeContainer.innerHTML = `<div class="empty-state">${tr('Backend offline — live ad data unavailable. Start the server to connect.', '백엔드 오프라인 — 실시간 광고 데이터를 사용할 수 없습니다. 연결하려면 서버를 실행하세요.')}</div>`;
     }
     if (lessonsSummaryEl) lessonsSummaryEl.innerHTML = '';
     if (inactiveContainer) {
       if (inactiveCount) inactiveCount.textContent = '—';
-      inactiveContainer.innerHTML = '<div class="empty-state">Backend offline — paused ad data unavailable.</div>';
+      inactiveContainer.innerHTML = `<div class="empty-state">${tr('Backend offline — paused ad data unavailable.', '백엔드 오프라인 — 중지 광고 데이터를 사용할 수 없습니다.')}</div>`;
     }
   }
 
   function showLiveIndicator() {
     const statusLabel = document.querySelector('.status-label');
     if (statusLabel) {
-      statusLabel.innerHTML = 'Agent Active <span id="liveDot" class="live-dot"></span>';
+      statusLabel.innerHTML = `${tr('Agent Active', '에이전트 활성')} <span id="liveDot" class="live-dot"></span>`;
     }
   }
 
@@ -40,7 +41,7 @@
     scanBtn.dataset.liveBound = 'true';
     scanBtn.addEventListener('click', async () => {
       const label = scanBtn.querySelector('span');
-      if (label) label.textContent = 'Scanning...';
+      if (label) label.textContent = tr('Scanning...', '스캔 중...');
       scanBtn.disabled = true;
       await triggerScan();
 
@@ -53,10 +54,10 @@
         if (health && !health.isScanning) {
           clearInterval(scanPollId);
           scanPollId = null;
-          if (label) label.textContent = 'Run Scan Now';
+          if (label) label.textContent = typeof window.t === 'function' ? window.t('header.runScan') : tr('Run Scan Now', '스캔 실행');
           scanBtn.disabled = false;
           const lastScanEl = document.getElementById('lastScan');
-          if (lastScanEl) lastScanEl.textContent = 'just now';
+          if (lastScanEl) lastScanEl.textContent = tr('just now', '방금 전');
           await live.refresh('overview');
           await live.refresh('optimizations');
           await live.refresh('campaigns');

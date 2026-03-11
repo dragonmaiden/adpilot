@@ -53,7 +53,7 @@
       </a>
       <a href="#" class="nav-item" data-page="optimizations">
         <i data-lucide="zap"></i>
-        <span data-i18n="nav.optimizations">Action Queue</span>
+        <span data-i18n="nav.optimizations">AI Operations</span>
       </a>
       <a href="#" class="nav-item" data-page="fatigue">
         <i data-lucide="activity"></i>
@@ -73,19 +73,19 @@
         <span class="status-dot active"></span>
         <span class="status-label" data-i18n="header.agentActive">Agent Active</span>
       </div>
-      <div class="scan-info">Next scan in <span id="countdown">47m</span></div>
+      <div class="scan-info"><span data-i18n="header.nextScan">Next scan in</span> <span id="countdown">47m</span></div>
     </div>
   </aside>
 
   <!-- Header -->
   <header class="header">
     <div class="header-left">
-      <button class="mobile-menu-btn" id="menuBtn" aria-label="Toggle menu">
+      <button class="mobile-menu-btn" id="menuBtn" aria-label="Toggle menu" data-i18n-aria-label="misc.toggleMenu">
         <i data-lucide="menu"></i>
       </button>
       <div class="page-title">
         <h1 id="pageTitle">Executive Summary</h1>
-        <span class="last-scan">Last scan: <span id="lastScan">12 min ago</span></span>
+        <span class="last-scan"><span data-i18n="header.lastScan">Last scan:</span> <span id="lastScan">—</span></span>
         <span class="last-scan-warning" id="dataFreshnessNotice" hidden></span>
       </div>
     </div>
@@ -112,7 +112,7 @@
         <button class="lang-btn active" id="langEn">EN</button>
         <button class="lang-btn" id="langKr">KR</button>
       </div>
-      <button data-theme-toggle aria-label="Toggle theme">
+      <button data-theme-toggle aria-label="Toggle theme" data-i18n-aria-label="misc.toggleTheme">
         <i data-lucide="moon"></i>
       </button>
     </div>
@@ -130,7 +130,7 @@
           <div class="kpi-value" data-target="0" data-prefix="₩">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
-            <span>— orders · — AOV</span>
+            <span data-i18n="overview.placeholderRevenue">— orders · — AOV</span>
           </div>
           <div class="kpi-spark" id="sparkRevenue"></div>
         </div>
@@ -157,7 +157,7 @@
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral">
             <i data-lucide="info"></i>
-            <span>— margin</span>
+            <span data-i18n="overview.placeholderMargin">— margin</span>
           </div>
         </div>
       </div>
@@ -178,7 +178,7 @@
           <div class="kpi-value" data-target="0" data-prefix="">—</div>
           <div class="kpi-delta positive">
             <i data-lucide="trending-up"></i>
-            <span>— avg/day</span>
+            <span data-i18n="overview.placeholderAvgDay">— avg/day</span>
           </div>
           <div class="kpi-spark" id="sparkPurchases"></div>
         </div>
@@ -204,15 +204,15 @@
 
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Overview Trends</div>
-          <h2>Daily revenue and efficiency</h2>
+          <div class="section-kicker" data-i18n="overview.trendsKicker">Overview Trends</div>
+          <h2 data-i18n="overview.trendsTitle">Daily revenue and efficiency</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label">Window</span>
-          <div class="range-switch" data-series-window-group="overview" role="group" aria-label="Overview trend window">
+          <span class="range-toolbar-label" data-i18n="overview.window">Window</span>
+          <div class="range-switch" data-series-window-group="overview" role="group" aria-label="Overview trend window" data-i18n-aria-label="overview.windowAria">
             <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
       </div>
@@ -261,9 +261,9 @@
         <div class="card-header">
           <div>
             <h2 data-i18n="chart.hourVolume">Order Timing Distribution (KST)</h2>
-            <span style="font-size:0.75rem;color:var(--color-text-faint)">All synced Imweb orders</span>
+            <span style="font-size:0.75rem;color:var(--color-text-faint)" data-i18n="overview.hourSubtitle">All synced Imweb orders</span>
           </div>
-          <span class="badge badge-neutral">Source: Imweb</span>
+          <span class="badge badge-neutral" data-i18n="overview.hourSource">Source: Imweb</span>
         </div>
         <div class="chart-container" style="height:300px">
           <canvas id="hourChart"></canvas>
@@ -272,45 +272,45 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Operator Workflow</h2>
+          <h2 data-i18n="overview.workflowTitle">Operator Workflow</h2>
         </div>
-        <p class="card-desc">This page stays executive. Use the workflow surfaces below when you need live decisions, approvals, pacing, or fatigue detail.</p>
+        <p class="card-desc" data-i18n="overview.workflowDesc">This page stays executive. Use the workflow surfaces below when you need live decisions, approvals, pacing, or fatigue detail.</p>
         <div class="workflow-grid">
           <article class="workflow-card">
             <div class="workflow-card-head">
               <span class="workflow-icon"><i data-lucide="radar"></i></span>
-              <span class="badge badge-success">Operate here</span>
+              <span class="badge badge-success" data-i18n="overview.workflow.liveBadge">Operate here</span>
             </div>
-            <h3>Live Performance</h3>
-            <p>Watch active ads, pending decisions, budget pressure, and the campaigns that need action first.</p>
-            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="campaigns">Open Live Performance</button>
+            <h3 data-i18n="overview.workflow.liveTitle">Live Performance</h3>
+            <p data-i18n="overview.workflow.liveDesc">Watch active ads, pending decisions, budget pressure, and the campaigns that need action first.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="campaigns" data-i18n="overview.workflow.liveButton">Open Live Performance</button>
           </article>
           <article class="workflow-card">
             <div class="workflow-card-head">
               <span class="workflow-icon"><i data-lucide="sparkles"></i></span>
-              <span class="badge badge-neutral">Diagnose</span>
+              <span class="badge badge-neutral" data-i18n="overview.workflow.diagnoseBadge">Diagnose</span>
             </div>
-            <h3>Creative Health</h3>
-            <p>Review fatigue, CTR decay, frequency, and CPM pressure when creative performance starts to slip.</p>
-            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="fatigue">Open Creative Health</button>
+            <h3 data-i18n="overview.workflow.diagnoseTitle">Creative Health</h3>
+            <p data-i18n="overview.workflow.diagnoseDesc">Review fatigue, CTR decay, frequency, and CPM pressure when creative performance starts to slip.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="fatigue" data-i18n="overview.workflow.diagnoseButton">Open Creative Health</button>
           </article>
           <article class="workflow-card">
             <div class="workflow-card-head">
               <span class="workflow-icon"><i data-lucide="gauge"></i></span>
-              <span class="badge badge-neutral">Monitor</span>
+              <span class="badge badge-neutral" data-i18n="overview.workflow.monitorBadge">Monitor</span>
             </div>
-            <h3>Spend Pacing</h3>
-            <p>Check daily budget headroom, allocation, and whether delivery is running ahead or behind plan.</p>
-            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="budget">Open Spend Pacing</button>
+            <h3 data-i18n="overview.workflow.monitorTitle">Spend Pacing</h3>
+            <p data-i18n="overview.workflow.monitorDesc">Check daily budget headroom, allocation, and whether delivery is running ahead or behind plan.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="budget" data-i18n="overview.workflow.monitorButton">Open Spend Pacing</button>
           </article>
           <article class="workflow-card">
             <div class="workflow-card-head">
               <span class="workflow-icon"><i data-lucide="list-todo"></i></span>
-              <span class="badge badge-warning">Approval path</span>
+              <span class="badge badge-warning" data-i18n="overview.workflow.aiBadge">AI decisioning</span>
             </div>
-            <h3>Action Queue</h3>
-            <p>Inspect what the agent suggested, what needs approval, and what already executed.</p>
-            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="optimizations">Open Action Queue</button>
+            <h3 data-i18n="overview.workflow.aiTitle">AI Operations</h3>
+            <p data-i18n="overview.workflow.aiDesc">Inspect what the agent suggested, what needs approval, and what already executed.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="optimizations" data-i18n="overview.workflow.aiButton">Open AI Operations</button>
           </article>
         </div>
       </div>
@@ -320,10 +320,10 @@
     <section class="page" data-page="analytics">
       <div class="section-head">
         <div>
-          <div class="section-kicker">Profit Analytics</div>
-          <h2>Deep-dive margin diagnostics</h2>
+          <div class="section-kicker" data-i18n="analytics.sectionKicker">Profit Analytics</div>
+          <h2 data-i18n="analytics.sectionTitle">Deep-dive margin diagnostics</h2>
         </div>
-        <p class="section-note">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
+        <p class="section-note" data-i18n="analytics.sectionNote">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
       </div>
       <div class="analytics-inline-notice" id="analyticsFreshnessNotice" hidden></div>
 
@@ -339,41 +339,41 @@
           </div>
           <div class="profit-hero-metrics">
             <div class="profit-hero-metric">
-              <span>Margin</span>
+              <span data-i18n="analytics.hero.margin">Margin</span>
               <strong id="profitHeroMargin">—</strong>
             </div>
             <div class="profit-hero-metric">
-              <span>True ROAS</span>
+              <span data-i18n="analytics.hero.trueRoas">True ROAS</span>
               <strong id="profitHeroRoas">—</strong>
             </div>
             <div class="profit-hero-metric">
-              <span>30d run rate</span>
+              <span data-i18n="analytics.hero.runRate">30d run rate</span>
               <strong id="profitHeroRunRate">—</strong>
             </div>
           </div>
         </div>
-        <div class="profit-hero-sub" id="profitHeroSub">Waiting for data...</div>
-        <div class="profit-hero-latest" id="profitLatestSignal">Latest completed day: waiting for covered data.</div>
+        <div class="profit-hero-sub" id="profitHeroSub" data-i18n="analytics.hero.waiting">Waiting for data...</div>
+        <div class="profit-hero-latest" id="profitLatestSignal" data-i18n="analytics.hero.latestWaiting">Latest completed day: waiting for covered data.</div>
       </div>
 
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card" data-profit-kpi="cogsCoverage">
-          <div class="kpi-label">COGS Coverage</div>
+          <div class="kpi-label" data-i18n="analytics.kpi.cogsCoverage">COGS Coverage</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="database"></i><span>—</span></div>
         </div>
         <div class="kpi-card" data-profit-kpi="blendedMargin">
-          <div class="kpi-label">Blended Margin</div>
+          <div class="kpi-label" data-i18n="analytics.kpi.blendedMargin">Blended Margin</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="percent"></i><span>—</span></div>
         </div>
         <div class="kpi-card" data-profit-kpi="trueRoas">
-          <div class="kpi-label">True ROAS</div>
+          <div class="kpi-label" data-i18n="analytics.kpi.trueRoas">True ROAS</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
         </div>
         <div class="kpi-card" data-profit-kpi="runRate30d">
-          <div class="kpi-label">30d Profit Run Rate</div>
+          <div class="kpi-label" data-i18n="analytics.kpi.runRate30d">30d Profit Run Rate</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="calendar-range"></i><span>—</span></div>
         </div>
@@ -416,15 +416,15 @@
 
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Profit Structure</div>
-          <h2>How net profit is formed over time</h2>
+          <div class="section-kicker" data-i18n="analytics.structureKicker">Profit Structure</div>
+          <h2 data-i18n="analytics.structureTitle">How net profit is formed over time</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label">Window</span>
-          <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure window">
+          <span class="range-toolbar-label" data-i18n="analytics.window">Window</span>
+          <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure window" data-i18n-aria-label="analytics.windowStructureAria">
             <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
       </div>
@@ -450,7 +450,7 @@
 
       <div class="card chart-card">
         <div class="card-header">
-          <h2>Daily Profit Waterfall</h2>
+          <h2 data-i18n="analytics.waterfallTitle">Daily Profit Waterfall</h2>
           <span class="chart-days" id="profitWaterfallDays" data-series-window-badge="profit-structure"></span>
         </div>
         <div class="chart-container" style="height:380px">
@@ -460,24 +460,24 @@
 
       <div class="card" id="dataCoverageCard">
         <div class="card-header">
-          <h2>Data Coverage & Confidence</h2>
+          <h2 data-i18n="analytics.coverageTitle">Data Coverage & Confidence</h2>
         </div>
         <div id="dataCoverageContent">
-          <p style="color:var(--color-text-faint)">Waiting for data...</p>
+          <p style="color:var(--color-text-faint)" data-i18n="analytics.coverageWaiting">Waiting for data...</p>
         </div>
       </div>
 
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Media Profitability</div>
-          <h2>Which traffic patterns and campaigns create profit</h2>
+          <div class="section-kicker" data-i18n="analytics.mediaKicker">Media Profitability</div>
+          <h2 data-i18n="analytics.mediaTitle">Which traffic patterns and campaigns create profit</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label">Window</span>
-          <div class="range-switch" data-series-window-group="media-profitability" role="group" aria-label="Media profitability window">
+          <span class="range-toolbar-label" data-i18n="analytics.window">Window</span>
+          <div class="range-switch" data-series-window-group="media-profitability" role="group" aria-label="Media profitability window" data-i18n-aria-label="analytics.windowMediaAria">
             <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
       </div>
@@ -504,21 +504,21 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Campaign Profit Leaderboard</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)">Revenue estimated (pixel-attributed) · all available data</span>
+          <h2 data-i18n="analytics.leaderboardTitle">Campaign Profit Leaderboard</h2>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)" data-i18n="analytics.leaderboardNote">Revenue estimated (pixel-attributed) · all available data</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="campaignProfitTable">
             <thead>
               <tr>
-                <th>Campaign</th>
-                <th>Status</th>
-                <th>Ad Spend</th>
-                <th>Meta Purchases</th>
-                <th>Est. Revenue</th>
-                <th>Est. COGS</th>
-                <th>Gross Profit</th>
-                <th>Margin %</th>
+                <th data-i18n="th.campaign">Campaign</th>
+                <th data-i18n="th.status">Status</th>
+                <th data-i18n="th.adSpend">Ad Spend</th>
+                <th data-i18n="th.purchasesPixel">Meta Purchases</th>
+                <th data-i18n="analytics.leaderboard.estRevenue">Est. Revenue</th>
+                <th data-i18n="analytics.leaderboard.estCogs">Est. COGS</th>
+                <th data-i18n="analytics.leaderboard.grossProfit">Gross Profit</th>
+                <th data-i18n="analytics.leaderboard.margin">Margin %</th>
               </tr>
             </thead>
             <tbody id="campaignProfitBody"></tbody>
@@ -552,15 +552,15 @@
 
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Revenue Quality</div>
-          <h2>Refund pressure and settlement validation</h2>
+          <div class="section-kicker" data-i18n="analytics.qualityKicker">Revenue Quality</div>
+          <h2 data-i18n="analytics.qualityTitle">Refund pressure and settlement validation</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label">Window</span>
-          <div class="range-switch" data-series-window-group="revenue-quality" role="group" aria-label="Revenue quality window">
+          <span class="range-toolbar-label" data-i18n="analytics.window">Window</span>
+          <div class="range-switch" data-series-window-group="revenue-quality" role="group" aria-label="Revenue quality window" data-i18n-aria-label="analytics.windowQualityAria">
             <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
       </div>
@@ -576,55 +576,55 @@
         </div>
         <div class="card" id="reconciliationSummaryCard">
           <div class="card-header">
-            <h2>Settlement Reconciliation</h2>
-            <span class="badge badge-neutral" id="reconciliationStatus">Waiting</span>
+            <h2 data-i18n="analytics.reconciliationTitle">Settlement Reconciliation</h2>
+            <span class="badge badge-neutral" id="reconciliationStatus" data-i18n="misc.waiting">Waiting</span>
           </div>
-          <p class="card-desc">Card settlement rows are treated as validation only. They are not added into revenue totals.</p>
+          <p class="card-desc" data-i18n="analytics.reconciliationDesc">Card settlement rows are treated as validation only. They are not added into revenue totals.</p>
           <div class="kpi-grid small">
             <div class="kpi-card" data-recon-kpi="matchedNet">
-              <div class="kpi-label">Matched Net</div>
+              <div class="kpi-label" data-i18n="analytics.recon.matchedNet">Matched Net</div>
               <div class="kpi-value">—</div>
               <div class="kpi-delta neutral"><i data-lucide="link"></i><span>—</span></div>
             </div>
             <div class="kpi-card" data-recon-kpi="unmatchedSettlement">
-              <div class="kpi-label">Unmatched Settlement</div>
+              <div class="kpi-label" data-i18n="analytics.recon.unmatchedSettlement">Unmatched Settlement</div>
               <div class="kpi-value">—</div>
               <div class="kpi-delta neutral"><i data-lucide="receipt"></i><span>—</span></div>
             </div>
             <div class="kpi-card" data-recon-kpi="unmatchedImweb">
-              <div class="kpi-label">Unmatched Imweb</div>
+              <div class="kpi-label" data-i18n="analytics.recon.unmatchedImweb">Unmatched Imweb</div>
               <div class="kpi-value">—</div>
               <div class="kpi-delta neutral"><i data-lucide="shopping-bag"></i><span>—</span></div>
             </div>
             <div class="kpi-card" data-recon-kpi="methodMismatch">
-              <div class="kpi-label">Method Mismatch</div>
+              <div class="kpi-label" data-i18n="analytics.recon.methodMismatch">Method Mismatch</div>
               <div class="kpi-value">—</div>
               <div class="kpi-delta neutral"><i data-lucide="shield-alert"></i><span>—</span></div>
             </div>
           </div>
-          <div id="reconciliationNote" class="reconciliation-note">Waiting for reconciliation data...</div>
+          <div id="reconciliationNote" class="reconciliation-note" data-i18n="analytics.reconciliationWaiting">Waiting for reconciliation data...</div>
         </div>
       </div>
 
       <div class="card" id="reconciliationCard">
         <div class="card-header">
-          <h2>Daily Reconciliation Rollup</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)" id="reconciliationWindow">Match window —</span>
+          <h2 data-i18n="analytics.reconciliationRollupTitle">Daily Reconciliation Rollup</h2>
+          <span style="font-size:0.75rem;color:var(--color-text-faint)" id="reconciliationWindow" data-i18n="analytics.reconciliationWindowDefault">Match window —</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="reconciliationTable">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Settlement Net</th>
-                <th>Imweb Net</th>
-                <th>Matched Net</th>
-                <th>Settlement Gap</th>
-                <th>Imweb Gap</th>
+                <th data-i18n="calendar.date">Date</th>
+                <th data-i18n="calendar.settlementNet">Settlement Net</th>
+                <th data-i18n="calendar.imwebNet">Imweb Net</th>
+                <th data-i18n="analytics.recon.matchedNet">Matched Net</th>
+                <th data-i18n="calendar.settlementGap">Settlement Gap</th>
+                <th data-i18n="calendar.imwebGap">Imweb Gap</th>
               </tr>
             </thead>
             <tbody id="reconciliationBody">
-              <tr><td colspan="6" style="color:var(--color-text-faint)">Waiting for reconciliation data...</td></tr>
+              <tr><td colspan="6" style="color:var(--color-text-faint)" data-i18n="analytics.reconciliationWaiting">Waiting for reconciliation data...</td></tr>
             </tbody>
           </table>
         </div>
@@ -635,10 +635,10 @@
     <section class="page" data-page="calendar">
       <div class="section-head">
         <div>
-          <div class="section-kicker">Calendar Analysis</div>
-          <h2>Zoom into any day or date range</h2>
+          <div class="section-kicker" data-i18n="calendar.sectionKicker">Calendar Analysis</div>
+          <h2 data-i18n="calendar.sectionTitle">Zoom into any day or date range</h2>
         </div>
-        <p class="section-note">Revenue colors the calendar. Click a day or drag across dates to inspect profit, refunds, orders, campaigns, and operating events in KST.</p>
+        <p class="section-note" data-i18n="calendar.sectionNote">Revenue colors the calendar. Click a day or drag across dates to inspect profit, refunds, orders, campaigns, and operating events in KST.</p>
       </div>
 
       <div class="card calendar-shell">
@@ -646,31 +646,31 @@
           <div class="calendar-toolbar-actions">
             <button class="btn btn-ghost btn-sm" id="calendarPrevBtn" type="button">
               <i data-lucide="chevron-left"></i>
-              <span>Previous</span>
+              <span data-i18n="calendar.prev">Previous</span>
             </button>
             <button class="btn btn-ghost btn-sm" id="calendarTodayBtn" type="button">
               <i data-lucide="locate-fixed"></i>
-              <span>Today</span>
+              <span data-i18n="calendar.today">Today</span>
             </button>
             <button class="btn btn-ghost btn-sm" id="calendarNextBtn" type="button">
-              <span>Next</span>
+              <span data-i18n="calendar.next">Next</span>
               <i data-lucide="chevron-right"></i>
             </button>
           </div>
           <div class="calendar-selection-meta" id="calendarSelectionMeta">Previous month + current month · KST</div>
         </div>
         <div class="calendar-viewport" id="calendarViewport">
-          <div class="empty-state">Loading calendar analysis...</div>
+          <div class="empty-state" data-i18n="calendar.loading">Loading calendar analysis...</div>
         </div>
       </div>
 
       <div class="calendar-selection-deck" id="calendarSelectionDeck">
         <div class="card">
           <div class="card-header">
-            <h2>Selected Range</h2>
-            <span class="badge badge-neutral">Choose a day or drag across a period</span>
+            <h2 data-i18n="calendar.selectedTitle">Selected Range</h2>
+            <span class="badge badge-neutral" data-i18n="calendar.selectedHint">Choose a day or drag across a period</span>
           </div>
-          <p class="card-desc">The drilldown will populate with profit, orders, refunds, campaign estimates, product mix, and operating events for the selected KST date range.</p>
+          <p class="card-desc" data-i18n="calendar.selectedDesc">The drilldown will populate with profit, orders, refunds, campaign estimates, product mix, and operating events for the selected KST date range.</p>
         </div>
       </div>
     </section>
@@ -679,16 +679,16 @@
     <section class="page" data-page="campaigns">
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Live Performance</div>
-          <h2>Act on what needs attention now</h2>
+          <div class="section-kicker" data-i18n="campaigns.sectionKicker">Live Performance</div>
+          <h2 data-i18n="campaigns.sectionTitle">Act on what needs attention now</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label">Window</span>
-          <div class="range-switch" data-series-window-group="campaigns" role="group" aria-label="Campaign performance window">
+          <span class="range-toolbar-label" data-i18n="campaigns.window">Window</span>
+          <div class="range-switch" data-series-window-group="campaigns" role="group" aria-label="Campaign performance window" data-i18n-aria-label="campaigns.windowAria">
             <button type="button" class="range-switch-btn is-active" data-series-window-value="7d">7D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all">All</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
       </div>
@@ -696,27 +696,27 @@
 
       <div class="kpi-grid small">
         <div class="kpi-card" data-live-kpi="activeCampaigns">
-          <div class="kpi-label">Active Campaigns</div>
+          <div class="kpi-label" data-i18n="campaigns.kpi.activeCampaigns">Active Campaigns</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="megaphone"></i><span>—</span></div>
         </div>
         <div class="kpi-card" data-live-kpi="pendingApprovals">
-          <div class="kpi-label">Approval Queue</div>
+          <div class="kpi-label" data-i18n="campaigns.kpi.approvalQueue">Approval Queue</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="message-square-more"></i><span>—</span></div>
         </div>
         <div class="kpi-card" data-live-kpi="fatigueAlerts">
-          <div class="kpi-label">Creative Alerts</div>
+          <div class="kpi-label" data-i18n="campaigns.kpi.creativeAlerts">Creative Alerts</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="activity"></i><span>—</span></div>
         </div>
         <div class="kpi-card" data-live-kpi="spendPace">
-          <div class="kpi-label">Spend Pace Today</div>
+          <div class="kpi-label" data-i18n="campaigns.kpi.spendPace">Spend Pace Today</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="gauge"></i><span>—</span></div>
         </div>
         <div class="kpi-card" data-live-kpi="burnRisk">
-          <div class="kpi-label">Spend Without Sales</div>
+          <div class="kpi-label" data-i18n="campaigns.kpi.burnRisk">Spend Without Sales</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="flame"></i><span>—</span></div>
         </div>
@@ -726,25 +726,25 @@
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="section-kicker">Latest Scan</div>
-              <h2>Approval-required actions</h2>
+              <div class="section-kicker" data-i18n="campaigns.latestKicker">Latest Scan</div>
+              <h2 data-i18n="campaigns.latestTitle">Approval-required actions</h2>
             </div>
-            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="optimizations">Open Action Queue</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="optimizations" data-i18n="campaigns.latestButton">Open AI Operations</button>
           </div>
           <div class="live-queue" id="liveActionQueue">
-            <div class="empty-state">Loading action queue...</div>
+            <div class="empty-state" data-i18n="campaigns.latestLoading">Loading action queue...</div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-header">
             <div>
-              <div class="section-kicker">Operator Signals</div>
-              <h2>What changed in the account</h2>
+              <div class="section-kicker" data-i18n="campaigns.signalsKicker">Operator Signals</div>
+              <h2 data-i18n="campaigns.signalsTitle">What changed in the account</h2>
             </div>
           </div>
           <div class="operator-signal-grid" id="operatorSignalGrid">
-            <div class="empty-state">Loading operator signals...</div>
+            <div class="empty-state" data-i18n="campaigns.signalsLoading">Loading operator signals...</div>
           </div>
         </div>
       </div>
@@ -756,7 +756,7 @@
           <span id="activeCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
         </div>
         <div id="activeAdsContainer" style="padding:0 20px 20px">
-          <div class="empty-state">Loading live ad data...</div>
+          <div class="empty-state" data-i18n="misc.loading">Loading live ad data...</div>
         </div>
       </div>
 
@@ -790,52 +790,59 @@
     <section class="page" data-page="optimizations">
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Action Queue</div>
-          <h2>Approvals, suggestions, and execution history</h2>
+          <div class="section-kicker" data-i18n="optimizations.sectionKicker">AI Operations</div>
+          <h2 data-i18n="optimizations.sectionTitle">AI decisions, approvals, and execution history</h2>
         </div>
-        <p class="section-note">Use this page for the full queue. The Live Performance page only surfaces the decisions that matter most right now.</p>
+        <p class="section-note" data-i18n="optimizations.sectionNote">Use this page to separate current AI actions from advisory backlog and historical outcomes. Live Performance only surfaces the most urgent latest-scan items.</p>
       </div>
       <div class="kpi-grid small">
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.totalOpt">Logged Decisions</div>
-          <div class="kpi-value" id="optTotal" data-target="0" data-prefix="">—</div>
+          <div class="kpi-label" data-i18n="kpi.pending">Needs Approval Now</div>
+          <div class="kpi-value" id="optPending" data-target="0" data-prefix="">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label" data-i18n="kpi.awaitingTelegram">Awaiting Telegram</div>
+          <div class="kpi-value" id="optAwaiting" data-target="0" data-prefix="">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label" data-i18n="kpi.advisory">Advisory Suggestions</div>
+          <div class="kpi-value" id="optAdvisory" data-target="0" data-prefix="">—</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label" data-i18n="kpi.autoExec">Executed</div>
           <div class="kpi-value" id="optExecuted" data-target="0" data-prefix="">—</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.pending">Pending Approval</div>
-          <div class="kpi-value" id="optPending" data-target="0" data-prefix="">—</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.scans">Scans Completed</div>
-          <div class="kpi-value" id="optScans" data-target="0" data-prefix="">—</div>
+          <div class="kpi-label" data-i18n="kpi.totalOpt">AI Suggestions Logged</div>
+          <div class="kpi-value" id="optTotal" data-target="0" data-prefix="">—</div>
         </div>
       </div>
 
-      <!-- SPEND & CAC — Candlestick Chart -->
       <div class="charts-grid">
         <div class="card chart-card candlestick-card" style="grid-column: 1 / -1; background: var(--color-surface); border: 1px solid var(--color-border); overflow: hidden;">
-          <div class="card-header" style="padding: 16px 20px 8px; display:flex; justify-content:space-between; align-items:center;">
-            <h2 style="font-size:0.85rem; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; color:var(--color-text-muted);">SPEND & CAC — DAILY</h2>
+          <div class="card-header candlestick-card-header">
+            <div>
+              <div class="section-kicker" data-i18n="optimizations.spendContext">Spend Context</div>
+              <h2 data-i18n="chart.spendCac">Spend &amp; CAC Trend</h2>
+              <p class="card-desc" data-i18n="optimizations.chartDesc">Daily spend transitions in KRW with CAC overlay. Spend comes from Meta; CAC uses actual daily purchase counts when COGS coverage exists.</p>
+            </div>
             <div class="candlestick-legend">
-              <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:#8b8b94;display:inline-block;"></span> Spend (L)</span>
-              <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:2px;background:#38bdf8;display:inline-block;"></span> CAC (R)</span>
-              <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:0;border-top:2px dashed #ef6461;display:inline-block;"></span> Target CPA</span>
-              <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:0;border-top:2px dashed #d4a44a;display:inline-block;"></span> Budget</span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;background:#8b8b94;display:inline-block;"></span> <span data-i18n="optimizations.legendSpend">Spend (L)</span></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:2px;background:#38bdf8;display:inline-block;"></span> <span data-i18n="optimizations.legendCac">CAC (R)</span></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:0;border-top:2px dashed #ef6461;display:inline-block;"></span> <span data-i18n="optimizations.legendTarget">Target CPA</span></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:0;border-top:2px dashed #d4a44a;display:inline-block;"></span> <span data-i18n="optimizations.legendBudget">Budget</span></span>
             </div>
           </div>
-          <div class="chart-container" style="height:380px; padding:0 4px 0 0; position:relative;">
+          <div class="chart-container candlestick-chart-shell" style="height:380px; padding:0 4px 0 0; position:relative;">
             <canvas id="optTimelineChart"></canvas>
           </div>
           <div id="candlestickStats" class="candlestick-stats">
-            <div style="padding-right:20px;"><span style="text-transform:uppercase;letter-spacing:0.05em;">TOTAL SPEND</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
-            <div style="padding:0 20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;">PEAK DAY</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
-            <div style="padding:0 20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;">AVG DAILY</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
-            <div style="padding:0 20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;">DAYS</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
-            <div style="padding:0 20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;">AVG CAC</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
-            <div style="padding-left:20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;">PEAK DATE</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
+            <div style="padding-right:20px;"><span style="text-transform:uppercase;letter-spacing:0.05em;" data-i18n="stat.totalSpend">TOTAL SPEND</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
+            <div style="padding:0 20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;" data-i18n="stat.peakDay">PEAK DAY</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
+            <div style="padding:0 20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;" data-i18n="stat.avgDaily">AVG DAILY</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
+            <div style="padding:0 20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;" data-i18n="stat.days">DAYS</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
+            <div style="padding:0 20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;" data-i18n="stat.avgCac">AVG CAC</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
+            <div style="padding-left:20px;border-left:1px solid var(--color-border);"><span style="text-transform:uppercase;letter-spacing:0.05em;" data-i18n="stat.peakDate">PEAK DATE</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
           </div>
         </div>
       </div>
@@ -863,42 +870,45 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="section-kicker">Open Queue</div>
-            <h2>Grouped pending suggestions</h2>
+            <div class="section-kicker" data-i18n="optimizations.queueKicker">Current AI Queue</div>
+            <h2 data-i18n="optimizations.queueTitle">Ready for approval</h2>
           </div>
           <span id="optQueueStats"></span>
         </div>
-        <p class="card-desc">Repeated open suggestions are collapsed by target and action so the queue reflects the current decision surface, not every scan log entry.</p>
+        <p class="card-desc" data-i18n="optimizations.queueDesc">Only executable items from the latest scan and anything already awaiting a Telegram reply appear here.</p>
         <div class="optimization-log optimization-log-grouped" id="optimizationQueue">
-          <div class="empty-state">Waiting for backend connection and first scan...</div>
+          <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
         </div>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2 data-i18n="opt.liveLog">Recent Decision History</h2>
+          <h2 data-i18n="opt.liveLog">Historical AI Suggestions &amp; Outcomes</h2>
           <div style="display:flex;align-items:center;gap:12px">
             <span id="optStats"></span>
             <div class="filter-group">
               <select class="select-input" id="optTypeFilter">
-                <option value="all">All Types</option>
-                <option value="budget">Budget</option>
-                <option value="bid">Bid</option>
-                <option value="creative">Creative</option>
-                <option value="status">Status</option>
-                <option value="schedule">Schedule</option>
-                <option value="targeting">Targeting</option>
+                <option value="all" data-i18n="opt.allTypes">All Types</option>
+                <option value="budget" data-i18n="opt.budget">Budget</option>
+                <option value="bid" data-i18n="opt.bid">Bid</option>
+                <option value="creative" data-i18n="opt.creative">Creative</option>
+                <option value="status" data-i18n="opt.status">Status</option>
+                <option value="schedule" data-i18n="opt.schedule">Schedule</option>
+                <option value="targeting" data-i18n="opt.targeting">Targeting</option>
               </select>
               <select class="select-input" id="optStatusFilter">
-                <option value="all">All Statuses</option>
-                <option value="open">Open</option>
-                <option value="executed">Executed</option>
+                <option value="all" data-i18n="opt.allStatuses">All Statuses</option>
+                <option value="open" data-i18n="opt.openBacklog">Open Backlog</option>
+                <option value="awaiting_telegram" data-i18n="opt.awaitingTelegram">Awaiting Telegram</option>
+                <option value="advisory" data-i18n="opt.advisoryOnly">Advisory Only</option>
+                <option value="executed" data-i18n="kpi.autoExec">Executed</option>
+                <option value="resolved" data-i18n="opt.resolved">Rejected / Expired</option>
               </select>
             </div>
           </div>
         </div>
         <div class="optimization-log" id="optimizationLog">
-          <div class="empty-state">Waiting for backend connection and first scan...</div>
+          <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
         </div>
       </div>
     </section>
@@ -907,16 +917,16 @@
     <section class="page" data-page="fatigue">
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Creative Health</div>
-          <h2>Watch fatigue before it damages performance</h2>
+          <div class="section-kicker" data-i18n="fatigue.sectionKicker">Creative Health</div>
+          <h2 data-i18n="fatigue.sectionTitle">Watch fatigue before it damages performance</h2>
         </div>
-        <p class="section-note">This page owns creative diagnosis: active fatigue signals, pressure trends, and paused-ad learnings.</p>
+        <p class="section-note" data-i18n="fatigue.sectionNote">This page owns creative diagnosis: active fatigue signals, pressure trends, and paused-ad learnings.</p>
       </div>
       <div class="card">
         <div class="card-header">
           <h2 data-i18n="fatigue.monitor">Creative Health Monitor</h2>
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="fatigueWindowNote">Recent 14 day fatigue view</span>
+            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="fatigueWindowNote" data-i18n="fatigue.windowRecent">Recent 14 day fatigue view</span>
             <span class="badge badge-warning" data-fatigue-badge>— ads · — healthy</span>
           </div>
         </div>
@@ -934,7 +944,7 @@
       <div class="card" id="fatigueLearningsCard">
         <div class="card-header">
           <div>
-            <div class="section-kicker">Creative Learnings</div>
+            <div class="section-kicker" data-i18n="fatigue.learnKicker">Creative Learnings</div>
             <h2 data-i18n="campaigns.pausedLessons">Paused ads and what they taught</h2>
           </div>
           <span id="fatigueInactiveCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
@@ -948,10 +958,10 @@
     <section class="page" data-page="budget">
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Spend Pacing</div>
-          <h2>Track budget headroom and delivery pace</h2>
+          <div class="section-kicker" data-i18n="budget.sectionKicker">Spend Pacing</div>
+          <h2 data-i18n="budget.sectionTitle">Track budget headroom and delivery pace</h2>
         </div>
-        <p class="section-note">This page is for pacing and budget pressure only. Live campaign decisions stay on Live Performance.</p>
+        <p class="section-note" data-i18n="budget.sectionNote">This page is for pacing and budget pressure only. Live campaign decisions stay on Live Performance.</p>
       </div>
       <div class="kpi-grid small">
         <div class="kpi-card" data-budget-kpi="daily">
@@ -1021,11 +1031,11 @@
           <div class="setting-group">
             <label class="setting-label" data-i18n="settings.scanFreq">Scan Frequency</label>
             <select class="select-input">
-              <option>Every 15 minutes</option>
-              <option>Every 30 minutes</option>
-              <option selected>Every hour</option>
-              <option>Every 2 hours</option>
-              <option>Every 4 hours</option>
+              <option data-i18n="settings.every15">Every 15 minutes</option>
+              <option data-i18n="settings.every30">Every 30 minutes</option>
+              <option selected data-i18n="settings.everyHour">Every hour</option>
+              <option data-i18n="settings.every2h">Every 2 hours</option>
+              <option data-i18n="settings.every4h">Every 4 hours</option>
             </select>
             <span class="setting-desc" data-i18n="settings.scanFreqDesc">How often the agent scans your campaigns for optimization opportunities</span>
           </div>
@@ -1048,9 +1058,9 @@
           <div class="setting-group">
             <label class="setting-label" data-i18n="settings.fatigueSens">Fatigue Detection Sensitivity</label>
             <select class="select-input">
-              <option>Low</option>
-              <option selected>Medium</option>
-              <option>High</option>
+              <option data-i18n="settings.low">Low</option>
+              <option selected data-i18n="settings.medium">Medium</option>
+              <option data-i18n="settings.high">High</option>
             </select>
             <span class="setting-desc" data-i18n="settings.fatigueSensDesc">How aggressively the agent flags creatives for fatigue</span>
           </div>
@@ -1081,11 +1091,11 @@
           <div class="setting-group">
             <label class="setting-label" data-i18n="settings.notifChannel">Notification Channel</label>
             <select class="select-input">
-              <option selected>Email + In-App</option>
-              <option>Email Only</option>
-              <option>In-App Only</option>
-              <option>Slack</option>
-              <option>Webhook</option>
+              <option selected data-i18n="settings.emailInApp">Email + In-App</option>
+              <option data-i18n="settings.emailOnly">Email Only</option>
+              <option data-i18n="settings.inAppOnly">In-App Only</option>
+              <option data-i18n="settings.slack">Slack</option>
+              <option data-i18n="settings.webhook">Webhook</option>
             </select>
             <span class="setting-desc" data-i18n="settings.notifChannelDesc">Where to send alerts about significant changes or issues</span>
           </div>
@@ -1097,23 +1107,23 @@
         </div>
         <div class="api-status">
           <div class="api-row">
-            <span class="api-label">Connection Status</span>
-            <span class="badge badge-success">Connected</span>
+            <span class="api-label" data-i18n="settings.connStatus">Connection Status</span>
+            <span class="badge badge-success" data-i18n="settings.connected">Connected</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Ad Account</span>
+            <span class="api-label" data-i18n="settings.adAccount">Ad Account</span>
             <span class="api-value">act_1407071387528879 (SHUE)</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Access Token</span>
-            <span class="api-value">••••••••••••YmkZD (Long-lived, ~60 days)</span>
+            <span class="api-label" data-i18n="settings.accessToken">Access Token</span>
+            <span class="api-value">••••••••••••YmkZD (<span data-i18n="settings.longLivedToken">Long-lived, ~60 days</span>)</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Business ID</span>
+            <span class="api-label" data-i18n="settings.businessId">Business ID</span>
             <span class="api-value">1037680327881084</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Permissions</span>
+            <span class="api-label" data-i18n="settings.permissions">Permissions</span>
             <span class="api-value">ads_management, ads_read, pages_read</span>
           </div>
         </div>
@@ -1124,74 +1134,74 @@
         </div>
         <div class="api-status">
           <div class="api-row">
-            <span class="api-label">Connection Status</span>
-            <span class="badge badge-neutral" id="settingsImwebStatus">Unknown</span>
+            <span class="api-label" data-i18n="settings.connStatus">Connection Status</span>
+            <span class="badge badge-neutral" id="settingsImwebStatus" data-i18n="misc.unknown">Unknown</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Store</span>
+            <span class="api-label" data-i18n="settings.store">Store</span>
             <span class="api-value">슈에 (SHUE) — shue1.imweb.me</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Site Code</span>
+            <span class="api-label" data-i18n="settings.siteCode">Site Code</span>
             <span class="api-value" id="settingsImwebSiteCode">S20260108741f7ad4afc71</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Scopes</span>
+            <span class="api-label" data-i18n="settings.scopes">Scopes</span>
             <span class="api-value">site-info:read/write, order:read, product:read</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Token Source</span>
+            <span class="api-label" data-i18n="settings.tokenSource">Token Source</span>
             <span class="api-value" id="settingsImwebTokenSource">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Token Expiry</span>
+            <span class="api-label" data-i18n="settings.tokenExpiry">Token Expiry</span>
             <span class="api-value" id="settingsImwebTokenExpiry">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Auth Note</span>
+            <span class="api-label" data-i18n="settings.authNote">Auth Note</span>
             <span class="api-value" id="settingsImwebAuthNote">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Data Freshness</span>
+            <span class="api-label" data-i18n="settings.dataFreshness">Data Freshness</span>
             <span class="api-value" id="settingsImwebDataStatus">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Last Revenue Sync</span>
+            <span class="api-label" data-i18n="settings.lastRevenueSync">Last Revenue Sync</span>
             <span class="api-value" id="settingsImwebLastSync">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Total Orders</span>
+            <span class="api-label" data-i18n="settings.totalOrders">Total Orders</span>
             <span class="api-value" id="settingsImwebOrders">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Revenue</span>
+            <span class="api-label" data-i18n="settings.revenue">Revenue</span>
             <span class="api-value" id="settingsImwebRevenue">—</span>
           </div>
         </div>
       </div>
       <div class="card">
         <div class="card-header">
-          <h2>Telegram Approval Bot</h2>
+          <h2 data-i18n="settings.telegramBot">Telegram Approval Bot</h2>
         </div>
         <div class="api-status">
           <div class="api-row">
-            <span class="api-label">Connection Status</span>
-            <span class="badge badge-neutral" id="settingsTelegramStatus">Unknown</span>
+            <span class="api-label" data-i18n="settings.connStatus">Connection Status</span>
+            <span class="badge badge-neutral" id="settingsTelegramStatus" data-i18n="misc.unknown">Unknown</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Bot</span>
+            <span class="api-label" data-i18n="settings.bot">Bot</span>
             <span class="api-value" id="settingsTelegramBot">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Chat</span>
+            <span class="api-label" data-i18n="settings.chat">Chat</span>
             <span class="api-value" id="settingsTelegramChat">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Last Check</span>
+            <span class="api-label" data-i18n="settings.lastCheck">Last Check</span>
             <span class="api-value" id="settingsTelegramLastCheck">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Bot Note</span>
+            <span class="api-label" data-i18n="settings.botNote">Bot Note</span>
             <span class="api-value" id="settingsTelegramNote">—</span>
           </div>
         </div>
@@ -1202,23 +1212,23 @@
         </div>
         <div class="api-status">
           <div class="api-row">
-            <span class="api-label">Connection Status</span>
-            <span class="badge badge-warning">Partial</span>
+            <span class="api-label" data-i18n="settings.connStatus">Connection Status</span>
+            <span class="badge badge-warning" data-i18n="settings.partial">Partial</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Source</span>
+            <span class="api-label" data-i18n="settings.source">Source</span>
             <span class="api-value">SHUE 2월 주문 (Google Sheets)</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Coverage</span>
-            <span class="api-value">Feb 8 – Feb 28, 2026 (no March data)</span>
+            <span class="api-label" data-i18n="settings.coverage">Coverage</span>
+            <span class="api-value" data-i18n="settings.cogsRangeFallback">Feb 8 – Feb 28, 2026 (no March data)</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Line Items</span>
+            <span class="api-label" data-i18n="settings.lineItems">Line Items</span>
             <span class="api-value" id="settingsCogsItems">—</span>
           </div>
           <div class="api-row">
-            <span class="api-label">Total COGS</span>
+            <span class="api-label" data-i18n="settings.totalCogs">Total COGS</span>
             <span class="api-value" id="settingsCogs">—</span>
           </div>
         </div>
@@ -1228,7 +1238,7 @@
     <!-- Footer Attribution -->
     <footer class="footer-attr">
       <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer">
-        Created with Perplexity Computer
+        <span data-i18n="misc.createdWith">Created with Perplexity Computer</span>
       </a>
     </footer>
 

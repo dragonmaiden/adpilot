@@ -25,9 +25,12 @@
 
   function getSeriesWindowMeta(group) {
     const selectedKey = seriesWindowState[group] || DEFAULT_SERIES_WINDOWS[group] || 'all';
+    const option = SERIES_WINDOW_OPTIONS[selectedKey] || SERIES_WINDOW_OPTIONS.all;
+    const isKorean = document.documentElement.lang === 'ko';
     return {
       key: selectedKey,
-      ...(SERIES_WINDOW_OPTIONS[selectedKey] || SERIES_WINDOW_OPTIONS.all),
+      ...option,
+      label: selectedKey === 'all' && isKorean ? '전체' : option.label,
     };
   }
 

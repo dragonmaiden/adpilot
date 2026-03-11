@@ -70,7 +70,7 @@ const pageTitles = {
   analytics: 'Profit Analytics',
   calendar: 'Calendar Analysis',
   campaigns: 'Live Performance',
-  optimizations: 'Action Queue',
+  optimizations: 'AI Operations',
   fatigue: 'Creative Health',
   budget: 'Spend Pacing',
   settings: 'Settings'
@@ -114,10 +114,17 @@ navItems.forEach(item => {
 
 // ── Countdown Timer ──
 let countdownMinutes = 47;
+function renderCountdown() {
+  const el = document.getElementById('countdown');
+  if (!el) return;
+  const lang = typeof window.getCurrentLang === 'function' ? window.getCurrentLang() : 'en';
+  el.textContent = lang === 'kr' ? `${countdownMinutes}분` : `${countdownMinutes}m`;
+}
+window.renderCountdown = renderCountdown;
+renderCountdown();
 setInterval(() => {
   countdownMinutes = countdownMinutes <= 0 ? 60 : countdownMinutes - 1;
-  const el = document.getElementById('countdown');
-  if (el) el.textContent = countdownMinutes + 'm';
+  renderCountdown();
 }, 60000);
 
 // ── KPI Number Animation ──
@@ -805,6 +812,7 @@ async function initOptTimeline() {
         interaction: {
           mode: 'index',
           intersect: false,
+          axis: 'x',
         },
         plugins: {
           legend: { display: false },
@@ -855,17 +863,29 @@ async function initOptTimeline() {
         },
         scales: {
           x: {
-            grid: { display: false },
+            grid: {
+              display: true,
+              color: c.grid,
+              lineWidth: 0.6,
+              borderDash: [2, 6],
+              drawTicks: false,
+            },
             ticks: {
               color: c.textFaint,
               font: { size: 10, family: "'JetBrains Mono', monospace" },
               maxRotation: 0,
             },
-            border: { color: 'rgba(255,255,255,0.06)' },
+            border: { display: false },
           },
           y: {
             position: 'left',
-            grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+            grid: {
+              color: c.grid,
+              lineWidth: 0.8,
+              borderDash: [3, 5],
+              drawBorder: false,
+              drawTicks: false,
+            },
             ticks: {
               color: c.textFaint,
               font: { size: 10, family: "'JetBrains Mono', monospace" },
@@ -877,7 +897,7 @@ async function initOptTimeline() {
           },
           y1: {
             position: 'right',
-            grid: { display: false },
+            grid: { display: false, drawTicks: false },
             ticks: {
               color: c.textFaint,
               font: { size: 10, family: "'JetBrains Mono', monospace" },

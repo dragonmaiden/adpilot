@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, formatUsd, timeSince } = live.shared;
+  const { esc, formatUsd, timeSince, tr, getLocale, localizeOptimizationText, localizeCreativeText } = live.shared;
   const { fetchCampaigns, fetchPostmortem, fetchOptimizations, fetchAnalytics, fetchOverview, fetchScans, updateCampaignStatus } = live.api;
   const { getSeriesWindowMeta } = live.seriesWindows;
 
@@ -36,7 +36,13 @@
       medium: 'badge-info',
       low: 'badge-neutral',
     }[normalized] || 'badge-neutral';
-    return { label: normalized.charAt(0).toUpperCase() + normalized.slice(1), klass };
+    const labels = {
+      critical: tr('Critical', '치명적'),
+      high: tr('High', '높음'),
+      medium: tr('Medium', '보통'),
+      low: tr('Low', '낮음'),
+    };
+    return { label: labels[normalized] || normalized, klass };
   }
 
   function fatigueWeight(status) {
@@ -142,33 +148,46 @@
     updateLiveKpi(
       'activeCampaigns',
       activeCampaigns.length.toString(),
-      `${campaigns.length} campaigns tracked in this window`,
+      tr(`${campaigns.length} campaigns tracked in this window`, `이 기간 추적 캠페인 ${campaigns.length.toLocaleString(getLocale())}개`),
       activeCampaigns.length > 0 ? 'positive' : 'neutral'
     );
     updateLiveKpi(
       'pendingApprovals',
       executablePending.length.toString(),
       olderPending > 0
-        ? `${executablePending.length} current from the latest scan · ${olderPending} older pending in Action Queue`
-        : `${executablePending.length} current from the latest scan`,
+        ? tr(
+            `${executablePending.length} current from the latest scan · ${olderPending} older pending in AI Operations`,
+            `최신 스캔 기준 ${executablePending.length.toLocaleString(getLocale())}건 · AI 운영에 이전 대기 ${olderPending.toLocaleString(getLocale())}건`
+          )
+        : tr(
+            `${executablePending.length} current from the latest scan`,
+            `최신 스캔 기준 ${executablePending.length.toLocaleString(getLocale())}건`
+          ),
       executablePending.length > 0 ? 'warning' : 'positive'
     );
     updateLiveKpi(
       'fatigueAlerts',
       fatigueAds.length.toString(),
-      `${dangerCount} high risk · ${warningCount} watch closely`,
+      tr(
+        `${dangerCount} high risk · ${warningCount} watch closely`,
+        `고위험 ${dangerCount.toLocaleString(getLocale())}건 · 주의 ${warningCount.toLocaleString(getLocale())}건`
+      ),
       dangerCount > 0 ? 'negative' : fatigueAds.length > 0 ? 'warning' : 'positive'
     );
     updateLiveKpi(
       'spendPace',
       pace.totalDailyBudget > 0 ? `${formatUsd(pace.latestDailySpend, 0)} / ${formatUsd(pace.totalDailyBudget, 0)}` : '—',
-      pace.totalDailyBudget > 0 ? `${pace.pacePct.toFixed(0)}% of today's active budget` : 'No active budget configured',
+      pace.totalDailyBudget > 0
+        ? tr(`${pace.pacePct.toFixed(0)}% of today's active budget`, `오늘 활성 예산의 ${pace.pacePct.toFixed(0)}%`)
+        : tr('No active budget configured', '활성 예산이 설정되지 않았습니다'),
       paceTone
     );
     updateLiveKpi(
       'burnRisk',
       burnRiskCampaigns.length.toString(),
-      burnRiskCampaigns.length > 0 ? `${formatUsd(burnRiskSpend, 2)} spent without Meta-attributed purchases` : 'No active zero-attribution burn risk flagged',
+      burnRiskCampaigns.length > 0
+        ? tr(`${formatUsd(burnRiskSpend, 2)} spent without Meta-attributed purchases`, `메타 귀속 구매 없이 ${formatUsd(burnRiskSpend, 2)} 지출`)
+        : tr('No active zero-attribution burn risk flagged', '귀속 없는 지출 위험이 감지되지 않았습니다'),
       burnRiskCampaigns.length > 0 ? 'negative' : 'positive'
     );
   }
@@ -183,8 +202,11 @@
     if (optimizations.length === 0) {
       container.innerHTML = `<div class="empty-state">${
         olderPending > 0
-          ? `No approval-required actions were produced in the most recent scan. ${olderPending} older pending suggestion${olderPending === 1 ? '' : 's'} remain in Action Queue.`
-          : 'No approval-required actions were produced in the most recent scan.'
+          ? tr(
+              `No approval-required actions were produced in the most recent scan. ${olderPending} older pending suggestion${olderPending === 1 ? '' : 's'} remain in AI Operations.`,
+              `최신 스캔에서 승인 필요한 조치가 생성되지 않았습니다. AI 운영에 이전 대기 제안 ${olderPending.toLocaleString(getLocale())}건이 남아 있습니다.`
+            )
+          : tr('No approval-required actions were produced in the most recent scan.', '최신 스캔에서 승인 필요한 조치가 생성되지 않았습니다.')
       }</div>`;
       return;
     }
@@ -192,8 +214,8 @@
     container.innerHTML = optimizations.slice(0, 6).map(opt => {
       const priority = priorityBadge(opt.priority);
       const repeatNote = opt.repeats > 1
-        ? `Repeated across ${opt.repeats} scans`
-        : 'Single open recommendation';
+        ? tr(`Repeated across ${opt.repeats} scans`, `${opt.repeats.toLocaleString(getLocale())}번 스캔에서 반복됨`)
+        : tr('Single open recommendation', '현재 열린 단일 제안');
 
       return `
         <div class="live-queue-item">
@@ -202,15 +224,15 @@
           </div>
           <div class="live-queue-content">
             <div class="live-queue-top">
-              <div class="live-queue-title">${esc(opt.action || '—')}</div>
+            <div class="live-queue-title">${esc(localizeOptimizationText(opt.action || '—'))}</div>
               <div class="live-queue-badges">
-                <span class="badge badge-warning">Awaiting review</span>
+                <span class="badge badge-warning">${esc(tr('Awaiting review', '검토 대기'))}</span>
                 <span class="badge ${priority.klass}">${esc(priority.label)}</span>
               </div>
             </div>
-            <div class="live-queue-target">${esc(opt.targetName || 'Account-wide')}</div>
-            <div class="live-queue-detail">${esc(opt.reason || opt.impact || 'No reason provided.')}</div>
-            <div class="live-queue-meta">${esc(opt.impact || 'No impact note provided.')} · ${esc(repeatNote)} · ${opt.timestamp ? 'Last seen ' + timeSince(new Date(opt.timestamp)) : 'Just now'}</div>
+            <div class="live-queue-target">${esc(opt.targetName || tr('Account-wide', '계정 전체'))}</div>
+            <div class="live-queue-detail">${esc(localizeOptimizationText(opt.reason || opt.impact || tr('No reason provided.', '사유가 제공되지 않았습니다.')))}</div>
+            <div class="live-queue-meta">${esc(localizeOptimizationText(opt.impact || tr('No impact note provided.', '영향 메모가 없습니다.')))} · ${esc(repeatNote)} · ${opt.timestamp ? tr('Last seen ', '최근 확인 ') + timeSince(new Date(opt.timestamp)) : tr('Just now', '방금 전')}</div>
           </div>
         </div>
       `;
@@ -248,43 +270,43 @@
     const cards = [
       {
         tone: pace.totalDailyBudget > 0 && pace.pacePct >= 100 ? 'negative' : pace.totalDailyBudget > 0 && pace.pacePct >= 65 ? 'warning' : 'positive',
-        label: 'Budget pace',
-        title: pace.totalDailyBudget > 0 ? `${pace.pacePct.toFixed(0)}% of budget consumed` : 'No active budget pool',
+        label: tr('Budget pace', '예산 속도'),
+        title: pace.totalDailyBudget > 0 ? tr(`${pace.pacePct.toFixed(0)}% of budget consumed`, `예산의 ${pace.pacePct.toFixed(0)}% 사용`) : tr('No active budget pool', '활성 예산 풀이 없습니다'),
         detail: pace.totalDailyBudget > 0
-          ? `${formatUsd(pace.latestDailySpend, 2)} spent against ${formatUsd(pace.totalDailyBudget, 2)} today`
-          : 'Set active campaign budgets before relying on pacing.'
+          ? tr(`${formatUsd(pace.latestDailySpend, 2)} spent against ${formatUsd(pace.totalDailyBudget, 2)} today`, `오늘 ${formatUsd(pace.totalDailyBudget, 2)} 중 ${formatUsd(pace.latestDailySpend, 2)} 지출`)
+          : tr('Set active campaign budgets before relying on pacing.', '페이싱을 보기 전에 활성 캠페인 예산을 설정하세요.')
       },
       {
         tone: bestScaleCandidate ? 'positive' : 'neutral',
-        label: 'Best scale candidate',
-        title: bestScaleCandidate ? bestScaleCandidate.name : 'No scale candidate right now',
+        label: tr('Best scale candidate', '확장 후보'),
+        title: bestScaleCandidate ? bestScaleCandidate.name : tr('No scale candidate right now', '현재 확장 후보 없음'),
         detail: bestScaleCandidate
-          ? `${getAttributedPurchases(bestScaleCandidate.metricsWindow)} Meta-attributed purchases · ${formatUsd(bestScaleCandidate.metricsWindow.cpa || 0, 2)} CPA`
-          : 'No active campaign has recent attributed purchase volume in this window.'
+          ? tr(`${getAttributedPurchases(bestScaleCandidate.metricsWindow)} Meta-attributed purchases · ${formatUsd(bestScaleCandidate.metricsWindow.cpa || 0, 2)} CPA`, `메타 귀속 구매 ${getAttributedPurchases(bestScaleCandidate.metricsWindow).toLocaleString(getLocale())}건 · CPA ${formatUsd(bestScaleCandidate.metricsWindow.cpa || 0, 2)}`)
+          : tr('No active campaign has recent attributed purchase volume in this window.', '이 기간에 최근 귀속 구매가 있는 활성 캠페인이 없습니다.')
       },
       {
         tone: burnRiskCampaign ? 'negative' : 'positive',
-        label: 'Cash burn risk',
-        title: burnRiskCampaign ? burnRiskCampaign.name : 'No active burn risk flagged',
+        label: tr('Cash burn risk', '현금 소진 위험'),
+        title: burnRiskCampaign ? burnRiskCampaign.name : tr('No active burn risk flagged', '활성 소진 위험 없음'),
         detail: burnRiskCampaign
-          ? `${formatUsd(burnRiskCampaign.metricsWindow.spend || 0, 2)} spent with 0 Meta-attributed purchases`
-          : 'No active campaign is spending without attributed purchases.'
+          ? tr(`${formatUsd(burnRiskCampaign.metricsWindow.spend || 0, 2)} spent with 0 Meta-attributed purchases`, `메타 귀속 구매 0건으로 ${formatUsd(burnRiskCampaign.metricsWindow.spend || 0, 2)} 지출`)
+          : tr('No active campaign is spending without attributed purchases.', '귀속 구매 없이 지출 중인 활성 캠페인이 없습니다.')
       },
       {
         tone: fatigueRisk && fatigueRisk.fatigue?.status === 'danger' ? 'negative' : fatigueRisk && fatigueRisk.fatigue?.status === 'warning' ? 'warning' : 'positive',
-        label: 'Creative pressure',
-        title: fatigueRisk ? fatigueRisk.name : 'Creatives look stable',
+        label: tr('Creative pressure', '크리에이티브 압박'),
+        title: fatigueRisk ? fatigueRisk.name : tr('Creatives look stable', '크리에이티브 안정적'),
         detail: fatigueRisk
-          ? (fatigueRisk.fatigue?.summary || `Frequency ${Number(fatigueRisk.lastFrequency || 0).toFixed(1)} · CTR ${Number(fatigueRisk.lastCTR || fatigueRisk.avgCTR || 0).toFixed(2)}%`)
-          : 'No active ad currently shows fatigue pressure.'
+          ? localizeCreativeText(fatigueRisk.fatigue?.summary || `Frequency ${Number(fatigueRisk.lastFrequency || 0).toFixed(1)} · CTR ${Number(fatigueRisk.lastCTR || fatigueRisk.avgCTR || 0).toFixed(2)}%`)
+          : tr('No active ad currently shows fatigue pressure.', '현재 피로 압박이 감지된 활성 광고가 없습니다.')
       },
       {
         tone: errorSources > 0 ? 'negative' : staleSources > 0 ? 'warning' : 'positive',
-        label: 'Source health',
-        title: errorSources > 0 ? `${errorSources} source error${errorSources !== 1 ? 's' : ''}` : staleSources > 0 ? `${staleSources} cached source${staleSources !== 1 ? 's' : ''}` : `${healthySources} sources healthy`,
+        label: tr('Source health', '소스 상태'),
+        title: errorSources > 0 ? tr(`${errorSources} source error${errorSources !== 1 ? 's' : ''}`, `소스 오류 ${errorSources.toLocaleString(getLocale())}건`) : staleSources > 0 ? tr(`${staleSources} cached source${staleSources !== 1 ? 's' : ''}`, `캐시 소스 ${staleSources.toLocaleString(getLocale())}건`) : tr(`${healthySources} sources healthy`, `정상 소스 ${healthySources.toLocaleString(getLocale())}건`),
         detail: overviewData?.lastScan
-          ? `Last scan ${timeSince(new Date(overviewData.lastScan))} · Meta, Imweb, and COGS are being monitored`
-          : 'Waiting for the next scan to refresh source health.'
+          ? tr(`Last scan ${timeSince(new Date(overviewData.lastScan))} · Meta, Imweb, and COGS are being monitored`, `최근 스캔 ${timeSince(new Date(overviewData.lastScan))} · Meta, Imweb, COGS 모니터링 중`)
+          : tr('Waiting for the next scan to refresh source health.', '다음 스캔 후 소스 상태가 갱신됩니다.')
       },
     ];
 
@@ -311,20 +333,21 @@
       const metrics = campaign.metricsWindow || {};
       const status = campaign.status === 'ACTIVE' || campaign.status === 'PAUSED' ? campaign.status : 'UNKNOWN';
       const statusClass = status === 'ACTIVE' ? 'badge-success' : status === 'PAUSED' ? 'badge-warning' : 'badge-neutral';
+      const statusLabel = status === 'ACTIVE' ? tr('ACTIVE', '집행중') : status === 'PAUSED' ? tr('PAUSED', '중지') : tr('UNKNOWN', '알 수 없음');
       const budget = campaign.dailyBudget ? formatUsd(parseInt(campaign.dailyBudget, 10) / 100, 2) : '-';
       const actionButton = status === 'ACTIVE'
-        ? `<button class="btn btn-sm btn-ghost campaign-action" data-id="${esc(campaign.id)}" data-action="PAUSED">Pause</button>`
+        ? `<button class="btn btn-sm btn-ghost campaign-action" data-id="${esc(campaign.id)}" data-action="PAUSED">${esc(tr('Pause', '중지'))}</button>`
         : status === 'PAUSED'
-        ? `<button class="btn btn-sm btn-primary campaign-action" data-id="${esc(campaign.id)}" data-action="ACTIVE">Resume</button>`
+        ? `<button class="btn btn-sm btn-primary campaign-action" data-id="${esc(campaign.id)}" data-action="ACTIVE">${esc(tr('Resume', '재개'))}</button>`
         : '—';
 
       return `
         <tr>
           <td style="font-weight:600">${esc(campaign.name)}</td>
-          <td><span class="badge ${statusClass}">${esc(status)}</span></td>
-          <td>${budget}/day</td>
+          <td><span class="badge ${statusClass}">${esc(statusLabel)}</span></td>
+          <td>${budget}${tr('/day', '/일')}</td>
           <td>${formatUsd(metrics.spend || 0, 2)}</td>
-          <td>${getAttributedPurchases(metrics).toLocaleString()}</td>
+          <td>${getAttributedPurchases(metrics).toLocaleString(getLocale())}</td>
           <td>${metrics.cpa ? formatUsd(metrics.cpa, 2) : '-'}</td>
           <td>${metrics.ctr ? metrics.ctr.toFixed(2) + '%' : '-'}</td>
           <td>${actionButton}</td>
@@ -336,19 +359,19 @@
       button.addEventListener('click', async event => {
         const id = event.target.dataset.id;
         const action = event.target.dataset.action;
-        event.target.textContent = 'Sending approval...';
+        event.target.textContent = tr('Sending approval...', '승인 요청 중...');
         event.target.disabled = true;
         const result = await updateCampaignStatus(id, action);
         if (result && result.pending) {
-          event.target.textContent = '⏳ Check Telegram';
-          event.target.title = 'Approval request sent to Telegram. Please approve or reject there.';
+          event.target.textContent = tr('⏳ Check Telegram', '⏳ 텔레그램 확인');
+          event.target.title = tr('Approval request sent to Telegram. Please approve or reject there.', '승인 요청이 텔레그램으로 전송되었습니다. 텔레그램에서 승인 또는 거절하세요.');
           setTimeout(() => refreshCampaignsPage(), 15000);
           setTimeout(() => refreshCampaignsPage(), 60000);
         } else if (result && result.success) {
-          event.target.textContent = action === 'PAUSED' ? 'Paused' : 'Resumed';
+          event.target.textContent = action === 'PAUSED' ? tr('Paused', '중지됨') : tr('Resumed', '재개됨');
           setTimeout(() => refreshCampaignsPage(), 1000);
         } else {
-          event.target.textContent = 'Error';
+          event.target.textContent = tr('Error', '오류');
         }
       });
     });
@@ -357,43 +380,46 @@
   function renderActiveAds(container, countEl, postmortem, windowLabel) {
     if (!container) return;
     const active = (postmortem?.active || []).slice().sort((left, right) => Number(right.spend || 0) - Number(left.spend || 0));
-    if (countEl) countEl.textContent = `${Math.min(active.length, 4)} shown · ${active.length} active ads · ${windowLabel}`;
+    if (countEl) countEl.textContent = tr(
+      `${Math.min(active.length, 4)} shown · ${active.length} active ads · ${windowLabel}`,
+      `${Math.min(active.length, 4).toLocaleString(getLocale())}개 표시 · 활성 광고 ${active.length.toLocaleString(getLocale())}개 · ${windowLabel}`
+    );
 
     if (active.length === 0) {
-      container.innerHTML = '<div class="empty-state">No active ads right now.</div>';
+      container.innerHTML = `<div class="empty-state">${esc(tr('No active ads right now.', '현재 활성 광고가 없습니다.'))}</div>`;
       return;
     }
 
     container.innerHTML = `
       <div class="live-ads-grid">
         ${active.slice(0, 4).map(ad => {
-          const cpaStr = ad.cpa ? formatUsd(ad.cpa, 2) : 'N/A';
+          const cpaStr = ad.cpa ? formatUsd(ad.cpa, 2) : tr('N/A', '없음');
           const cpaColor = ad.cpa && ad.cpa < 15 ? '#4ade80' : ad.cpa && ad.cpa < 25 ? '#facc15' : '#f87171';
           const fatigueStatus = String(ad.fatigue?.status || 'healthy');
           const fatigueBadge = fatigueStatus === 'danger'
-            ? '<span class="badge badge-error">Rotate now</span>'
+            ? `<span class="badge badge-error">${esc(tr('Rotate now', '지금 교체'))}</span>`
             : fatigueStatus === 'warning'
-            ? '<span class="badge badge-warning">Watch fatigue</span>'
-            : '<span class="badge badge-success">Healthy</span>';
+            ? `<span class="badge badge-warning">${esc(tr('Watch fatigue', '피로 주시'))}</span>`
+            : `<span class="badge badge-success">${esc(tr('Healthy', '정상'))}</span>`;
           return `
             <div class="live-ad-card">
               <div class="live-ad-card-head">
                 <div>
                   <div class="live-ad-card-title">${esc(ad.name)}</div>
-                  <div class="live-ad-card-meta">${esc(ad.campaignName)} · ${ad.daysOfData} days of data</div>
+                  <div class="live-ad-card-meta">${esc(ad.campaignName)} · ${tr(`${ad.daysOfData} days of data`, `${ad.daysOfData}일 데이터`)}</div>
                 </div>
                 <div class="live-ad-card-badges">
-                  <span class="badge badge-success">LIVE</span>
+                  <span class="badge badge-success">${esc(tr('LIVE', '집행중'))}</span>
                   ${fatigueBadge}
                 </div>
               </div>
               <div class="live-ad-metrics">
-                <div><span>Spend</span><strong>${formatUsd(ad.spend || 0, 2)}</strong></div>
-                <div><span>Meta-attributed purchases</span><strong>${getAttributedPurchases(ad).toLocaleString()}</strong></div>
+                <div><span>${esc(tr('Spend', '지출'))}</span><strong>${formatUsd(ad.spend || 0, 2)}</strong></div>
+                <div><span>${esc(tr('Meta-attributed purchases', '메타 귀속 구매'))}</span><strong>${getAttributedPurchases(ad).toLocaleString(getLocale())}</strong></div>
                 <div><span>CPA</span><strong style="color:${cpaColor}">${cpaStr}</strong></div>
                 <div><span>CTR</span><strong>${Number(ad.avgCTR || 0).toFixed(2)}%</strong></div>
               </div>
-              <div class="live-ad-note">${esc(ad.fatigue?.summary || 'Use Creative Health for fatigue diagnosis and rotation decisions.')}</div>
+              <div class="live-ad-note">${esc(localizeCreativeText(ad.fatigue?.summary || tr('Use Creative Health for fatigue diagnosis and rotation decisions.', '피로 진단과 교체 판단은 크리에이티브 상태 탭에서 확인하세요.')))}</div>
             </div>
           `;
         }).join('')}
@@ -415,11 +441,14 @@
     if (!campaignData || !postmortem) return;
 
     const windowLabel = (campaignData?.windowDays || postmortem?.windowDays)
-      ? `Last ${campaignData?.windowDays || postmortem?.windowDays} days`
-      : 'All available data';
+      ? tr(`Last ${campaignData?.windowDays || postmortem?.windowDays} days`, `최근 ${campaignData?.windowDays || postmortem?.windowDays}일`)
+      : tr('All available data', '사용 가능한 전체 데이터');
     const windowNoteEl = document.getElementById('campaignWindowNote');
     if (windowNoteEl) {
-      windowNoteEl.textContent = `${windowLabel} · active delivery, pacing, fatigue, and approvals in one place.`;
+      windowNoteEl.textContent = tr(
+        `${windowLabel} · active delivery, pacing, fatigue, and approvals in one place.`,
+        `${windowLabel} · 집행, 페이싱, 피로도, 승인 현황을 한 곳에서 확인`
+      );
     }
 
     renderLiveKpis(campaignData, postmortem, optData, analyticsData, scansData);

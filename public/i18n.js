@@ -8,7 +8,7 @@ const I18N = {
   'nav.campaigns':      { en: 'Live Performance',  kr: '실시간 성과' },
   'nav.analytics':      { en: 'Profit Analytics',  kr: '수익 분석' },
   'nav.calendar':       { en: 'Calendar Analysis', kr: '캘린더 분석' },
-  'nav.optimizations':  { en: 'Action Queue',      kr: '조치 대기열' },
+  'nav.optimizations':  { en: 'AI Operations',     kr: 'AI 운영' },
   'nav.fatigue':        { en: 'Creative Health',   kr: '크리에이티브 상태' },
   'nav.budget':         { en: 'Spend Pacing',      kr: '지출 페이싱' },
   'nav.settings':       { en: 'Settings',           kr: '설정' },
@@ -17,14 +17,14 @@ const I18N = {
   'header.runScan':     { en: 'Run Scan Now',      kr: '스캔 실행' },
   'header.lastScan':    { en: 'Last scan:',        kr: '마지막 스캔:' },
   'header.agentActive': { en: 'Agent Active',      kr: '에이전트 활성' },
-  'header.nextScan':    { en: 'Next scan in',      kr: '다음 스캔' },
+  'header.nextScan':    { en: 'Next scan in',      kr: '다음 스캔까지' },
 
   // ── Page Titles ──
   'page.overview':      { en: 'Executive Summary', kr: '요약' },
   'page.campaigns':     { en: 'Live Performance',  kr: '실시간 성과' },
   'page.analytics':     { en: 'Profit Analytics',  kr: '수익 분석' },
   'page.calendar':      { en: 'Calendar Analysis', kr: '캘린더 분석' },
-  'page.optimizations': { en: 'Action Queue',      kr: '조치 대기열' },
+  'page.optimizations': { en: 'AI Operations',     kr: 'AI 운영' },
   'page.fatigue':       { en: 'Creative Health',   kr: '크리에이티브 상태' },
   'page.budget':        { en: 'Spend Pacing',      kr: '지출 페이싱' },
   'page.settings':      { en: 'Settings',           kr: '설정' },
@@ -46,6 +46,41 @@ const I18N = {
   'chart.revenueByBrand': { en: 'Revenue by Brand',    kr: '브랜드별 매출' },
   'chart.recentAI':       { en: 'Recent AI Actions',   kr: '최근 AI 활동' },
   'btn.viewAll':          { en: 'View All',            kr: '전체 보기' },
+  'misc.toggleMenu':      { en: 'Toggle menu',         kr: '메뉴 열기/닫기' },
+  'misc.toggleTheme':     { en: 'Toggle theme',        kr: '테마 전환' },
+  'misc.createdWith':     { en: 'Created with Perplexity Computer', kr: 'Perplexity Computer로 제작됨' },
+  'misc.all':             { en: 'All', kr: '전체' },
+  'misc.waiting':         { en: 'Waiting', kr: '대기 중' },
+  'misc.unknown':         { en: 'Unknown', kr: '알 수 없음' },
+
+  // ── Overview Page Details ──
+  'overview.trendsKicker': { en: 'Overview Trends', kr: '요약 추이' },
+  'overview.trendsTitle':  { en: 'Daily revenue and efficiency', kr: '일별 매출 및 효율' },
+  'overview.window':       { en: 'Window', kr: '기간' },
+  'overview.windowAria':   { en: 'Overview trend window', kr: '요약 추이 기간 선택' },
+  'overview.hourSubtitle': { en: 'All synced Imweb orders', kr: '동기화된 Imweb 주문 전체' },
+  'overview.hourSource':   { en: 'Source: Imweb', kr: '소스: Imweb' },
+  'overview.placeholderRevenue': { en: '— orders · — AOV', kr: '—건 주문 · 객단가 —' },
+  'overview.placeholderMargin':  { en: '— margin', kr: '마진 —' },
+  'overview.placeholderAvgDay':  { en: '— avg/day', kr: '일평균 —' },
+  'overview.workflowTitle': { en: 'Operator Workflow', kr: '운영 워크플로' },
+  'overview.workflowDesc':  { en: 'This page stays executive. Use the workflow surfaces below when you need live decisions, approvals, pacing, or fatigue detail.', kr: '이 페이지는 경영 요약에 집중합니다. 실시간 의사결정, 승인, 페이싱, 크리에이티브 상태 점검이 필요할 때 아래 워크플로를 사용하세요.' },
+  'overview.workflow.liveBadge': { en: 'Operate here', kr: '여기서 운영' },
+  'overview.workflow.liveTitle': { en: 'Live Performance', kr: '실시간 성과' },
+  'overview.workflow.liveDesc': { en: 'Watch active ads, pending decisions, budget pressure, and the campaigns that need action first.', kr: '활성 광고, 대기 중인 의사결정, 예산 압박, 우선 조치가 필요한 캠페인을 확인합니다.' },
+  'overview.workflow.liveButton': { en: 'Open Live Performance', kr: '실시간 성과 열기' },
+  'overview.workflow.diagnoseBadge': { en: 'Diagnose', kr: '진단' },
+  'overview.workflow.diagnoseTitle': { en: 'Creative Health', kr: '크리에이티브 상태' },
+  'overview.workflow.diagnoseDesc': { en: 'Review fatigue, CTR decay, frequency, and CPM pressure when creative performance starts to slip.', kr: '크리에이티브 성과가 약해질 때 피로도, CTR 하락, 빈도, CPM 압박을 점검합니다.' },
+  'overview.workflow.diagnoseButton': { en: 'Open Creative Health', kr: '크리에이티브 상태 열기' },
+  'overview.workflow.monitorBadge': { en: 'Monitor', kr: '모니터링' },
+  'overview.workflow.monitorTitle': { en: 'Spend Pacing', kr: '지출 페이싱' },
+  'overview.workflow.monitorDesc': { en: 'Check daily budget headroom, allocation, and whether delivery is running ahead or behind plan.', kr: '일일 예산 여유, 배분 현황, 집행 속도가 계획보다 빠른지 느린지 확인합니다.' },
+  'overview.workflow.monitorButton': { en: 'Open Spend Pacing', kr: '지출 페이싱 열기' },
+  'overview.workflow.aiBadge': { en: 'AI decisioning', kr: 'AI 의사결정' },
+  'overview.workflow.aiTitle': { en: 'AI Operations', kr: 'AI 운영' },
+  'overview.workflow.aiDesc': { en: 'Inspect what the agent suggested, what needs approval, and what already executed.', kr: '에이전트가 무엇을 제안했는지, 무엇이 승인을 기다리는지, 무엇이 이미 실행되었는지 확인합니다.' },
+  'overview.workflow.aiButton': { en: 'Open AI Operations', kr: 'AI 운영 열기' },
 
   // ── Analytics KPIs ──
   'kpi.refundRate':     { en: 'Refund Rate (₩)',        kr: '환불률 (₩)' },
@@ -61,6 +96,61 @@ const I18N = {
   'chart.weeklyCpa':        { en: 'Main Campaign Weekly CPA',   kr: '주요 캠페인 주간 CPA' },
   'chart.monthlyRefund':    { en: 'Monthly Refund Comparison',  kr: '월별 환불 비교' },
   'chart.weekdayRevenue':   { en: 'Revenue by Day of Week',     kr: '요일별 매출' },
+  'analytics.sectionKicker': { en: 'Profit Analytics', kr: '수익 분석' },
+  'analytics.sectionTitle':  { en: 'Deep-dive margin diagnostics', kr: '마진 심층 진단' },
+  'analytics.sectionNote':   { en: 'Trend shape, refund drag, campaign efficiency, and settlement validation live together here.', kr: '추이 구조, 환불 영향, 캠페인 효율, 정산 검증을 이 페이지에서 함께 확인합니다.' },
+  'analytics.hero.margin':   { en: 'Margin', kr: '마진' },
+  'analytics.hero.trueRoas': { en: 'True ROAS', kr: '실질 ROAS' },
+  'analytics.hero.runRate':  { en: '30d run rate', kr: '30일 런레이트' },
+  'analytics.hero.waiting':  { en: 'Waiting for data...', kr: '데이터 대기 중...' },
+  'analytics.hero.latestWaiting': { en: 'Latest completed day: waiting for covered data.', kr: '최신 완료일: 원가 포함 데이터 대기 중.' },
+  'analytics.structureKicker': { en: 'Profit Structure', kr: '수익 구조' },
+  'analytics.structureTitle':  { en: 'How net profit is formed over time', kr: '순이익이 시간에 따라 어떻게 형성되는지' },
+  'analytics.mediaKicker':    { en: 'Media Profitability', kr: '매체 수익성' },
+  'analytics.mediaTitle':     { en: 'Which traffic patterns and campaigns create profit', kr: '어떤 트래픽 패턴과 캠페인이 수익을 만드는지' },
+  'analytics.qualityKicker':  { en: 'Revenue Quality', kr: '매출 품질' },
+  'analytics.qualityTitle':   { en: 'Refund pressure and settlement validation', kr: '환불 압력 및 정산 검증' },
+  'analytics.window':         { en: 'Window', kr: '기간' },
+  'analytics.windowStructureAria': { en: 'Profit structure window', kr: '수익 구조 기간 선택' },
+  'analytics.windowMediaAria': { en: 'Media profitability window', kr: '매체 수익성 기간 선택' },
+  'analytics.windowQualityAria': { en: 'Revenue quality window', kr: '매출 품질 기간 선택' },
+  'analytics.kpi.cogsCoverage': { en: 'COGS Coverage', kr: 'COGS 커버리지' },
+  'analytics.kpi.blendedMargin': { en: 'Blended Margin', kr: '혼합 마진' },
+  'analytics.kpi.trueRoas': { en: 'True ROAS', kr: '실질 ROAS' },
+  'analytics.kpi.runRate30d': { en: '30d Profit Run Rate', kr: '30일 수익 런레이트' },
+  'analytics.waterfallTitle': { en: 'Daily Profit Waterfall', kr: '일별 수익 워터폴' },
+  'analytics.coverageTitle': { en: 'Data Coverage & Confidence', kr: '데이터 커버리지 및 신뢰도' },
+  'analytics.coverageWaiting': { en: 'Waiting for data...', kr: '데이터 대기 중...' },
+  'analytics.leaderboardTitle': { en: 'Campaign Profit Leaderboard', kr: '캠페인 수익 리더보드' },
+  'analytics.leaderboardNote': { en: 'Revenue estimated (pixel-attributed) · all available data', kr: '매출은 픽셀 귀속 기준 추정 · 전체 사용 가능 데이터' },
+  'analytics.leaderboard.estRevenue': { en: 'Est. Revenue', kr: '추정 매출' },
+  'analytics.leaderboard.estCogs': { en: 'Est. COGS', kr: '추정 원가' },
+  'analytics.leaderboard.grossProfit': { en: 'Gross Profit', kr: '매출총이익' },
+  'analytics.leaderboard.margin': { en: 'Margin %', kr: '마진 %' },
+  'analytics.reconciliationTitle': { en: 'Settlement Reconciliation', kr: '정산 대사' },
+  'analytics.reconciliationDesc': { en: 'Card settlement rows are treated as validation only. They are not added into revenue totals.', kr: '카드 정산 행은 검증용으로만 사용되며 매출 합계에는 더해지지 않습니다.' },
+  'analytics.reconciliationWaiting': { en: 'Waiting for reconciliation data...', kr: '정산 대사 데이터 대기 중...' },
+  'analytics.reconciliationRollupTitle': { en: 'Daily Reconciliation Rollup', kr: '일별 정산 롤업' },
+  'analytics.reconciliationWindowDefault': { en: 'Match window —', kr: '매칭 범위 —' },
+  'analytics.recon.matchedNet': { en: 'Matched Net', kr: '일치 순액' },
+  'analytics.recon.unmatchedSettlement': { en: 'Unmatched Settlement', kr: '미일치 정산' },
+  'analytics.recon.unmatchedImweb': { en: 'Unmatched Imweb', kr: '미일치 Imweb' },
+  'analytics.recon.methodMismatch': { en: 'Method Mismatch', kr: '결제 방식 차이' },
+  'calendar.sectionKicker':   { en: 'Calendar Analysis', kr: '캘린더 분석' },
+  'calendar.sectionTitle':    { en: 'Zoom into any day or date range', kr: '특정 날짜나 기간을 자세히 보기' },
+  'calendar.sectionNote':     { en: 'Revenue colors the calendar. Click a day or drag across dates to inspect profit, refunds, orders, campaigns, and operating events in KST.', kr: '매출이 캘린더 색상을 결정합니다. 날짜를 클릭하거나 범위를 드래그해 KST 기준 수익, 환불, 주문, 캠페인, 운영 이벤트를 확인하세요.' },
+  'calendar.date':            { en: 'Date', kr: '날짜' },
+  'calendar.prev':            { en: 'Previous', kr: '이전' },
+  'calendar.today':           { en: 'Today', kr: '오늘' },
+  'calendar.next':            { en: 'Next', kr: '다음' },
+  'calendar.loading':         { en: 'Loading calendar analysis...', kr: '캘린더 분석 불러오는 중...' },
+  'calendar.selectedTitle':   { en: 'Selected Range', kr: '선택한 범위' },
+  'calendar.selectedHint':    { en: 'Choose a day or drag across a period', kr: '날짜를 선택하거나 범위를 드래그하세요' },
+  'calendar.selectedDesc':    { en: 'The drilldown will populate with profit, orders, refunds, campaign estimates, product mix, and operating events for the selected KST date range.', kr: '선택한 KST 날짜 범위에 대한 수익, 주문, 환불, 캠페인 추정치, 상품 구성, 운영 이벤트가 아래에 표시됩니다.' },
+  'calendar.settlementNet':   { en: 'Settlement Net', kr: '정산 순액' },
+  'calendar.imwebNet':        { en: 'Imweb Net', kr: 'Imweb 순액' },
+  'calendar.settlementGap':   { en: 'Settlement Gap', kr: '정산 차이' },
+  'calendar.imwebGap':        { en: 'Imweb Gap', kr: 'Imweb 차이' },
 
   // ── Analytics Table Headers ──
   'th.day':             { en: 'Day',               kr: '요일' },
@@ -76,6 +166,22 @@ const I18N = {
   'campaigns.liveAds':        { en: 'Top Active Ads',                   kr: '핵심 활성 광고' },
   'campaigns.overview':       { en: 'Campaign Control Table',           kr: '캠페인 제어 테이블' },
   'campaigns.pausedLessons':  { en: 'Paused ads and what they taught',  kr: '중지된 광고와 학습 내용' },
+  'campaigns.sectionKicker':  { en: 'Live Performance', kr: '실시간 성과' },
+  'campaigns.sectionTitle':   { en: 'Act on what needs attention now', kr: '지금 필요한 조치를 바로 확인' },
+  'campaigns.window':         { en: 'Window', kr: '기간' },
+  'campaigns.windowAria':     { en: 'Campaign performance window', kr: '캠페인 성과 기간 선택' },
+  'campaigns.kpi.activeCampaigns': { en: 'Active Campaigns', kr: '활성 캠페인' },
+  'campaigns.kpi.approvalQueue': { en: 'Approval Queue', kr: '승인 대기열' },
+  'campaigns.kpi.creativeAlerts': { en: 'Creative Alerts', kr: '크리에이티브 경보' },
+  'campaigns.kpi.spendPace': { en: 'Spend Pace Today', kr: '오늘 지출 속도' },
+  'campaigns.kpi.burnRisk':  { en: 'Spend Without Sales', kr: '매출 없는 지출' },
+  'campaigns.latestKicker':  { en: 'Latest Scan', kr: '최신 스캔' },
+  'campaigns.latestTitle':   { en: 'Approval-required actions', kr: '승인 필요한 조치' },
+  'campaigns.latestButton':  { en: 'Open AI Operations', kr: 'AI 운영 열기' },
+  'campaigns.latestLoading': { en: 'Loading action queue...', kr: '조치 대기열 불러오는 중...' },
+  'campaigns.signalsKicker': { en: 'Operator Signals', kr: '운영 신호' },
+  'campaigns.signalsTitle':  { en: 'What changed in the account', kr: '계정에서 달라진 점' },
+  'campaigns.signalsLoading': { en: 'Loading operator signals...', kr: '운영 신호 불러오는 중...' },
   'th.campaign':        { en: 'Campaign',          kr: '캠페인' },
   'th.status':          { en: 'Status',            kr: '상태' },
   'th.dailyBudget':     { en: 'Daily Budget',      kr: '일일 예산' },
@@ -85,14 +191,28 @@ const I18N = {
   'th.actions':         { en: 'Actions',           kr: '관리' },
 
   // ── Optimizations Page ──
-  'kpi.totalOpt':       { en: 'Logged Decisions',    kr: '기록된 결정' },
+  'kpi.totalOpt':       { en: 'AI Suggestions Logged', kr: '기록된 AI 제안' },
   'kpi.autoExec':       { en: 'Executed',            kr: '실행됨' },
-  'kpi.pending':        { en: 'Pending Approval',    kr: '승인 대기' },
+  'kpi.pending':        { en: 'Needs Approval Now',  kr: '현재 승인 필요' },
+  'kpi.awaitingTelegram': { en: 'Awaiting Telegram', kr: '텔레그램 응답 대기' },
+  'kpi.advisory':       { en: 'Advisory Suggestions', kr: '참고용 제안' },
   'kpi.scans':          { en: 'Scans Completed',     kr: '완료된 스캔' },
-  'chart.spendCac':     { en: 'SPEND & CAC — DAILY', kr: '지출 & CAC — 일별' },
+  'chart.spendCac':     { en: 'Spend & CAC Trend',   kr: '지출 & CAC 추이' },
   'chart.actionType':   { en: 'Actions by Type',     kr: '유형별 활동' },
   'chart.actionPriority': { en: 'Actions by Priority', kr: '우선순위별 활동' },
-  'opt.liveLog':        { en: 'Recent Decision History',  kr: '최근 결정 이력' },
+  'opt.liveLog':        { en: 'Historical AI Suggestions & Outcomes',  kr: '과거 AI 제안 및 결과 이력' },
+  'optimizations.sectionKicker': { en: 'AI Operations', kr: 'AI 운영' },
+  'optimizations.sectionTitle': { en: 'AI decisions, approvals, and execution history', kr: 'AI 의사결정, 승인, 실행 이력' },
+  'optimizations.sectionNote': { en: 'Use this page to separate current AI actions from advisory backlog and historical outcomes. Live Performance only surfaces the most urgent latest-scan items.', kr: '현재 AI 조치, 참고용 제안 백로그, 과거 결과를 분리해 보는 페이지입니다. 실시간 성과 탭에는 최신 스캔의 가장 긴급한 항목만 표시됩니다.' },
+  'optimizations.spendContext': { en: 'Spend Context', kr: '지출 맥락' },
+  'optimizations.chartDesc': { en: 'Daily spend transitions in KRW with CAC overlay. Spend comes from Meta; CAC uses actual daily purchase counts when COGS coverage exists.', kr: 'KRW 기준 일별 지출 변화에 CAC를 겹쳐 보여줍니다. 지출은 Meta 기준이며 CAC는 COGS 커버리지가 있을 때 실제 일별 구매 수를 사용합니다.' },
+  'optimizations.legendSpend': { en: 'Spend (L)', kr: '지출 (좌)' },
+  'optimizations.legendCac': { en: 'CAC (R)', kr: 'CAC (우)' },
+  'optimizations.legendTarget': { en: 'Target CPA', kr: '목표 CPA' },
+  'optimizations.legendBudget': { en: 'Budget', kr: '예산' },
+  'optimizations.queueKicker': { en: 'Current AI Queue', kr: '현재 AI 대기열' },
+  'optimizations.queueTitle': { en: 'Ready for approval', kr: '승인 준비 완료' },
+  'optimizations.queueDesc': { en: 'Only executable items from the latest scan and anything already awaiting a Telegram reply appear here.', kr: '여기에는 최신 스캔의 실행 가능한 항목과 이미 텔레그램 응답을 기다리는 항목만 표시됩니다.' },
   'opt.allTypes':       { en: 'All Types',           kr: '전체 유형' },
   'opt.budget':         { en: 'Budget',              kr: '예산' },
   'opt.bid':            { en: 'Bid',                 kr: '입찰' },
@@ -101,6 +221,11 @@ const I18N = {
   'opt.schedule':       { en: 'Schedule',            kr: '일정' },
   'opt.targeting':      { en: 'Targeting',           kr: '타겟팅' },
   'opt.waiting':        { en: 'Waiting for backend connection and first scan...', kr: '백엔드 연결 및 첫 번째 스캔 대기 중...' },
+  'opt.allStatuses':    { en: 'All Statuses', kr: '전체 상태' },
+  'opt.openBacklog':    { en: 'Open Backlog', kr: '미해결 백로그' },
+  'opt.awaitingTelegram': { en: 'Awaiting Telegram', kr: '텔레그램 응답 대기' },
+  'opt.advisoryOnly':   { en: 'Advisory Only', kr: '참고용만' },
+  'opt.resolved':       { en: 'Rejected / Expired', kr: '거절 / 만료' },
 
   // Candlestick stats
   'stat.totalSpend':    { en: 'TOTAL SPEND',  kr: '총 지출' },
@@ -114,6 +239,11 @@ const I18N = {
   'fatigue.monitor':    { en: 'Creative Health Monitor',  kr: '크리에이티브 상태 모니터' },
   'fatigue.desc':       { en: 'The agent monitors frequency, CTR decay, and CPM rise to detect creative fatigue before it damages performance.', kr: '에이전트가 빈도, CTR 감소, CPM 상승을 모니터링하여 성과에 영향을 미치기 전에 크리에이티브 피로도를 감지합니다.' },
   'fatigue.indicators': { en: 'Fatigue Indicators Over Time', kr: '시간 경과에 따른 피로도 지표' },
+  'fatigue.sectionKicker': { en: 'Creative Health', kr: '크리에이티브 상태' },
+  'fatigue.sectionTitle': { en: 'Watch fatigue before it damages performance', kr: '성과를 해치기 전에 피로도를 확인' },
+  'fatigue.sectionNote': { en: 'This page owns creative diagnosis: active fatigue signals, pressure trends, and paused-ad learnings.', kr: '이 페이지는 크리에이티브 진단 전용입니다. 현재 피로 신호, 압박 추이, 중지 광고 학습 내용을 확인합니다.' },
+  'fatigue.windowRecent': { en: 'Recent 14 day creative health view', kr: '최근 14일 크리에이티브 상태 보기' },
+  'fatigue.learnKicker': { en: 'Creative Learnings', kr: '크리에이티브 학습' },
 
   // ── Budget Manager Page ──
   'budget.daily':       { en: 'Active Budget Pool',    kr: '활성 예산 풀' },
@@ -123,6 +253,9 @@ const I18N = {
   'chart.budgetAlloc':  { en: 'Budget Allocation by Campaign', kr: '캠페인별 예산 배분' },
   'chart.dailyPace':    { en: 'Daily Spend Pace',              kr: '일별 지출 속도' },
   'budget.history':     { en: 'Budget Optimization History',    kr: '예산 최적화 내역' },
+  'budget.sectionKicker': { en: 'Spend Pacing', kr: '지출 페이싱' },
+  'budget.sectionTitle':  { en: 'Track budget headroom and delivery pace', kr: '예산 여유와 집행 속도 추적' },
+  'budget.sectionNote':   { en: 'This page is for pacing and budget pressure only. Live campaign decisions stay on Live Performance.', kr: '이 페이지는 페이싱과 예산 압박만 다룹니다. 실시간 캠페인 의사결정은 실시간 성과 탭에서 확인합니다.' },
   'th.time':            { en: 'Time',               kr: '시간' },
   'th.target':          { en: 'Target',             kr: '대상' },
   'th.scope':           { en: 'Scope',              kr: '범위' },
@@ -147,6 +280,11 @@ const I18N = {
   'settings.creativeRotDesc':   { en: 'Automatically rotate underperforming creatives when fatigue is detected', kr: '피로도가 감지되면 성과가 낮은 크리에이티브를 자동 교체' },
   'settings.notifChannel':      { en: 'Notification Channel',        kr: '알림 채널' },
   'settings.notifChannelDesc':  { en: 'Where to send alerts about significant changes or issues', kr: '중요한 변경 사항 또는 문제에 대한 알림을 보낼 곳' },
+  'settings.emailInApp':        { en: 'Email + In-App', kr: '이메일 + 인앱' },
+  'settings.emailOnly':         { en: 'Email Only', kr: '이메일만' },
+  'settings.inAppOnly':         { en: 'In-App Only', kr: '인앱만' },
+  'settings.slack':             { en: 'Slack', kr: 'Slack' },
+  'settings.webhook':           { en: 'Webhook', kr: 'Webhook' },
   'settings.low':               { en: 'Low',    kr: '낮음' },
   'settings.medium':            { en: 'Medium', kr: '보통' },
   'settings.high':              { en: 'High',   kr: '높음' },
@@ -157,11 +295,13 @@ const I18N = {
   'settings.everyHour': { en: 'Every hour',       kr: '1시간마다' },
   'settings.every2h':   { en: 'Every 2 hours',    kr: '2시간마다' },
   'settings.every4h':   { en: 'Every 4 hours',    kr: '4시간마다' },
+  'settings.longLivedToken': { en: 'Long-lived, ~60 days', kr: '장기 토큰, 약 60일' },
 
   // API connections
   'settings.metaApi':       { en: 'Meta Ads API Connection',  kr: 'Meta 광고 API 연결' },
   'settings.imwebStore':    { en: 'Imweb Store Connection',    kr: 'Imweb 스토어 연결' },
   'settings.cogsData':      { en: 'COGS Data (Google Sheets)', kr: '매출원가 데이터 (Google Sheets)' },
+  'settings.cogsRangeFallback': { en: 'Feb 8 – Feb 28, 2026 (no March data)', kr: '2026년 2월 8일 – 2월 28일 (3월 데이터 없음)' },
   'settings.connStatus':    { en: 'Connection Status',         kr: '연결 상태' },
   'settings.connected':     { en: 'Connected',                kr: '연결됨' },
   'settings.partial':       { en: 'Partial',                  kr: '부분 연결' },
@@ -172,12 +312,22 @@ const I18N = {
   'settings.store':         { en: 'Store',                    kr: '스토어' },
   'settings.siteCode':      { en: 'Site Code',                kr: '사이트 코드' },
   'settings.scopes':        { en: 'Scopes',                   kr: '범위' },
+  'settings.tokenSource':   { en: 'Token Source',             kr: '토큰 소스' },
+  'settings.tokenExpiry':   { en: 'Token Expiry',             kr: '토큰 만료' },
+  'settings.authNote':      { en: 'Auth Note',                kr: '인증 메모' },
+  'settings.dataFreshness': { en: 'Data Freshness',           kr: '데이터 최신성' },
+  'settings.lastRevenueSync': { en: 'Last Revenue Sync',      kr: '최근 매출 동기화' },
   'settings.totalOrders':   { en: 'Total Orders',             kr: '총 주문수' },
   'settings.revenue':       { en: 'Revenue',                  kr: '매출' },
   'settings.source':        { en: 'Source',                   kr: '소스' },
   'settings.coverage':      { en: 'Coverage',                 kr: '범위' },
   'settings.lineItems':     { en: 'Line Items',               kr: '항목수' },
   'settings.totalCogs':     { en: 'Total COGS',               kr: '총 매출원가' },
+  'settings.telegramBot':   { en: 'Telegram Approval Bot',    kr: '텔레그램 승인 봇' },
+  'settings.bot':           { en: 'Bot',                      kr: '봇' },
+  'settings.chat':          { en: 'Chat',                     kr: '채팅' },
+  'settings.lastCheck':     { en: 'Last Check',               kr: '최근 확인' },
+  'settings.botNote':       { en: 'Bot Note',                 kr: '봇 메모' },
 
   // ── Misc ──
   'misc.loading':       { en: 'Loading live ad data...', kr: '라이브 광고 데이터 로딩 중...' },
@@ -211,6 +361,11 @@ function applyTranslations() {
     }
   });
 
+  document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+    const key = el.getAttribute('data-i18n-aria-label');
+    el.setAttribute('aria-label', t(key));
+  });
+
   // Update dynamic page title for the currently active page
   const activeNav = document.querySelector('.nav-item.active');
   const pageTitleEl = document.getElementById('pageTitle');
@@ -237,6 +392,14 @@ function setLanguage(lang) {
   if (enBtn && krBtn) {
     enBtn.classList.toggle('active', lang === 'en');
     krBtn.classList.toggle('active', lang === 'kr');
+  }
+
+  if (typeof window.renderCountdown === 'function') {
+    window.renderCountdown();
+  }
+
+  if (window.AdPilotLive && typeof window.AdPilotLive.refresh === 'function' && window.AdPilotLive.isLiveEnabled?.()) {
+    window.AdPilotLive.refresh();
   }
 }
 
@@ -265,3 +428,7 @@ if (document.readyState === 'loading') {
 } else {
   initI18n();
 }
+
+window.t = t;
+window.applyTranslations = applyTranslations;
+window.getCurrentLang = () => currentLang;

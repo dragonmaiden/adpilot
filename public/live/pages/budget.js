@@ -1,14 +1,14 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, timeSince } = live.shared;
+  const { esc, timeSince, tr, getLocale, localizeOptimizationText } = live.shared;
   const { fetchCampaigns, fetchAnalytics, fetchOptimizations } = live.api;
 
   function formatOptimizationScope(level) {
     const labels = {
-      account: 'Account',
-      campaign: 'Campaign',
-      adset: 'Ad Set',
-      ad: 'Ad',
+      account: tr('Account', '계정'),
+      campaign: tr('Campaign', '캠페인'),
+      adset: tr('Ad Set', '광고 세트'),
+      ad: tr('Ad', '광고'),
     };
     return labels[level] || '—';
   }
@@ -34,7 +34,7 @@
 
         const dailyBudgetEl = document.querySelector('[data-budget-kpi="daily"] .kpi-value');
         if (dailyBudgetEl) {
-          dailyBudgetEl.textContent = totalDailyBudget > 0 ? '$' + totalDailyBudget.toFixed(0) + '/day' : '—';
+          dailyBudgetEl.textContent = totalDailyBudget > 0 ? '$' + totalDailyBudget.toFixed(0) + tr('/day', '/일') : '—';
         }
 
         const totalSpend = campaigns.reduce((sum, campaign) => {
@@ -62,16 +62,16 @@
         const paceEl = document.querySelector('[data-budget-kpi="pace"] .kpi-value');
         if (paceEl) {
           if (totalDailyBudget <= 0) {
-            paceEl.textContent = 'No budget';
+            paceEl.textContent = tr('No budget', '예산 없음');
             paceEl.className = 'kpi-value';
           } else if (pacePct >= 100) {
-            paceEl.textContent = 'At limit';
+            paceEl.textContent = tr('At limit', '한도 도달');
             paceEl.className = 'kpi-value pace-over';
           } else if (pacePct >= 65) {
-            paceEl.textContent = 'Watch';
+            paceEl.textContent = tr('Watch', '주의');
             paceEl.className = 'kpi-value pace-watch';
           } else {
-            paceEl.textContent = 'On track';
+            paceEl.textContent = tr('On track', '정상');
             paceEl.className = 'kpi-value pace-on-track';
           }
         }
@@ -121,15 +121,15 @@
       if (budgetHistoryEl && optData && optData.optimizations) {
         const budgetOpts = optData.optimizations.filter(opt => opt.type === 'budget');
         if (budgetOpts.length === 0) {
-          budgetHistoryEl.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--color-text-faint);padding:20px">No budget changes yet.</td></tr>';
+          budgetHistoryEl.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No budget changes yet.', '아직 예산 변경 이력이 없습니다.'))}</td></tr>`;
         } else {
           budgetHistoryEl.innerHTML = budgetOpts.map(opt => `
             <tr>
               <td>${timeSince(new Date(opt.timestamp))}</td>
               <td>${esc(opt.targetName || '—')}</td>
               <td>${esc(formatOptimizationScope(opt.level))}</td>
-              <td style="font-weight:600">${esc(opt.action || '—')}</td>
-              <td style="color:var(--color-text-muted)">${esc(opt.reason || '—')}</td>
+              <td style="font-weight:600">${esc(localizeOptimizationText(opt.action || '—'))}</td>
+              <td style="color:var(--color-text-muted)">${esc(localizeOptimizationText(opt.reason || '—'))}</td>
             </tr>
           `).join('');
         }

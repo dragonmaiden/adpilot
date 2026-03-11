@@ -23,6 +23,7 @@ const analyticsService = require('./services/analyticsService');
 const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
 const reconciliationService = require('./services/reconciliationService');
+const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
 
 function isValidMetaId(id) {
   return /^\d{1,20}$/.test(String(id || ''));
@@ -369,12 +370,77 @@ app.post('/api/optimizations/:id/execute', writeLimiter, async (req, res) => {
     const opt = opts.find(o => o.id === req.params.id);
     if (!opt) return res.status(404).json({ error: 'Optimization not found' });
     if (opt.executed) return res.json({ already: true, optimization: opt });
+    if (!isExecutableOptimization(opt)) {
+      return res.status(400).json({ error: 'Optimization is advisory only and cannot be executed.' });
+    }
+    if (!requiresApproval(opt)) {
+      return res.status(400).json({ error: 'Optimization does not require Telegram approval.' });
+    }
+    if (opt.approvalStatus === 'pending') {
+      return res.json({ success: true, pending: true, alreadyRequested: true, optimization: opt });
+    }
 
     const OptimizationEngine = require('./modules/optimizer');
     const engine = new OptimizationEngine();
-    engine.actions = [opt];
-    const result = await engine.executeAction(opt);
-    res.json({ success: true, optimization: result });
+    const approvalId = await telegram.requestApproval(opt);
+    if (!approvalId) {
+      const failed = scheduler.updateOptimization(opt.id, {
+        executionResult: 'Failed to send Telegram approval request',
+      }) || opt;
+      return res.status(500).json({ error: 'Failed to send Telegram approval', optimization: failed });
+    }
+
+    const requestedAt = new Date().toISOString();
+    const queued = scheduler.updateOptimization(opt.id, {
+      approvalStatus: 'pending',
+      approvalRequestedAt: requestedAt,
+      executionResult: 'Awaiting Telegram approval',
+    }) || opt;
+
+    res.json({
+      success: true,
+      pending: true,
+      message: 'Approval request sent to Telegram.',
+      optimization: queued,
+    });
+
+    (async () => {
+      try {
+        const response = await telegram.waitForApproval(approvalId, 300000);
+        const liveOpt = scheduler.getAllOptimizations().find(item => item.id === opt.id) || queued;
+
+        if (response.approved) {
+          await engine.executeAction(liveOpt);
+          scheduler.updateOptimization(liveOpt.id, {
+            executed: liveOpt.executed,
+            executionResult: liveOpt.executionResult,
+            approvalStatus: 'approved',
+          });
+
+          const resultEmoji = liveOpt.executed ? '✅' : '❌';
+          await telegram.sendMessage(
+            `${resultEmoji} <b>Execution Result</b>\n\n<b>Action:</b> ${liveOpt.action}\n<b>Result:</b> ${liveOpt.executionResult}`
+          );
+          return;
+        }
+
+        const rejectedStatus = String(response.reason || '').toLowerCase().includes('timeout')
+          ? 'expired'
+          : 'rejected';
+        scheduler.updateOptimization(liveOpt.id, {
+          executed: false,
+          approvalStatus: rejectedStatus,
+          executionResult: `${rejectedStatus === 'expired' ? 'Expired' : 'Rejected'}: ${response.reason}`,
+        });
+      } catch (err) {
+        console.error('[API] Optimization approval flow failed:', err.message);
+        scheduler.updateOptimization(opt.id, {
+          executed: false,
+          approvalStatus: null,
+          executionResult: `Approval flow failed: ${err.message}`,
+        });
+      }
+    })();
   } catch (err) {
     handleInternalError(req, res, err);
   }

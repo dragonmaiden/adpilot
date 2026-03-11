@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
+  const { esc, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum, tr, getLocale, localizeOptimizationText } = live.shared;
   const { fetchCalendarAnalysis } = live.api;
 
   const KST_TIME_ZONE = 'Asia/Seoul';
@@ -107,14 +107,14 @@
   function formatUtcDate(dateKey, options) {
     const date = toUtcDate(dateKey);
     if (!date) return '—';
-    return new Intl.DateTimeFormat('en-US', {
+    return new Intl.DateTimeFormat(getLocale(), {
       timeZone: 'UTC',
       ...options,
     }).format(date);
   }
 
   function formatCalendarRange(start, end) {
-    if (!start || !end) return 'Selected range';
+    if (!start || !end) return tr('Selected range', '선택한 범위');
     if (start === end) {
       return formatUtcDate(start, { month: 'long', day: 'numeric', year: 'numeric' });
     }
@@ -124,7 +124,7 @@
   function formatKstTimestamp(timestamp) {
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return '—';
-    return date.toLocaleString('en-US', {
+    return date.toLocaleString(getLocale(), {
       timeZone: KST_TIME_ZONE,
       month: 'short',
       day: 'numeric',
@@ -203,9 +203,9 @@
   }
 
   function getCalendarSelectionMeta(months) {
-    const monthLabel = (months || []).map(month => month.label).join(' + ') || 'Calendar';
+    const monthLabel = (months || []).map(month => month.label).join(' + ') || tr('Calendar', '캘린더');
     const selectionLabel = formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd);
-    return `${monthLabel} · ${selectionLabel} · KST${calendarState.loading ? ' · Updating...' : ''}`;
+    return `${monthLabel} · ${selectionLabel} · KST${calendarState.loading ? ` · ${tr('Updating...', '업데이트 중...')}` : ''}`;
   }
 
   function getCalendarDayClasses(dateKey) {
@@ -263,23 +263,23 @@
     const badges = [];
 
     if (isFuture) {
-      badges.push('<span class="calendar-mini-badge future">Future</span>');
+      badges.push(`<span class="calendar-mini-badge future">${esc(tr('Future', '예정'))}</span>`);
     }
 
     if ((data.refundCount || 0) > 0) {
-      badges.push(`<span class="calendar-mini-badge refund">${formatCount(data.refundCount)} refund${data.refundCount === 1 ? '' : 's'}</span>`);
+      badges.push(`<span class="calendar-mini-badge refund">${tr(`${formatCount(data.refundCount)} refund${data.refundCount === 1 ? '' : 's'}`, `환불 ${formatCount(data.refundCount)}건`)}</span>`);
     }
 
     if (isEmptyDay) {
-      badges.push('<span class="calendar-mini-badge coverage">No data</span>');
+      badges.push(`<span class="calendar-mini-badge coverage">${esc(tr('No data', '데이터 없음'))}</span>`);
     }
 
     const revenueLabel = isFuture ? '—' : formatKrw(data.revenue || 0);
     const profitLabel = isFuture ? '—' : formatSignedKrw(data.trueNetProfit || 0);
     const orderCount = Number(data.orders || 0);
     const ordersLabel = isFuture
-      ? 'Future'
-      : `${formatCount(orderCount)} ${orderCount === 1 ? 'order' : 'orders'}`;
+      ? tr('Future', '예정')
+      : tr(`${formatCount(orderCount)} ${orderCount === 1 ? 'order' : 'orders'}`, `주문 ${formatCount(orderCount)}건`);
 
     return `
       <button
@@ -291,7 +291,7 @@
       >
         <div class="calendar-day-top">
           <span class="calendar-day-number">${esc(String(Number(dateKey.slice(-2))))}</span>
-          ${dateKey === todayKey ? '<span class="calendar-day-label">Today</span>' : ''}
+          ${dateKey === todayKey ? `<span class="calendar-day-label">${esc(tr('Today', '오늘'))}</span>` : ''}
         </div>
         <div class="calendar-day-revenue">${revenueLabel}</div>
         <div class="calendar-day-profit ${profitClass}">${profitLabel}</div>
@@ -312,7 +312,10 @@
     const { visibleStart, visibleEnd } = getCalendarVisibleRange();
     const hasFreshViewport = hasFreshCalendarViewportPayload(calendarState.data);
     const months = hasFreshViewport && calendarState.data?.viewport?.months?.length
-      ? calendarState.data.viewport.months
+      ? calendarState.data.viewport.months.map(month => ({
+        ...month,
+        label: formatUtcDate(month.start, { month: 'long', year: 'numeric' }),
+      }))
       : buildClientCalendarMonths(visibleStart, visibleEnd);
 
     if (metaEl) {
@@ -320,7 +323,7 @@
     }
 
     if (!hasFreshViewport && calendarState.loading) {
-      viewportEl.innerHTML = '<div class="empty-state">Loading calendar analysis...</div>';
+      viewportEl.innerHTML = `<div class="empty-state">${esc(tr('Loading calendar analysis...', '캘린더 분석 불러오는 중...'))}</div>`;
       return;
     }
 
@@ -335,7 +338,7 @@
       }
       return acc;
     }, { maxPositiveProfit: 0, maxNegativeLoss: 0 });
-    const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const weekdayLabels = tr(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], ['월', '화', '수', '목', '금', '토', '일']);
 
     viewportEl.innerHTML = months.map(month => {
       const days = enumerateDateKeys(month.start, month.end);
@@ -345,7 +348,7 @@
           <div class="calendar-month-header">
             <div>
               <div class="calendar-month-title">${esc(month.label)}</div>
-              <div class="calendar-month-note">${formatCount(days.length)} days</div>
+              <div class="calendar-month-note">${tr(`${formatCount(days.length)} days`, `${formatCount(days.length)}일`)}</div>
             </div>
             <span class="badge badge-neutral">${esc(month.month)}</span>
           </div>
@@ -400,8 +403,8 @@
     return `
       <div class="card">
         <div class="card-header">
-          <h2>Profit Waterfall</h2>
-          <span class="calendar-card-note">Left to right: revenue becomes true net profit after refunds, operating costs, and media spend.</span>
+          <h2>${esc(tr('Profit Waterfall', '수익 워터폴'))}</h2>
+          <span class="calendar-card-note">${esc(tr('Left to right: revenue becomes true net profit after refunds, operating costs, and media spend.', '왼쪽에서 오른쪽으로: 매출이 환불, 운영비, 광고비를 거쳐 실질 순이익이 됩니다.'))}</span>
         </div>
         <div class="calendar-waterfall">
           ${rows.map((row, rowIndex) => `
@@ -418,7 +421,7 @@
                 <div class="calendar-waterfall-row-connector" aria-hidden="true">
                   <div class="calendar-waterfall-row-connector-start">
                     <i data-lucide="arrow-right"></i>
-                    <span>Next row starts here</span>
+                    <span>${esc(tr('Next row starts here', '다음 줄은 여기서 시작'))}</span>
                   </div>
                   <div class="calendar-waterfall-row-connector-line"></div>
                   <div class="calendar-waterfall-row-connector-turn">
@@ -453,14 +456,56 @@
       : /(CANCEL|RETURN|REFUND|ERROR|FAILED)/.test(normalized)
       ? 'badge-danger'
       : 'badge-neutral';
-    return `<span class="badge ${badgeClass}">${esc(humanizeEnum(status || '—'))}</span>`;
+    const label = normalized === 'ACTIVE'
+      ? tr('Active', '집행중')
+      : normalized === 'OPEN'
+      ? tr('Open', '오픈')
+      : normalized === 'PAUSED'
+      ? tr('Paused', '중지')
+      : humanizeEnum(status || '—');
+    return `<span class="badge ${badgeClass}">${esc(label)}</span>`;
   }
 
   function renderStatusMixText(statusMix) {
+    const statusLabels = {
+      active: tr('Active', '집행중'),
+      open: tr('Open', '오픈'),
+      paused: tr('Paused', '중지'),
+      cancelled: tr('Cancelled', '취소'),
+      canceled: tr('Canceled', '취소'),
+      refund: tr('Refunded', '환불'),
+      refunded: tr('Refunded', '환불'),
+      returned: tr('Returned', '반품'),
+      pending: tr('Pending', '대기'),
+      completed: tr('Completed', '완료'),
+      paid: tr('Paid', '결제완료'),
+    };
+
     return (Array.isArray(statusMix) ? statusMix : [])
       .slice(0, 3)
-      .map(entry => `${humanizeEnum(entry.status)} ${formatCount(entry.count)}`)
+      .map(entry => {
+        const normalized = String(entry?.status || '').trim().toLowerCase();
+        const label = statusLabels[normalized] || humanizeEnum(entry.status);
+        return `${label} ${formatCount(entry.count)}`;
+      })
       .join(' · ') || '—';
+  }
+
+  function translateEventTitle(title) {
+    switch (String(title || '')) {
+      case 'Scan completed':
+        return tr('Scan completed', '스캔 완료');
+      case 'Optimization suggested':
+        return tr('Optimization suggested', '최적화 제안');
+      case 'Optimization executed':
+        return tr('Optimization executed', '최적화 실행됨');
+      case 'Optimization execution update':
+        return tr('Optimization execution update', '최적화 실행 업데이트');
+      case 'Settlement gap detected':
+        return tr('Settlement gap detected', '정산 차이 감지');
+      default:
+        return localizeOptimizationText(title);
+    }
   }
 
   function renderCalendarEvent(event) {
@@ -480,11 +525,22 @@
       : '';
     const meta = [];
     if (event?.meta?.targetName) meta.push(esc(event.meta.targetName));
-    if (event?.meta?.priority) meta.push(esc(humanizeEnum(event.meta.priority)));
+    if (event?.meta?.priority) {
+      const priorityLabel = {
+        critical: tr('Critical', '치명적'),
+        high: tr('High', '높음'),
+        medium: tr('Medium', '보통'),
+        low: tr('Low', '낮음'),
+      }[String(event.meta.priority || '').toLowerCase()] || humanizeEnum(event.meta.priority);
+      meta.push(esc(priorityLabel));
+    }
     if (event?.scanId) meta.push(`#${esc(String(event.scanId))}`);
     const summary = event?.type === 'reconciliation_gap'
-      ? `Settlement ${formatSignedKrw(event?.meta?.settlementGap || 0)} · Imweb ${formatSignedKrw(event?.meta?.imwebGap || 0)}`
-      : (event?.summary || '—');
+      ? tr(
+        `Settlement ${formatSignedKrw(event?.meta?.settlementGap || 0)} · Imweb ${formatSignedKrw(event?.meta?.imwebGap || 0)}`,
+        `정산 ${formatSignedKrw(event?.meta?.settlementGap || 0)} · Imweb ${formatSignedKrw(event?.meta?.imwebGap || 0)}`
+      )
+      : localizeOptimizationText(event?.summary || '—');
 
     return `
       <div class="calendar-event">
@@ -492,7 +548,7 @@
           <i data-lucide="${esc(iconMap[event?.type] || 'activity')}"></i>
         </div>
         <div class="calendar-event-main">
-          <div class="calendar-event-title">${esc(event?.title || 'Event')}</div>
+          <div class="calendar-event-title">${esc(translateEventTitle(event?.title || tr('Event', '이벤트')))}</div>
           <div class="calendar-event-summary">${esc(summary)}</div>
           ${meta.length > 0 ? `<div class="calendar-event-meta">${meta.join(' · ')}</div>` : ''}
         </div>
@@ -510,17 +566,17 @@
 
     const hasFreshSelection = hasFreshCalendarSelectionPayload(calendarState.data);
     if (!hasFreshSelection && calendarState.loading) {
-      container.innerHTML = renderEmptyStateCard('Selected Range', 'Refreshing calendar metrics for the selected date range...');
+      container.innerHTML = renderEmptyStateCard(tr('Selected Range', '선택한 범위'), tr('Refreshing calendar metrics for the selected date range...', '선택한 날짜 범위의 캘린더 지표를 새로고침 중...'));
       return;
     }
 
     if (!hasFreshSelection && calendarState.error) {
-      container.innerHTML = renderEmptyStateCard('Selected Range', calendarState.error);
+      container.innerHTML = renderEmptyStateCard(tr('Selected Range', '선택한 범위'), calendarState.error);
       return;
     }
 
     if (!calendarState.data || calendarState.data.ready === false || !hasFreshSelection) {
-      container.innerHTML = renderEmptyStateCard('Calendar Analysis', 'Calendar analysis is waiting for the first completed scan.');
+      container.innerHTML = renderEmptyStateCard(tr('Calendar Analysis', '캘린더 분석'), tr('Calendar analysis is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
       return;
     }
 
@@ -531,23 +587,23 @@
     const overlap = reconciliation.summary?.overlap || {};
 
     const waterfallCards = [
-      { label: 'Gross Revenue', value: formatKrw(summary.grossRevenue || 0), sub: `${formatCount(summary.recognizedOrders || 0)} recognized orders`, tone: 'positive', icon: 'shopping-bag' },
-      { label: 'Refunded', value: formatSignedKrw(-(summary.refundedAmount || 0)), sub: `${formatPercent(summary.refundRate || 0)} refund rate`, tone: (summary.refundedAmount || 0) > 0 ? 'negative' : 'neutral', icon: 'rotate-ccw' },
-      { label: 'Net Revenue', value: formatKrw(summary.netRevenue || 0), sub: `${formatCount(summary.dayCount || selection.dayCount || 0)} selected days`, tone: 'positive', icon: 'wallet' },
-      { label: 'COGS', value: formatSignedKrw(-(summary.cogs || 0)), sub: `${formatCount(summary.daysWithCOGS || 0)} covered days`, tone: 'negative', icon: 'package' },
-      { label: 'Shipping', value: formatSignedKrw(-(summary.shipping || 0)), sub: 'Operational shipping cost', tone: 'negative', icon: 'truck' },
-      { label: 'Payment Fees', value: formatSignedKrw(-(summary.paymentFees || 0)), sub: '3.3% applied to net revenue', tone: 'negative', icon: 'credit-card' },
-      { label: 'Ad Spend', value: formatSignedKrw(-(summary.adSpendKRW || 0)), sub: `${formatUsd(summary.adSpend || 0, 2)} media spend`, tone: 'negative', icon: 'megaphone' },
-      { label: 'True Net Profit', value: formatSignedKrw(summary.trueNetProfit || 0), sub: isProfitPositive ? 'Profit after all deductions' : 'Below break-even after all deductions', tone: isProfitPositive ? 'positive' : 'negative', icon: 'coins' },
+      { label: tr('Gross Revenue', '총매출'), value: formatKrw(summary.grossRevenue || 0), sub: tr(`${formatCount(summary.recognizedOrders || 0)} recognized orders`, `인식 주문 ${formatCount(summary.recognizedOrders || 0)}건`), tone: 'positive', icon: 'shopping-bag' },
+      { label: tr('Refunded', '환불'), value: formatSignedKrw(-(summary.refundedAmount || 0)), sub: tr(`${formatPercent(summary.refundRate || 0)} refund rate`, `환불률 ${formatPercent(summary.refundRate || 0)}`), tone: (summary.refundedAmount || 0) > 0 ? 'negative' : 'neutral', icon: 'rotate-ccw' },
+      { label: tr('Net Revenue', '순매출'), value: formatKrw(summary.netRevenue || 0), sub: tr(`${formatCount(summary.dayCount || selection.dayCount || 0)} selected days`, `선택 일수 ${formatCount(summary.dayCount || selection.dayCount || 0)}일`), tone: 'positive', icon: 'wallet' },
+      { label: 'COGS', value: formatSignedKrw(-(summary.cogs || 0)), sub: tr(`${formatCount(summary.daysWithCOGS || 0)} covered days`, `커버 일수 ${formatCount(summary.daysWithCOGS || 0)}일`), tone: 'negative', icon: 'package' },
+      { label: tr('Shipping', '배송비'), value: formatSignedKrw(-(summary.shipping || 0)), sub: tr('Operational shipping cost', '운영 배송비'), tone: 'negative', icon: 'truck' },
+      { label: tr('Payment Fees', '결제 수수료'), value: formatSignedKrw(-(summary.paymentFees || 0)), sub: tr('3.3% applied to net revenue', '순매출 기준 3.3% 적용'), tone: 'negative', icon: 'credit-card' },
+      { label: tr('Ad Spend', '광고비'), value: formatSignedKrw(-(summary.adSpendKRW || 0)), sub: tr(`${formatUsd(summary.adSpend || 0, 2)} media spend`, `광고비 ${formatUsd(summary.adSpend || 0, 2)}`), tone: 'negative', icon: 'megaphone' },
+      { label: tr('True Net Profit', '실질 순이익'), value: formatSignedKrw(summary.trueNetProfit || 0), sub: isProfitPositive ? tr('Profit after all deductions', '모든 차감 후 수익') : tr('Below break-even after all deductions', '모든 차감 후 손익분기 이하'), tone: isProfitPositive ? 'positive' : 'negative', icon: 'coins' },
     ];
 
     const summaryCards = [
-      { label: 'Margin', value: formatPercent(summary.margin || 0), sub: 'True net profit / net revenue', tone: (summary.margin || 0) >= 0 ? 'positive' : 'negative', icon: 'percent' },
-      { label: 'ROAS', value: `${Number(summary.roas || 0).toFixed(2)}x`, sub: 'Net revenue / ad spend', tone: (summary.roas || 0) >= 1 ? 'positive' : 'negative', icon: 'trending-up' },
-      { label: 'Recognized Orders', value: formatCount(summary.recognizedOrders || 0), sub: `${formatCount(summary.refundOrders || 0)} refund orders`, tone: 'neutral', icon: 'receipt' },
-      { label: 'Refund Rate', value: formatPercent(summary.refundRate || 0), sub: `${formatKrw(summary.refundedAmount || 0)} refunded`, tone: (summary.refundRate || 0) > 10 ? 'negative' : 'neutral', icon: 'percent' },
-      { label: 'Cancel Rate', value: formatPercent(summary.cancelRate || 0), sub: `${formatCount(summary.cancelledSections || 0)} of ${formatCount(summary.totalSections || 0)} sections`, tone: (summary.cancelRate || 0) > 10 ? 'negative' : 'neutral', icon: 'x-circle' },
-      { label: 'Meta Purchases', value: formatCount(summary.metaPurchases || 0), sub: 'Selected-range campaign insights', tone: 'neutral', icon: 'mouse-pointer-2' },
+      { label: tr('Margin', '마진'), value: formatPercent(summary.margin || 0), sub: tr('True net profit / net revenue', '실질 순이익 / 순매출'), tone: (summary.margin || 0) >= 0 ? 'positive' : 'negative', icon: 'percent' },
+      { label: 'ROAS', value: `${Number(summary.roas || 0).toFixed(2)}x`, sub: tr('Net revenue / ad spend', '순매출 / 광고비'), tone: (summary.roas || 0) >= 1 ? 'positive' : 'negative', icon: 'trending-up' },
+      { label: tr('Recognized Orders', '인식 주문'), value: formatCount(summary.recognizedOrders || 0), sub: tr(`${formatCount(summary.refundOrders || 0)} refund orders`, `환불 주문 ${formatCount(summary.refundOrders || 0)}건`), tone: 'neutral', icon: 'receipt' },
+      { label: tr('Refund Rate', '환불률'), value: formatPercent(summary.refundRate || 0), sub: tr(`${formatKrw(summary.refundedAmount || 0)} refunded`, `${formatKrw(summary.refundedAmount || 0)} 환불`), tone: (summary.refundRate || 0) > 10 ? 'negative' : 'neutral', icon: 'percent' },
+      { label: tr('Cancel Rate', '취소율'), value: formatPercent(summary.cancelRate || 0), sub: tr(`${formatCount(summary.cancelledSections || 0)} of ${formatCount(summary.totalSections || 0)} sections`, `섹션 ${formatCount(summary.totalSections || 0)}개 중 ${formatCount(summary.cancelledSections || 0)}개`), tone: (summary.cancelRate || 0) > 10 ? 'negative' : 'neutral', icon: 'x-circle' },
+      { label: tr('Meta Purchases', '메타 구매'), value: formatCount(summary.metaPurchases || 0), sub: tr('Selected-range campaign insights', '선택 범위 캠페인 인사이트'), tone: 'neutral', icon: 'mouse-pointer-2' },
     ];
 
     const dailyRows = Array.isArray(selection.days) ? selection.days : [];
@@ -569,10 +625,10 @@
             <td>${formatKrw(day.paymentFees || 0)}</td>
             <td style="font-weight:600;color:${(day.trueNetProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-error)'}">${formatSignedKrw(day.trueNetProfit || 0)}</td>
             <td>${Number(day.roas || 0).toFixed(2)}x</td>
-            <td>${day.hasCOGS ? '<span class="badge badge-success">Covered</span>' : '<span class="badge badge-warning">Pending</span>'}</td>
+            <td>${day.hasCOGS ? `<span class="badge badge-success">${esc(tr('Covered', '커버됨'))}</span>` : `<span class="badge badge-warning">${esc(tr('Pending', '대기'))}</span>`}</td>
           </tr>
         `).join('')
-      : '<tr><td colspan="11" style="text-align:center;color:var(--color-text-faint);padding:20px">No daily rows in this selection.</td></tr>';
+      : `<tr><td colspan="11" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No daily rows in this selection.', '선택 범위에 일별 행이 없습니다.'))}</td></tr>`;
 
     const orderBody = orderRows.length > 0
       ? orderRows.map(row => `
@@ -580,7 +636,7 @@
             <td style="font-weight:600">${esc(formatUtcDate(row.date, { month: 'short', day: 'numeric' }))}</td>
             <td><span style="font-family:var(--font-mono)">${esc(row.orderNo || '—')}</span></td>
             <td>${renderStatusBadge(row.orderStatus)}</td>
-            <td>${esc(humanizeEnum(row.paymentMethod || row.pgName || 'Unknown'))}</td>
+            <td>${esc(humanizeEnum(row.paymentMethod || row.pgName || tr('Unknown', '알 수 없음')))}</td>
             <td>${formatKrw(row.paidAmount || 0)}</td>
             <td style="color:var(--color-error)">${formatKrw(row.refundedAmount || 0)}</td>
             <td style="font-weight:600">${formatSignedKrw(row.netRevenue || 0)}</td>
@@ -588,14 +644,14 @@
             <td title="${esc(row.productSummary || '')}">${esc(row.productSummary || '—')}</td>
           </tr>
         `).join('')
-      : '<tr><td colspan="9" style="text-align:center;color:var(--color-text-faint);padding:20px">No orders in this selection.</td></tr>';
+      : `<tr><td colspan="9" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No orders in this selection.', '선택 범위에 주문이 없습니다.'))}</td></tr>`;
 
     const productBody = productRows.length > 0
       ? productRows.map(row => {
           const exactCoverage = !!row.exactCostCoverage;
           const coverageMarkup = exactCoverage
-            ? '<span class="calendar-product-coverage exact">Exact</span>'
-            : `<span class="calendar-product-coverage partial">${formatPercent((row.coverageRatio || 0) * 100, 0)} covered</span>`;
+            ? `<span class="calendar-product-coverage exact">${esc(tr('Exact', '정확 일치'))}</span>`
+            : `<span class="calendar-product-coverage partial">${tr(`${formatPercent((row.coverageRatio || 0) * 100, 0)} covered`, `${formatPercent((row.coverageRatio || 0) * 100, 0)} 커버`)}</span>`;
           return `
             <tr>
               <td style="font-weight:600">${esc(row.productName || '—')}</td>
@@ -611,7 +667,7 @@
             </tr>
           `;
         }).join('')
-      : '<tr><td colspan="10" style="text-align:center;color:var(--color-text-faint);padding:20px">No product rows in this selection.</td></tr>';
+      : `<tr><td colspan="10" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No product rows in this selection.', '선택 범위에 상품 행이 없습니다.'))}</td></tr>`;
 
     const campaignBody = campaignRows.length > 0
       ? campaignRows.map(row => `
@@ -627,27 +683,27 @@
             <td>${formatPercent(row.margin || 0)}</td>
           </tr>
         `).join('')
-      : '<tr><td colspan="9" style="text-align:center;color:var(--color-text-faint);padding:20px">No campaign insight rows in this selection.</td></tr>';
+      : `<tr><td colspan="9" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No campaign insight rows in this selection.', '선택 범위에 캠페인 인사이트 행이 없습니다.'))}</td></tr>`;
 
     const reconRows = Array.isArray(reconciliation.daily) ? reconciliation.daily : [];
     const reconciliationSummary = reconciliation.ready === false
-      ? '<p class="calendar-coverage-note">Settlement reconciliation is unavailable for this environment.</p>'
+      ? `<p class="calendar-coverage-note">${esc(tr('Settlement reconciliation is unavailable for this environment.', '이 환경에서는 정산 대사를 사용할 수 없습니다.'))}</p>`
       : `
         <div class="calendar-reconciliation-grid">
           <div class="calendar-reconciliation-item">
-            <div class="calendar-reconciliation-label">Matched Net</div>
+            <div class="calendar-reconciliation-label">${esc(tr('Matched Net', '일치 순액'))}</div>
             <div class="calendar-reconciliation-value">${formatSignedKrw(overlap.netAmount || 0)}</div>
           </div>
           <div class="calendar-reconciliation-item">
-            <div class="calendar-reconciliation-label">Settlement Gaps</div>
+            <div class="calendar-reconciliation-label">${esc(tr('Settlement Gaps', '정산 차이'))}</div>
             <div class="calendar-reconciliation-value">${formatCount(overlap.unmatchedSettlementCount || 0)}</div>
           </div>
           <div class="calendar-reconciliation-item">
-            <div class="calendar-reconciliation-label">Imweb Gaps</div>
+            <div class="calendar-reconciliation-label">${esc(tr('Imweb Gaps', 'Imweb 차이'))}</div>
             <div class="calendar-reconciliation-value">${formatCount(overlap.unmatchedImwebCount || 0)}</div>
           </div>
           <div class="calendar-reconciliation-item">
-            <div class="calendar-reconciliation-label">Method Drift</div>
+            <div class="calendar-reconciliation-label">${esc(tr('Method Drift', '결제 방식 차이'))}</div>
             <div class="calendar-reconciliation-value">${formatCount(overlap.methodMismatchCount || 0)}</div>
           </div>
         </div>
@@ -664,18 +720,18 @@
             <td style="color:${(day.unmatchedImweb?.netAmount || 0) === 0 ? 'var(--color-text)' : 'var(--color-warning)'}">${formatSignedKrw(day.unmatchedImweb?.netAmount || 0)}</td>
           </tr>
         `).join('')
-      : '<tr><td colspan="6" style="text-align:center;color:var(--color-text-faint);padding:20px">No reconciliation gaps in this selection.</td></tr>';
+      : `<tr><td colspan="6" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No reconciliation gaps in this selection.', '선택 범위에 대사 차이가 없습니다.'))}</td></tr>`;
 
     container.innerHTML = `
       <div class="card">
         <div class="calendar-detail-head">
           <div>
-            <div class="section-kicker">Selected Range</div>
+            <div class="section-kicker">${esc(tr('Selected Range', '선택한 범위'))}</div>
             <div class="calendar-detail-title">${esc(formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd))}</div>
-            <div class="calendar-detail-note">${formatCount(selection.dayCount || 0)} day${selection.dayCount === 1 ? '' : 's'} selected · All dates shown in KST</div>
+            <div class="calendar-detail-note">${tr(`${formatCount(selection.dayCount || 0)} day${selection.dayCount === 1 ? '' : 's'} selected · All dates shown in KST`, `${formatCount(selection.dayCount || 0)}일 선택 · 모든 날짜는 KST 기준`)}</div>
           </div>
           <div class="calendar-chip-row">
-            <span class="calendar-chip ${isProfitPositive ? 'positive' : 'negative'}">${isProfitPositive ? 'Profitable window' : 'Below break-even'}</span>
+            <span class="calendar-chip ${isProfitPositive ? 'positive' : 'negative'}">${esc(isProfitPositive ? tr('Profitable window', '수익 구간') : tr('Below break-even', '손익분기 이하'))}</span>
           </div>
         </div>
       </div>
@@ -688,24 +744,24 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Daily Breakdown</h2>
-          <span class="calendar-card-note">${formatCount(dailyRows.length)} rows</span>
+          <h2>${esc(tr('Daily Breakdown', '일별 상세'))}</h2>
+          <span class="calendar-card-note">${tr(`${formatCount(dailyRows.length)} rows`, `${formatCount(dailyRows.length)}행`)}</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Gross</th>
-                <th>Refunded</th>
-                <th>Net</th>
-                <th>Orders</th>
-                <th>Ad Spend</th>
-                <th>COGS + Ship</th>
-                <th>Fees</th>
-                <th>True Net</th>
+                <th>${esc(tr('Date', '날짜'))}</th>
+                <th>${esc(tr('Gross', '총액'))}</th>
+                <th>${esc(tr('Refunded', '환불'))}</th>
+                <th>${esc(tr('Net', '순액'))}</th>
+                <th>${esc(tr('Orders', '주문'))}</th>
+                <th>${esc(tr('Ad Spend', '광고비'))}</th>
+                <th>${esc(tr('COGS + Ship', '원가 + 배송'))}</th>
+                <th>${esc(tr('Fees', '수수료'))}</th>
+                <th>${esc(tr('True Net', '실질 순이익'))}</th>
                 <th>ROAS</th>
-                <th>Coverage</th>
+                <th>${esc(tr('Coverage', '커버리지'))}</th>
               </tr>
             </thead>
             <tbody>${dailyBody}</tbody>
@@ -715,22 +771,22 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Orders Ledger</h2>
-          <span class="calendar-card-note">${formatCount(orderRows.length)} rows · recognized and non-recognized orders in the selection</span>
+          <h2>${esc(tr('Orders Ledger', '주문 원장'))}</h2>
+          <span class="calendar-card-note">${tr(`${formatCount(orderRows.length)} rows · recognized and non-recognized orders in the selection`, `${formatCount(orderRows.length)}행 · 선택 범위 내 인식/비인식 주문`)}</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Order</th>
-                <th>Status</th>
-                <th>Payment</th>
-                <th>Paid</th>
-                <th>Refunded</th>
-                <th>Net</th>
-                <th>Items</th>
-                <th>Products</th>
+                <th>${esc(tr('Date', '날짜'))}</th>
+                <th>${esc(tr('Order', '주문번호'))}</th>
+                <th>${esc(tr('Status', '상태'))}</th>
+                <th>${esc(tr('Payment', '결제'))}</th>
+                <th>${esc(tr('Paid', '결제금액'))}</th>
+                <th>${esc(tr('Refunded', '환불'))}</th>
+                <th>${esc(tr('Net', '순액'))}</th>
+                <th>${esc(tr('Items', '상품수'))}</th>
+                <th>${esc(tr('Products', '상품'))}</th>
               </tr>
             </thead>
             <tbody>${orderBody}</tbody>
@@ -740,23 +796,23 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Product Explorer</h2>
-          <span class="calendar-card-note">Exact COGS only appears when <code>date + productName</code> matches the Sheets item rows exactly.</span>
+          <h2>${esc(tr('Product Explorer', '상품 탐색'))}</h2>
+          <span class="calendar-card-note">${esc(tr('Exact COGS only appears when date + productName matches the Sheets item rows exactly.', '정확한 COGS는 date + productName이 시트 항목과 정확히 일치할 때만 표시됩니다.'))}</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Product</th>
-                <th>Brand</th>
-                <th>Qty</th>
-                <th>Orders</th>
-                <th>Revenue</th>
-                <th>Refund / Cancel Qty</th>
-                <th>Status Mix</th>
+                <th>${esc(tr('Product', '상품'))}</th>
+                <th>${esc(tr('Brand', '브랜드'))}</th>
+                <th>${esc(tr('Qty', '수량'))}</th>
+                <th>${esc(tr('Orders', '주문'))}</th>
+                <th>${esc(tr('Revenue', '매출'))}</th>
+                <th>${esc(tr('Refund / Cancel Qty', '환불 / 취소 수량'))}</th>
+                <th>${esc(tr('Status Mix', '상태 구성'))}</th>
                 <th>COGS</th>
-                <th>Shipping</th>
-                <th>Profit / Coverage</th>
+                <th>${esc(tr('Shipping', '배송비'))}</th>
+                <th>${esc(tr('Profit / Coverage', '이익 / 커버리지'))}</th>
               </tr>
             </thead>
             <tbody>${productBody}</tbody>
@@ -766,22 +822,22 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Campaign Performance</h2>
-          <span class="calendar-card-note">Revenue, COGS allocation, profit, and ROAS here are estimated from selected-range AOV and Meta purchases.</span>
+          <h2>${esc(tr('Campaign Performance', '캠페인 성과'))}</h2>
+          <span class="calendar-card-note">${esc(tr('Revenue, COGS allocation, profit, and ROAS here are estimated from selected-range AOV and Meta purchases.', '여기서 매출, COGS 배분, 이익, ROAS는 선택 범위 AOV와 메타 구매를 기준으로 추정됩니다.'))}</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Campaign</th>
-                <th>Status</th>
-                <th>Spend</th>
-                <th>Meta Purchases</th>
-                <th>Est. Revenue</th>
-                <th>Est. COGS</th>
-                <th>Est. Profit</th>
-                <th>Est. ROAS</th>
-                <th>Margin</th>
+                <th>${esc(tr('Campaign', '캠페인'))}</th>
+                <th>${esc(tr('Status', '상태'))}</th>
+                <th>${esc(tr('Spend', '지출'))}</th>
+                <th>${esc(tr('Meta Purchases', '메타 구매'))}</th>
+                <th>${esc(tr('Est. Revenue', '추정 매출'))}</th>
+                <th>${esc(tr('Est. COGS', '추정 원가'))}</th>
+                <th>${esc(tr('Est. Profit', '추정 이익'))}</th>
+                <th>${esc(tr('Est. ROAS', '추정 ROAS'))}</th>
+                <th>${esc(tr('Margin', '마진'))}</th>
               </tr>
             </thead>
             <tbody>${campaignBody}</tbody>
@@ -792,31 +848,31 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <h2>Operations & Reconciliation Timeline</h2>
-            <div class="calendar-card-note">Scans, optimizer actions, execution updates, and reconciliation gaps for the active selection.</div>
+            <h2>${esc(tr('Operations & Reconciliation Timeline', '운영 및 정산 타임라인'))}</h2>
+            <div class="calendar-card-note">${esc(tr('Scans, optimizer actions, execution updates, and reconciliation gaps for the active selection.', '선택 범위의 스캔, 최적화 조치, 실행 업데이트, 정산 차이를 보여줍니다.'))}</div>
           </div>
-          <span class="calendar-card-note">${formatCount(operations.length)} events</span>
+          <span class="calendar-card-note">${tr(`${formatCount(operations.length)} events`, `${formatCount(operations.length)}개 이벤트`)}</span>
         </div>
         ${reconciliationSummary}
         <div class="calendar-timeline">
           ${operations.length > 0
             ? operations.map(renderCalendarEvent).join('')
-            : '<div class="empty-state">No operations in this selection.</div>'}
+            : `<div class="empty-state">${esc(tr('No operations in this selection.', '선택 범위에 운영 이벤트가 없습니다.'))}</div>`}
         </div>
         <div class="card-header" style="margin-top:16px">
-          <h2>Daily Reconciliation Gaps</h2>
-          <span class="calendar-card-note">${formatCount(reconRows.length)} rows</span>
+          <h2>${esc(tr('Daily Reconciliation Gaps', '일별 정산 차이'))}</h2>
+          <span class="calendar-card-note">${tr(`${formatCount(reconRows.length)} rows`, `${formatCount(reconRows.length)}행`)}</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Settlement Net</th>
-                <th>Imweb Net</th>
-                <th>Matched</th>
-                <th>Settlement Gap</th>
-                <th>Imweb Gap</th>
+                <th>${esc(tr('Date', '날짜'))}</th>
+                <th>${esc(tr('Settlement Net', '정산 순액'))}</th>
+                <th>${esc(tr('Imweb Net', 'Imweb 순액'))}</th>
+                <th>${esc(tr('Matched', '일치'))}</th>
+                <th>${esc(tr('Settlement Gap', '정산 차이'))}</th>
+                <th>${esc(tr('Imweb Gap', 'Imweb 차이'))}</th>
               </tr>
             </thead>
             <tbody>${reconBody}</tbody>
@@ -862,13 +918,13 @@
         calendarState.selectionEnd = data.viewport?.selectionEnd || calendarState.selectionEnd;
         calendarState.error = null;
       } else if (!hasFreshCalendarSelectionPayload(calendarState.data)) {
-        calendarState.error = 'Could not refresh calendar metrics right now. Try again in a moment.';
+        calendarState.error = tr('Could not refresh calendar metrics right now. Try again in a moment.', '지금은 캘린더 지표를 새로고침할 수 없습니다. 잠시 후 다시 시도하세요.');
       }
     } catch (err) {
       if (requestId !== calendarState.requestId) {
         return;
       }
-      calendarState.error = 'Could not refresh calendar metrics right now. Try again in a moment.';
+      calendarState.error = tr('Could not refresh calendar metrics right now. Try again in a moment.', '지금은 캘린더 지표를 새로고침할 수 없습니다. 잠시 후 다시 시도하세요.');
       console.warn('[LIVE] refreshCalendarPage error:', err.message);
     } finally {
       if (requestId === calendarState.requestId) {

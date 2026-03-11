@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, safeConfidenceLevel, formatSignedKrw, formatSignedCompactKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
+  const { esc, safeConfidenceLevel, formatSignedKrw, formatSignedCompactKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum, tr, getLocale } = live.shared;
   const { fetchAnalytics, fetchReconciliation } = live.api;
   const { getSeriesWindowMeta, sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
 
@@ -10,11 +10,19 @@
     }
 
     if (metric.unit === 'currency') {
-      return `${formatKrw(metric.numerator)} of ${formatKrw(metric.denominator)}`;
+      return tr(
+        `${formatKrw(metric.numerator)} of ${formatKrw(metric.denominator)}`,
+        `${formatKrw(metric.denominator)} 중 ${formatKrw(metric.numerator)}`
+      );
     }
 
     if (metric.unit === 'sections') {
-      return `${metric.numerator} ${metric.numeratorLabel || 'cancelled'} of ${metric.denominator} ${metric.denominatorLabel || 'sections'}`;
+      const denominatorLabel = metric.denominatorLabel || 'sections';
+      const numeratorLabel = metric.numeratorLabel || 'cancelled';
+      return tr(
+        `${metric.numerator} ${numeratorLabel} of ${metric.denominator} ${denominatorLabel}`,
+        `${metric.denominator.toLocaleString(getLocale())}${denominatorLabel === 'sections' ? '개 섹션' : denominatorLabel} 중 ${metric.numerator.toLocaleString(getLocale())}${numeratorLabel === 'cancelled' ? '개 취소' : numeratorLabel}`
+      );
     }
 
     return fallback;
@@ -34,7 +42,7 @@
   }
 
   function buildWeekdayPerformance(rows) {
-    const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const labels = tr(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], ['일', '월', '화', '수', '목', '금', '토']);
     const buckets = labels.map(day => ({
       day,
       spend: 0,
@@ -111,16 +119,16 @@
     const coveredDays = waterfall.filter(row => row.hasCOGS);
     const coverageRatio = waterfall.length > 0 ? coveredDays.length / waterfall.length : 0;
     const coverage = waterfall.length === 0
-      ? { totalDays: 0, daysWithCOGS: 0, coverageRatio: 0, cogsCoveredRange: {}, missingRanges: [], confidence: { level: 'low', label: 'Waiting for data' } }
+      ? { totalDays: 0, daysWithCOGS: 0, coverageRatio: 0, cogsCoveredRange: {}, missingRanges: [], confidence: { level: 'low', label: tr('Waiting for data', '데이터 대기 중') } }
       : {
           totalDays: waterfall.length,
           daysWithCOGS: coveredDays.length,
           coverageRatio,
           cogsCoveredRange: coveredDays.length > 0 ? { from: coveredDays[0].date, to: coveredDays[coveredDays.length - 1].date } : {},
           missingRanges: waterfall.filter(row => !row.hasCOGS).map(row => row.date),
-          confidence: coverageRatio >= 0.9 ? { level: 'high', label: 'High confidence' }
-            : coverageRatio >= 0.6 ? { level: 'medium', label: 'Medium confidence' }
-            : { level: 'low', label: 'Low confidence' },
+          confidence: coverageRatio >= 0.9 ? { level: 'high', label: tr('High confidence', '높은 신뢰도') }
+            : coverageRatio >= 0.6 ? { level: 'medium', label: tr('Medium confidence', '중간 신뢰도') }
+            : { level: 'low', label: tr('Low confidence', '낮은 신뢰도') },
         };
     const todaySummary = pa.todaySummary;
     const runRate = pa.runRate;
@@ -130,7 +138,7 @@
     const blendedMargin = totalNetRev > 0 ? (totalProfit / totalNetRev * 100) : 0;
     const trueRoas = totalAdSpend > 0 ? totalNetRev / totalAdSpend : 0;
     const windowMeta = getSeriesWindowMeta('profit-structure');
-    const windowLabel = windowMeta?.label || 'Selected';
+    const windowLabel = windowMeta?.label || tr('Selected', '선택');
 
     updateSeriesWindowBadges('profit-structure', waterfall);
 
@@ -146,13 +154,13 @@
     const heroRunRateEl = document.getElementById('profitHeroRunRate');
 
     if (heroKickerEl) {
-      heroKickerEl.textContent = `${windowLabel} window true net profit`;
+      heroKickerEl.textContent = tr(`${windowLabel} window true net profit`, `${windowLabel} 기준 실질 순이익`);
     }
 
     if (verdictEl && amountEl) {
       const isPositive = totalProfit > 0;
       const isNegative = totalProfit < 0;
-      verdictEl.textContent = isPositive ? 'Profitable period' : isNegative ? 'Unprofitable period' : 'Break-even period';
+      verdictEl.textContent = isPositive ? tr('Profitable period', '수익 구간') : isNegative ? tr('Unprofitable period', '적자 구간') : tr('Break-even period', '손익분기 구간');
       verdictEl.className = 'profit-verdict ' + (isPositive ? 'verdict-positive' : isNegative ? 'verdict-negative' : '');
       amountEl.textContent = formatSignedKrw(totalProfit);
       amountEl.className = 'profit-amount ' + (isPositive ? 'verdict-positive' : isNegative ? 'verdict-negative' : '');
@@ -161,16 +169,19 @@
 
     if (confEl && coverage.confidence) {
       const coverageLabel = coverage.confidence.level === 'high'
-        ? 'Strong COGS coverage'
+        ? tr('Strong COGS coverage', 'COGS 커버리지 양호')
         : coverage.confidence.level === 'medium'
-        ? 'Partial COGS coverage'
-        : 'Low COGS coverage';
+        ? tr('Partial COGS coverage', 'COGS 일부 커버')
+        : tr('Low COGS coverage', 'COGS 커버리지 낮음');
       confEl.textContent = coverageLabel;
       confEl.className = 'confidence-badge confidence-' + safeConfidenceLevel(coverage.confidence.level);
     }
 
     if (heroSubEl) {
-      heroSubEl.textContent = `${windowLabel} window · ${waterfall.length} days shown · ${coverage.daysWithCOGS} of ${coverage.totalDays} days with COGS (${(coverage.coverageRatio * 100).toFixed(0)}% coverage)`;
+      heroSubEl.textContent = tr(
+        `${windowLabel} window · ${waterfall.length} days shown · ${coverage.daysWithCOGS} of ${coverage.totalDays} days with COGS (${(coverage.coverageRatio * 100).toFixed(0)}% coverage)`,
+        `${windowLabel} 기준 · ${waterfall.length.toLocaleString(getLocale())}일 표시 · ${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 COGS 포함 (${(coverage.coverageRatio * 100).toFixed(0)}% 커버)`
+      );
     }
 
     if (heroMarginEl) heroMarginEl.textContent = formatPercent(blendedMargin, 1);
@@ -179,31 +190,31 @@
 
     if (latestSignalEl) {
       if (todaySummary) {
-        let summaryLabel = 'Latest profit signal';
-        if (todaySummary.summaryType === 'today') summaryLabel = 'Today';
-        if (todaySummary.summaryType === 'latest_completed') summaryLabel = 'Latest completed day';
-        if (todaySummary.summaryType === 'estimated') summaryLabel = 'Current estimate';
-        const cogsNote = todaySummary.hasCOGS ? 'COGS included' : 'COGS not yet available';
+        let summaryLabel = tr('Latest profit signal', '최근 수익 신호');
+        if (todaySummary.summaryType === 'today') summaryLabel = tr('Today', '오늘');
+        if (todaySummary.summaryType === 'latest_completed') summaryLabel = tr('Latest completed day', '최신 완료일');
+        if (todaySummary.summaryType === 'estimated') summaryLabel = tr('Current estimate', '현재 추정치');
+        const cogsNote = todaySummary.hasCOGS ? tr('COGS included', 'COGS 포함') : tr('COGS not yet available', 'COGS 아직 없음');
         latestSignalEl.textContent = `${summaryLabel}: ${todaySummary.date} · ${formatSignedKrw(todaySummary.trueNetProfit)} · ${cogsNote}`;
       } else {
-        latestSignalEl.textContent = 'Latest completed day: waiting for covered profit data.';
+        latestSignalEl.textContent = tr('Latest completed day: waiting for covered profit data.', '최신 완료일: 원가 포함 수익 데이터 대기 중');
       }
     }
 
     const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
     if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';
     const cogsSub = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-delta span');
-    if (cogsSub) cogsSub.textContent = coverage.daysWithCOGS + ' of ' + coverage.totalDays + ' days';
+    if (cogsSub) cogsSub.textContent = tr(`${coverage.daysWithCOGS} of ${coverage.totalDays} days`, `${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일`);
 
     const marginKpi = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-value');
     if (marginKpi) marginKpi.textContent = blendedMargin.toFixed(1) + '%';
     const marginSub = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-delta span');
-    if (marginSub) marginSub.textContent = totalProfit >= 0 ? 'Profitable' : 'Unprofitable';
+    if (marginSub) marginSub.textContent = totalProfit >= 0 ? tr('Profitable', '수익') : tr('Unprofitable', '적자');
 
     const roasKpi = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-value');
     if (roasKpi) roasKpi.textContent = trueRoas.toFixed(2) + 'x';
     const roasSub = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-delta span');
-    if (roasSub) roasSub.textContent = 'Net Revenue / Ad Spend';
+    if (roasSub) roasSub.textContent = tr('Net Revenue / Ad Spend', '순매출 / 광고비');
 
     const runRateKpi = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-value');
     if (runRateKpi) {
@@ -220,9 +231,9 @@
         const avgDaily = runRate.avgDailyNetProfit >= 0
           ? '₩' + runRate.avgDailyNetProfit.toLocaleString()
           : '-₩' + Math.abs(runRate.avgDailyNetProfit).toLocaleString();
-        runRateSub.textContent = `${runRate.daysUsed}d used · ${avgDaily}/day`;
+        runRateSub.textContent = tr(`${runRate.daysUsed}d used · ${avgDaily}/day`, `${runRate.daysUsed}일 사용 · 일평균 ${avgDaily}`);
       } else {
-        runRateSub.textContent = 'Waiting for covered days';
+        runRateSub.textContent = tr('Waiting for covered days', '커버된 날짜 대기 중');
       }
     }
 
@@ -250,9 +261,9 @@
         const profitColor = campaign.grossProfit >= 0 ? 'var(--color-success)' : 'var(--color-error)';
         return `<tr>
           <td title="${esc(campaign.campaignId)}">${esc(campaign.campaignName)}</td>
-          <td><span class="badge ${statusClass}">${esc(campaign.status || '—')}</span></td>
+          <td><span class="badge ${statusClass}">${esc(campaign.status === 'ACTIVE' ? tr('ACTIVE', '집행중') : campaign.status === 'PAUSED' ? tr('PAUSED', '중지') : (campaign.status || '—'))}</span></td>
           <td>$${campaign.spend.toFixed(2)}<br><span style="font-size:0.7rem;color:var(--color-text-faint)">₩${campaign.spendKRW.toLocaleString()}</span></td>
-          <td>${campaign.metaPurchases}</td>
+          <td>${Number(campaign.metaPurchases || 0).toLocaleString(getLocale())}</td>
           <td>₩${campaign.estimatedRevenue.toLocaleString()}</td>
           <td>₩${campaign.allocatedCOGS.toLocaleString()}</td>
           <td style="color:${profitColor};font-weight:600">₩${campaign.grossProfit.toLocaleString()}</td>
@@ -270,11 +281,11 @@
       coverageContent.innerHTML = `
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
           <span class="confidence-badge confidence-${confLevel}">${esc(conf.label)}</span>
-          <span style="font-size:0.85rem;color:var(--color-text-muted)">${coverage.daysWithCOGS} of ${coverage.totalDays} days have COGS data (${(coverage.coverageRatio * 100).toFixed(0)}%)</span>
+          <span style="font-size:0.85rem;color:var(--color-text-muted)">${tr(`${coverage.daysWithCOGS} of ${coverage.totalDays} days have COGS data (${(coverage.coverageRatio * 100).toFixed(0)}%)`, `${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일에 COGS 데이터 존재 (${(coverage.coverageRatio * 100).toFixed(0)}%)`)}</span>
         </div>
-        ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">Covered: <strong>${esc(coveredRange.from)}</strong> to <strong>${esc(coveredRange.to)}</strong></p>` : ''}
-        ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">Missing: ${missing.map(item => esc(item)).join(', ')}</p>` : ''}
-        <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">Days without COGS data are shown dimmed in the waterfall chart. Profit for those days only accounts for revenue, ad spend, and payment fees.</p>
+        ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">${esc(tr('Covered', '커버 구간'))}: <strong>${esc(coveredRange.from)}</strong> ${esc(tr('to', '부터'))} <strong>${esc(coveredRange.to)}</strong></p>` : ''}
+        ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">${esc(tr('Missing', '누락'))}: ${missing.map(item => esc(item)).join(', ')}</p>` : ''}
+        <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">${esc(tr('Days without COGS data are shown dimmed in the waterfall chart. Profit for those days only accounts for revenue, ad spend, and payment fees.', 'COGS 데이터가 없는 날짜는 워터폴 차트에서 흐리게 표시됩니다. 해당 날짜 수익은 매출, 광고비, 결제 수수료만 반영합니다.'))}</p>
       `;
     }
   }
@@ -291,20 +302,20 @@
 
     if (windowEl) {
       windowEl.textContent = report?.matchWindowMinutes
-        ? `Match window ${report.matchWindowMinutes}m · ${rangeMeta.label} view`
-        : `${rangeMeta.label} view`;
+        ? tr(`Match window ${report.matchWindowMinutes}m · ${rangeMeta.label} view`, `매칭 범위 ${report.matchWindowMinutes}분 · ${rangeMeta.label} 보기`)
+        : tr(`${rangeMeta.label} view`, `${rangeMeta.label} 보기`);
     }
 
     if (!report || report.ready === false) {
       if (statusEl) {
         statusEl.className = 'badge badge-neutral';
-        statusEl.textContent = 'Unavailable';
+        statusEl.textContent = tr('Unavailable', '사용 불가');
       }
       if (noteEl) {
-        noteEl.textContent = 'Settlement reconciliation is unavailable because no settlement source is configured.';
+        noteEl.textContent = tr('Settlement reconciliation is unavailable because no settlement source is configured.', '정산 소스가 설정되지 않아 정산 대사가 불가능합니다.');
       }
       if (bodyEl) {
-        bodyEl.innerHTML = '<tr><td colspan="6" style="color:var(--color-text-faint)">Settlement reconciliation is unavailable.</td></tr>';
+        bodyEl.innerHTML = `<tr><td colspan="6" style="color:var(--color-text-faint)">${esc(tr('Settlement reconciliation is unavailable.', '정산 대사를 사용할 수 없습니다.'))}</td></tr>`;
       }
       return;
     }
@@ -319,32 +330,32 @@
     if (statusEl) {
       if (methodMismatchCount > 0) {
         statusEl.className = 'badge badge-warning';
-        statusEl.textContent = 'Check Mapping';
+        statusEl.textContent = tr('Check Mapping', '매핑 확인');
       } else if (unmatchedSettlementCount > 0 || unmatchedImwebCount > 0) {
         statusEl.className = 'badge badge-neutral';
-        statusEl.textContent = 'Partial Match';
+        statusEl.textContent = tr('Partial Match', '부분 일치');
       } else {
         statusEl.className = 'badge badge-success';
-        statusEl.textContent = 'Aligned';
+        statusEl.textContent = tr('Aligned', '일치');
       }
     }
 
     const reconKpis = {
       matchedNet: {
         value: formatSignedKrw(matchedNet),
-        sub: `${overlap.matchedCount || 0} matched events`,
+        sub: tr(`${overlap.matchedCount || 0} matched events`, `일치 이벤트 ${Number(overlap.matchedCount || 0).toLocaleString(getLocale())}건`),
       },
       unmatchedSettlement: {
         value: String(unmatchedSettlementCount),
-        sub: `${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))} settlement gap`,
+        sub: tr(`${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))} settlement gap`, `정산 차이 ${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))}`),
       },
       unmatchedImweb: {
         value: String(unmatchedImwebCount),
-        sub: `${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))} imweb gap`,
+        sub: tr(`${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))} imweb gap`, `Imweb 차이 ${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))}`),
       },
       methodMismatch: {
         value: String(methodMismatchCount),
-        sub: methodMismatchCount > 0 ? `${formatSignedKrw(methodMismatchAmount)} flagged` : 'No method drift',
+        sub: methodMismatchCount > 0 ? tr(`${formatSignedKrw(methodMismatchAmount)} flagged`, `${formatSignedKrw(methodMismatchAmount)} 표시됨`) : tr('No method drift', '결제 방식 차이 없음'),
       },
     };
 
@@ -361,10 +372,10 @@
       const medium = confidence.medium || 0;
       const low = confidence.low || 0;
       noteEl.textContent = visibleReport.daily.length === 0
-        ? 'No reconciliation rows fall inside the selected window.'
+        ? tr('No reconciliation rows fall inside the selected window.', '선택한 기간에 해당하는 대사 행이 없습니다.')
         : methodMismatchCount > 0
-        ? `${high} high / ${medium} medium / ${low} low-confidence matches. Matched settlement rows are currently colliding with non-card IMWEB payment labels, so treat this as a validation signal rather than a direct payment-method map.`
-        : `${high} high / ${medium} medium / ${low} low-confidence matches across the selected settlement window.`;
+        ? tr(`${high} high / ${medium} medium / ${low} low-confidence matches. Matched settlement rows are currently colliding with non-card IMWEB payment labels, so treat this as a validation signal rather than a direct payment-method map.`, `높음 ${high}건 / 중간 ${medium}건 / 낮음 ${low}건 일치입니다. 현재 카드 외 IMWEB 결제 라벨과 일부 충돌하므로 직접적인 결제수단 매핑이 아니라 검증 신호로 해석하세요.`)
+        : tr(`${high} high / ${medium} medium / ${low} low-confidence matches across the selected settlement window.`, `선택한 정산 기간 기준 높음 ${high}건 / 중간 ${medium}건 / 낮음 ${low}건 일치입니다.`);
     }
 
     if (bodyEl) {
@@ -380,7 +391,7 @@
               <td style="color:${(day.unmatchedImweb?.netAmount || 0) === 0 ? 'var(--color-text)' : 'var(--color-warning)'}">${formatSignedKrw(day.unmatchedImweb?.netAmount || 0)}</td>
             </tr>
           `).join('')
-        : '<tr><td colspan="6" style="color:var(--color-text-faint)">No reconciliation rows available.</td></tr>';
+        : `<tr><td colspan="6" style="color:var(--color-text-faint)">${esc(tr('No reconciliation rows available.', '대사 행이 없습니다.'))}</td></tr>`;
     }
   }
 
@@ -415,7 +426,10 @@
       if (cancelSubEl) {
         cancelSubEl.textContent = formatRateMetricDetail(
           data.metrics?.cancellations,
-          (data.cancelledSections || 0) + ' cancelled of ' + (data.totalSections || 0) + ' sections'
+          tr(
+            `${data.cancelledSections || 0} cancelled of ${data.totalSections || 0} sections`,
+            `${(data.totalSections || 0).toLocaleString(getLocale())}개 섹션 중 ${(data.cancelledSections || 0).toLocaleString(getLocale())}개 취소`
+          )
         );
       }
 
@@ -427,7 +441,7 @@
       const febSubEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-delta span');
       if (febSubEl) {
         const febData = (data.charts?.monthlyRefunds || []).find(month => month.month === '2026-02');
-        if (febData) febSubEl.textContent = `${formatKrw(febData.refunded || 0)} refunded of ${formatKrw(febData.revenue || 0)}`;
+        if (febData) febSubEl.textContent = tr(`${formatKrw(febData.refunded || 0)} refunded of ${formatKrw(febData.revenue || 0)}`, `${formatKrw(febData.revenue || 0)} 중 ${formatKrw(febData.refunded || 0)} 환불`);
       }
 
       const marRate = data.monthlyRates?.['2026-03'] ?? null;
@@ -438,7 +452,7 @@
       const marSubEl = document.querySelector('[data-kpi-analytics="marRefundRate"] .kpi-delta span');
       if (marSubEl) {
         const marData = (data.charts?.monthlyRefunds || []).find(month => month.month === '2026-03');
-        if (marData) marSubEl.textContent = `${formatKrw(marData.refunded || 0)} refunded of ${formatKrw(marData.revenue || 0)}`;
+        if (marData) marSubEl.textContent = tr(`${formatKrw(marData.refunded || 0)} refunded of ${formatKrw(marData.revenue || 0)}`, `${formatKrw(marData.revenue || 0)} 중 ${formatKrw(marData.refunded || 0)} 환불`);
       }
 
       const charts = data.charts || {};
@@ -464,18 +478,18 @@
       const mediaWindowMeta = getSeriesWindowMeta('media-profitability');
 
       if (weekdayChartWindowEl) {
-        weekdayChartWindowEl.textContent = `${mediaWindowMeta.label} window`;
+        weekdayChartWindowEl.textContent = tr(`${mediaWindowMeta.label} window`, `${mediaWindowMeta.label} 기준`);
       }
       if (weekdayTableWindowEl) {
-        weekdayTableWindowEl.textContent = `Net revenue, ad spend, and CPA by weekday · ${mediaWindowMeta.label} window`;
+        weekdayTableWindowEl.textContent = tr(`Net revenue, ad spend, and CPA by weekday · ${mediaWindowMeta.label} window`, `요일별 순매출, 광고비, CPA · ${mediaWindowMeta.label} 기준`);
       }
       if (analyticsNoticeEl) {
         if (imwebSource?.stale) {
           analyticsNoticeEl.hidden = false;
-          analyticsNoticeEl.textContent = 'Revenue-backed analytics are using cached Imweb data. Weekday revenue, refunds, and ROAS are directional until the next successful sync.';
+          analyticsNoticeEl.textContent = tr('Revenue-backed analytics are using cached Imweb data. Weekday revenue, refunds, and ROAS are directional until the next successful sync.', '매출 기반 분석은 캐시된 Imweb 데이터를 사용 중입니다. 다음 정상 동기화 전까지 요일별 매출, 환불, ROAS는 방향성 참고용입니다.');
         } else if (imwebSource?.status === 'error') {
           analyticsNoticeEl.hidden = false;
-          analyticsNoticeEl.textContent = 'Imweb sync is unavailable. Revenue-backed analytics may be incomplete.';
+          analyticsNoticeEl.textContent = tr('Imweb sync is unavailable. Revenue-backed analytics may be incomplete.', 'Imweb 동기화를 사용할 수 없어 매출 기반 분석이 불완전할 수 있습니다.');
         } else {
           analyticsNoticeEl.hidden = true;
           analyticsNoticeEl.textContent = '';

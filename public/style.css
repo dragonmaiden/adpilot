@@ -1767,6 +1767,29 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   flex-wrap: wrap;
 }
 
+.candlestick-card-header {
+  padding: 16px 20px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.candlestick-card-header .card-desc {
+  max-width: 720px;
+  margin-top: 6px;
+}
+
+.candlestick-chart-shell {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 5%, transparent), transparent 38%),
+    repeating-linear-gradient(to right, transparent 0, transparent 72px, color-mix(in srgb, var(--color-divider) 72%, transparent) 72px, color-mix(in srgb, var(--color-divider) 72%, transparent) 73px),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 56px, color-mix(in srgb, var(--color-divider) 78%, transparent) 56px, color-mix(in srgb, var(--color-divider) 78%, transparent) 57px),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-surface-offset) 70%, var(--color-surface) 30%), var(--color-surface));
+  border-top: 1px solid var(--color-divider);
+}
+
 .candlestick-stats {
   display: flex;
   gap: 0;
@@ -2562,6 +2585,10 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   /* Candlestick legend wrap */
   .candlestick-legend {
     gap: 8px;
+  }
+
+  .candlestick-card-header {
+    padding: 14px 16px 8px;
   }
 }
 

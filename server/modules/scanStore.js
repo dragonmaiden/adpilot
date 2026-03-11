@@ -470,6 +470,21 @@ function appendOptimizations(optimizations) {
   return state.allOptimizations;
 }
 
+function updateOptimization(id, patch) {
+  if (!id) return null;
+  const optimization = state.allOptimizations.find(entry => entry.id === id);
+  if (!optimization) return null;
+
+  const nextPatch = typeof patch === 'function' ? patch({ ...optimization }) : patch;
+  if (!nextPatch || typeof nextPatch !== 'object') {
+    return optimization;
+  }
+
+  Object.assign(optimization, nextPatch);
+  saveData(ALL_OPTIMIZATIONS_FILE, state.allOptimizations);
+  return optimization;
+}
+
 function getIsScanning() {
   return state.isScanning;
 }
@@ -504,6 +519,7 @@ module.exports = {
   addScanHistory,
   getAllOptimizations,
   appendOptimizations,
+  updateOptimization,
   getIsScanning,
   setIsScanning,
   saveLatestData,

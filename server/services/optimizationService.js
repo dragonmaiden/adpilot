@@ -1,6 +1,14 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
-const { OPTIMIZATION_TYPES, getOptimizationDirection, isBudgetIncreaseAction, isBudgetDecreaseAction } = require('../domain/optimizationSemantics');
+const {
+  OPTIMIZATION_TYPES,
+  getOptimizationDirection,
+  getOptimizationStatus,
+  isBudgetIncreaseAction,
+  isBudgetDecreaseAction,
+  isExecutableOptimization,
+  requiresApproval,
+} = require('../domain/optimizationSemantics');
 
 /**
  * Count occurrences of each value for a given key in an array of objects.
@@ -12,11 +20,20 @@ function countBy(arr, key) {
   }, {});
 }
 
+function enrichOptimization(opt) {
+  const status = getOptimizationStatus(opt);
+  return {
+    ...opt,
+    status,
+    actionable: requiresApproval(opt) && isExecutableOptimization(opt),
+  };
+}
+
 /**
  * Build the /api/optimizations response — filtered list with stats.
  */
 function getOptimizationsResponse(query) {
-  const opts = scheduler.getAllOptimizations();
+  const opts = scheduler.getAllOptimizations().map(enrichOptimization);
   const limit = parseInt(query.limit) || 50;
   const type = query.type || 'all';
   const priority = query.priority || 'all';
@@ -37,6 +54,9 @@ function getOptimizationsResponse(query) {
       byPriority: countBy(opts, 'priority'),
       executed: opts.filter(o => o.executed).length,
       pending: opts.filter(o => !o.executed).length,
+      actionable: opts.filter(o => o.status === 'needs_approval').length,
+      awaitingTelegram: opts.filter(o => o.status === 'awaiting_telegram').length,
+      advisory: opts.filter(o => o.status === 'advisory').length,
     },
   });
 }
@@ -45,7 +65,7 @@ function getOptimizationsResponse(query) {
  * Build the /api/optimizations/timeline response — timeline + scan aggregation.
  */
 function getTimelineResponse() {
-  const opts = scheduler.getAllOptimizations();
+  const opts = scheduler.getAllOptimizations().map(enrichOptimization);
   const scans = scheduler.getScanHistory();
 
   // Group all opts by type for the timeline
