@@ -103,30 +103,14 @@ navItems.forEach(item => {
     if (target === 'budget' && !budgetChartsInitialized) initBudgetCharts();
     if (target === 'optimizations' && !optTimelineInitialized) initOptTimeline();
 
-    if (typeof liveMode !== 'undefined' && liveMode) {
-      if (target === 'analytics') {
-        if (typeof updateAnalyticsPage === 'function') updateAnalyticsPage();
-      }
-      if (target === 'calendar') {
-        if (typeof updateCalendarAnalysisPage === 'function') updateCalendarAnalysisPage();
+    if (window.AdPilotLive) {
+      window.AdPilotLive.handlePageActivated(target);
+      if (target === 'analytics' || target === 'fatigue' || target === 'budget' || target === 'optimizations') {
+        window.AdPilotLive.refresh(target);
       }
     }
   });
 });
-
-// ── Scan Button ──
-const runScanBtn = document.getElementById('runScanBtn');
-if (runScanBtn) {
-  runScanBtn.addEventListener('click', () => {
-    document.body.classList.add('scanning');
-    runScanBtn.querySelector('span').textContent = 'Scanning...';
-    setTimeout(() => {
-      document.body.classList.remove('scanning');
-      runScanBtn.querySelector('span').textContent = 'Run Scan Now';
-      document.getElementById('lastScan').textContent = 'just now';
-    }, 3000);
-  });
-}
 
 // ── Countdown Timer ──
 let countdownMinutes = 47;
@@ -242,7 +226,7 @@ function createSparkline(containerId, data, color) {
   });
 }
 
-// ── Main Charts — initialize with empty data; live.js populates them ──
+// ── Main Charts — initialize with empty data; the live runtime populates them ──
 function initCharts() {
   const c = getChartColors();
 
@@ -445,9 +429,6 @@ function initCharts() {
     });
   }
 
-  // Sparklines — start empty; live.js will call createSparkline with real data
-  // (no-op here — live.js handles populating them via updateOverviewKPIs)
-
   const hourCtx = document.getElementById('hourChart');
   if (hourCtx) {
     hourChartInstance = new Chart(hourCtx, {
@@ -475,48 +456,13 @@ function initCharts() {
   }
 }
 
-// ── Activity Feed ──
-function addActivity(act) {
-  // No-op in live mode; live.js renders activities from API
-  // Keep stub to avoid errors from any remaining callers
-}
-
-function renderActivities() {
-  // No-op — live.js populates #activityFeed from API
-}
-
-// ── Campaign Table ──
-function renderCampaigns() {
-  // No-op in live mode — live.js handles via updateLiveCampaigns
-}
-
-const campaignFilter = document.getElementById('campaignFilter');
-if (campaignFilter) {
-  campaignFilter.addEventListener('change', () => {
-    // In live mode, re-fetch from API
-    if (typeof liveMode !== 'undefined' && liveMode && typeof updateLiveCampaigns === 'function') {
-      updateLiveCampaigns();
-    }
-  });
-}
-
-// ── Optimization Log ──
-function renderOptimizations() {
-  // No-op in live mode — live.js handles via updateOptimizationLog
-}
-
 const optTypeFilter = document.getElementById('optTypeFilter');
 if (optTypeFilter) {
   optTypeFilter.addEventListener('change', () => {
-    if (typeof liveMode !== 'undefined' && liveMode && typeof updateOptimizationLog === 'function') {
-      updateOptimizationLog();
+    if (window.AdPilotLive) {
+      window.AdPilotLive.refresh('optimizations');
     }
   });
-}
-
-// ── Fatigue Detection ──
-function renderFatigue() {
-  // No-op in live mode — live.js handles via updateFatiguePage
 }
 
 function initFatigueChart() {
@@ -524,7 +470,6 @@ function initFatigueChart() {
   const ctx = document.getElementById('fatigueChart');
   if (!ctx) return;
 
-  // Initialize with empty data; live.js populates via updateFatiguePage
   fatigueChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -576,11 +521,6 @@ function initFatigueChart() {
   });
 
   fatigueChartInitialized = true;
-
-  // Trigger live data population if live mode is already active
-  if (typeof liveMode !== 'undefined' && liveMode && typeof updateFatiguePage === 'function') {
-    updateFatiguePage();
-  }
 }
 
 // ── Budget Charts — initialize with empty data ──
@@ -679,16 +619,6 @@ function initBudgetCharts() {
   }
 
   budgetChartsInitialized = true;
-
-  // Trigger live data population if live mode is already active
-  if (typeof liveMode !== 'undefined' && liveMode && typeof updateBudgetPage === 'function') {
-    updateBudgetPage();
-  }
-}
-
-// ── Budget History ──
-function renderBudgetHistory() {
-  // No-op in live mode — live.js handles via updateBudgetPage
 }
 
 // ═══════════════════════════════════════════════════════
@@ -775,26 +705,6 @@ const candlestickPlugin = {
 };
 Chart.register(candlestickPlugin);
 
-function updateCandlestickStats(data) {
-  const el = document.getElementById('candlestickStats');
-  if (!el || !data.length) return;
-  const totalSpend = data.reduce((s, d) => s + d.spend, 0);
-  const peakDay = data.reduce((max, d) => d.spend > max.spend ? d : max, data[0]);
-  const avgDaily = totalSpend / data.length;
-  const avgCac = data.reduce((s, d) => s + d.cac, 0) / data.length;
-  const peakDate = new Date(peakDay.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-  const vals = el.querySelectorAll('strong');
-  if (vals.length >= 6) {
-    vals[0].textContent = formatKRW(totalSpend);
-    vals[1].textContent = formatKRW(peakDay.spend);
-    vals[2].textContent = formatKRW(Math.round(avgDaily));
-    vals[3].textContent = data.length.toString();
-    vals[4].textContent = formatKRW(Math.round(avgCac));
-    vals[5].textContent = peakDate;
-  }
-}
-
 // Shared ref for tooltip data so closures can access updated data
 let _candlestickData = [];
 let _candlestickChanges = [];
@@ -804,49 +714,14 @@ async function initOptTimeline() {
   const c = getChartColors();
   const targetCPA = 45000; // KRW
   const budgetLine = 90000; // KRW
-
-  // Fetch real data from API (full history)
-  let data = [];
-  try {
-    const resp = await fetch('/api/spend-daily');
-    data = await resp.json();
-  } catch (e) {
-    console.warn('Failed to fetch spend-daily, chart will be empty until next scan');
-  }
-  if (!data || data.length === 0) {
-    // Show empty state message
-    const el = document.getElementById('optTimelineChart');
-    if (el && el.parentNode) {
-      el.parentNode.innerHTML = '<p style="text-align:center;color:var(--color-text-faint);padding:60px 0;font-size:0.85rem">Waiting for first scan to collect spend data...</p>';
-    }
-    return;
-  }
+  const data = [];
+  const labels = [];
+  const yMin = 0;
+  const yMax = budgetLine * 1.5;
 
   _candlestickData = data;
-
-  // Store OHLC for the plugin to draw
-  _candlestickOHLC = data.map(d => ({ o: d.o, h: d.h, l: d.l, c: d.c }));
-
-  const labels = data.map(d => {
-    const dt = new Date(d.date);
-    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  });
-
-  // Compute previous-day changes for tooltip (stored in shared ref)
-  _candlestickChanges = data.map((d, i) => {
-    if (i === 0) return { pct: 0, dir: '' };
-    const prev = data[i - 1].spend;
-    const pct = ((d.spend - prev) / prev * 100).toFixed(1);
-    return { pct: Math.abs(pct), dir: d.spend >= prev ? '\u25b2' : '\u25bc' };
-  });
-
-  // Y-axis range for spend: we want candles to fill most of the chart
-  const allVals = data.flatMap(d => [d.o, d.h, d.l, d.c]);
-  const minSpend = Math.min(...allVals);
-  const maxSpend = Math.max(...allVals);
-  const spendPad = (maxSpend - minSpend) * 0.15;
-  const yMin = Math.max(0, minSpend - spendPad * 2);
-  const yMax = maxSpend + spendPad;
+  _candlestickOHLC = [];
+  _candlestickChanges = [];
 
   const tlCtx = document.getElementById('optTimelineChart');
   if (tlCtx) {
@@ -995,10 +870,6 @@ async function initOptTimeline() {
     });
   }
 
-  // Update summary stats bar
-  updateCandlestickStats(data);
-
-  // ── Type breakdown donut (empty — live.js populates via updateOptTimeline) ──
   const typeCtx = document.getElementById('optTypeChart');
   if (typeCtx) {
     optTypeChart = new Chart(typeCtx, {
@@ -1031,7 +902,7 @@ async function initOptTimeline() {
     });
   }
 
-  // ── Priority breakdown donut (empty — live.js populates) ──
+  // ── Priority breakdown donut (empty until live data arrives) ──
   const prioCtx = document.getElementById('optPriorityChart');
   if (prioCtx) {
     const prioColors = {
@@ -1061,13 +932,8 @@ async function initOptTimeline() {
         cutout: '60%',
       },
     });
-    // Store prioColors on chart for live.js to access
+    // Store prioColors on chart so the live runtime can reuse them.
     optPriorityChart._prioColors = prioColors;
-  }
-
-  // Trigger live timeline data now that chart exists
-  if (typeof liveMode !== 'undefined' && liveMode && typeof updateOptTimeline === 'function') {
-    updateOptTimeline();
   }
 }
 
@@ -1383,10 +1249,6 @@ function initAnalyticsCharts() {
     });
   }
 
-}
-
-function renderWeekdayTable() {
-  // No-op stub — live.js populates the weekday table via updateAnalyticsPage
 }
 
 // ── Initialize Everything ──

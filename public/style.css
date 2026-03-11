@@ -231,9 +231,31 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   animation: pulse 2s ease-in-out infinite;
 }
 
+.live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.45);
+  animation: livePulse 2s ease-in-out infinite;
+  transition: transform var(--transition-interactive), box-shadow var(--transition-interactive);
+}
+
+.live-dot.pulse {
+  transform: scale(1.35);
+  box-shadow: 0 0 14px rgba(74, 222, 128, 0.75);
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 .scan-info {
@@ -622,6 +644,11 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   color: #ef4444;
 }
 
+.badge-info {
+  background: rgba(32, 128, 141, 0.15);
+  color: var(--color-primary);
+}
+
 /* ============================================
    TABLES
    ============================================ */
@@ -855,6 +882,38 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   gap: var(--space-3);
 }
 
+.optimization-item {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.optimization-item:last-child {
+  border-bottom: none;
+}
+
+.optimization-item.executed {
+  opacity: 0.7;
+}
+
+.opt-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-offset);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.opt-icon i {
+  width: 16px;
+  height: 16px;
+  color: var(--color-primary);
+}
+
 .opt-item {
   display: flex;
   gap: var(--space-4);
@@ -884,6 +943,30 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .opt-content { flex: 1; min-width: 0; }
 
+.opt-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.opt-action {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.opt-target {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-bottom: 2px;
+}
+
+.opt-reason {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+}
+
 .opt-title {
   font-size: var(--text-sm);
   font-weight: 500;
@@ -906,7 +989,18 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .opt-impact {
   font-weight: 600;
-  color: var(--color-success);
+  color: var(--color-primary);
+}
+
+.opt-time {
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+}
+
+#optStats {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
 }
 
 /* ============================================
@@ -929,6 +1023,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .fatigue-card.danger { border-color: var(--color-error); }
 .fatigue-card.warning { border-color: var(--color-warning); }
 .fatigue-card.healthy { border-color: var(--color-success); }
+
+.empty-state {
+  padding: 32px;
+  text-align: center;
+  color: var(--color-text-faint);
+}
 
 .fatigue-header {
   display: flex;
