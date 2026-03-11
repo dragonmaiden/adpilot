@@ -956,13 +956,13 @@ function updateReconciliationSection(report) {
   if (!report || report.ready === false) {
     if (statusEl) {
       statusEl.className = 'badge badge-neutral';
-      statusEl.textContent = 'Not Configured';
+      statusEl.textContent = 'Unavailable';
     }
     if (noteEl) {
-      noteEl.textContent = 'Add CARD_SETTLEMENT_* env vars to enable settlement validation.';
+      noteEl.textContent = 'Settlement reconciliation is unavailable because no settlement source is configured.';
     }
     if (bodyEl) {
-      bodyEl.innerHTML = '<tr><td colspan="6" style="color:var(--color-text-faint)">Settlement reconciliation is not configured.</td></tr>';
+      bodyEl.innerHTML = '<tr><td colspan="6" style="color:var(--color-text-faint)">Settlement reconciliation is unavailable.</td></tr>';
     }
     return;
   }

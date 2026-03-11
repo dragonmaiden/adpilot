@@ -73,7 +73,7 @@ const config = {
 
   // Card settlement reconciliation (Google Sheets)
   cardSettlement: {
-    spreadsheetId: process.env.CARD_SETTLEMENT_SPREADSHEET_ID || '',
+    spreadsheetId: process.env.CARD_SETTLEMENT_SPREADSHEET_ID || '18JgdneWqL0ickJ7ieNN5Mhe3ErHVQrXw1-643S8scco',
     gid: process.env.CARD_SETTLEMENT_GID || '0',
     merchantName: process.env.CARD_SETTLEMENT_MERCHANT || 'SHUE',
     matchWindowMinutes: parseInt(process.env.CARD_SETTLEMENT_MATCH_WINDOW_MINUTES || '3', 10),
