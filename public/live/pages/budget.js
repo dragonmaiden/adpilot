@@ -30,6 +30,7 @@
         const totalDailyBudget = active.reduce((sum, campaign) => {
           return sum + (campaign.dailyBudget ? parseInt(campaign.dailyBudget, 10) / 100 : 0);
         }, 0);
+        const pacePct = totalDailyBudget > 0 ? (latestDailySpend / totalDailyBudget) * 100 : 0;
 
         const dailyBudgetEl = document.querySelector('[data-budget-kpi="daily"] .kpi-value');
         if (dailyBudgetEl) {
@@ -60,13 +61,24 @@
 
         const paceEl = document.querySelector('[data-budget-kpi="pace"] .kpi-value');
         if (paceEl) {
-          paceEl.textContent = active.length > 0 ? 'Active' : 'Paused';
-          paceEl.className = 'kpi-value ' + (active.length > 0 ? 'pace-on-track' : '');
+          if (totalDailyBudget <= 0) {
+            paceEl.textContent = 'No budget';
+            paceEl.className = 'kpi-value';
+          } else if (pacePct >= 100) {
+            paceEl.textContent = 'At limit';
+            paceEl.className = 'kpi-value pace-over';
+          } else if (pacePct >= 65) {
+            paceEl.textContent = 'Watch';
+            paceEl.className = 'kpi-value pace-watch';
+          } else {
+            paceEl.textContent = 'On track';
+            paceEl.className = 'kpi-value pace-on-track';
+          }
         }
 
         const budgetFill = document.querySelector('.budget-fill');
         if (budgetFill && totalDailyBudget > 0) {
-          const pct = Math.min(100, (latestDailySpend / totalDailyBudget) * 100);
+          const pct = Math.min(100, pacePct);
           budgetFill.style.width = pct + '%';
         }
 

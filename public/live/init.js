@@ -82,6 +82,7 @@
 
     if (!secondaryPollId) {
       secondaryPollId = setInterval(async () => {
+        await live.refresh('campaigns');
         await live.refresh('analytics');
         await live.refresh('fatigue');
         await live.refresh('budget');

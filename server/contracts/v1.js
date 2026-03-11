@@ -195,6 +195,7 @@ function campaigns({ campaigns: enriched, windowKey, windowDays }) {
       bidStrategy: c.bid_strategy ?? c.bidStrategy ?? '',
       metricsWindow: {
         spend: c.metricsWindow?.spend ?? 0,
+        attributedPurchases: c.metricsWindow?.attributedPurchases ?? c.metricsWindow?.metaPurchases ?? 0,
         metaPurchases: c.metricsWindow?.metaPurchases ?? 0,
         cpa: c.metricsWindow?.cpa ?? null,
         clicks: c.metricsWindow?.clicks ?? 0,

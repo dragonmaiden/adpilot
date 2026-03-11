@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, safeConfidenceLevel, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
+  const { esc, safeConfidenceLevel, formatSignedKrw, formatSignedCompactKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
   const { fetchAnalytics, fetchReconciliation } = live.api;
   const { getSeriesWindowMeta, sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
 
@@ -124,51 +124,71 @@
         };
     const todaySummary = pa.todaySummary;
     const runRate = pa.runRate;
-
-    updateSeriesWindowBadges('profit-structure', waterfall);
-
-    const heroEl = document.getElementById('profitHero');
-    const verdictEl = document.getElementById('profitVerdict');
-    const amountEl = document.getElementById('profitAmount');
-    const confEl = document.getElementById('profitConfidence');
-    const heroSubEl = document.getElementById('profitHeroSub');
-
-    if (todaySummary && verdictEl) {
-      const isPositive = todaySummary.trueNetProfit >= 0;
-      verdictEl.textContent = todaySummary.verdict;
-      verdictEl.className = 'profit-verdict ' + (isPositive ? 'verdict-positive' : 'verdict-negative');
-      amountEl.textContent = '₩' + todaySummary.trueNetProfit.toLocaleString();
-      amountEl.className = 'profit-amount ' + (isPositive ? 'verdict-positive' : 'verdict-negative');
-      if (heroEl) heroEl.className = 'profit-hero ' + (isPositive ? 'hero-positive' : 'hero-negative');
-    }
-
-    if (confEl && coverage.confidence) {
-      confEl.textContent = coverage.confidence.label;
-      confEl.className = 'confidence-badge confidence-' + safeConfidenceLevel(coverage.confidence.level);
-    }
-
-    if (heroSubEl && todaySummary) {
-      let summaryLabel = 'Latest profit signal';
-      if (todaySummary.summaryType === 'today') summaryLabel = 'Today';
-      if (todaySummary.summaryType === 'latest_completed') summaryLabel = 'Latest completed day';
-      if (todaySummary.summaryType === 'estimated') summaryLabel = 'Current estimate';
-      const cogsNote = todaySummary.hasCOGS ? 'COGS included' : 'COGS not yet available';
-      const runRateText = runRate
-        ? ` · 14d avg ₩${runRate.avgDailyNetProfit.toLocaleString()}/day · est. ₩${runRate.projectedMonthlyNetProfit.toLocaleString()}/30d`
-        : '';
-      heroSubEl.textContent = `${todaySummary.date} — ${summaryLabel} · ${cogsNote}${runRateText}`;
-    }
-
     const totalProfit = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.trueNetProfit), 0);
     const totalNetRev = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.netRevenue), 0);
     const totalAdSpend = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.adSpendKRW), 0);
     const blendedMargin = totalNetRev > 0 ? (totalProfit / totalNetRev * 100) : 0;
     const trueRoas = totalAdSpend > 0 ? totalNetRev / totalAdSpend : 0;
+    const windowMeta = getSeriesWindowMeta('profit-structure');
+    const windowLabel = windowMeta?.label || 'Selected';
 
-    const profitKpi = document.querySelector('[data-profit-kpi="trueNetProfit"] .kpi-value');
-    if (profitKpi) profitKpi.textContent = '₩' + totalProfit.toLocaleString();
-    const profitSub = document.querySelector('[data-profit-kpi="trueNetProfit"] .kpi-delta span');
-    if (profitSub) profitSub.textContent = waterfall.length + ' days';
+    updateSeriesWindowBadges('profit-structure', waterfall);
+
+    const heroEl = document.getElementById('profitHero');
+    const heroKickerEl = document.getElementById('profitHeroKicker');
+    const verdictEl = document.getElementById('profitVerdict');
+    const amountEl = document.getElementById('profitAmount');
+    const confEl = document.getElementById('profitConfidence');
+    const heroSubEl = document.getElementById('profitHeroSub');
+    const latestSignalEl = document.getElementById('profitLatestSignal');
+    const heroMarginEl = document.getElementById('profitHeroMargin');
+    const heroRoasEl = document.getElementById('profitHeroRoas');
+    const heroRunRateEl = document.getElementById('profitHeroRunRate');
+
+    if (heroKickerEl) {
+      heroKickerEl.textContent = `${windowLabel} window true net profit`;
+    }
+
+    if (verdictEl && amountEl) {
+      const isPositive = totalProfit > 0;
+      const isNegative = totalProfit < 0;
+      verdictEl.textContent = isPositive ? 'Profitable period' : isNegative ? 'Unprofitable period' : 'Break-even period';
+      verdictEl.className = 'profit-verdict ' + (isPositive ? 'verdict-positive' : isNegative ? 'verdict-negative' : '');
+      amountEl.textContent = formatSignedKrw(totalProfit);
+      amountEl.className = 'profit-amount ' + (isPositive ? 'verdict-positive' : isNegative ? 'verdict-negative' : '');
+      if (heroEl) heroEl.className = 'profit-hero ' + (isPositive ? 'hero-positive' : isNegative ? 'hero-negative' : '');
+    }
+
+    if (confEl && coverage.confidence) {
+      const coverageLabel = coverage.confidence.level === 'high'
+        ? 'Strong COGS coverage'
+        : coverage.confidence.level === 'medium'
+        ? 'Partial COGS coverage'
+        : 'Low COGS coverage';
+      confEl.textContent = coverageLabel;
+      confEl.className = 'confidence-badge confidence-' + safeConfidenceLevel(coverage.confidence.level);
+    }
+
+    if (heroSubEl) {
+      heroSubEl.textContent = `${windowLabel} window · ${waterfall.length} days shown · ${coverage.daysWithCOGS} of ${coverage.totalDays} days with COGS (${(coverage.coverageRatio * 100).toFixed(0)}% coverage)`;
+    }
+
+    if (heroMarginEl) heroMarginEl.textContent = formatPercent(blendedMargin, 1);
+    if (heroRoasEl) heroRoasEl.textContent = `${trueRoas.toFixed(2)}x`;
+    if (heroRunRateEl) heroRunRateEl.textContent = runRate ? formatSignedCompactKrw(runRate.projectedMonthlyNetProfit) : '—';
+
+    if (latestSignalEl) {
+      if (todaySummary) {
+        let summaryLabel = 'Latest profit signal';
+        if (todaySummary.summaryType === 'today') summaryLabel = 'Today';
+        if (todaySummary.summaryType === 'latest_completed') summaryLabel = 'Latest completed day';
+        if (todaySummary.summaryType === 'estimated') summaryLabel = 'Current estimate';
+        const cogsNote = todaySummary.hasCOGS ? 'COGS included' : 'COGS not yet available';
+        latestSignalEl.textContent = `${summaryLabel}: ${todaySummary.date} · ${formatSignedKrw(todaySummary.trueNetProfit)} · ${cogsNote}`;
+      } else {
+        latestSignalEl.textContent = 'Latest completed day: waiting for covered profit data.';
+      }
+    }
 
     const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
     if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';

@@ -105,6 +105,10 @@
     return api('/settings');
   }
 
+  function fetchScans() {
+    return api('/scans');
+  }
+
   function fetchReconciliation() {
     return api('/reconciliation');
   }
@@ -134,6 +138,7 @@
     fetchCalendarAnalysis,
     fetchCampaigns,
     fetchPostmortem,
+    fetchScans,
     fetchSettings,
     fetchReconciliation,
     fetchSpendDaily,

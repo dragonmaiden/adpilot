@@ -4,13 +4,13 @@
 
 const I18N = {
   // ── Navigation ──
-  'nav.overview':       { en: 'Overview',          kr: '개요' },
-  'nav.campaigns':      { en: 'Campaigns',         kr: '캠페인' },
+  'nav.overview':       { en: 'Executive Summary', kr: '요약' },
+  'nav.campaigns':      { en: 'Live Performance',  kr: '실시간 성과' },
   'nav.analytics':      { en: 'Profit Analytics',  kr: '수익 분석' },
   'nav.calendar':       { en: 'Calendar Analysis', kr: '캘린더 분석' },
-  'nav.optimizations':  { en: 'Optimizations',     kr: '최적화' },
-  'nav.fatigue':        { en: 'Fatigue Detection',  kr: '피로도 감지' },
-  'nav.budget':         { en: 'Budget Manager',     kr: '예산 관리' },
+  'nav.optimizations':  { en: 'Action Queue',      kr: '조치 대기열' },
+  'nav.fatigue':        { en: 'Creative Health',   kr: '크리에이티브 상태' },
+  'nav.budget':         { en: 'Spend Pacing',      kr: '지출 페이싱' },
   'nav.settings':       { en: 'Settings',           kr: '설정' },
 
   // ── Header ──
@@ -20,13 +20,13 @@ const I18N = {
   'header.nextScan':    { en: 'Next scan in',      kr: '다음 스캔' },
 
   // ── Page Titles ──
-  'page.overview':      { en: 'Overview',          kr: '개요' },
-  'page.campaigns':     { en: 'Campaigns',         kr: '캠페인' },
+  'page.overview':      { en: 'Executive Summary', kr: '요약' },
+  'page.campaigns':     { en: 'Live Performance',  kr: '실시간 성과' },
   'page.analytics':     { en: 'Profit Analytics',  kr: '수익 분석' },
   'page.calendar':      { en: 'Calendar Analysis', kr: '캘린더 분석' },
-  'page.optimizations': { en: 'Optimizations',     kr: '최적화' },
-  'page.fatigue':       { en: 'Fatigue Detection',  kr: '피로도 감지' },
-  'page.budget':        { en: 'Budget Manager',     kr: '예산 관리' },
+  'page.optimizations': { en: 'Action Queue',      kr: '조치 대기열' },
+  'page.fatigue':       { en: 'Creative Health',   kr: '크리에이티브 상태' },
+  'page.budget':        { en: 'Spend Pacing',      kr: '지출 페이싱' },
   'page.settings':      { en: 'Settings',           kr: '설정' },
 
   // ── Overview KPI Labels ──
@@ -57,7 +57,7 @@ const I18N = {
   'chart.dailyProfit':      { en: 'Daily Profit Trend',         kr: '일별 수익 추이' },
   'chart.weeklyProfit':     { en: 'Weekly Profit',              kr: '주간 수익' },
   'chart.weekdayPerf':      { en: 'Ad Performance by Weekday',  kr: '요일별 광고 성과' },
-  'chart.hourVolume':       { en: 'Order Volume by Hour (KST)', kr: '시간대별 주문량 (KST)' },
+  'chart.hourVolume':       { en: 'Order Timing Distribution (KST)', kr: '주문 시간대 분포 (KST)' },
   'chart.weeklyCpa':        { en: 'Main Campaign Weekly CPA',   kr: '주요 캠페인 주간 CPA' },
   'chart.monthlyRefund':    { en: 'Monthly Refund Comparison',  kr: '월별 환불 비교' },
   'chart.weekdayRevenue':   { en: 'Revenue by Day of Week',     kr: '요일별 매출' },
@@ -69,13 +69,13 @@ const I18N = {
   'th.refunded':        { en: 'Refunded',          kr: '환불' },
   'th.netRevenue':      { en: 'Net Revenue',       kr: '순매출' },
   'th.adSpend':         { en: 'Ad Spend',          kr: '광고비' },
-  'th.purchasesPixel':  { en: 'Pixel Purchases', kr: '픽셀 구매' },
+  'th.purchasesPixel':  { en: 'Meta-attributed Purchases', kr: '메타 귀속 구매' },
   'th.cpa':             { en: 'CPA',               kr: 'CPA' },
 
   // ── Campaigns Page ──
-  'campaigns.liveAds':        { en: 'Live Ads',                        kr: '라이브 광고' },
-  'campaigns.overview':       { en: 'Campaigns Overview',              kr: '캠페인 개요' },
-  'campaigns.pausedLessons':  { en: 'Paused Ads — Performance Lessons', kr: '일시중지 광고 — 성과 분석' },
+  'campaigns.liveAds':        { en: 'Top Active Ads',                   kr: '핵심 활성 광고' },
+  'campaigns.overview':       { en: 'Campaign Control Table',           kr: '캠페인 제어 테이블' },
+  'campaigns.pausedLessons':  { en: 'Paused ads and what they taught',  kr: '중지된 광고와 학습 내용' },
   'th.campaign':        { en: 'Campaign',          kr: '캠페인' },
   'th.status':          { en: 'Status',            kr: '상태' },
   'th.dailyBudget':     { en: 'Daily Budget',      kr: '일일 예산' },
@@ -85,14 +85,14 @@ const I18N = {
   'th.actions':         { en: 'Actions',           kr: '관리' },
 
   // ── Optimizations Page ──
-  'kpi.totalOpt':       { en: 'Total Optimizations', kr: '총 최적화' },
-  'kpi.autoExec':       { en: 'Auto-Executed',       kr: '자동 실행' },
+  'kpi.totalOpt':       { en: 'Logged Decisions',    kr: '기록된 결정' },
+  'kpi.autoExec':       { en: 'Executed',            kr: '실행됨' },
   'kpi.pending':        { en: 'Pending Approval',    kr: '승인 대기' },
   'kpi.scans':          { en: 'Scans Completed',     kr: '완료된 스캔' },
   'chart.spendCac':     { en: 'SPEND & CAC — DAILY', kr: '지출 & CAC — 일별' },
   'chart.actionType':   { en: 'Actions by Type',     kr: '유형별 활동' },
   'chart.actionPriority': { en: 'Actions by Priority', kr: '우선순위별 활동' },
-  'opt.liveLog':        { en: 'Live Optimization Log', kr: '실시간 최적화 로그' },
+  'opt.liveLog':        { en: 'Approval Queue & Decision Log', kr: '승인 대기열 및 결정 로그' },
   'opt.allTypes':       { en: 'All Types',           kr: '전체 유형' },
   'opt.budget':         { en: 'Budget',              kr: '예산' },
   'opt.bid':            { en: 'Bid',                 kr: '입찰' },
@@ -111,14 +111,14 @@ const I18N = {
   'stat.peakDate':      { en: 'PEAK DATE',     kr: '최고 날짜' },
 
   // ── Fatigue Detection Page ──
-  'fatigue.monitor':    { en: 'Ad Fatigue Monitor',  kr: '광고 피로도 모니터' },
-  'fatigue.desc':       { en: 'The agent monitors frequency, CTR decay, and CPM rise to detect ad fatigue before it damages performance.', kr: '에이전트가 빈도, CTR 감소, CPM 상승을 모니터링하여 성과에 영향을 미치기 전에 광고 피로도를 감지합니다.' },
+  'fatigue.monitor':    { en: 'Creative Health Monitor',  kr: '크리에이티브 상태 모니터' },
+  'fatigue.desc':       { en: 'The agent monitors frequency, CTR decay, and CPM rise to detect creative fatigue before it damages performance.', kr: '에이전트가 빈도, CTR 감소, CPM 상승을 모니터링하여 성과에 영향을 미치기 전에 크리에이티브 피로도를 감지합니다.' },
   'fatigue.indicators': { en: 'Fatigue Indicators Over Time', kr: '시간 경과에 따른 피로도 지표' },
 
   // ── Budget Manager Page ──
-  'budget.daily':       { en: 'Daily Budget (Active)', kr: '일일 예산 (활성)' },
-  'budget.periodSpend': { en: 'Period Spend',          kr: '기간 지출' },
-  'budget.remaining':   { en: 'Budget Remaining',      kr: '잔여 예산' },
+  'budget.daily':       { en: 'Active Budget Pool',    kr: '활성 예산 풀' },
+  'budget.periodSpend': { en: 'Spend This Window',     kr: '이 기간 지출' },
+  'budget.remaining':   { en: 'Budget Headroom',       kr: '예산 여유' },
   'budget.pace':        { en: 'Pace',                  kr: '속도' },
   'chart.budgetAlloc':  { en: 'Budget Allocation by Campaign', kr: '캠페인별 예산 배분' },
   'chart.dailyPace':    { en: 'Daily Spend Pace',              kr: '일별 지출 속도' },

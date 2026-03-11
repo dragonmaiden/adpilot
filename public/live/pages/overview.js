@@ -1,8 +1,21 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, safeOptType, timeSince } = live.shared;
-  const { fetchOverview, fetchAnalytics, fetchOptimizations } = live.api;
+  const { timeSince } = live.shared;
+  const { fetchOverview, fetchAnalytics } = live.api;
   const { sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
+
+  function initOverviewPage() {
+    document.querySelectorAll('[data-nav-target]').forEach(button => {
+      if (button.dataset.navBound === 'true') return;
+      button.dataset.navBound = 'true';
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        const target = button.dataset.navTarget;
+        const nav = document.querySelector(`.nav-item[data-page="${target}"]`);
+        if (nav) nav.click();
+      });
+    });
+  }
 
   function updateImwebSourceIndicators(source) {
     const badgeEl = document.getElementById('imwebConnectedBadge');
@@ -44,49 +57,6 @@
     if (noticeEl) {
       noticeEl.hidden = true;
       noticeEl.textContent = '';
-    }
-  }
-
-  async function updateActivityFeed() {
-    try {
-      const data = await fetchOptimizations(8);
-      if (!data || !data.optimizations) return;
-
-      const feed = document.getElementById('activityFeed');
-      if (!feed) return;
-
-      if (data.optimizations.length === 0) {
-        feed.innerHTML = '<div class="activity-item"><div class="activity-content"><div class="activity-title">No activity yet</div><div class="activity-detail">Waiting for first scan to generate optimization data.</div></div></div>';
-        return;
-      }
-
-      const iconMap = {
-        budget: 'wallet',
-        bid: 'trending-up',
-        creative: 'image',
-        status: 'power',
-        schedule: 'clock',
-        targeting: 'users',
-      };
-
-      feed.innerHTML = data.optimizations.slice(0, 8).map(opt => `
-        <div class="activity-item">
-          <div class="activity-icon ${safeOptType(opt.type)}">
-            <i data-lucide="${iconMap[safeOptType(opt.type)] || 'zap'}"></i>
-          </div>
-          <div class="activity-content">
-            <div class="activity-title">${esc(opt.action || opt.title || '—')}</div>
-            <div class="activity-detail">${esc(opt.reason || opt.impact || '')}</div>
-          </div>
-          <div class="activity-time">${timeSince(new Date(opt.timestamp))}</div>
-        </div>
-      `).join('');
-
-      if (window.lucide) {
-        lucide.createIcons({ nodes: [feed] });
-      }
-    } catch (e) {
-      console.warn('[LIVE] updateActivityFeed error:', e.message);
     }
   }
 
@@ -213,6 +183,7 @@
       }
 
       const dailyMerged = sliceRowsByWindow((data.charts && data.charts.dailyMerged) || [], 'overview');
+      const dailyProfit = sliceRowsByWindow((data.charts && data.charts.dailyProfit) || [], 'overview');
       const hourlyOrders = analyticsData?.charts?.hourlyOrders || [];
       updateSeriesWindowBadges('overview', dailyMerged);
 
@@ -242,6 +213,17 @@
           impactChart.data.datasets[1].data = dailyMerged.map(row => row.cpc || 0);
           impactChart.update();
         }
+      }
+
+      if (dailyProfit.length > 0 && typeof brandChart !== 'undefined' && brandChart) {
+        const profitLabels = dailyProfit.map(row => row.date);
+        const profitValues = dailyProfit.map(row => Number(row.profit || 0));
+        brandChart.data.labels = profitLabels;
+        brandChart.data.datasets[0].data = profitValues;
+        brandChart.data.datasets[0].pointBackgroundColor = profitValues.map(value => value >= 0 ? '#4ade80' : '#f87171');
+        brandChart.data.datasets[0].pointBorderColor = profitValues.map(value => value >= 0 ? '#4ade80' : '#f87171');
+        brandChart.data.datasets[0].borderColor = profitValues.some(value => value < 0) ? '#20808D' : '#4ade80';
+        brandChart.update();
       }
 
       const sparkIds = ['sparkRevenue', 'sparkSpend', 'sparkRoas', 'sparkPurchases', 'sparkCtr', 'sparkCpa', 'sparkCogs'];
@@ -277,14 +259,13 @@
         );
         hourChartInstance.update();
       }
-
-      await updateActivityFeed();
     } catch (e) {
       console.warn('[LIVE] refreshOverviewPage error:', e.message);
     }
   }
 
   live.registerPage('overview', {
+    init: initOverviewPage,
     refresh: refreshOverviewPage,
   });
 })();

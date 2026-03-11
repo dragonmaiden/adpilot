@@ -37,6 +37,7 @@ function getEnrichedCampaigns(query = {}) {
       ...c,
       metricsWindow: {
         spend: metrics.spend,
+        attributedPurchases: metrics.purchases,
         metaPurchases: metrics.purchases,
         cpa: metrics.cpa,
         clicks: metrics.clicks,

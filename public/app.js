@@ -66,13 +66,13 @@ const pageTitleKeys = {
 
 // Fallback for when i18n hasn't loaded yet
 const pageTitles = {
-  overview: 'Overview',
+  overview: 'Executive Summary',
   analytics: 'Profit Analytics',
   calendar: 'Calendar Analysis',
-  campaigns: 'Active Campaigns',
-  optimizations: 'Optimization Log',
-  fatigue: 'Fatigue Detection',
-  budget: 'Budget Manager',
+  campaigns: 'Live Performance',
+  optimizations: 'Action Queue',
+  fatigue: 'Creative Health',
+  budget: 'Spend Pacing',
   settings: 'Settings'
 };
 
@@ -331,40 +331,55 @@ function initCharts() {
     });
   }
 
-  // Brand revenue doughnut (empty)
+  // Overview daily profit chart (empty)
   const ctxBrand = document.getElementById('brandChart');
   if (ctxBrand) {
     brandChart = new Chart(ctxBrand, {
-      type: 'doughnut',
+      type: 'line',
       data: {
         labels: [],
         datasets: [{
+          label: 'Daily Profit (₩)',
           data: [],
-          backgroundColor: ['#20808D', '#FFC553', '#A84B2F', '#944454', '#6B7280'],
-          borderWidth: 0,
+          borderColor: '#4ade80',
+          backgroundColor: 'rgba(74, 222, 128, 0.16)',
+          fill: {
+            target: 'origin',
+            above: 'rgba(74, 222, 128, 0.16)',
+            below: 'rgba(248, 113, 113, 0.14)',
+          },
+          tension: 0.35,
+          pointRadius: 3,
+          pointHoverRadius: 4,
+          pointBackgroundColor: [],
+          borderWidth: 2,
         }]
       },
       options: {
         plugins: {
           legend: {
-            display: true,
-            position: 'right',
-            labels: {
-              color: c.textFaint,
-              usePointStyle: true,
-              padding: 10,
-              font: { size: 11 },
-            }
+            display: false,
           },
           tooltip: {
             callbacks: {
               label: function(ctx) {
-                return ctx.label + ': ₩' + ctx.raw.toLocaleString();
+                const value = Number(ctx.raw || 0);
+                const prefix = value >= 0 ? '₩' : '-₩';
+                return 'Profit: ' + prefix + Math.abs(Math.round(value)).toLocaleString();
               }
             }
           }
         },
-        cutout: '65%',
+        scales: {
+          x: { grid: { display: false }, ticks: { color: c.textFaint, maxRotation: 45 } },
+          y: {
+            grid: { color: c.grid },
+            ticks: {
+              color: c.textFaint,
+              callback: v => formatChartKrwTick(v),
+            },
+          },
+        },
       }
     });
   }

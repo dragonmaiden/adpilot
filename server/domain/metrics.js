@@ -6,29 +6,31 @@ const PURCHASE_ACTION_TYPES = [
   'omni_purchase',
 ];
 
-const PURCHASE_ACTION_TYPE_SET = new Set(PURCHASE_ACTION_TYPES);
-
 function toNumber(value, parse = parseFloat) {
   const parsed = parse(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function getPurchases(actions) {
-  if (!Array.isArray(actions)) return 0;
+function getPreferredPurchaseAction(actions) {
+  if (!Array.isArray(actions)) return null;
 
-  let total = 0;
-  for (const action of actions) {
-    if (PURCHASE_ACTION_TYPE_SET.has(action.action_type)) {
-      total += toNumber(action.value, value => parseInt(value, 10));
-    }
+  for (const type of PURCHASE_ACTION_TYPES) {
+    const match = actions.find(action => action?.action_type === type);
+    if (match) return match;
   }
-  return total;
+
+  return null;
+}
+
+function getPurchases(actions) {
+  const purchaseAction = getPreferredPurchaseAction(actions);
+  return purchaseAction ? toNumber(purchaseAction.value, value => parseInt(value, 10)) : 0;
 }
 
 function getCPA(costPerAction) {
   if (!Array.isArray(costPerAction)) return null;
 
-  const cpa = costPerAction.find(action => PURCHASE_ACTION_TYPE_SET.has(action.action_type));
+  const cpa = getPreferredPurchaseAction(costPerAction);
   if (!cpa) return null;
 
   const value = toNumber(cpa.value);

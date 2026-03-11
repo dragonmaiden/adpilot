@@ -37,11 +37,11 @@
     <nav class="sidebar-nav">
       <a href="#" class="nav-item active" data-page="overview">
         <i data-lucide="layout-dashboard"></i>
-        <span data-i18n="nav.overview">Overview</span>
+        <span data-i18n="nav.overview">Executive Summary</span>
       </a>
       <a href="#" class="nav-item" data-page="campaigns">
         <i data-lucide="megaphone"></i>
-        <span data-i18n="nav.campaigns">Campaigns</span>
+        <span data-i18n="nav.campaigns">Live Performance</span>
       </a>
       <a href="#" class="nav-item" data-page="analytics">
         <i data-lucide="bar-chart-3"></i>
@@ -53,15 +53,15 @@
       </a>
       <a href="#" class="nav-item" data-page="optimizations">
         <i data-lucide="zap"></i>
-        <span data-i18n="nav.optimizations">Optimizations</span>
+        <span data-i18n="nav.optimizations">Action Queue</span>
       </a>
       <a href="#" class="nav-item" data-page="fatigue">
         <i data-lucide="activity"></i>
-        <span data-i18n="nav.fatigue">Fatigue Detection</span>
+        <span data-i18n="nav.fatigue">Creative Health</span>
       </a>
       <a href="#" class="nav-item" data-page="budget">
         <i data-lucide="wallet"></i>
-        <span data-i18n="nav.budget">Budget Manager</span>
+        <span data-i18n="nav.budget">Spend Pacing</span>
       </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="settings"></i>
@@ -84,7 +84,7 @@
         <i data-lucide="menu"></i>
       </button>
       <div class="page-title">
-        <h1 id="pageTitle">Overview</h1>
+        <h1 id="pageTitle">Executive Summary</h1>
         <span class="last-scan">Last scan: <span id="lastScan">12 min ago</span></span>
         <span class="last-scan-warning" id="dataFreshnessNotice" hidden></span>
       </div>
@@ -249,7 +249,7 @@
         </div>
         <div class="card chart-card">
           <div class="card-header">
-            <h2 data-i18n="chart.revenueByBrand">Revenue by Brand</h2>
+            <h2 data-i18n="chart.dailyProfit">Daily Profit Trend</h2>
           </div>
           <div class="chart-container">
             <canvas id="brandChart"></canvas>
@@ -259,21 +259,60 @@
 
       <div class="card chart-card">
         <div class="card-header">
-          <h2 data-i18n="chart.hourVolume">Order Volume by Hour (KST)</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)">All available data</span>
+          <div>
+            <h2 data-i18n="chart.hourVolume">Order Timing Distribution (KST)</h2>
+            <span style="font-size:0.75rem;color:var(--color-text-faint)">All synced Imweb orders</span>
+          </div>
+          <span class="badge badge-neutral">Source: Imweb</span>
         </div>
         <div class="chart-container" style="height:300px">
           <canvas id="hourChart"></canvas>
         </div>
       </div>
 
-      <!-- Recent Activity -->
       <div class="card">
         <div class="card-header">
-          <h2 data-i18n="chart.recentAI">Recent AI Actions</h2>
-          <button class="btn btn-ghost" data-i18n="btn.viewAll">View All</button>
+          <h2>Operator Workflow</h2>
         </div>
-        <div class="activity-feed" id="activityFeed"></div>
+        <p class="card-desc">This page stays executive. Use the workflow surfaces below when you need live decisions, approvals, pacing, or fatigue detail.</p>
+        <div class="workflow-grid">
+          <article class="workflow-card">
+            <div class="workflow-card-head">
+              <span class="workflow-icon"><i data-lucide="radar"></i></span>
+              <span class="badge badge-success">Operate here</span>
+            </div>
+            <h3>Live Performance</h3>
+            <p>Watch active ads, pending decisions, budget pressure, and the campaigns that need action first.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="campaigns">Open Live Performance</button>
+          </article>
+          <article class="workflow-card">
+            <div class="workflow-card-head">
+              <span class="workflow-icon"><i data-lucide="sparkles"></i></span>
+              <span class="badge badge-neutral">Diagnose</span>
+            </div>
+            <h3>Creative Health</h3>
+            <p>Review fatigue, CTR decay, frequency, and CPM pressure when creative performance starts to slip.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="fatigue">Open Creative Health</button>
+          </article>
+          <article class="workflow-card">
+            <div class="workflow-card-head">
+              <span class="workflow-icon"><i data-lucide="gauge"></i></span>
+              <span class="badge badge-neutral">Monitor</span>
+            </div>
+            <h3>Spend Pacing</h3>
+            <p>Check daily budget headroom, allocation, and whether delivery is running ahead or behind plan.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="budget">Open Spend Pacing</button>
+          </article>
+          <article class="workflow-card">
+            <div class="workflow-card-head">
+              <span class="workflow-icon"><i data-lucide="list-todo"></i></span>
+              <span class="badge badge-warning">Approval path</span>
+            </div>
+            <h3>Action Queue</h3>
+            <p>Inspect what the agent suggested, what needs approval, and what already executed.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="optimizations">Open Action Queue</button>
+          </article>
+        </div>
       </div>
     </section>
 
@@ -289,20 +328,35 @@
       <div class="analytics-inline-notice" id="analyticsFreshnessNotice" hidden></div>
 
       <div class="profit-hero" id="profitHero">
-        <div class="profit-hero-inner">
-          <div class="profit-verdict" id="profitVerdict">—</div>
-          <div class="profit-amount" id="profitAmount">—</div>
+        <div class="profit-hero-head">
+          <div class="profit-hero-kicker" id="profitHeroKicker">Selected period true net profit</div>
           <span class="confidence-badge" id="profitConfidence">—</span>
         </div>
+        <div class="profit-hero-main">
+          <div class="profit-hero-primary">
+            <div class="profit-amount" id="profitAmount">—</div>
+            <div class="profit-verdict" id="profitVerdict">—</div>
+          </div>
+          <div class="profit-hero-metrics">
+            <div class="profit-hero-metric">
+              <span>Margin</span>
+              <strong id="profitHeroMargin">—</strong>
+            </div>
+            <div class="profit-hero-metric">
+              <span>True ROAS</span>
+              <strong id="profitHeroRoas">—</strong>
+            </div>
+            <div class="profit-hero-metric">
+              <span>30d run rate</span>
+              <strong id="profitHeroRunRate">—</strong>
+            </div>
+          </div>
+        </div>
         <div class="profit-hero-sub" id="profitHeroSub">Waiting for data...</div>
+        <div class="profit-hero-latest" id="profitLatestSignal">Latest completed day: waiting for covered data.</div>
       </div>
 
       <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card" data-profit-kpi="trueNetProfit">
-          <div class="kpi-label">True Net Profit (Period)</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="coins"></i><span>—</span></div>
-        </div>
         <div class="kpi-card" data-profit-kpi="cogsCoverage">
           <div class="kpi-label">COGS Coverage</div>
           <div class="kpi-value">—</div>
@@ -625,8 +679,8 @@
     <section class="page" data-page="campaigns">
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker">Campaign Performance</div>
-          <h2>Control and diagnose live delivery</h2>
+          <div class="section-kicker">Live Performance</div>
+          <h2>Act on what needs attention now</h2>
         </div>
         <div class="range-toolbar">
           <span class="range-toolbar-label">Window</span>
@@ -638,12 +692,67 @@
           </div>
         </div>
       </div>
-      <p class="section-note" id="campaignWindowNote">last 7 days · live actions still apply immediately</p>
+      <p class="section-note" id="campaignWindowNote">Last 7 days · active delivery, pacing, fatigue, and approvals in one place.</p>
+
+      <div class="kpi-grid small">
+        <div class="kpi-card" data-live-kpi="activeCampaigns">
+          <div class="kpi-label">Active Campaigns</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="megaphone"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-live-kpi="pendingApprovals">
+          <div class="kpi-label">Approval Queue</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="message-square-more"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-live-kpi="fatigueAlerts">
+          <div class="kpi-label">Creative Alerts</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="activity"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-live-kpi="spendPace">
+          <div class="kpi-label">Spend Pace Today</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="gauge"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-live-kpi="burnRisk">
+          <div class="kpi-label">Spend Without Sales</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="flame"></i><span>—</span></div>
+        </div>
+      </div>
+
+      <div class="live-performance-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="section-kicker">Latest Scan</div>
+              <h2>Approval-required actions</h2>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="optimizations">Open Action Queue</button>
+          </div>
+          <div class="live-queue" id="liveActionQueue">
+            <div class="empty-state">Loading action queue...</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="section-kicker">Operator Signals</div>
+              <h2>What changed in the account</h2>
+            </div>
+          </div>
+          <div class="operator-signal-grid" id="operatorSignalGrid">
+            <div class="empty-state">Loading operator signals...</div>
+          </div>
+        </div>
+      </div>
 
       <!-- Live / Active Section -->
       <div class="card" id="activeCampaignsCard">
         <div class="card-header">
-          <h2><span style="display:inline-block;width:8px;height:8px;background:#4ade80;border-radius:50%;margin-right:8px;animation:livePulse 2s infinite"></span><span data-i18n="campaigns.liveAds">Live Ads</span></h2>
+          <h2><span style="display:inline-block;width:8px;height:8px;background:#4ade80;border-radius:50%;margin-right:8px;animation:livePulse 2s infinite"></span><span data-i18n="campaigns.liveAds">Live Ad Watchlist</span></h2>
           <span id="activeCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
         </div>
         <div id="activeAdsContainer" style="padding:0 20px 20px">
@@ -654,7 +763,7 @@
       <!-- Campaign Overview -->
       <div class="card" id="campaignOverviewCard">
         <div class="card-header">
-          <h2 data-i18n="campaigns.overview">Campaigns Overview</h2>
+          <h2 data-i18n="campaigns.overview">Campaign Control Table</h2>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="campaignTable">
@@ -675,28 +784,38 @@
         </div>
       </div>
 
-      <!-- Inactive Ads + Lessons -->
-      <div class="card" id="inactiveAdsCard" style="margin-top:0">
-        <div class="card-header">
-          <h2 data-i18n="campaigns.pausedLessons">Paused Ads — Performance Lessons</h2>
-          <span id="inactiveCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
+      <div class="charts-grid">
+        <div class="card" id="creativeHealthCard">
+          <div class="card-header">
+            <div>
+              <div class="section-kicker">Creative Health</div>
+              <h2>Creative alerts</h2>
+            </div>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="fatigue">Open Creative Health</button>
+          </div>
+          <div class="creative-alert-list" id="liveCreativeAlerts">
+            <div class="empty-state">Loading creative alerts...</div>
+          </div>
         </div>
-        <!-- Lessons Summary -->
-        <div id="lessonsSummary" style="padding:0 20px 16px"></div>
-        <!-- Individual paused ads -->
-        <div id="inactiveAdsContainer" style="padding:0 20px 20px"></div>
       </div>
     </section>
 
     <!-- Optimizations Page -->
     <section class="page" data-page="optimizations">
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker">Action Queue</div>
+          <h2>Approvals, suggestions, and execution history</h2>
+        </div>
+        <p class="section-note">Use this page for the full queue. The Live Performance page only surfaces the decisions that matter most right now.</p>
+      </div>
       <div class="kpi-grid small">
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.totalOpt">Total Optimizations</div>
+          <div class="kpi-label" data-i18n="kpi.totalOpt">Logged Decisions</div>
           <div class="kpi-value" id="optTotal" data-target="0" data-prefix="">—</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.autoExec">Auto-Executed</div>
+          <div class="kpi-label" data-i18n="kpi.autoExec">Executed</div>
           <div class="kpi-value" id="optExecuted" data-target="0" data-prefix="">—</div>
         </div>
         <div class="kpi-card">
@@ -757,7 +876,7 @@
 
       <div class="card">
         <div class="card-header">
-          <h2 data-i18n="opt.liveLog">Live Optimization Log</h2>
+          <h2 data-i18n="opt.liveLog">Approval Queue & Decision Log</h2>
           <div style="display:flex;align-items:center;gap:12px">
             <span id="optStats"></span>
             <div class="filter-group">
@@ -781,9 +900,16 @@
 
     <!-- Fatigue Detection Page -->
     <section class="page" data-page="fatigue">
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker">Creative Health</div>
+          <h2>Watch fatigue before it damages performance</h2>
+        </div>
+        <p class="section-note">This page owns creative diagnosis: active fatigue signals, pressure trends, and paused-ad learnings.</p>
+      </div>
       <div class="card">
         <div class="card-header">
-          <h2 data-i18n="fatigue.monitor">Ad Fatigue Monitor</h2>
+          <h2 data-i18n="fatigue.monitor">Creative Health Monitor</h2>
           <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <span style="font-size:0.75rem;color:var(--color-text-faint)" id="fatigueWindowNote">Recent 14 day fatigue view</span>
             <span class="badge badge-warning" data-fatigue-badge>— ads · — healthy</span>
@@ -800,22 +926,40 @@
           <canvas id="fatigueChart"></canvas>
         </div>
       </div>
+      <div class="card" id="fatigueLearningsCard">
+        <div class="card-header">
+          <div>
+            <div class="section-kicker">Creative Learnings</div>
+            <h2 data-i18n="campaigns.pausedLessons">Paused ads and what they taught</h2>
+          </div>
+          <span id="fatigueInactiveCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
+        </div>
+        <div id="fatigueLessonsSummary" style="padding:0 20px 16px"></div>
+        <div id="fatigueInactiveAdsContainer" style="padding:0 20px 20px"></div>
+      </div>
     </section>
 
     <!-- Budget Manager Page -->
     <section class="page" data-page="budget">
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker">Spend Pacing</div>
+          <h2>Track budget headroom and delivery pace</h2>
+        </div>
+        <p class="section-note">This page is for pacing and budget pressure only. Live campaign decisions stay on Live Performance.</p>
+      </div>
       <div class="kpi-grid small">
         <div class="kpi-card" data-budget-kpi="daily">
-          <div class="kpi-label" data-i18n="budget.daily">Daily Budget (Active)</div>
+          <div class="kpi-label" data-i18n="budget.daily">Active Budget Pool</div>
           <div class="kpi-value">—</div>
         </div>
         <div class="kpi-card" data-budget-kpi="periodSpend">
-          <div class="kpi-label" data-i18n="budget.periodSpend">Period Spend</div>
+          <div class="kpi-label" data-i18n="budget.periodSpend">Spend This Window</div>
           <div class="kpi-value" data-target="0" data-prefix="$">—</div>
           <div class="budget-bar"><div class="budget-fill" style="width:0%"></div></div>
         </div>
         <div class="kpi-card" data-budget-kpi="remaining">
-          <div class="kpi-label" data-i18n="budget.remaining">Budget Remaining</div>
+          <div class="kpi-label" data-i18n="budget.remaining">Budget Headroom</div>
           <div class="kpi-value">—</div>
         </div>
         <div class="kpi-card" data-budget-kpi="pace">
