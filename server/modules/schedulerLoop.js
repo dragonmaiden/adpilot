@@ -40,7 +40,7 @@ function startScheduler(runScan) {
 
   imweb.loadTokens();
   telegram.startPolling();
-  telegram.sendMessage('🤖 <b>AdPilot Agent Started</b>\n\nAutonomous scanning is active. Executable budget, bid, and status changes will request your approval here.');
+  telegram.maybeSendStartupMessage();
 
   nextInitialRunAt = new Date(Date.now() + 5000);
   initialScanTimer = setTimeout(() => {

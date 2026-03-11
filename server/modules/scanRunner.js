@@ -290,7 +290,7 @@ async function runScan(manual = false) {
       pushStep(scanResult, { step: 'optimizer', status: 'ok', totalOptimizations: optimizations.length });
       console.log(`[SCHEDULER]   → ${optimizations.length} optimizations generated`);
 
-      await telegram.sendScanSummary(scanResult);
+      await telegram.sendScanSummary(scanResult, latestData);
 
       const byType = {};
       const byPriority = {};

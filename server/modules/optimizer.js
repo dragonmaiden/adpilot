@@ -6,7 +6,6 @@
 const config = require('../config');
 const meta = require('./metaClient');
 const telegram = require('./telegram');
-const transforms = require('../transforms/charts');
 const {
   averagePositiveField,
   calcROAS,
@@ -16,6 +15,13 @@ const {
 } = require('../domain/metrics');
 const { buildFatigueSnapshot, classifyFatigue } = require('../domain/fatigue');
 const {
+  filterRecentInsights,
+  filterAllRecentInsights,
+  sumRecentNetRevenue,
+  buildWeekdayScaleContext,
+  buildProfitContext,
+} = require('../domain/performanceContext');
+const {
   OPTIMIZATION_TYPES,
   isBudgetDecreaseAction,
   isBudgetIncreaseAction,
@@ -24,7 +30,7 @@ const {
   requiresApproval,
 } = require('../domain/optimizationSemantics');
 const runtimeSettings = require('../runtime/runtimeSettings');
-const { getTodayInTimeZone, shiftDate } = require('../domain/time');
+const { getTodayInTimeZone } = require('../domain/time');
 
 const PERFORMANCE_LOOKBACK_DAYS = 7;
 const SCHEDULE_LOOKBACK_DAYS = 28;
@@ -32,182 +38,6 @@ const PROFIT_SCALE_MARGIN_THRESHOLD = 0.08;
 const MIN_PROFIT_COVERAGE_RATIO = 0.8;
 const WEEKDAY_SCALE_CAUTION_RATIO = 1.15;
 const WEEKDAY_SCALE_SUPPRESS_RATIO = 1.4;
-
-// ═══════════════════════════════════════════════
-// OPTIMIZATION RULES
-// ═══════════════════════════════════════════════
-
-function getWindowStart(days, referenceDate = getTodayInTimeZone()) {
-  return shiftDate(referenceDate, -(days - 1));
-}
-
-function filterRecentInsights(insights, idKey, idValue, days = PERFORMANCE_LOOKBACK_DAYS, referenceDate = getTodayInTimeZone()) {
-  const windowStart = getWindowStart(days, referenceDate);
-  return (Array.isArray(insights) ? insights : [])
-    .filter(row => row?.[idKey] === idValue && row?.date_start >= windowStart)
-    .sort((left, right) => String(left?.date_start || '').localeCompare(String(right?.date_start || '')));
-}
-
-function filterAllRecentInsights(insights, days = PERFORMANCE_LOOKBACK_DAYS, referenceDate = getTodayInTimeZone()) {
-  const windowStart = getWindowStart(days, referenceDate);
-  return (Array.isArray(insights) ? insights : [])
-    .filter(row => row?.date_start >= windowStart)
-    .sort((left, right) => String(left?.date_start || '').localeCompare(String(right?.date_start || '')));
-}
-
-function sumRecentNetRevenue(revenueData, days = PERFORMANCE_LOOKBACK_DAYS, referenceDate = getTodayInTimeZone()) {
-  const dailyRevenue = revenueData?.dailyRevenue;
-  const windowStart = getWindowStart(days, referenceDate);
-  if (!dailyRevenue || typeof dailyRevenue !== 'object') return 0;
-
-  return Object.entries(dailyRevenue).reduce((sum, [date, value]) => {
-    if (date < windowStart) return sum;
-    const paid = Number(value?.revenue || 0);
-    const refunded = Number(value?.refunded || 0);
-    return sum + paid - refunded;
-  }, 0);
-}
-
-function getWeekdayName(dateKey) {
-  if (!dateKey) return '';
-  return new Date(`${dateKey}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
-}
-
-function median(values) {
-  const sorted = (values || []).filter(value => Number.isFinite(value)).sort((left, right) => left - right);
-  if (sorted.length === 0) return null;
-  const midpoint = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[midpoint - 1] + sorted[midpoint]) / 2
-    : sorted[midpoint];
-}
-
-function buildWeekdayScaleContext(insights, rules, referenceDate = getTodayInTimeZone()) {
-  const currentWeekday = getWeekdayName(referenceDate);
-  const recentInsights = filterAllRecentInsights(insights, SCHEDULE_LOOKBACK_DAYS, referenceDate);
-  if (!currentWeekday || recentInsights.length === 0) {
-    return { status: 'neutral', weekday: currentWeekday };
-  }
-
-  const dayPerf = new Map();
-  for (const insight of recentInsights) {
-    const weekday = getWeekdayName(insight?.date_start);
-    if (!weekday) continue;
-    const spend = Number(insight?.spend || 0);
-    const purchases = getPurchases(insight?.actions);
-    const bucket = dayPerf.get(weekday) || { weekday, spend: 0, purchases: 0, observations: 0 };
-    bucket.spend += spend;
-    bucket.purchases += purchases;
-    bucket.observations += 1;
-    dayPerf.set(weekday, bucket);
-  }
-
-  const weekdayRows = Array.from(dayPerf.values()).map(day => ({
-    ...day,
-    cpa: day.purchases > 0 ? day.spend / day.purchases : Infinity,
-    purchaseEfficiency: day.spend > 0 ? day.purchases / day.spend : 0,
-  }));
-  const current = weekdayRows.find(day => day.weekday === currentWeekday);
-  if (!current || current.observations < 2 || current.spend < rules.minSpendForDecision) {
-    return { status: 'neutral', weekday: currentWeekday };
-  }
-
-  if (current.purchases === 0) {
-    return {
-      status: 'suppress',
-      weekday: currentWeekday,
-      reason: `Recent ${currentWeekday} delivery spent $${current.spend.toFixed(2)} across ${current.observations} observations with 0 Meta-attributed purchases`,
-    };
-  }
-
-  const comparable = weekdayRows.filter(day => day.observations > 0 && day.spend >= rules.minSpendForDecision);
-  const medianCpa = median(comparable.filter(day => Number.isFinite(day.cpa)).map(day => day.cpa));
-  const medianEfficiency = median(comparable.filter(day => day.purchaseEfficiency > 0).map(day => day.purchaseEfficiency));
-  if (!Number.isFinite(medianCpa) || !Number.isFinite(medianEfficiency) || medianCpa <= 0 || medianEfficiency <= 0) {
-    return { status: 'neutral', weekday: currentWeekday };
-  }
-
-  const cpaWeaknessRatio = current.cpa / medianCpa;
-  const efficiencyWeaknessRatio = medianEfficiency / current.purchaseEfficiency;
-  const weaknessRatio = Math.max(cpaWeaknessRatio, efficiencyWeaknessRatio);
-  const summary = `${currentWeekday} CPA is $${current.cpa.toFixed(2)} versus a $${medianCpa.toFixed(2)} median weekday CPA`;
-
-  if (weaknessRatio > WEEKDAY_SCALE_SUPPRESS_RATIO) {
-    return {
-      status: 'suppress',
-      weekday: currentWeekday,
-      weaknessRatio,
-      reason: `${currentWeekday} is materially underperforming the weekday baseline — ${summary}`,
-    };
-  }
-
-  if (weaknessRatio >= WEEKDAY_SCALE_CAUTION_RATIO) {
-    return {
-      status: 'caution',
-      weekday: currentWeekday,
-      weaknessRatio,
-      reason: `${currentWeekday} is softer than the weekday baseline — ${summary}`,
-    };
-  }
-
-  return {
-    status: 'favorable',
-    weekday: currentWeekday,
-    weaknessRatio,
-    reason: `${currentWeekday} is in line with the weekday baseline — ${summary}`,
-  };
-}
-
-function buildProfitContext(campaignInsights, revenueData, cogsData, days = PERFORMANCE_LOOKBACK_DAYS, referenceDate = getTodayInTimeZone()) {
-  if (!revenueData?.dailyRevenue || !cogsData?.dailyCOGS) {
-    return null;
-  }
-
-  const dailyMerged = transforms.buildDailyMerged(revenueData.dailyRevenue, campaignInsights, cogsData.dailyCOGS);
-  const profitWaterfall = transforms.buildProfitWaterfall(dailyMerged, cogsData.dailyCOGS, config.fees.paymentFeeRate);
-  const windowStart = getWindowStart(days, referenceDate);
-  const rows = profitWaterfall.filter(row => row?.date && row.date >= windowStart);
-
-  if (rows.length === 0) {
-    return null;
-  }
-
-  const totals = rows.reduce((summary, row) => {
-    summary.netRevenue += Number(row?.netRevenue || 0);
-    summary.trueNetProfit += Number(row?.trueNetProfit || 0);
-    summary.adSpendKRW += Number(row?.adSpendKRW || 0);
-    summary.cogs += Number(row?.cogs || 0);
-    summary.shipping += Number(row?.cogsShipping || 0);
-    summary.paymentFees += Number(row?.paymentFees || 0);
-    summary.coveredDays += row?.hasCOGS ? 1 : 0;
-    return summary;
-  }, {
-    netRevenue: 0,
-    trueNetProfit: 0,
-    adSpendKRW: 0,
-    cogs: 0,
-    shipping: 0,
-    paymentFees: 0,
-    coveredDays: 0,
-  });
-
-  const coverageRatio = rows.length > 0 ? totals.coveredDays / rows.length : 0;
-
-  return {
-    days,
-    rowCount: rows.length,
-    coveredDays: totals.coveredDays,
-    coverageRatio,
-    hasReliableCoverage: coverageRatio >= MIN_PROFIT_COVERAGE_RATIO,
-    netRevenue: Math.round(totals.netRevenue),
-    trueNetProfit: Math.round(totals.trueNetProfit),
-    adSpendKRW: Math.round(totals.adSpendKRW),
-    cogs: Math.round(totals.cogs),
-    shipping: Math.round(totals.shipping),
-    paymentFees: Math.round(totals.paymentFees),
-    margin: totals.netRevenue > 0 ? totals.trueNetProfit / totals.netRevenue : 0,
-  };
-}
 
 class OptimizationEngine {
   constructor(scanId = Date.now()) {
@@ -244,7 +74,9 @@ class OptimizationEngine {
   async analyze(campaignData, adSetData, adData, campaignInsights, adSetInsights, adInsights, revenueData, revenueSource = null, cogsData = null) {
     const rules = this.getRules();
     this.actions = [];
-    const profitContext = buildProfitContext(campaignInsights, revenueData, cogsData, PERFORMANCE_LOOKBACK_DAYS);
+    const profitContext = buildProfitContext(campaignInsights, revenueData, cogsData, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), {
+      minCoverageRatio: MIN_PROFIT_COVERAGE_RATIO,
+    });
 
     console.log(`[OPTIMIZER] Starting scan ${this.scanId}...`);
 
@@ -321,7 +153,11 @@ class OptimizationEngine {
       const profitSupportsScaling = hasFreshProfitContext
         && profitContext.trueNetProfit > 0
         && profitContext.margin >= PROFIT_SCALE_MARGIN_THRESHOLD;
-      const weekdayScaleContext = buildWeekdayScaleContext(campaignHistory, rules, referenceDate);
+      const weekdayScaleContext = buildWeekdayScaleContext(campaignHistory, rules, referenceDate, {
+        lookbackDays: SCHEDULE_LOOKBACK_DAYS,
+        cautionRatio: WEEKDAY_SCALE_CAUTION_RATIO,
+        suppressRatio: WEEKDAY_SCALE_SUPPRESS_RATIO,
+      });
 
       if (hasDecisionData && avgCPA && avgCPA < rules.cpaWarningThreshold * 0.5 && totalPurchases >= 5 && profitSupportsScaling) {
         if (weekdayScaleContext.status === 'suppress') {

@@ -4,6 +4,8 @@
 // ═══════════════════════════════════════════════════════
 
 const config = require('../config');
+const telegramState = require('./telegramState');
+const { buildScanSummaryPlan, shouldSendStartupMessage } = require('../services/telegramDigestService');
 
 const BOT_TOKEN = typeof config.telegram.botToken === 'string'
   ? config.telegram.botToken.trim()
@@ -160,6 +162,19 @@ async function sendMessage(text, parseMode = 'HTML') {
     console.error('[TELEGRAM] Send error:', err.message);
     return null;
   }
+}
+
+async function maybeSendStartupMessage() {
+  const state = telegramState.getState();
+  if (!shouldSendStartupMessage(state)) {
+    return { skipped: true, reason: 'startup-cooldown' };
+  }
+
+  const result = await sendMessage('🤖 <b>AdPilot Agent Started</b>\n\nAutonomous scanning is active. Executable budget, bid, and status changes will request your approval here.');
+  if (result?.ok) {
+    telegramState.markStartupSent();
+  }
+  return result;
 }
 
 // ── Send approval request with inline buttons ──
@@ -372,38 +387,20 @@ async function editApprovalMessage(messageId, appendText) {
 }
 
 // ── Send scan summary notification ──
-async function sendScanSummary(scanResult) {
-  const opts = scanResult.optimizations || [];
-  if (opts.length === 0) {
-    // Don't spam if nothing found
-    return;
+async function sendScanSummary(scanResult, latestData = null) {
+  const plan = buildScanSummaryPlan(scanResult, latestData || {}, telegramState.getState());
+  if (!plan.shouldSend || !plan.text) {
+    return { skipped: true, reason: plan.reason, category: plan.category };
   }
 
-  const priorityEmoji = { critical: '🚨', high: '⚠️', medium: 'ℹ️', low: '💡' };
-  const typeEmoji = { budget: '💰', status: '⏸', bid: '📊', creative: '🎨', schedule: '🕐', targeting: '🎯' };
-
-  // Build detailed list of each optimization
-  const details = opts.map((o, i) => {
-    const pEmoji = priorityEmoji[o.priority] || '⚡';
-    const tEmoji = typeEmoji[o.type] || '⚡';
-    return `${pEmoji} <b>${o.priority.toUpperCase()}</b> ${tEmoji} <b>${o.targetName}</b>\n    └ ${o.action}\n    └ <i>${o.reason}</i>`;
-  }).join('\n\n');
-
-  // Stats from scan
-  const stats = scanResult.stats || {};
-  const statsLine = stats.activeAds
-    ? `\n📊 ${stats.activeCampaigns} campaigns · ${stats.activeAds} ads active · $${stats.totalSpend7d} spent (7d)`
-    : '';
-
-  const text = `🔍 <b>AdPilot Scan Complete</b>${statsLine}
-
-Found <b>${opts.length}</b> suggestion${opts.length > 1 ? 's' : ''}:
-
-${details}
-
-<i>💵 Executable budget, bid, and status changes will request your approval here first.</i>`;
-
-  await sendMessage(text);
+  const result = await sendMessage(plan.text);
+  if (result?.ok) {
+    telegramState.markSummarySent({
+      fingerprint: plan.fingerprint,
+      category: plan.category,
+    });
+  }
+  return result;
 }
 
 // ── Poll for updates (callback button presses) ──
@@ -497,6 +494,7 @@ function getPendingApprovals() {
 
 module.exports = {
   sendMessage,
+  maybeSendStartupMessage,
   requestApproval,
   waitForApproval,
   processCallback,

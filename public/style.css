@@ -395,6 +395,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .main {
   grid-column: 2;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   padding: var(--space-6);
   display: flex;
@@ -1542,6 +1543,19 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .filter-group {
   display: flex;
   gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.history-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.history-toolbar #optStats {
+  min-width: 0;
 }
 
 /* ============================================
@@ -2435,6 +2449,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 @media (max-width: 768px) {
   .dashboard {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
   }
 
   .sidebar {
@@ -2448,7 +2463,11 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
   .sidebar.open { left: 0; }
 
-  .header { grid-column: 1; }
+  .header {
+    grid-column: 1;
+    min-height: var(--header-height);
+    padding: var(--space-3) var(--space-4);
+  }
   .main { grid-column: 1; padding: var(--space-4); }
   .mobile-menu-btn { display: flex; }
 
@@ -2464,6 +2483,24 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
   /* Header tighter gap */
   .header-right { gap: var(--space-2); }
+
+  .history-toolbar {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .history-toolbar #optStats {
+    flex: 1 1 100%;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .filter-group .select-input {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
 
   .calendar-toolbar {
     align-items: flex-start;
@@ -2597,11 +2634,30 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .kpi-grid.kpi-grid-4 { grid-template-columns: 1fr; }
   .kpi-grid.small { grid-template-columns: 1fr; }
 
-  /* Hide lang toggle */
-  .lang-toggle { display: none; }
-
   /* Tighter header padding */
-  .header { padding: 0 var(--space-3); }
+  .header {
+    padding: var(--space-3);
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .header-left,
+  .header-right {
+    width: 100%;
+  }
+
+  .header-right {
+    justify-content: flex-end;
+  }
+
+  .page-title {
+    width: 100%;
+  }
+
+  .last-scan,
+  .last-scan-warning {
+    line-height: 1.45;
+  }
 
   /* API rows stack */
   .api-row {
