@@ -278,6 +278,7 @@ const calendarState = {
   selectionStart: null,
   selectionEnd: null,
   data: null,
+  error: null,
   loading: false,
   requestId: 0,
   dragging: false,
@@ -430,18 +431,29 @@ function buildVisibleReconciliationReport(report, group) {
 }
 
 // ── API Helper ──
-async function api(path, method = 'GET', body = null) {
+async function api(path, method = 'GET', body = null, options = null) {
+  const timeoutMs = Number(options?.timeoutMs) > 0 ? Number(options.timeoutMs) : 0;
+  let timeoutId = null;
   try {
     const key = getApiKey();
+    const controller = timeoutMs > 0 ? new AbortController() : null;
     const opts = {
       method,
       headers: {
         'Content-Type': 'application/json',
         ...(key ? { Authorization: `Bearer ${key}` } : {}),
       },
+      ...(controller ? { signal: controller.signal } : {}),
     };
     if (body) opts.body = JSON.stringify(body);
+    if (controller) {
+      timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    }
     const res = await fetch(`${API_BASE}${path}`, opts);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      timeoutId = null;
+    }
     if (res.status === 401) {
       sessionStorage.removeItem('adpilot_key');
       promptForApiKey();
@@ -452,6 +464,10 @@ async function api(path, method = 'GET', body = null) {
   } catch (err) {
     console.warn(`[LIVE] API error on ${path}:`, err.message);
     return null;
+  } finally {
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -484,7 +500,7 @@ async function fetchAnalytics() {
 
 async function fetchCalendarAnalysis(params) {
   const search = new URLSearchParams(params || {});
-  return api(`/calendar-analysis?${search.toString()}`);
+  return api(`/calendar-analysis?${search.toString()}`, 'GET', null, { timeoutMs: 15000 });
 }
 
 async function fetchCampaigns() {
@@ -1773,6 +1789,11 @@ function renderCalendarSelectionDeck() {
     return;
   }
 
+  if (!hasFreshSelection && calendarState.error) {
+    container.innerHTML = renderEmptyStateCard('Selected Range', calendarState.error);
+    return;
+  }
+
   if (!calendarState.data || calendarState.data.ready === false || !hasFreshSelection) {
     container.innerHTML = renderEmptyStateCard('Calendar Analysis', 'Calendar analysis is waiting for the first completed scan.');
     return;
@@ -2100,33 +2121,44 @@ async function updateCalendarAnalysisPage() {
 
   const { visibleStart, visibleEnd } = getCalendarVisibleRange();
   calendarState.loading = true;
+  calendarState.error = null;
   renderCalendarViewport();
   renderCalendarSelectionDeck();
 
   const requestId = ++calendarState.requestId;
-  const data = await fetchCalendarAnalysis({
-    visibleStart,
-    visibleEnd,
-    selectionStart: calendarState.selectionStart,
-    selectionEnd: calendarState.selectionEnd,
-  });
+  try {
+    const data = await fetchCalendarAnalysis({
+      visibleStart,
+      visibleEnd,
+      selectionStart: calendarState.selectionStart,
+      selectionEnd: calendarState.selectionEnd,
+    });
 
-  if (requestId !== calendarState.requestId) {
-    return;
+    if (requestId !== calendarState.requestId) {
+      return;
+    }
+
+    if (data) {
+      calendarState.data = data;
+      calendarState.selectionStart = data.viewport?.selectionStart || calendarState.selectionStart;
+      calendarState.selectionEnd = data.viewport?.selectionEnd || calendarState.selectionEnd;
+      calendarState.error = null;
+    } else if (!hasFreshCalendarSelectionPayload(calendarState.data)) {
+      calendarState.error = 'Could not refresh calendar metrics right now. Try again in a moment.';
+    }
+  } catch (err) {
+    if (requestId !== calendarState.requestId) {
+      return;
+    }
+    calendarState.error = 'Could not refresh calendar metrics right now. Try again in a moment.';
+    console.warn('[LIVE] updateCalendarAnalysisPage error:', err.message);
+  } finally {
+    if (requestId === calendarState.requestId) {
+      calendarState.loading = false;
+      renderCalendarViewport();
+      renderCalendarSelectionDeck();
+    }
   }
-
-  calendarState.loading = false;
-
-  if (data) {
-    calendarState.data = data;
-    calendarState.selectionStart = data.viewport?.selectionStart || calendarState.selectionStart;
-    calendarState.selectionEnd = data.viewport?.selectionEnd || calendarState.selectionEnd;
-  } else if (!hasFreshCalendarSelectionPayload(calendarState.data)) {
-    calendarState.data = null;
-  }
-
-  renderCalendarViewport();
-  renderCalendarSelectionDeck();
 }
 
 function initCalendarAnalysisControls() {
