@@ -148,6 +148,11 @@ function animateKPIs() {
   });
 }
 
+function formatChartKrwTick(value) {
+  const amount = Number(value);
+  return '₩' + (Number.isFinite(amount) ? Math.round(amount).toLocaleString('en-US') : '0');
+}
+
 // ── Chart.js Defaults ──
 function getChartColors() {
   const style = getComputedStyle(document.documentElement);
@@ -277,7 +282,7 @@ function initCharts() {
             grid: { color: c.grid },
             ticks: {
               color: c.textFaint,
-              callback: v => '₩' + (v / 1000).toFixed(0) + 'K'
+              callback: v => formatChartKrwTick(v)
             },
           },
         }
@@ -1031,7 +1036,7 @@ function initProfitCharts() {
             grid: { color: c.grid },
             ticks: {
               color: c.textFaint,
-              callback: v => '\u20a9' + (v / 1000).toFixed(0) + 'K'
+              callback: v => formatChartKrwTick(v)
             }
           }
         }
@@ -1094,8 +1099,8 @@ function initAnalyticsCharts() {
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: c.textFaint, maxRotation: 45, font: { size: 10 } } },
-          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => '\u20a9' + (v/1000).toFixed(0) + 'K' } },
-          y1: { position: 'right', grid: { display: false }, ticks: { color: c.gold, callback: v => '\u20a9' + (v/1000000).toFixed(1) + 'M' } },
+          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => formatChartKrwTick(v) } },
+          y1: { position: 'right', grid: { display: false }, ticks: { color: c.gold, callback: v => formatChartKrwTick(v) } },
         }
       }
     });
@@ -1122,7 +1127,7 @@ function initAnalyticsCharts() {
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: c.textFaint, font: { size: 10 } } },
-          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => '\u20a9' + (v/1000000).toFixed(1) + 'M' } },
+          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => formatChartKrwTick(v) } },
         }
       }
     });
@@ -1243,7 +1248,7 @@ function initAnalyticsCharts() {
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: c.textFaint } },
-          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => '\u20a9' + (v/1000000).toFixed(1) + 'M' } },
+          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => formatChartKrwTick(v) } },
         }
       }
     });

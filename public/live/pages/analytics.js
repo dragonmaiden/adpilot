@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, safeConfidenceLevel, formatSignedKrw, formatCompactKrw, formatSignedCompactKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
+  const { esc, safeConfidenceLevel, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum } = live.shared;
   const { fetchAnalytics, fetchReconciliation } = live.api;
   const { getSeriesWindowMeta, sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
 
@@ -10,7 +10,7 @@
     }
 
     if (metric.unit === 'currency') {
-      return `${formatCompactKrw(metric.numerator)} of ${formatCompactKrw(metric.denominator)}`;
+      return `${formatKrw(metric.numerator)} of ${formatKrw(metric.denominator)}`;
     }
 
     if (metric.unit === 'sections') {
@@ -311,20 +311,20 @@
 
     const reconKpis = {
       matchedNet: {
-        value: formatSignedCompactKrw(matchedNet),
+        value: formatSignedKrw(matchedNet),
         sub: `${overlap.matchedCount || 0} matched events`,
       },
       unmatchedSettlement: {
         value: String(unmatchedSettlementCount),
-        sub: `${formatSignedCompactKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))} settlement gap`,
+        sub: `${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))} settlement gap`,
       },
       unmatchedImweb: {
         value: String(unmatchedImwebCount),
-        sub: `${formatSignedCompactKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))} imweb gap`,
+        sub: `${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))} imweb gap`,
       },
       methodMismatch: {
         value: String(methodMismatchCount),
-        sub: methodMismatchCount > 0 ? `${formatSignedCompactKrw(methodMismatchAmount)} flagged` : 'No method drift',
+        sub: methodMismatchCount > 0 ? `${formatSignedKrw(methodMismatchAmount)} flagged` : 'No method drift',
       },
     };
 
@@ -383,7 +383,7 @@
       if (refundSubEl) {
         refundSubEl.textContent = formatRateMetricDetail(
           data.metrics?.refunds,
-          '₩' + (data.totalRefunded / 1000).toFixed(0) + 'K of ₩' + ((data.totalRevenue || 0) / 1000000).toFixed(1) + 'M'
+          `${formatKrw(data.totalRefunded || 0)} of ${formatKrw(data.totalRevenue || 0)}`
         );
       }
 
@@ -407,7 +407,7 @@
       const febSubEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-delta span');
       if (febSubEl) {
         const febData = (data.charts?.monthlyRefunds || []).find(month => month.month === '2026-02');
-        if (febData) febSubEl.textContent = '₩' + (febData.refunded / 1000).toFixed(0) + 'K refunded of ₩' + (febData.revenue / 1000000).toFixed(1) + 'M';
+        if (febData) febSubEl.textContent = `${formatKrw(febData.refunded || 0)} refunded of ${formatKrw(febData.revenue || 0)}`;
       }
 
       const marRate = data.monthlyRates?.['2026-03'] ?? null;
@@ -418,7 +418,7 @@
       const marSubEl = document.querySelector('[data-kpi-analytics="marRefundRate"] .kpi-delta span');
       if (marSubEl) {
         const marData = (data.charts?.monthlyRefunds || []).find(month => month.month === '2026-03');
-        if (marData) marSubEl.textContent = '₩' + (marData.refunded / 1000).toFixed(0) + 'K refunded of ₩' + (marData.revenue / 1000000).toFixed(1) + 'M';
+        if (marData) marSubEl.textContent = `${formatKrw(marData.refunded || 0)} refunded of ${formatKrw(marData.revenue || 0)}`;
       }
 
       const charts = data.charts || {};

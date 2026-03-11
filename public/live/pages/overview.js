@@ -131,19 +131,19 @@
       }
       const spendSubEl = document.querySelector('[data-kpi="adspend"] .kpi-delta span');
       if (spendSubEl) {
-        spendSubEl.textContent = '₩' + ((k.adSpendKRW || 0) / 1000000).toFixed(2) + 'M · ' + (data.days || '—') + ' days';
+        spendSubEl.textContent = '₩' + Math.round(k.adSpendKRW || 0).toLocaleString() + ' · ' + (data.days || '—') + ' days';
       }
 
       const profitEl = document.querySelector('[data-kpi="profit"] .kpi-value');
       if (profitEl) {
         const profit = k.grossProfit || 0;
         profitEl.textContent = profit >= 0
-          ? '₩' + (profit / 1000).toFixed(0) + 'K'
-          : '-₩' + (Math.abs(profit) / 1000).toFixed(0) + 'K';
+          ? '₩' + Math.round(profit).toLocaleString()
+          : '-₩' + Math.abs(Math.round(profit)).toLocaleString();
       }
       const profitSubEl = document.querySelector('[data-kpi="profit"] .kpi-delta span');
       if (profitSubEl && k.grossMargin != null) {
-        profitSubEl.textContent = '₩' + ((k.netRevenue || 0) / 1000000).toFixed(2) + 'M net · ' + k.grossMargin + '% margin';
+        profitSubEl.textContent = '₩' + Math.round(k.netRevenue || 0).toLocaleString() + ' net · ' + k.grossMargin + '% margin';
       }
 
       const roasEl = document.querySelector('[data-kpi="roas"] .kpi-value');

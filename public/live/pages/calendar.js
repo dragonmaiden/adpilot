@@ -254,7 +254,10 @@
 
     const revenueLabel = isFuture ? '—' : formatKrw(data.revenue || 0);
     const profitLabel = isFuture ? '—' : formatSignedKrw(data.trueNetProfit || 0);
-    const ordersLabel = isFuture ? 'Future date' : `${formatCount(data.orders || 0)} orders`;
+    const orderCount = Number(data.orders || 0);
+    const ordersLabel = isFuture
+      ? 'Future'
+      : `${formatCount(orderCount)} ${orderCount === 1 ? 'order' : 'orders'}`;
 
     return `
       <button
