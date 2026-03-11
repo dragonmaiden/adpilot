@@ -125,13 +125,20 @@
 
       const spendEl = document.querySelector('[data-kpi="adspend"] .kpi-value');
       if (spendEl) {
-        spendEl.dataset.target = Math.round(k.adSpend || 0);
-        spendEl.dataset.prefix = '$';
-        spendEl.textContent = '$' + Math.round(k.adSpend || 0).toLocaleString();
+        spendEl.dataset.target = Math.round(k.adSpendKRW || 0);
+        spendEl.dataset.prefix = '₩';
+        spendEl.textContent = '₩' + Math.round(k.adSpendKRW || 0).toLocaleString();
       }
       const spendSubEl = document.querySelector('[data-kpi="adspend"] .kpi-delta span');
       if (spendSubEl) {
-        spendSubEl.textContent = '₩' + Math.round(k.adSpendKRW || 0).toLocaleString() + ' · ' + (data.days || '—') + ' days';
+        const fxRate = Number(data.fx?.usdToKrwRate || 0);
+        const fxDate = data.fx?.rateDate || '';
+        const usdText = '$' + Number(k.adSpend || 0).toFixed(2);
+        if (fxRate > 0 && fxDate) {
+          spendSubEl.textContent = `${usdText} · ${fxDate} FX ₩${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/USD`;
+        } else {
+          spendSubEl.textContent = `${usdText} · ${(data.days || '—')} days`;
+        }
       }
 
       const profitEl = document.querySelector('[data-kpi="profit"] .kpi-value');
@@ -248,7 +255,7 @@
         const colors = typeof getChartColors === 'function' ? getChartColors() : { primary: '#20808D', secondary: '#A84B2F' };
         if (typeof createSparkline === 'function') {
           createSparkline('sparkRevenue', last12.map(row => row.revenue || 0), '#4ade80');
-          createSparkline('sparkSpend', last12.map(row => row.spend || 0), colors.primary);
+          createSparkline('sparkSpend', last12.map(row => row.spendKrw || 0), colors.primary);
           createSparkline('sparkRoas', last12.map(row => row.roas || 0), colors.primary);
           createSparkline('sparkPurchases', last12.map(row => row.purchases || 0), '#4ade80');
           createSparkline('sparkCtr', last12.map(row => row.ctr || 0), colors.primary);

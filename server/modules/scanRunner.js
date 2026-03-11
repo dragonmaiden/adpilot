@@ -282,7 +282,8 @@ async function runScan(manual = false) {
         metaInsightsResult.adSetInsights,
         metaInsightsResult.adInsights,
         latestData.revenueData,
-        latestData.sources?.imweb || null
+        latestData.sources?.imweb || null,
+        latestData.cogsData || null
       );
 
       scanResult.optimizations = optimizations;
@@ -301,8 +302,8 @@ async function runScan(manual = false) {
       console.log(`[SCHEDULER]   Priority: ${JSON.stringify(byPriority)}`);
 
       if (runtimeSettings.getRules().autonomousMode) {
-        console.log('[SCHEDULER] Step 5: Executing high-priority optimizations...');
-        const executed = await optimizer.executeHighPriority();
+        console.log('[SCHEDULER] Step 5: Processing approval-required optimizations...');
+        const executed = await optimizer.processApprovalQueue();
         pushStep(scanResult, {
           step: 'execution',
           status: 'ok',

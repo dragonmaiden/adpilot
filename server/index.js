@@ -163,8 +163,12 @@ app.get('/api/health', (req, res) => {
 });
 
 // ── Dashboard Overview (live KPIs + charts data) ──
-app.get('/api/overview', (req, res) => {
-  res.json(overviewService.getOverviewResponse());
+app.get('/api/overview', async (req, res) => {
+  try {
+    res.json(await overviewService.getOverviewResponse());
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
 });
 
 // ── Campaigns list with live data ──

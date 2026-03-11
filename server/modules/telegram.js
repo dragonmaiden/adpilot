@@ -401,7 +401,7 @@ Found <b>${opts.length}</b> suggestion${opts.length > 1 ? 's' : ''}:
 
 ${details}
 
-<i>💵 Any $ decisions will require your approval first.</i>`;
+<i>💵 Executable budget, bid, and status changes will request your approval here first.</i>`;
 
   await sendMessage(text);
 }

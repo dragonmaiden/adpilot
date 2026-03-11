@@ -6,6 +6,7 @@
 const config = require('../config');
 const meta = require('./metaClient');
 const telegram = require('./telegram');
+const transforms = require('../transforms/charts');
 const {
   averagePositiveField,
   calcROAS,
@@ -25,6 +26,8 @@ const { getTodayInTimeZone, shiftDate } = require('../domain/time');
 
 const PERFORMANCE_LOOKBACK_DAYS = 7;
 const SCHEDULE_LOOKBACK_DAYS = 28;
+const PROFIT_SCALE_MARGIN_THRESHOLD = 0.08;
+const MIN_PROFIT_COVERAGE_RATIO = 0.8;
 
 // ═══════════════════════════════════════════════
 // OPTIMIZATION RULES
@@ -61,6 +64,61 @@ function sumRecentNetRevenue(revenueData, days = PERFORMANCE_LOOKBACK_DAYS) {
   }, 0);
 }
 
+function buildProfitContext(campaignInsights, revenueData, cogsData, days = PERFORMANCE_LOOKBACK_DAYS) {
+  if (!revenueData?.dailyRevenue || !cogsData?.dailyCOGS) {
+    return null;
+  }
+
+  const dailyMerged = transforms.buildDailyMerged(revenueData.dailyRevenue, campaignInsights, cogsData.dailyCOGS);
+  const profitWaterfall = transforms.buildProfitWaterfall(dailyMerged, cogsData.dailyCOGS, config.fees.paymentFeeRate);
+  const windowStart = getWindowStart(days);
+  const rows = profitWaterfall.filter(row => row?.date && row.date >= windowStart);
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const totals = rows.reduce((summary, row) => {
+    summary.netRevenue += Number(row?.netRevenue || 0);
+    summary.trueNetProfit += Number(row?.trueNetProfit || 0);
+    summary.adSpendKRW += Number(row?.adSpendKRW || 0);
+    summary.cogs += Number(row?.cogs || 0);
+    summary.shipping += Number(row?.cogsShipping || 0);
+    summary.paymentFees += Number(row?.paymentFees || 0);
+    summary.coveredDays += row?.hasCOGS ? 1 : 0;
+    return summary;
+  }, {
+    netRevenue: 0,
+    trueNetProfit: 0,
+    adSpendKRW: 0,
+    cogs: 0,
+    shipping: 0,
+    paymentFees: 0,
+    coveredDays: 0,
+  });
+
+  const coverageRatio = rows.length > 0 ? totals.coveredDays / rows.length : 0;
+
+  return {
+    days,
+    rowCount: rows.length,
+    coveredDays: totals.coveredDays,
+    coverageRatio,
+    hasReliableCoverage: coverageRatio >= MIN_PROFIT_COVERAGE_RATIO,
+    netRevenue: Math.round(totals.netRevenue),
+    trueNetProfit: Math.round(totals.trueNetProfit),
+    adSpendKRW: Math.round(totals.adSpendKRW),
+    cogs: Math.round(totals.cogs),
+    shipping: Math.round(totals.shipping),
+    paymentFees: Math.round(totals.paymentFees),
+    margin: totals.netRevenue > 0 ? totals.trueNetProfit / totals.netRevenue : 0,
+  };
+}
+
+function isReallocationAction(actionText) {
+  return /\bReallocate\b/i.test(String(actionText || ''));
+}
+
 class OptimizationEngine {
   constructor(scanId = Date.now()) {
     this.actions = []; // Generated actions for this scan
@@ -91,14 +149,15 @@ class OptimizationEngine {
   }
 
   // ── Run all optimization checks ──
-  async analyze(campaignData, adSetData, adData, campaignInsights, adSetInsights, adInsights, revenueData, revenueSource = null) {
+  async analyze(campaignData, adSetData, adData, campaignInsights, adSetInsights, adInsights, revenueData, revenueSource = null, cogsData = null) {
     const rules = this.getRules();
     this.actions = [];
+    const profitContext = buildProfitContext(campaignInsights, revenueData, cogsData, PERFORMANCE_LOOKBACK_DAYS);
 
     console.log(`[OPTIMIZER] Starting scan ${this.scanId}...`);
 
     // 1. Campaign-level optimizations
-    this.analyzeCampaigns(campaignData, campaignInsights, revenueData);
+    this.analyzeCampaigns(campaignData, campaignInsights, profitContext);
 
     // 2. Ad set-level optimizations
     this.analyzeAdSets(adSetData, adSetInsights, campaignData);
@@ -115,14 +174,14 @@ class OptimizationEngine {
     this.analyzeScheduling(adSetInsights);
 
     // 6. ROAS-based optimizations
-    this.analyzeROAS(campaignInsights, revenueData, revenueSource);
+    this.analyzeROAS(campaignInsights, revenueData, revenueSource, profitContext);
 
     console.log(`[OPTIMIZER] Scan complete. Generated ${this.actions.length} optimizations.`);
     return this.actions;
   }
 
   // ── 1. Campaign-Level Analysis ──
-  analyzeCampaigns(campaigns, insights, revenueData) {
+  analyzeCampaigns(campaigns, insights, profitContext = null) {
     const rules = this.getRules();
     for (const campaign of campaigns) {
       if (campaign.status !== 'ACTIVE') continue;
@@ -159,12 +218,19 @@ class OptimizationEngine {
       }
 
       // Rule: Campaign performing well — increase budget
-      if (hasDecisionData && avgCPA && avgCPA < rules.cpaWarningThreshold * 0.5 && totalPurchases >= 5) {
+      const profitSupportsScaling = !profitContext
+        || !profitContext.hasReliableCoverage
+        || (profitContext.trueNetProfit > 0 && profitContext.margin >= PROFIT_SCALE_MARGIN_THRESHOLD);
+
+      if (hasDecisionData && avgCPA && avgCPA < rules.cpaWarningThreshold * 0.5 && totalPurchases >= 5 && profitSupportsScaling) {
         const currentBudget = parseInt(campaign.daily_budget || 0);
         const increase = Math.round(currentBudget * rules.maxBudgetChangePercent / 100);
+        const scaleReason = profitContext?.hasReliableCoverage
+          ? `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} with ${totalPurchases} purchases, while account true net profit is ₩${profitContext.trueNetProfit.toLocaleString()} at ${(profitContext.margin * 100).toFixed(1)}% margin`
+          : `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} with ${totalPurchases} purchases — room to scale`;
         this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', campaign.id, campaign.name,
           `Increase daily budget by $${(increase / 100).toFixed(2)} (${rules.maxBudgetChangePercent}%)`,
-          `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} with ${totalPurchases} purchases — room to scale`,
+          scaleReason,
           `Potential ${Math.round(increase / 100 / avgCPA)} additional purchases/day`,
           'medium'
         );
@@ -367,7 +433,7 @@ class OptimizationEngine {
   }
 
   // ── 6. ROAS-Based Optimizations ──
-  analyzeROAS(campaignInsights, revenueData, revenueSource) {
+  analyzeROAS(campaignInsights, revenueData, revenueSource, profitContext = null) {
     const rules = this.getRules();
     if (!revenueData) return;
     if (revenueSource?.stale || revenueSource?.status !== 'connected') return;
@@ -376,6 +442,28 @@ class OptimizationEngine {
     const totalSpend = summarizeInsights(recentCampaignInsights).spend;
     const netRevenue = sumRecentNetRevenue(revenueData, PERFORMANCE_LOOKBACK_DAYS);
     if (totalSpend < rules.minSpendForDecision) return;
+
+    if (profitContext?.hasReliableCoverage) {
+      if (profitContext.trueNetProfit < 0) {
+        this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall Profitability',
+          `True net profit is -₩${Math.abs(profitContext.trueNetProfit).toLocaleString()} — reduce spend`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d true net profit is -₩${Math.abs(profitContext.trueNetProfit).toLocaleString()} after ₩${profitContext.cogs.toLocaleString()} COGS, ₩${profitContext.shipping.toLocaleString()} shipping, ₩${profitContext.paymentFees.toLocaleString()} fees, and ₩${profitContext.adSpendKRW.toLocaleString()} ad spend`,
+          `Reduce wasted spend until contribution margin turns positive`,
+          'critical'
+        );
+        return;
+      }
+
+      if (profitContext.trueNetProfit > 0 && profitContext.margin >= PROFIT_SCALE_MARGIN_THRESHOLD) {
+        this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall Profitability',
+          `True net profit is ₩${profitContext.trueNetProfit.toLocaleString()} — room to scale`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d true net profit is ₩${profitContext.trueNetProfit.toLocaleString()} on ₩${profitContext.netRevenue.toLocaleString()} net revenue (${(profitContext.margin * 100).toFixed(1)}% true net margin)`,
+          `Consider increasing total ad spend by 10-20% while margins stay above ${(PROFIT_SCALE_MARGIN_THRESHOLD * 100).toFixed(0)}%`,
+          'medium'
+        );
+      }
+      return;
+    }
 
     const totalSpendKRW = convertUsdToKrw(totalSpend);
     const roas = calcROAS(netRevenue, totalSpend);
@@ -411,32 +499,43 @@ class OptimizationEngine {
       return action;
     }
 
+    if (!this.isExecutableAction(action)) {
+      action.executed = false;
+      action.executionResult = 'Suggestion only — manual review required';
+      return action;
+    }
+
     try {
       let result;
 
       // Budget changes
-      if (action.type === OPTIMIZATION_TYPES.BUDGET && action.level === 'campaign') {
-        // Parse the budget change from the action description
+      if (action.type === OPTIMIZATION_TYPES.BUDGET && (action.level === 'campaign' || action.level === 'adset')) {
+        const entities = action.level === 'campaign' ? await meta.getCampaigns() : await meta.getAdSets();
+        const entity = entities.find(item => item.id === action.targetId);
+        const currentBudget = Number.parseInt(entity?.daily_budget || 0, 10);
+
+        if (!Number.isFinite(currentBudget) || currentBudget <= 0) {
+          action.executed = false;
+          action.executionResult = 'Failed: current daily budget unavailable';
+          return action;
+        }
+
+        let newBudget = currentBudget;
         if (isBudgetDecreaseAction(action.action)) {
           const match = action.action.match(/(\d+)%/);
-          const pct = match ? parseInt(match[1]) : rules.maxBudgetChangePercent;
-          // We need the current budget - fetch it
-          const campaigns = await meta.getCampaigns();
-          const campaign = campaigns.find(c => c.id === action.targetId);
-          if (campaign) {
-            const currentBudget = parseInt(campaign.daily_budget);
-            const newBudget = Math.round(currentBudget * (1 - pct / 100));
-            result = await meta.updateCampaignBudget(action.targetId, newBudget);
-          }
+          const pct = match ? parseInt(match[1], 10) : rules.maxBudgetChangePercent;
+          newBudget = Math.max(100, Math.round(currentBudget * (1 - pct / 100)));
         } else if (isBudgetIncreaseAction(action.action)) {
-          const campaigns = await meta.getCampaigns();
-          const campaign = campaigns.find(c => c.id === action.targetId);
-          if (campaign) {
-            const currentBudget = parseInt(campaign.daily_budget);
-            const newBudget = Math.round(currentBudget * (1 + rules.maxBudgetChangePercent / 100));
-            result = await meta.updateCampaignBudget(action.targetId, newBudget);
-          }
+          newBudget = Math.round(currentBudget * (1 + rules.maxBudgetChangePercent / 100));
+        } else {
+          action.executed = false;
+          action.executionResult = 'Suggestion only — unsupported budget action';
+          return action;
         }
+
+        result = action.level === 'campaign'
+          ? await meta.updateCampaignBudget(action.targetId, newBudget)
+          : await meta.updateAdSetBudget(action.targetId, newBudget);
       }
 
       // Status changes
@@ -448,6 +547,21 @@ class OptimizationEngine {
         } else if (action.level === 'ad') {
           result = await meta.updateAdStatus(action.targetId, 'PAUSED');
         }
+      }
+
+      if (action.type === OPTIMIZATION_TYPES.BID && action.level === 'adset') {
+        const adSets = await meta.getAdSets();
+        const adSet = adSets.find(item => item.id === action.targetId);
+        const currentBid = Number.parseInt(adSet?.bid_amount || 0, 10);
+
+        if (!Number.isFinite(currentBid) || currentBid <= 0) {
+          action.executed = false;
+          action.executionResult = 'Failed: current bid unavailable';
+          return action;
+        }
+
+        const nextBid = Math.max(1, Math.round(currentBid * 0.9));
+        result = await meta.updateAdSetBid(action.targetId, nextBid);
       }
 
       action.executed = true;
@@ -467,53 +581,69 @@ class OptimizationEngine {
     return requiresApproval(action);
   }
 
-  // Execute all critical and high priority actions (with Telegram approval)
-  async executeHighPriority() {
-    const toExecute = this.actions.filter(a =>
-      (a.priority === 'critical' || a.priority === 'high') && !a.executed
+  isExecutableAction(action) {
+    if (!action || !action.type) return false;
+
+    if (action.type === OPTIMIZATION_TYPES.STATUS) {
+      return ['campaign', 'adset', 'ad'].includes(action.level);
+    }
+
+    if (action.type === OPTIMIZATION_TYPES.BUDGET) {
+      if (isReallocationAction(action.action)) {
+        return false;
+      }
+      return ['campaign', 'adset'].includes(action.level);
+    }
+
+    if (action.type === OPTIMIZATION_TYPES.BID) {
+      return action.level === 'adset';
+    }
+
+    return false;
+  }
+
+  // Execute money actions after explicit approval, regardless of priority.
+  async processApprovalQueue() {
+    const approvalQueue = this.actions.filter(action =>
+      this.requiresApproval(action) && this.isExecutableAction(action) && !action.executed
     );
 
-    console.log(`[OPTIMIZER] ${toExecute.length} high-priority actions to process...`);
+    console.log(`[OPTIMIZER] ${approvalQueue.length} approval-required actions to process...`);
 
-    for (const action of toExecute) {
-      if (this.requiresApproval(action)) {
-        // Request Telegram approval
-        console.log(`[OPTIMIZER] Requesting Telegram approval for: ${action.action}`);
-        const approvalId = await telegram.requestApproval(action);
+    for (const action of approvalQueue) {
+      console.log(`[OPTIMIZER] Requesting Telegram approval for: ${action.action}`);
+      const approvalId = await telegram.requestApproval(action);
 
-        if (!approvalId) {
-          action.executed = false;
-          action.executionResult = 'Failed to send Telegram approval request';
-          console.error(`[OPTIMIZER] Telegram request failed for: ${action.action}`);
-          continue;
-        }
-
-        // Wait for user response (5 min timeout)
-        const response = await telegram.waitForApproval(approvalId, 300000);
-
-        if (response.approved) {
-          console.log(`[OPTIMIZER] ✅ APPROVED: ${action.action}`);
-          await this.executeAction(action);
-          // Notify execution result
-          const resultEmoji = action.executed ? '✅' : '❌';
-          await telegram.sendMessage(
-            `${resultEmoji} <b>Execution Result</b>\n\n<b>Action:</b> ${action.action}\n<b>Result:</b> ${action.executionResult}`
-          );
-        } else {
-          action.executed = false;
-          action.executionResult = `Rejected: ${response.reason}`;
-          console.log(`[OPTIMIZER] ❌ REJECTED: ${action.action} — ${response.reason}`);
-        }
-      } else {
-        // Non-money actions (schedule suggestions, creative insights) execute directly
-        await this.executeAction(action);
+      if (!approvalId) {
+        action.executed = false;
+        action.executionResult = 'Failed to send Telegram approval request';
+        console.error(`[OPTIMIZER] Telegram request failed for: ${action.action}`);
+        continue;
       }
 
-      // Rate limiting: wait 1 second between actions
+      const response = await telegram.waitForApproval(approvalId, 300000);
+
+      if (response.approved) {
+        console.log(`[OPTIMIZER] ✅ APPROVED: ${action.action}`);
+        await this.executeAction(action);
+        const resultEmoji = action.executed ? '✅' : '❌';
+        await telegram.sendMessage(
+          `${resultEmoji} <b>Execution Result</b>\n\n<b>Action:</b> ${action.action}\n<b>Result:</b> ${action.executionResult}`
+        );
+      } else {
+        action.executed = false;
+        action.executionResult = `Rejected: ${response.reason}`;
+        console.log(`[OPTIMIZER] ❌ REJECTED: ${action.action} — ${response.reason}`);
+      }
+
       await new Promise(r => setTimeout(r, 1000));
     }
 
-    return toExecute;
+    return approvalQueue;
+  }
+
+  async executeHighPriority() {
+    return this.processApprovalQueue();
   }
 }
 

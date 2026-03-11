@@ -20,7 +20,7 @@ function buildRateMetric({ rate = 0, numerator = 0, denominator = 0, unit = '', 
 /**
  * Build /api/overview response.
  */
-function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanning, dataSources }) {
+function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanning, dataSources, fx }) {
   return {
     apiVersion: API_VERSION,
     ready: true,
@@ -64,6 +64,7 @@ function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanni
     },
     scanStats: scanStats ?? {},
     dataSources: dataSources ?? {},
+    fx: fx ?? {},
   };
 }
 

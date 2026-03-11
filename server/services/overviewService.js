@@ -1,14 +1,12 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const transforms = require('../transforms/charts');
+const fxService = require('./fxService');
 const {
   summarizeInsights,
   calcCPA,
-  calcROAS,
-  convertUsdToKrw,
   calcAOV,
   calcPercent,
-  calcGrossProfit,
   calcMargin,
 } = require('../domain/metrics');
 
@@ -16,7 +14,23 @@ const {
  * Build the full /api/overview response.
  * Returns the not-ready contract if no scan has completed yet.
  */
-function getOverviewResponse() {
+function applyOverviewFx(dailyMerged, usdToKrwRate) {
+  return (dailyMerged || []).map(row => {
+    const spend = Number(row?.spend || 0);
+    const netRevenue = Number(row?.netRevenue ?? ((row?.revenue || 0) - (row?.refunded || 0)));
+    const spendKrw = Math.round(spend * usdToKrwRate);
+    const roas = spendKrw > 0 ? Number((netRevenue / spendKrw).toFixed(4)) : 0;
+
+    return {
+      ...row,
+      spendKrw,
+      roas,
+      usdToKrwRate,
+    };
+  });
+}
+
+async function getOverviewResponse() {
   const data = scheduler.getLatestData();
   const scan = scheduler.getLastScanResult();
 
@@ -34,10 +48,12 @@ function getOverviewResponse() {
   const totalPurchases = cogs?.purchaseCount ?? revenue.totalOrders ?? 0;
   const cpa = calcCPA(totalSpend, totalPurchases, 0);
   const ctr = insightSummary.ctr;
-  const roas = calcROAS(revenue.netRevenue || 0, totalSpend);
+  const fx = await fxService.getLatestUsdToKrwRate();
+  const usdToKrwRate = Number(fx?.usdToKrwRate || 0);
 
   // Build ALL chart data server-side — frontend does zero transformation
-  const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights, cogs?.dailyCOGS);
+  const baseDailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights, cogs?.dailyCOGS);
+  const dailyMerged = applyOverviewFx(baseDailyMerged, usdToKrwRate);
   const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
   const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
   const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged);
@@ -46,9 +62,10 @@ function getOverviewResponse() {
 
   // Compute gross profit margin
   const totalCOGSWithShipping = cogs ? cogs.totalCOGSWithShipping : 0;
-  const adSpendKRW = convertUsdToKrw(totalSpend);
-  const grossProfit = calcGrossProfit(revenue.netRevenue || 0, totalCOGSWithShipping, totalSpend);
+  const adSpendKRW = Math.round(totalSpend * usdToKrwRate);
+  const grossProfit = Math.round((revenue.netRevenue || 0) - totalCOGSWithShipping - adSpendKRW);
   const grossMargin = calcMargin(grossProfit, revenue.netRevenue || 0);
+  const roas = adSpendKRW > 0 ? (revenue.netRevenue || 0) / adSpendKRW : 0;
   const aov = calcAOV(revenue.totalRevenue || 0, revenue.totalOrders || 0);
   const cogsRate = calcPercent(totalCOGSWithShipping, revenue.totalRevenue || 0);
 
@@ -79,6 +96,14 @@ function getOverviewResponse() {
     lastScan: scheduler.getLastScanTime()?.toISOString(),
     isScanning: scheduler.getIsScanning(),
     dataSources: scheduler.getSourceHealth(),
+    fx: {
+      base: fx.base,
+      quote: fx.quote,
+      source: fx.source,
+      usdToKrwRate,
+      rateDate: fx.rateDate,
+      fetchedAt: fx.fetchedAt,
+    },
   });
 }
 
