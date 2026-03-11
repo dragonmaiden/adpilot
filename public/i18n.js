@@ -10,7 +10,6 @@ const I18N = {
   'nav.optimizations':  { en: 'Optimizations',     kr: '최적화' },
   'nav.fatigue':        { en: 'Fatigue Detection',  kr: '피로도 감지' },
   'nav.budget':         { en: 'Budget Manager',     kr: '예산 관리' },
-  'nav.profit':         { en: 'Profit',            kr: '수익' },
   'nav.settings':       { en: 'Settings',           kr: '설정' },
 
   // ── Header ──
@@ -26,7 +25,6 @@ const I18N = {
   'page.optimizations': { en: 'Optimizations',     kr: '최적화' },
   'page.fatigue':       { en: 'Fatigue Detection',  kr: '피로도 감지' },
   'page.budget':        { en: 'Budget Manager',     kr: '예산 관리' },
-  'page.profit':        { en: 'Profit',            kr: '수익' },
   'page.settings':      { en: 'Settings',           kr: '설정' },
 
   // ── Overview KPI Labels ──

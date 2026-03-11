@@ -60,7 +60,6 @@ const pageTitleKeys = {
   optimizations: 'page.optimizations',
   fatigue: 'page.fatigue',
   budget: 'page.budget',
-  profit: 'page.profit',
   settings: 'page.settings'
 };
 
@@ -72,7 +71,6 @@ const pageTitles = {
   optimizations: 'Optimization Log',
   fatigue: 'Fatigue Detection',
   budget: 'Budget Manager',
-  profit: 'Profit',
   settings: 'Settings'
 };
 
@@ -102,15 +100,11 @@ navItems.forEach(item => {
     if (target === 'fatigue' && !fatigueChartInitialized) initFatigueChart();
     if (target === 'budget' && !budgetChartsInitialized) initBudgetCharts();
     if (target === 'optimizations' && !optTimelineInitialized) initOptTimeline();
-    if (target === 'profit' && !profitChartsInitialized) initProfitCharts();
 
     if (typeof liveMode !== 'undefined' && liveMode) {
       if (target === 'analytics') {
         if (typeof updateAnalyticsPage === 'function') updateAnalyticsPage();
         if (typeof updateProfitPage === 'function') updateProfitPage();
-      }
-      if (target === 'profit' && typeof updateProfitPage === 'function') {
-        updateProfitPage();
       }
     }
   });

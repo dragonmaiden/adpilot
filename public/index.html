@@ -63,10 +63,6 @@
         <i data-lucide="wallet"></i>
         <span data-i18n="nav.budget">Budget Manager</span>
       </a>
-      <a href="#" class="nav-item" data-page="profit">
-        <i data-lucide="coins"></i>
-        <span data-i18n="nav.profit">Profit</span>
-      </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="settings"></i>
         <span data-i18n="nav.settings">Settings</span>
@@ -272,6 +268,43 @@
           <h2>Deep-dive margin diagnostics</h2>
         </div>
         <p class="section-note">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
+      </div>
+
+      <div class="profit-hero" id="profitHero">
+        <div class="profit-hero-inner">
+          <div class="profit-verdict" id="profitVerdict">—</div>
+          <div class="profit-amount" id="profitAmount">—</div>
+          <span class="confidence-badge" id="profitConfidence">—</span>
+        </div>
+        <div class="profit-hero-sub" id="profitHeroSub">Waiting for data...</div>
+      </div>
+
+      <div class="kpi-grid kpi-grid-4">
+        <div class="kpi-card" data-profit-kpi="trueNetProfit">
+          <div class="kpi-label">True Net Profit (Period)</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="coins"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-profit-kpi="cogsCoverage">
+          <div class="kpi-label">COGS Coverage</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="database"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-profit-kpi="blendedMargin">
+          <div class="kpi-label">Blended Margin</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="percent"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-profit-kpi="trueRoas">
+          <div class="kpi-label">True ROAS</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-profit-kpi="runRate30d">
+          <div class="kpi-label">30d Profit Run Rate</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="calendar-range"></i><span>—</span></div>
+        </div>
       </div>
 
       <div class="kpi-grid kpi-grid-4">
@@ -718,46 +751,6 @@
             </thead>
             <tbody id="budgetHistory"></tbody>
           </table>
-        </div>
-      </div>
-    </section>
-
-    <!-- Profit Page -->
-    <section class="page" data-page="profit">
-      <div class="profit-hero" id="profitHero">
-        <div class="profit-hero-inner">
-          <div class="profit-verdict" id="profitVerdict">—</div>
-          <div class="profit-amount" id="profitAmount">—</div>
-          <span class="confidence-badge" id="profitConfidence">—</span>
-        </div>
-        <div class="profit-hero-sub" id="profitHeroSub">Waiting for data...</div>
-      </div>
-
-      <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card" data-profit-kpi="trueNetProfit">
-          <div class="kpi-label">True Net Profit (Period)</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="coins"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-profit-kpi="cogsCoverage">
-          <div class="kpi-label">COGS Coverage</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="database"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-profit-kpi="blendedMargin">
-          <div class="kpi-label">Blended Margin</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="percent"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-profit-kpi="trueRoas">
-          <div class="kpi-label">True ROAS</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-profit-kpi="runRate30d">
-          <div class="kpi-label">30d Profit Run Rate</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="calendar-range"></i><span>—</span></div>
         </div>
       </div>
     </section>
