@@ -1703,12 +1703,18 @@ function buildClientCalendarMonths(visibleStart, visibleEnd) {
   return months;
 }
 
-function hasFreshCalendarPayload(data) {
+function hasFreshCalendarViewportPayload(data) {
   const { visibleStart, visibleEnd } = getCalendarVisibleRange();
   return !!(
     data &&
     data.viewport?.visibleStart === visibleStart &&
-    data.viewport?.visibleEnd === visibleEnd &&
+    data.viewport?.visibleEnd === visibleEnd
+  );
+}
+
+function hasFreshCalendarSelectionPayload(data) {
+  return !!(
+    hasFreshCalendarViewportPayload(data) &&
     data.viewport?.selectionStart === calendarState.selectionStart &&
     data.viewport?.selectionEnd === calendarState.selectionEnd
   );
@@ -1808,8 +1814,8 @@ function renderCalendarViewport() {
   syncCalendarSelectionIntoViewport();
 
   const { visibleStart, visibleEnd } = getCalendarVisibleRange();
-  const hasFreshData = hasFreshCalendarPayload(calendarState.data);
-  const months = hasFreshData && calendarState.data?.viewport?.months?.length
+  const hasFreshViewport = hasFreshCalendarViewportPayload(calendarState.data);
+  const months = hasFreshViewport && calendarState.data?.viewport?.months?.length
     ? calendarState.data.viewport.months
     : buildClientCalendarMonths(visibleStart, visibleEnd);
 
@@ -1817,12 +1823,12 @@ function renderCalendarViewport() {
     metaEl.textContent = getCalendarSelectionMeta(months);
   }
 
-  if (!hasFreshData && calendarState.loading) {
+  if (!hasFreshViewport && calendarState.loading) {
     viewportEl.innerHTML = '<div class="empty-state">Loading calendar analysis...</div>';
     return;
   }
 
-  const calendarDays = hasFreshData ? (calendarState.data?.calendarDays || []) : [];
+  const calendarDays = hasFreshViewport ? (calendarState.data?.calendarDays || []) : [];
   const dayMap = new Map(calendarDays.map(day => [day.date, day]));
   const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -1938,13 +1944,13 @@ function renderCalendarSelectionDeck() {
   ensureCalendarStateInitialized();
   syncCalendarSelectionIntoViewport();
 
-  const hasFreshData = hasFreshCalendarPayload(calendarState.data);
-  if (!hasFreshData && calendarState.loading) {
+  const hasFreshSelection = hasFreshCalendarSelectionPayload(calendarState.data);
+  if (!hasFreshSelection && calendarState.loading) {
     container.innerHTML = renderEmptyStateCard('Selected Range', 'Refreshing calendar metrics for the selected date range...');
     return;
   }
 
-  if (!calendarState.data || calendarState.data.ready === false) {
+  if (!calendarState.data || calendarState.data.ready === false || !hasFreshSelection) {
     container.innerHTML = renderEmptyStateCard('Calendar Analysis', 'Calendar analysis is waiting for the first completed scan.');
     return;
   }
@@ -2292,7 +2298,7 @@ async function updateCalendarAnalysisPage() {
     calendarState.data = data;
     calendarState.selectionStart = data.viewport?.selectionStart || calendarState.selectionStart;
     calendarState.selectionEnd = data.viewport?.selectionEnd || calendarState.selectionEnd;
-  } else if (!hasFreshCalendarPayload(calendarState.data)) {
+  } else if (!hasFreshCalendarSelectionPayload(calendarState.data)) {
     calendarState.data = null;
   }
 
@@ -2348,9 +2354,6 @@ function initCalendarAnalysisControls() {
       calendarState.dragging = true;
       calendarState.didDrag = false;
       calendarState.dragStart = dayEl.dataset.date;
-      calendarState.selectionStart = dayEl.dataset.date;
-      calendarState.selectionEnd = dayEl.dataset.date;
-      renderCalendarViewport();
     });
 
     viewportEl.addEventListener('pointerover', event => {
