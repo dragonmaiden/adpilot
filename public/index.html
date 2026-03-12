@@ -318,12 +318,23 @@
 
     <!-- Profit Analytics Page -->
     <section class="page" data-page="analytics">
-      <div class="section-head">
-        <div>
-          <div class="section-kicker" data-i18n="analytics.sectionKicker">Profit Analytics</div>
-          <h2 data-i18n="analytics.sectionTitle">Deep-dive margin diagnostics</h2>
+      <div class="section-head section-head-with-toolbar">
+        <div class="section-head-copy">
+          <div>
+            <div class="section-kicker" data-i18n="analytics.sectionKicker">Profit Analytics</div>
+            <h2 data-i18n="analytics.sectionTitle">Deep-dive margin diagnostics</h2>
+          </div>
+          <p class="section-note" data-i18n="analytics.sectionNote">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
         </div>
-        <p class="section-note" data-i18n="analytics.sectionNote">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
+        <div class="range-toolbar section-head-toolbar">
+          <span class="range-toolbar-label" data-i18n="analytics.window">Window</span>
+          <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure window" data-i18n-aria-label="analytics.windowStructureAria">
+            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="30d">30D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
+          </div>
+        </div>
       </div>
       <div class="analytics-inline-notice" id="analyticsFreshnessNotice" hidden></div>
 
@@ -418,14 +429,6 @@
         <div>
           <div class="section-kicker" data-i18n="analytics.structureKicker">Profit Structure</div>
           <h2 data-i18n="analytics.structureTitle">How net profit is formed over time</h2>
-        </div>
-        <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="analytics.window">Window</span>
-          <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure window" data-i18n-aria-label="analytics.windowStructureAria">
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
-          </div>
         </div>
       </div>
 
@@ -634,11 +637,13 @@
     <!-- Calendar Analysis Page -->
     <section class="page" data-page="calendar">
       <div class="section-head">
-        <div>
-          <div class="section-kicker" data-i18n="calendar.sectionKicker">Calendar Analysis</div>
-          <h2 data-i18n="calendar.sectionTitle">Zoom into any day or date range</h2>
+        <div class="section-head-copy">
+          <div>
+            <div class="section-kicker" data-i18n="calendar.sectionKicker">Calendar Analysis</div>
+            <h2 data-i18n="calendar.sectionTitle">Zoom into any day or date range</h2>
+          </div>
+          <p class="section-note" data-i18n="calendar.sectionNote">Revenue colors the calendar. Click or drag dates to inspect KST profit, refunds, orders, campaigns, and operating events.</p>
         </div>
-        <p class="section-note" data-i18n="calendar.sectionNote">Revenue colors the calendar. Click a day or drag across dates to inspect profit, refunds, orders, campaigns, and operating events in KST.</p>
       </div>
 
       <div class="card calendar-shell">

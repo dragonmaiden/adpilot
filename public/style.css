@@ -527,6 +527,28 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   flex-wrap: wrap;
 }
 
+.section-head-copy {
+  display: flex;
+  flex: 1 1 420px;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.section-head-copy .section-note {
+  margin: 0;
+}
+
+.section-head-with-toolbar {
+  align-items: flex-start;
+}
+
+.section-head-toolbar {
+  margin-left: auto;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
 .section-head-compact {
   margin-top: var(--space-5);
 }
@@ -2483,6 +2505,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
   /* Header tighter gap */
   .header-right { gap: var(--space-2); }
+
+  .section-head-toolbar {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
 
   .history-toolbar {
     width: 100%;

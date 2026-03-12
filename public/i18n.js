@@ -138,7 +138,7 @@ const I18N = {
   'analytics.recon.methodMismatch': { en: 'Method Mismatch', kr: '결제 방식 차이' },
   'calendar.sectionKicker':   { en: 'Calendar Analysis', kr: '캘린더 분석' },
   'calendar.sectionTitle':    { en: 'Zoom into any day or date range', kr: '특정 날짜나 기간을 자세히 보기' },
-  'calendar.sectionNote':     { en: 'Revenue colors the calendar. Click a day or drag across dates to inspect profit, refunds, orders, campaigns, and operating events in KST.', kr: '매출이 캘린더 색상을 결정합니다. 날짜를 클릭하거나 범위를 드래그해 KST 기준 수익, 환불, 주문, 캠페인, 운영 이벤트를 확인하세요.' },
+  'calendar.sectionNote':     { en: 'Revenue colors the calendar. Click or drag dates to inspect KST profit, refunds, orders, campaigns, and operating events.', kr: '매출이 캘린더 색상을 결정합니다. 날짜를 클릭하거나 드래그해 KST 기준 수익, 환불, 주문, 캠페인, 운영 이벤트를 확인하세요.' },
   'calendar.date':            { en: 'Date', kr: '날짜' },
   'calendar.prev':            { en: 'Previous', kr: '이전' },
   'calendar.today':           { en: 'Today', kr: '오늘' },
