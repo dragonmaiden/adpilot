@@ -543,10 +543,24 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   align-items: flex-start;
 }
 
+.section-head-inline-note {
+  align-items: center;
+}
+
 .section-head-toolbar {
   margin-left: auto;
   align-self: flex-start;
   flex-shrink: 0;
+}
+
+.section-head-note {
+  margin: 0 0 0 auto;
+  flex-shrink: 0;
+  max-width: none;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .section-head-compact {
@@ -2510,6 +2524,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     width: 100%;
     margin-left: 0;
     justify-content: space-between;
+  }
+
+  .section-head-note {
+    width: 100%;
+    margin-left: 0;
+    white-space: normal;
   }
 
   .history-toolbar {
