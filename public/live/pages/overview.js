@@ -17,51 +17,203 @@
     });
   }
 
-  function updateImwebSourceIndicators(source) {
-    const badgeEl = document.getElementById('imwebConnectedBadge');
-    const labelEl = document.getElementById('imwebConnectedLabel');
-    const noticeEl = document.getElementById('dataFreshnessNotice');
+  function getLatestTimestamp(values) {
+    let latest = null;
+    let latestTime = 0;
+    for (const value of values) {
+      if (!value) continue;
+      const time = new Date(value).getTime();
+      if (!Number.isFinite(time) || time <= latestTime) continue;
+      latest = value;
+      latestTime = time;
+    }
+    return latest;
+  }
+
+  function combineMetaSourceHealth(dataSources) {
+    const structure = dataSources?.metaStructure || null;
+    const insights = dataSources?.metaInsights || null;
+    const parts = [structure, insights].filter(Boolean);
+
+    if (parts.length === 0) {
+      return null;
+    }
+
+    const latestSuccessAt = getLatestTimestamp(parts.map(part => part?.lastSuccessAt));
+    const firstError = parts.map(part => part?.lastError).find(Boolean) || null;
+    const hasData = parts.some(part => part?.hasData);
+
+    if (parts.some(part => part?.status === 'error')) {
+        return {
+          status: 'error',
+          stale: hasData,
+          hasData,
+          lastSuccessAt: latestSuccessAt,
+          lastError: firstError,
+        };
+    }
+
+    if (parts.some(part => part?.stale || part?.status === 'loaded')) {
+        return {
+          status: 'loaded',
+          stale: true,
+          hasData,
+          lastSuccessAt: latestSuccessAt,
+          lastError: null,
+        };
+    }
+
+    if (parts.every(part => part?.status === 'connected' || part?.status === 'ok')) {
+        return {
+          status: 'connected',
+          stale: false,
+          hasData,
+          lastSuccessAt: latestSuccessAt,
+          lastError: null,
+        };
+    }
+
+    if (hasData) {
+        return {
+          status: 'loaded',
+          stale: false,
+          hasData,
+          lastSuccessAt: latestSuccessAt,
+          lastError: null,
+        };
+    }
+
+    return {
+      status: 'unknown',
+      stale: false,
+      hasData: false,
+      lastSuccessAt: latestSuccessAt,
+      lastError: firstError,
+    };
+  }
+
+  function getSourceBadgeMeta(source, labels) {
+    if (source?.status === 'error') {
+      return {
+        badgeClass: 'is-error',
+        stateText: tr('Error', '오류'),
+        severity: 'error',
+        title: source?.lastError
+          ? localizeSystemText(source.lastError)
+          : tr(`${labels.short} sync needs attention.`, `${labels.krShort} 동기화 점검이 필요합니다.`),
+      };
+    }
+
+    if (source?.stale || source?.status === 'loaded') {
+      return {
+        badgeClass: 'is-warning',
+        stateText: tr('Cached', '캐시'),
+        severity: 'warning',
+        title: source?.lastSuccessAt
+          ? tr(`${labels.short} is using cached data from ${timeSince(new Date(source.lastSuccessAt))} ago.`, `${labels.krShort} 캐시 데이터를 ${timeSince(new Date(source.lastSuccessAt))} 전 기준으로 사용 중입니다.`)
+          : tr(`${labels.short} is using cached data.`, `${labels.krShort} 캐시 데이터를 사용 중입니다.`),
+      };
+    }
+
+    if (source?.status === 'connected' || source?.status === 'ok') {
+      return {
+        badgeClass: 'is-success',
+        stateText: tr('Fresh', '최신'),
+        severity: 'success',
+        title: source?.lastSuccessAt
+          ? tr(`${labels.short} synced ${timeSince(new Date(source.lastSuccessAt))} ago.`, `${labels.krShort} ${timeSince(new Date(source.lastSuccessAt))} 전에 동기화되었습니다.`)
+          : tr(`${labels.short} is up to date.`, `${labels.krShort} 데이터가 최신입니다.`),
+      };
+    }
+
+    return {
+      badgeClass: '',
+      stateText: tr('Waiting', '대기'),
+      severity: 'neutral',
+      title: tr(`Waiting for the first successful ${labels.short} sync.`, `첫 ${labels.krShort} 동기화를 기다리는 중입니다.`),
+    };
+  }
+
+  function updateSourceBadge(badgeId, stateId, source, labels) {
+    const badgeEl = document.getElementById(badgeId);
+    const stateEl = document.getElementById(stateId);
+    const badgeMeta = getSourceBadgeMeta(source, labels);
 
     if (badgeEl) {
       badgeEl.classList.remove('is-success', 'is-warning', 'is-error');
+      if (badgeMeta.badgeClass) badgeEl.classList.add(badgeMeta.badgeClass);
+      badgeEl.title = badgeMeta.title;
     }
 
-    if (source?.stale) {
-      if (badgeEl) badgeEl.classList.add('is-warning');
-      if (labelEl) labelEl.textContent = tr('Imweb cached', 'Imweb 캐시됨');
-      if (badgeEl) {
-        const suffix = source.lastSuccessAt
-          ? tr(` Last successful sync ${timeSince(new Date(source.lastSuccessAt))}.`, ` 마지막 정상 동기화 ${timeSince(new Date(source.lastSuccessAt))}.`)
-          : '';
-        badgeEl.title = tr(`Revenue/order metrics are cached.${suffix}`, `매출/주문 지표는 캐시 데이터를 사용 중입니다.${suffix}`);
-      }
-      if (noticeEl) {
-        noticeEl.hidden = false;
-        noticeEl.textContent = tr('Using cached Imweb revenue data from the last successful sync.', '마지막 정상 동기화 기준 Imweb 캐시 매출 데이터를 사용 중입니다.');
-      }
+    if (stateEl) {
+      stateEl.textContent = badgeMeta.stateText;
+    }
+
+    return badgeMeta;
+  }
+
+  function updateHeaderSourceIndicators(dataSources) {
+    const noticeEl = document.getElementById('dataFreshnessNotice');
+    const metaSource = combineMetaSourceHealth(dataSources);
+    const metaStatus = updateSourceBadge('metaConnectedBadge', 'metaConnectedState', metaSource, {
+      short: 'Meta Ads',
+      krShort: 'Meta 광고',
+    });
+    const imwebStatus = updateSourceBadge('imwebConnectedBadge', 'imwebConnectedState', dataSources?.imweb || null, {
+      short: 'Imweb',
+      krShort: 'Imweb',
+    });
+    const cogsStatus = updateSourceBadge('cogsConnectedBadge', 'cogsConnectedState', dataSources?.cogs || null, {
+      short: 'Google Sheets',
+      krShort: 'Google Sheets',
+    });
+
+    if (!noticeEl) return;
+
+    const errors = [];
+    const warnings = [];
+    const sourceEntries = [
+      { name: tr('Meta Ads', 'Meta 광고'), meta: metaStatus },
+      { name: 'Imweb', meta: imwebStatus },
+      { name: 'Google Sheets', meta: cogsStatus },
+    ];
+
+    for (const entry of sourceEntries) {
+      if (entry.meta.severity === 'error') errors.push(entry.name);
+      if (entry.meta.severity === 'warning') warnings.push(entry.name);
+    }
+
+    noticeEl.classList.toggle('is-error', errors.length > 0);
+
+    if (errors.length > 0 && warnings.length > 0) {
+      noticeEl.hidden = false;
+      noticeEl.textContent = tr(
+        `${errors.join(', ')} need attention. Using cached data for ${warnings.join(', ')}.`,
+        `${errors.join(', ')} 점검이 필요합니다. ${warnings.join(', ')} 캐시 데이터를 사용 중입니다.`
+      );
       return;
     }
 
-    if (source?.status === 'error') {
-      if (badgeEl) badgeEl.classList.add('is-error');
-      if (labelEl) labelEl.textContent = tr('Imweb error', 'Imweb 오류');
-      if (badgeEl && source.lastError) badgeEl.title = localizeSystemText(source.lastError);
-      if (noticeEl) {
-        noticeEl.hidden = false;
-        noticeEl.textContent = tr('Imweb sync is currently unavailable.', '현재 Imweb 동기화를 사용할 수 없습니다.');
-      }
+    if (errors.length > 0) {
+      noticeEl.hidden = false;
+      noticeEl.textContent = tr(
+        `${errors.join(', ')} sync is currently unavailable.`,
+        `${errors.join(', ')} 동기화를 현재 사용할 수 없습니다.`
+      );
       return;
     }
 
-    if (badgeEl) badgeEl.classList.add('is-success');
-    if (labelEl) labelEl.textContent = 'Imweb';
-    if (badgeEl) badgeEl.title = source?.lastSuccessAt
-      ? tr(`Last successful Imweb sync ${timeSince(new Date(source.lastSuccessAt))}.`, `마지막 정상 Imweb 동기화 ${timeSince(new Date(source.lastSuccessAt))}.`)
-      : tr('Imweb data is up to date.', 'Imweb 데이터가 최신입니다.');
-    if (noticeEl) {
-      noticeEl.hidden = true;
-      noticeEl.textContent = '';
+    if (warnings.length > 0) {
+      noticeEl.hidden = false;
+      noticeEl.textContent = tr(
+        `Using cached data for ${warnings.join(', ')}.`,
+        `${warnings.join(', ')} 캐시 데이터를 사용 중입니다.`
+      );
+      return;
     }
+
+    noticeEl.hidden = true;
+    noticeEl.textContent = '';
   }
 
   async function refreshOverviewPage() {
@@ -73,7 +225,7 @@
       if (!data) return;
 
       const k = data.kpis;
-      updateImwebSourceIndicators(data.dataSources?.imweb || null);
+      updateHeaderSourceIndicators(data.dataSources || null);
 
       const revenueEl = document.querySelector('[data-kpi="revenue"] .kpi-value');
       if (revenueEl) {

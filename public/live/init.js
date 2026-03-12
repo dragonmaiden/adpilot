@@ -8,6 +8,7 @@
   let optimizationPollId = null;
   let secondaryPollId = null;
   let scanPollId = null;
+  let bootstrapPollId = null;
 
   function renderStaticCampaignsView() {
     const activeContainer = document.getElementById('activeAdsContainer');
@@ -94,6 +95,42 @@
     }
   }
 
+  function stopBootstrapPolling() {
+    if (!bootstrapPollId) return;
+    clearInterval(bootstrapPollId);
+    bootstrapPollId = null;
+  }
+
+  function startBootstrapPolling() {
+    if (bootstrapPollId) return;
+
+    const startedAt = Date.now();
+    bootstrapPollId = setInterval(async () => {
+      const health = await api('/health');
+      if (!health) return;
+
+      if (Date.now() - startedAt > 90000) {
+        stopBootstrapPolling();
+        return;
+      }
+
+      const hasCompletedScan = Boolean(health.lastScan);
+      if (!health.isScanning && hasCompletedScan) {
+        stopBootstrapPolling();
+      }
+
+      await live.refresh('overview');
+
+      if (!health.isScanning && hasCompletedScan) {
+        await live.refresh('optimizations');
+        await live.refresh('campaigns');
+        await live.refresh('analytics');
+        await live.refresh('calendar');
+        await live.refresh('settings');
+      }
+    }, 3000);
+  }
+
   async function handlePageActivated(pageName) {
     if (!live.isLiveEnabled()) return;
 
@@ -122,6 +159,11 @@
     try { await live.refresh('analytics'); } catch (e) { console.warn('[LIVE] analytics refresh error:', e.message); }
     try { await live.refresh('calendar'); } catch (e) { console.warn('[LIVE] calendar refresh error:', e.message); }
     try { await live.refresh('settings'); } catch (e) { console.warn('[LIVE] settings refresh error:', e.message); }
+
+    const health = await api('/health');
+    if (health?.isScanning || !health?.lastScan) {
+      startBootstrapPolling();
+    }
 
     startPolling();
     return true;

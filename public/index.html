@@ -31,7 +31,7 @@
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-      <img src="./shue-mascot.svg" width="36" height="36" alt="Shue mascot" class="sidebar-logo-mark">
+      <img src="./shue-mascot.svg" width="30" height="30" alt="Shue mascot" class="sidebar-logo-mark">
       <span class="logo-text">Shue</span>
     </div>
     <nav class="sidebar-nav">
@@ -90,23 +90,36 @@
       </div>
     </div>
     <div class="header-right">
-      <div class="connected-badge">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="7" stroke="#1877F2" stroke-width="1.5"/>
-          <text x="8" y="11" text-anchor="middle" font-size="9" font-weight="700" fill="#1877F2">f</text>
-        </svg>
-        <span>Meta Ads</span>
+      <div class="source-status-log" id="sourceStatusLog" aria-label="Source status">
+        <div class="connected-badge" id="metaConnectedBadge">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <circle cx="8" cy="8" r="7" stroke="#1877F2" stroke-width="1.5"/>
+            <text x="8" y="11" text-anchor="middle" font-size="9" font-weight="700" fill="#1877F2">f</text>
+          </svg>
+          <span class="source-badge-name" data-i18n="header.metaAds">Meta Ads</span>
+          <span class="source-badge-state" id="metaConnectedState" data-i18n="misc.waiting">Waiting</span>
+        </div>
+        <div class="connected-badge" id="imwebConnectedBadge">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="1" y="1" width="14" height="14" rx="3" stroke="#4ade80" stroke-width="1.5"/>
+            <text x="8" y="11.5" text-anchor="middle" font-size="8" font-weight="700" fill="#4ade80">iw</text>
+          </svg>
+          <span class="source-badge-name" data-i18n="header.imweb">Imweb</span>
+          <span class="source-badge-state" id="imwebConnectedState" data-i18n="misc.waiting">Waiting</span>
+        </div>
+        <div class="connected-badge" id="cogsConnectedBadge">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="2" y="1.5" width="12" height="13" rx="2.5" stroke="#f59e0b" stroke-width="1.3"/>
+            <path d="M5 4.5H11" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M5 7.5H11" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/>
+            <path d="M5 10.5H9" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+          <span class="source-badge-name" data-i18n="header.googleSheets">Google Sheets</span>
+          <span class="source-badge-state" id="cogsConnectedState" data-i18n="misc.waiting">Waiting</span>
+        </div>
       </div>
-      <div class="connected-badge" id="imwebConnectedBadge">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <rect x="1" y="1" width="14" height="14" rx="3" stroke="#4ade80" stroke-width="1.5"/>
-          <text x="8" y="11.5" text-anchor="middle" font-size="8" font-weight="700" fill="#4ade80">iw</text>
-        </svg>
-        <span id="imwebConnectedLabel">Imweb</span>
-      </div>
-      <button class="btn btn-primary" id="runScanBtn">
-        <i data-lucide="radar"></i>
-        <span data-i18n="header.runScan">Run Scan Now</span>
+      <button class="btn btn-primary header-scan-btn" id="runScanBtn">
+        <span data-i18n="header.runScan">Run Scan</span>
       </button>
       <div class="lang-toggle" id="langToggle">
         <button class="lang-btn active" id="langEn">EN</button>

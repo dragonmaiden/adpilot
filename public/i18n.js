@@ -14,10 +14,13 @@ const I18N = {
   'nav.settings':       { en: 'Settings',           kr: '설정' },
 
   // ── Header ──
-  'header.runScan':     { en: 'Run Scan Now',      kr: '스캔 실행' },
+  'header.runScan':     { en: 'Run Scan',          kr: '스캔 실행' },
   'header.lastScan':    { en: 'Last scan:',        kr: '마지막 스캔:' },
   'header.agentActive': { en: 'Agent Active',      kr: '에이전트 활성' },
   'header.nextScan':    { en: 'Next scan in',      kr: '다음 스캔까지' },
+  'header.metaAds':     { en: 'Meta Ads',          kr: 'Meta 광고' },
+  'header.imweb':       { en: 'Imweb',             kr: 'Imweb' },
+  'header.googleSheets': { en: 'Google Sheets',    kr: 'Google Sheets' },
 
   // ── Page Titles ──
   'page.overview':      { en: 'Executive Summary', kr: '요약' },
