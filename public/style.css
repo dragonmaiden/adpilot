@@ -308,7 +308,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   color: var(--color-text-muted);
 }
 
-.page-title { min-width: 0; }
+.page-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
 
 .page-title h1 {
   font-size: var(--text-lg);
@@ -319,15 +324,28 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .last-scan {
   font-size: var(--text-xs);
   color: var(--color-text-faint);
+  flex-shrink: 0;
 }
 
 .last-scan-warning {
+  display: inline-block;
   font-size: var(--text-xs);
   color: var(--color-warning);
+  max-width: min(34vw, 320px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .last-scan-warning.is-error {
   color: var(--color-error);
+}
+
+.page-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .analytics-inline-notice {
@@ -2776,6 +2794,16 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .last-scan,
   .last-scan-warning {
     line-height: 1.45;
+  }
+
+  .page-meta {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .last-scan-warning {
+    max-width: 100%;
+    white-space: normal;
   }
 
   /* API rows stack */

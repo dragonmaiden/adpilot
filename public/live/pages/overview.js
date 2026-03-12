@@ -152,6 +152,14 @@
     return badgeMeta;
   }
 
+  function setHeaderNotice(noticeEl, text, isError = false) {
+    if (!noticeEl) return;
+    noticeEl.classList.toggle('is-error', Boolean(isError));
+    noticeEl.hidden = !text;
+    noticeEl.textContent = text || '';
+    noticeEl.title = text || '';
+  }
+
   function updateHeaderSourceIndicators(dataSources) {
     const noticeEl = document.getElementById('dataFreshnessNotice');
     const metaSource = combineMetaSourceHealth(dataSources);
@@ -168,8 +176,6 @@
       krShort: 'Google Sheets',
     });
 
-    if (!noticeEl) return;
-
     const errors = [];
     const warnings = [];
     const sourceEntries = [
@@ -183,37 +189,31 @@
       if (entry.meta.severity === 'warning') warnings.push(entry.name);
     }
 
-    noticeEl.classList.toggle('is-error', errors.length > 0);
-
     if (errors.length > 0 && warnings.length > 0) {
-      noticeEl.hidden = false;
-      noticeEl.textContent = tr(
+      setHeaderNotice(noticeEl, tr(
         `${errors.join(', ')} need attention. Using cached data for ${warnings.join(', ')}.`,
         `${errors.join(', ')} 점검이 필요합니다. ${warnings.join(', ')} 캐시 데이터를 사용 중입니다.`
-      );
+      ), true);
       return;
     }
 
     if (errors.length > 0) {
-      noticeEl.hidden = false;
-      noticeEl.textContent = tr(
+      setHeaderNotice(noticeEl, tr(
         `${errors.join(', ')} sync is currently unavailable.`,
         `${errors.join(', ')} 동기화를 현재 사용할 수 없습니다.`
-      );
+      ), true);
       return;
     }
 
     if (warnings.length > 0) {
-      noticeEl.hidden = false;
-      noticeEl.textContent = tr(
+      setHeaderNotice(noticeEl, tr(
         `Using cached data for ${warnings.join(', ')}.`,
         `${warnings.join(', ')} 캐시 데이터를 사용 중입니다.`
-      );
+      ));
       return;
     }
 
-    noticeEl.hidden = true;
-    noticeEl.textContent = '';
+    setHeaderNotice(noticeEl, '');
   }
 
   async function refreshOverviewPage() {
