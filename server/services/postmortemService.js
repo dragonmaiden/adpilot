@@ -80,7 +80,7 @@ function getPostmortemResponse(query = {}) {
         lessons.push({ type: 'clicks_no_purchase', text: `Good CTR (${avgCTR.toFixed(2)}%) but no Meta-attributed purchases — landing page or pricing may be the issue` });
       }
       if (totalSpend === 0) {
-        lessons.push({ type: 'no_data', text: 'No spend data in the selected window — was paused before this period' });
+        lessons.push({ type: 'no_data', text: 'No spend data in the selected time frame — was paused before this period' });
       }
       if (lessons.length === 0 && totalSpend > 0) {
         lessons.push({ type: 'general', text: `Spent $${totalSpend.toFixed(2)} with ${totalAttributedPurchases} Meta-attributed purchase${totalAttributedPurchases !== 1 ? 's' : ''} — manually paused or replaced by better creative` });

@@ -748,7 +748,7 @@
             <div class="calendar-detail-note">${tr(`${formatCount(selection.dayCount || 0)} day${selection.dayCount === 1 ? '' : 's'} selected · All dates shown in KST`, `${formatCount(selection.dayCount || 0)}일 선택 · 모든 날짜는 KST 기준`)}</div>
           </div>
           <div class="calendar-chip-row">
-            <span class="calendar-chip ${isProfitPositive ? 'positive' : 'negative'}">${esc(isProfitPositive ? tr('Profitable window', '수익 구간') : tr('Below break-even', '손익분기 이하'))}</span>
+            <span class="calendar-chip ${isProfitPositive ? 'positive' : 'negative'}">${esc(isProfitPositive ? tr('Profitable time frame', '수익 구간') : tr('Below break-even', '손익분기 이하'))}</span>
           </div>
         </div>
       </div>

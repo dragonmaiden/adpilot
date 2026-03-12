@@ -134,9 +134,19 @@ function validateImwebOrders(orders) {
   let unexpectedFields = new Set();
 
   const expectedFields = [
-    'totalPaymentPrice', 'totalPrice', 'totalRefundedPrice',
-    'wtime', 'sections', 'orderSections',
-    'orderNo', 'orderStatus', 'paymentMethod', 'payments',
+    'adminUrl', 'baseItemPrice', 'country', 'currency',
+    'deliveryCouponDiscount', 'deliveryExtraPrice', 'deliveryIslandPrice', 'deliveryPointAmount', 'deliveryPrice',
+    'device', 'gradeDiscount',
+    'isCancelReq', 'isFirst', 'isGift', 'isMember', 'isRequestPayment', 'isSubscription',
+    'itemCouponDiscount', 'itemPointAmount', 'itemPrice',
+    'memberCode', 'memberUid',
+    'orderNo', 'orderStatus', 'orderType', 'paymentMethod', 'payments',
+    'saleChannel', 'sections', 'orderSections',
+    'totalDeliveryPrice', 'totalDiscountPrice', 'totalPaymentPrice', 'totalPoint', 'totalPrice',
+    'totalRefundPendingPoint', 'totalRefundPendingPrice', 'totalRefundedPoint', 'totalRefundedPrice',
+    'unipassNumber', 'wtime',
+    'utm', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm',
+    'fbclid', 'gclid', 'msclkid', 'referrer', 'referer', 'landingUrl', 'landingPage',
   ];
 
   for (const order of orders) {

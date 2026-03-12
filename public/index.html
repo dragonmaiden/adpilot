@@ -208,10 +208,11 @@
           <h2 data-i18n="overview.trendsTitle">Daily revenue and efficiency</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="overview.window">Window</span>
-          <div class="range-switch" data-series-window-group="overview" role="group" aria-label="Overview trend window" data-i18n-aria-label="overview.windowAria">
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+          <span class="range-toolbar-label" data-i18n="overview.window">Time frame</span>
+          <div class="range-switch" data-series-window-group="overview" role="group" aria-label="Overview trend time frame" data-i18n-aria-label="overview.windowAria">
+            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="30d">30D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
@@ -327,8 +328,8 @@
           <p class="section-note" data-i18n="analytics.sectionNote">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
         </div>
         <div class="range-toolbar section-head-toolbar">
-          <span class="range-toolbar-label" data-i18n="analytics.window">Window</span>
-          <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure window" data-i18n-aria-label="analytics.windowStructureAria">
+          <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
+          <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure time frame" data-i18n-aria-label="analytics.windowStructureAria">
             <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
             <button type="button" class="range-switch-btn is-active" data-series-window-value="30d">30D</button>
@@ -476,10 +477,11 @@
           <h2 data-i18n="analytics.mediaTitle">Which traffic patterns and campaigns create profit</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="analytics.window">Window</span>
-          <div class="range-switch" data-series-window-group="media-profitability" role="group" aria-label="Media profitability window" data-i18n-aria-label="analytics.windowMediaAria">
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+          <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
+          <div class="range-switch" data-series-window-group="media-profitability" role="group" aria-label="Media profitability time frame" data-i18n-aria-label="analytics.windowMediaAria">
+            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="30d">30D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
@@ -489,7 +491,7 @@
         <div class="card chart-card">
           <div class="card-header">
             <h2 data-i18n="chart.weekdayPerf">Ad Performance by Weekday</h2>
-            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="weekdayChartWindowNote">30D window</span>
+            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="weekdayChartWindowNote">30D time frame</span>
           </div>
           <div class="chart-container" style="height:320px">
             <canvas id="weekdayChart"></canvas>
@@ -559,11 +561,12 @@
           <h2 data-i18n="analytics.qualityTitle">Refund pressure and settlement validation</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="analytics.window">Window</span>
-          <div class="range-switch" data-series-window-group="revenue-quality" role="group" aria-label="Revenue quality window" data-i18n-aria-label="analytics.windowQualityAria">
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="14d">14D</button>
+          <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
+          <div class="range-switch" data-series-window-group="revenue-quality" role="group" aria-label="Revenue quality time frame" data-i18n-aria-label="analytics.windowQualityAria">
+            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
       </div>
@@ -612,7 +615,7 @@
       <div class="card" id="reconciliationCard">
         <div class="card-header">
           <h2 data-i18n="analytics.reconciliationRollupTitle">Daily Reconciliation Rollup</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)" id="reconciliationWindow" data-i18n="analytics.reconciliationWindowDefault">Match window —</span>
+            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="reconciliationWindow" data-i18n="analytics.reconciliationWindowDefault">Match time frame —</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="reconciliationTable">
@@ -686,8 +689,8 @@
           <h2 data-i18n="campaigns.sectionTitle">Act on what needs attention now</h2>
         </div>
         <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="campaigns.window">Window</span>
-          <div class="range-switch" data-series-window-group="campaigns" role="group" aria-label="Campaign performance window" data-i18n-aria-label="campaigns.windowAria">
+          <span class="range-toolbar-label" data-i18n="campaigns.window">Time frame</span>
+          <div class="range-switch" data-series-window-group="campaigns" role="group" aria-label="Campaign performance time frame" data-i18n-aria-label="campaigns.windowAria">
             <button type="button" class="range-switch-btn is-active" data-series-window-value="7d">7D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>

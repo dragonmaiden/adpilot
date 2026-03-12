@@ -5,6 +5,7 @@
 const fs = require('fs');
 const config = require('../config');
 const { formatDateInTimeZone, getHourInTimeZone } = require('../domain/time');
+const { summarizeOrderAttribution } = require('../domain/imwebAttribution');
 const { getOrderCashTotals } = require('../domain/imwebPayments');
 const runtimePaths = require('../runtime/paths');
 
@@ -427,6 +428,7 @@ function processOrders(orders) {
   let totalSections = 0;
   const dailyRevenue = {};
   const hourlyOrders = new Array(24).fill(0);
+  const attributionSummary = summarizeOrderAttribution(orders);
 
   for (const order of orders) {
     const { approvedAmount, refundedAmount, hasRecognizedCash } = getOrderCashTotals(order);
@@ -474,6 +476,7 @@ function processOrders(orders) {
     cancelRate: totalSections > 0 ? (cancelledSections / totalSections * 100) : 0,
     dailyRevenue,
     hourlyOrders,
+    attributionSummary,
   };
 }
 

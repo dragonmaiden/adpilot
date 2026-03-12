@@ -16,7 +16,7 @@ function createActions(purchases) {
 
 function buildInsights({ baselineSpend, baselinePurchases, wednesdaySpend, wednesdayPurchases }) {
   const rows = [];
-  const start = new Date('2026-02-26T00:00:00Z');
+  const start = new Date('2026-02-12T00:00:00Z');
   const end = new Date('2026-03-11T00:00:00Z');
 
   for (let cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
@@ -44,16 +44,22 @@ function createCampaign() {
   };
 }
 
-function createProfitContext() {
+function createCampaignEconomicsContext(overrides = {}) {
   return {
-    hasReliableCoverage: true,
-    trueNetProfit: 1844935,
-    margin: 0.354,
+    campaigns: [
+      {
+        campaignId: 'c1',
+        estimatedRevenue: 520000,
+        estimatedTrueNetProfit: 1844935,
+        estimatedMargin: 0.354,
+        confidence: 'high',
+        hasReliableEstimate: true,
+        contributionPerSpend: 0.45,
+        ...overrides,
+      },
+    ],
   };
 }
-
-const freshRevenueSource = { status: 'connected', stale: false };
-const staleRevenueSource = { status: 'error', stale: true };
 
 test('analyzeCampaigns suppresses scale-up when the current weekday is materially weak', () => {
   const engine = new OptimizationEngine(1);
@@ -64,7 +70,7 @@ test('analyzeCampaigns suppresses scale-up when the current weekday is materiall
     wednesdayPurchases: 4,
   });
 
-  engine.analyzeCampaigns([createCampaign()], insights, createProfitContext(), freshRevenueSource, REFERENCE_DATE);
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE);
 
   assert.equal(engine.actions.length, 0);
 });
@@ -78,7 +84,7 @@ test('analyzeCampaigns downgrades scale-up to low priority when the current week
     wednesdayPurchases: 5,
   });
 
-  engine.analyzeCampaigns([createCampaign()], insights, createProfitContext(), freshRevenueSource, REFERENCE_DATE);
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE);
 
   assert.equal(engine.actions.length, 1);
   assert.equal(engine.actions[0].priority, 'low');
@@ -95,14 +101,14 @@ test('analyzeCampaigns allows a medium-priority scale-up when the current weekda
     wednesdayPurchases: 5,
   });
 
-  engine.analyzeCampaigns([createCampaign()], insights, createProfitContext(), freshRevenueSource, REFERENCE_DATE);
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE);
 
   assert.equal(engine.actions.length, 1);
   assert.equal(engine.actions[0].priority, 'medium');
   assert.match(engine.actions[0].action, /\$22\.00/);
 });
 
-test('analyzeCampaigns blocks profit-backed scale-up when the Imweb revenue source is stale', () => {
+test('analyzeCampaigns blocks scale-up when campaign-level economics are not reliable', () => {
   const engine = new OptimizationEngine(4);
   const insights = buildInsights({
     baselineSpend: 60,
@@ -111,7 +117,100 @@ test('analyzeCampaigns blocks profit-backed scale-up when the Imweb revenue sour
     wednesdayPurchases: 5,
   });
 
-  engine.analyzeCampaigns([createCampaign()], insights, createProfitContext(), staleRevenueSource, REFERENCE_DATE);
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext({
+    confidence: 'low',
+    hasReliableEstimate: false,
+  }), REFERENCE_DATE);
 
   assert.equal(engine.actions.length, 0);
+});
+
+test('analyzeCampaigns ignores an incomplete current day when recent CPA would otherwise look weak', () => {
+  const engine = new OptimizationEngine(5);
+  const insights = [
+    { campaign_id: 'c1', date_start: '2026-03-08', spend: '60', actions: createActions(5), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-03-09', spend: '60', actions: createActions(5), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-03-10', spend: '60', actions: createActions(5), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-03-11', spend: '120', actions: createActions(0), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-03-04', spend: '55', actions: createActions(5), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-02-25', spend: '55', actions: createActions(5), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-02-18', spend: '55', actions: createActions(5), frequency: '1.2' },
+  ];
+
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE);
+
+  assert.equal(engine.actions.length, 1);
+  assert.match(engine.actions[0].action, /\$22\.00/);
+});
+
+test('analyzeCampaigns requires stronger evidence before issuing a scale-up', () => {
+  const engine = new OptimizationEngine(6);
+  const insights = [
+    { campaign_id: 'c1', date_start: '2026-03-08', spend: '60', actions: createActions(4), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-03-09', spend: '60', actions: createActions(0), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-03-10', spend: '60', actions: createActions(2), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-03-04', spend: '55', actions: createActions(5), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-02-25', spend: '55', actions: createActions(0), frequency: '1.2' },
+    { campaign_id: 'c1', date_start: '2026-02-18', spend: '55', actions: createActions(0), frequency: '1.2' },
+  ];
+
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE);
+
+  assert.equal(engine.actions.length, 0);
+});
+
+test('analyzeCampaigns blocks scale-up when the campaign estimated contribution is negative', () => {
+  const engine = new OptimizationEngine(7);
+  const insights = buildInsights({
+    baselineSpend: 60,
+    baselinePurchases: 5,
+    wednesdaySpend: 55,
+    wednesdayPurchases: 5,
+  });
+
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext({
+    estimatedTrueNetProfit: -120000,
+    estimatedMargin: -0.08,
+  }), REFERENCE_DATE);
+
+  assert.equal(engine.actions.length, 0);
+});
+
+test('analyzeBudgetReallocation follows contribution estimates instead of issuing a CPA-only move', () => {
+  const engine = new OptimizationEngine(8);
+  const campaigns = [
+    { id: 'c1', name: 'Scale Winner', status: 'ACTIVE', daily_budget: '11000' },
+    { id: 'c2', name: 'Drag Campaign', status: 'ACTIVE', daily_budget: '9000' },
+  ];
+  const insights = [
+    { campaign_id: 'c1', date_start: '2026-03-08', spend: '55', actions: createActions(5) },
+    { campaign_id: 'c1', date_start: '2026-03-09', spend: '55', actions: createActions(5) },
+    { campaign_id: 'c1', date_start: '2026-03-10', spend: '55', actions: createActions(5) },
+    { campaign_id: 'c2', date_start: '2026-03-08', spend: '60', actions: createActions(5) },
+    { campaign_id: 'c2', date_start: '2026-03-09', spend: '60', actions: createActions(5) },
+    { campaign_id: 'c2', date_start: '2026-03-10', spend: '60', actions: createActions(5) },
+  ];
+
+  engine.analyzeBudgetReallocation(campaigns, insights, {
+    campaigns: [
+      {
+        campaignId: 'c1',
+        estimatedTrueNetProfit: 220000,
+        estimatedMargin: 0.18,
+        contributionPerSpend: 0.3,
+        hasReliableEstimate: true,
+      },
+      {
+        campaignId: 'c2',
+        estimatedTrueNetProfit: -90000,
+        estimatedMargin: -0.06,
+        contributionPerSpend: -0.12,
+        hasReliableEstimate: true,
+      },
+    ],
+  });
+
+  assert.equal(engine.actions.length, 1);
+  assert.match(engine.actions[0].reason, /estimated contribution/i);
+  assert.match(engine.actions[0].action, /Reallocate \$45\.00\/day/);
 });

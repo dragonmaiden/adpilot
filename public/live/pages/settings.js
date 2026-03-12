@@ -157,7 +157,7 @@
         } else if (imwebAuth?.lastError) {
           imwebAuthNoteEl.textContent = localizeSystemText(imwebAuth.lastError) + tokenMismatchNote;
         } else if (imwebAuth?.refreshTokenMismatch) {
-          imwebAuthNoteEl.textContent = tr('Persisted token and IMWEB_REFRESH_TOKEN differ. Keep one canonical token source and reseed before the next refresh window.', '저장된 토큰과 IMWEB_REFRESH_TOKEN이 다릅니다. 하나의 기준 토큰 소스를 유지하고 다음 갱신 전에 다시 시드하세요.');
+          imwebAuthNoteEl.textContent = tr('Persisted token and IMWEB_REFRESH_TOKEN differ. Keep one canonical token source and reseed before the next refresh cycle.', '저장된 토큰과 IMWEB_REFRESH_TOKEN이 다릅니다. 하나의 기준 토큰 소스를 유지하고 다음 갱신 전에 다시 시드하세요.');
         } else if (imwebAuth?.status === 'connected') {
           imwebAuthNoteEl.textContent = tr('Refreshable token is healthy', '갱신 가능한 토큰 상태가 정상입니다');
         } else if (imwebAuth?.status === 'misconfigured') {

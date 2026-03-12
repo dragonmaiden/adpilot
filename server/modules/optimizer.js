@@ -21,6 +21,7 @@ const {
   buildWeekdayScaleContext,
   buildProfitContext,
 } = require('../domain/performanceContext');
+const { buildCampaignEconomics } = require('../services/campaignEconomicsService');
 const {
   OPTIMIZATION_TYPES,
   isBudgetDecreaseAction,
@@ -38,6 +39,11 @@ const PROFIT_SCALE_MARGIN_THRESHOLD = 0.08;
 const MIN_PROFIT_COVERAGE_RATIO = 0.8;
 const WEEKDAY_SCALE_CAUTION_RATIO = 1.15;
 const WEEKDAY_SCALE_SUPPRESS_RATIO = 1.4;
+const OPTIMIZER_WINDOW_OPTIONS = Object.freeze({ includeCurrentDay: false });
+const MIN_SCALE_PURCHASES = 8;
+const MIN_SCALE_PURCHASE_DAYS = 3;
+const MIN_REALLOCATION_PURCHASES = 5;
+const MIN_REALLOCATION_PURCHASE_DAYS = 3;
 
 class OptimizationEngine {
   constructor(scanId = Date.now()) {
@@ -47,6 +53,33 @@ class OptimizationEngine {
 
   getRules() {
     return runtimeSettings.getRules();
+  }
+
+  buildDecisionEvidence(insights, totals = summarizeInsights(insights)) {
+    const rows = Array.isArray(insights) ? insights : [];
+    const purchaseDays = rows.filter(row => getPurchases(row?.actions) > 0).length;
+
+    return {
+      observationDays: rows.length,
+      purchaseDays,
+      spend: Number(totals.spend || 0),
+      purchases: Number(totals.purchases || 0),
+      cpa: totals.cpa,
+    };
+  }
+
+  hasScaleConfidence(evidence, rules) {
+    return evidence.observationDays >= Math.max(rules.minDataDays, MIN_SCALE_PURCHASE_DAYS)
+      && evidence.spend >= rules.minSpendForDecision
+      && evidence.purchases >= MIN_SCALE_PURCHASES
+      && evidence.purchaseDays >= MIN_SCALE_PURCHASE_DAYS;
+  }
+
+  hasReallocationConfidence(evidence, rules) {
+    return evidence.observationDays >= Math.max(rules.minDataDays, MIN_REALLOCATION_PURCHASE_DAYS)
+      && evidence.spend >= rules.minSpendForDecision
+      && evidence.purchases >= MIN_REALLOCATION_PURCHASES
+      && evidence.purchaseDays >= MIN_REALLOCATION_PURCHASE_DAYS;
   }
 
   // ── Log an optimization action ──
@@ -74,14 +107,29 @@ class OptimizationEngine {
   async analyze(campaignData, adSetData, adData, campaignInsights, adSetInsights, adInsights, revenueData, revenueSource = null, cogsData = null) {
     const rules = this.getRules();
     this.actions = [];
+    const referenceDate = getTodayInTimeZone();
     const profitContext = buildProfitContext(campaignInsights, revenueData, cogsData, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), {
       minCoverageRatio: MIN_PROFIT_COVERAGE_RATIO,
+      includeCurrentDay: false,
     });
+    const campaignEconomics = buildCampaignEconomics(
+      campaignData,
+      campaignInsights,
+      revenueData,
+      cogsData,
+      revenueSource,
+      {
+        days: PERFORMANCE_LOOKBACK_DAYS,
+        referenceDate,
+        includeCurrentDay: false,
+        minCoverageRatio: MIN_PROFIT_COVERAGE_RATIO,
+      }
+    );
 
     console.log(`[OPTIMIZER] Starting scan ${this.scanId}...`);
 
     // 1. Campaign-level optimizations
-    this.analyzeCampaigns(campaignData, campaignInsights, profitContext, revenueSource);
+    this.analyzeCampaigns(campaignData, campaignInsights, campaignEconomics, referenceDate);
 
     // 2. Ad set-level optimizations
     this.analyzeAdSets(adSetData, adSetInsights, campaignData);
@@ -91,7 +139,7 @@ class OptimizationEngine {
 
     // 4. Budget reallocation across campaigns
     if (rules.budgetReallocationEnabled) {
-      this.analyzeBudgetReallocation(campaignData, campaignInsights);
+      this.analyzeBudgetReallocation(campaignData, campaignInsights, campaignEconomics);
     }
 
     // 5. Scheduling optimizations
@@ -105,29 +153,27 @@ class OptimizationEngine {
   }
 
   // ── 1. Campaign-Level Analysis ──
-  analyzeCampaigns(campaigns, insights, profitContext = null, revenueSource = null, referenceDate = getTodayInTimeZone()) {
+  analyzeCampaigns(campaigns, insights, campaignEconomicsContext = null, referenceDate = getTodayInTimeZone()) {
     const rules = this.getRules();
-    const hasFreshProfitContext = Boolean(
-      profitContext
-      && profitContext.hasReliableCoverage
-      && revenueSource?.status === 'connected'
-      && !revenueSource?.stale
+    const campaignEconomicsById = new Map(
+      (campaignEconomicsContext?.campaigns || []).map(campaign => [String(campaign.campaignId), campaign])
     );
 
     for (const campaign of campaigns) {
       if (campaign.status !== 'ACTIVE') continue;
 
       // Get recent insights for this campaign (last 7 days)
-      const cInsights = filterRecentInsights(insights, 'campaign_id', campaign.id, PERFORMANCE_LOOKBACK_DAYS, referenceDate);
+      const cInsights = filterRecentInsights(insights, 'campaign_id', campaign.id, PERFORMANCE_LOOKBACK_DAYS, referenceDate, OPTIMIZER_WINDOW_OPTIONS);
       if (cInsights.length === 0) continue;
-      const campaignHistory = filterRecentInsights(insights, 'campaign_id', campaign.id, SCHEDULE_LOOKBACK_DAYS, referenceDate);
+      const campaignHistory = filterRecentInsights(insights, 'campaign_id', campaign.id, SCHEDULE_LOOKBACK_DAYS, referenceDate, OPTIMIZER_WINDOW_OPTIONS);
 
       const totals = summarizeInsights(cInsights);
       const totalSpend = totals.spend;
       const totalPurchases = totals.purchases;
       const avgCPA = totals.cpa;
       const avgFrequency = averagePositiveField(cInsights, 'frequency');
-      const hasDecisionData = cInsights.length >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
+      const evidence = this.buildDecisionEvidence(cInsights, totals);
+      const hasDecisionData = evidence.observationDays >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
 
       // Rule: High CPA warning
       if (hasDecisionData && avgCPA && avgCPA > rules.cpaWarningThreshold) {
@@ -150,16 +196,26 @@ class OptimizationEngine {
       }
 
       // Rule: Campaign performing well — increase budget
-      const profitSupportsScaling = hasFreshProfitContext
-        && profitContext.trueNetProfit > 0
-        && profitContext.margin >= PROFIT_SCALE_MARGIN_THRESHOLD;
+      const campaignEconomics = campaignEconomicsById.get(String(campaign.id)) || null;
+      const profitSupportsScaling = Boolean(
+        campaignEconomics
+        && campaignEconomics.hasReliableEstimate
+        && campaignEconomics.estimatedTrueNetProfit > 0
+        && campaignEconomics.estimatedMargin >= PROFIT_SCALE_MARGIN_THRESHOLD
+      );
       const weekdayScaleContext = buildWeekdayScaleContext(campaignHistory, rules, referenceDate, {
         lookbackDays: SCHEDULE_LOOKBACK_DAYS,
         cautionRatio: WEEKDAY_SCALE_CAUTION_RATIO,
         suppressRatio: WEEKDAY_SCALE_SUPPRESS_RATIO,
+        includeCurrentDay: false,
       });
 
-      if (hasDecisionData && avgCPA && avgCPA < rules.cpaWarningThreshold * 0.5 && totalPurchases >= 5 && profitSupportsScaling) {
+      if (hasDecisionData
+        && this.hasScaleConfidence(evidence, rules)
+        && avgCPA
+        && avgCPA < rules.cpaWarningThreshold * 0.5
+        && totalPurchases >= 5
+        && profitSupportsScaling) {
         if (weekdayScaleContext.status === 'suppress') {
           continue;
         }
@@ -169,12 +225,15 @@ class OptimizationEngine {
         const weekdaySuffix = weekdayScaleContext.status === 'caution'
           ? ` ${weekdayScaleContext.reason}.`
           : '';
-        const scaleReason = `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} with ${totalPurchases} Meta-attributed purchases, while account true net profit is ₩${profitContext.trueNetProfit.toLocaleString()} at ${(profitContext.margin * 100).toFixed(1)}% margin.${weekdaySuffix}`;
+        const confidencePrefix = campaignEconomics.confidence === 'medium'
+          ? 'Estimated campaign contribution is'
+          : 'Campaign estimated contribution is';
+        const scaleReason = `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} with ${totalPurchases} Meta-attributed purchases. ${confidencePrefix} ₩${campaignEconomics.estimatedTrueNetProfit.toLocaleString()} on ₩${campaignEconomics.estimatedRevenue.toLocaleString()} estimated attributable revenue at ${(campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin (${campaignEconomics.confidence}-confidence daily AOV proxy).${weekdaySuffix}`;
         this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', campaign.id, campaign.name,
           `Increase daily budget by $${(increase / 100).toFixed(2)} (${rules.maxBudgetChangePercent}%)`,
           scaleReason,
           `Potential ${Math.round(increase / 100 / avgCPA)} additional Meta-attributed purchases/day`,
-          weekdayScaleContext.status === 'caution' ? 'low' : 'medium'
+          weekdayScaleContext.status === 'caution' || campaignEconomics.confidence === 'medium' ? 'low' : 'medium'
         );
       }
 
@@ -196,7 +255,7 @@ class OptimizationEngine {
     for (const adSet of adSets) {
       if (adSet.effective_status !== 'ACTIVE') continue;
 
-      const asInsights = filterRecentInsights(insights, 'adset_id', adSet.id);
+      const asInsights = filterRecentInsights(insights, 'adset_id', adSet.id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
       if (asInsights.length === 0) continue;
 
       const totals = summarizeInsights(asInsights);
@@ -236,7 +295,7 @@ class OptimizationEngine {
       // Rule: Ad set CPA much higher than campaign average
       const parentCampaign = campaigns.find(c => c.id === adSet.campaign_id);
       if (parentCampaign && hasDecisionData && avgCPA) {
-        const campaignInsights = filterRecentInsights(insights, 'campaign_id', adSet.campaign_id);
+        const campaignInsights = filterRecentInsights(insights, 'campaign_id', adSet.campaign_id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
         const campaignTotals = summarizeInsights(campaignInsights);
         const campaignCPA = campaignTotals.cpa;
 
@@ -258,7 +317,7 @@ class OptimizationEngine {
     for (const ad of ads) {
       if (ad.effective_status !== 'ACTIVE') continue;
 
-      const adInsights = filterRecentInsights(insights, 'ad_id', ad.id);
+      const adInsights = filterRecentInsights(insights, 'ad_id', ad.id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
       if (adInsights.length < 3) continue;
 
       const totals = summarizeInsights(adInsights);
@@ -303,35 +362,55 @@ class OptimizationEngine {
   }
 
   // ── 4. Budget Reallocation ──
-  analyzeBudgetReallocation(campaigns, insights) {
+  analyzeBudgetReallocation(campaigns, insights, campaignEconomicsContext = null) {
     const rules = this.getRules();
     const activeCampaigns = campaigns.filter(c => c.status === 'ACTIVE');
     if (activeCampaigns.length < 2) return;
+    const economicsByCampaignId = new Map(
+      (campaignEconomicsContext?.campaigns || []).map(campaign => [String(campaign.campaignId), campaign])
+    );
 
-    // Calculate CPA for each active campaign
+    // Rank campaigns by estimated contribution efficiency, not raw CPA alone.
     const campaignPerf = activeCampaigns.map(c => {
-      const cInsights = filterRecentInsights(insights, 'campaign_id', c.id);
+      const cInsights = filterRecentInsights(insights, 'campaign_id', c.id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
       const totals = summarizeInsights(cInsights);
-      return { ...c, spend: totals.spend, purchases: totals.purchases, cpa: totals.cpa ?? Infinity };
-    }).filter(campaign => campaign.spend >= rules.minSpendForDecision);
+      const campaignEconomics = economicsByCampaignId.get(String(c.id)) || null;
+      return {
+        ...c,
+        spend: totals.spend,
+        purchases: totals.purchases,
+        cpa: totals.cpa ?? Infinity,
+        evidence: this.buildDecisionEvidence(cInsights, totals),
+        campaignEconomics,
+      };
+    }).filter(campaign =>
+      campaign.spend >= rules.minSpendForDecision
+      && this.hasReallocationConfidence(campaign.evidence, rules)
+      && campaign.campaignEconomics?.hasReliableEstimate
+    );
 
     if (campaignPerf.length < 2) return;
 
-    // Sort by CPA (best first)
-    campaignPerf.sort((a, b) => a.cpa - b.cpa);
+    campaignPerf.sort((left, right) => {
+      const contributionDelta = (right.campaignEconomics.contributionPerSpend || 0) - (left.campaignEconomics.contributionPerSpend || 0);
+      if (contributionDelta !== 0) return contributionDelta;
+      return (right.campaignEconomics.estimatedTrueNetProfit || 0) - (left.campaignEconomics.estimatedTrueNetProfit || 0);
+    });
 
     const best = campaignPerf[0];
     const worst = campaignPerf[campaignPerf.length - 1];
 
-    // If worst campaign CPA is 2x+ the best, suggest reallocation
-    if (best.cpa < Infinity && worst.cpa > best.cpa * 2 && worst.spend > rules.minSpendForDecision) {
+    if (best.campaignEconomics.estimatedTrueNetProfit > 0
+      && best.campaignEconomics.estimatedMargin >= PROFIT_SCALE_MARGIN_THRESHOLD
+      && worst.campaignEconomics.estimatedTrueNetProfit < 0
+      && worst.spend > rules.minSpendForDecision) {
       const worstBudget = parseInt(worst.daily_budget || 0);
       const moveAmount = Math.round(worstBudget * 0.5); // Move 50% of worst's budget
 
       this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', worst.id, `${worst.name} → ${best.name}`,
         `Reallocate $${(moveAmount / 100).toFixed(2)}/day from worst → best campaign`,
-        `${worst.name} CPA: $${worst.cpa.toFixed(2)} vs ${best.name} CPA: $${best.cpa.toFixed(2)} (${(worst.cpa / best.cpa).toFixed(1)}x worse)`,
-        `Expected ~${Math.round(moveAmount / 100 / best.cpa)} additional purchases/day at better CPA`,
+        `${worst.name} estimated contribution is -₩${Math.abs(worst.campaignEconomics.estimatedTrueNetProfit).toLocaleString()} at ${(worst.campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin, while ${best.name} is +₩${best.campaignEconomics.estimatedTrueNetProfit.toLocaleString()} at ${(best.campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin`,
+        `Shift budget toward the higher-contribution campaign while keeping approvals reviewable`,
         'high'
       );
     }
@@ -340,7 +419,7 @@ class OptimizationEngine {
   // ── 5. Scheduling Optimizations ──
   analyzeScheduling(adSetInsights) {
     const rules = this.getRules();
-    const recentInsights = filterAllRecentInsights(adSetInsights, SCHEDULE_LOOKBACK_DAYS);
+    const recentInsights = filterAllRecentInsights(adSetInsights, SCHEDULE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
     if (recentInsights.length < 14) return;
 
     // Aggregate by day of week
@@ -380,9 +459,9 @@ class OptimizationEngine {
     if (!revenueData) return;
     if (revenueSource?.stale || revenueSource?.status !== 'connected') return;
 
-    const recentCampaignInsights = filterAllRecentInsights(campaignInsights, PERFORMANCE_LOOKBACK_DAYS);
+    const recentCampaignInsights = filterAllRecentInsights(campaignInsights, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
     const totalSpend = summarizeInsights(recentCampaignInsights).spend;
-    const netRevenue = sumRecentNetRevenue(revenueData, PERFORMANCE_LOOKBACK_DAYS);
+    const netRevenue = sumRecentNetRevenue(revenueData, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
     if (totalSpend < rules.minSpendForDecision) return;
 
     if (profitContext?.hasReliableCoverage) {

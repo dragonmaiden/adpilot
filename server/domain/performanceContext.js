@@ -7,29 +7,57 @@ function getWindowStart(days, referenceDate = getTodayInTimeZone()) {
   return shiftDate(referenceDate, -(days - 1));
 }
 
-function filterRecentInsights(insights, idKey, idValue, days = 7, referenceDate = getTodayInTimeZone()) {
-  const windowStart = getWindowStart(days, referenceDate);
+function resolveWindowBounds(days, referenceDate = getTodayInTimeZone(), options = {}) {
+  const { includeCurrentDay = true } = options;
+  const windowEnd = includeCurrentDay ? referenceDate : shiftDate(referenceDate, -1);
+  if (!windowEnd) {
+    return { windowStart: null, windowEnd: null };
+  }
+
+  return {
+    windowStart: getWindowStart(days, windowEnd),
+    windowEnd,
+  };
+}
+
+function filterRecentInsights(insights, idKey, idValue, days = 7, referenceDate = getTodayInTimeZone(), options = {}) {
+  const { windowStart, windowEnd } = resolveWindowBounds(days, referenceDate, options);
+  if (!windowStart || !windowEnd) {
+    return [];
+  }
+
   return (Array.isArray(insights) ? insights : [])
-    .filter(row => row?.[idKey] === idValue && row?.date_start >= windowStart)
+    .filter(row =>
+      row?.[idKey] === idValue
+      && row?.date_start >= windowStart
+      && row?.date_start <= windowEnd
+    )
     .sort((left, right) => String(left?.date_start || '').localeCompare(String(right?.date_start || '')));
 }
 
-function filterAllRecentInsights(insights, days = 7, referenceDate = getTodayInTimeZone()) {
-  const windowStart = getWindowStart(days, referenceDate);
+function filterAllRecentInsights(insights, days = 7, referenceDate = getTodayInTimeZone(), options = {}) {
+  const { windowStart, windowEnd } = resolveWindowBounds(days, referenceDate, options);
+  if (!windowStart || !windowEnd) {
+    return [];
+  }
+
   return (Array.isArray(insights) ? insights : [])
-    .filter(row => row?.date_start >= windowStart)
+    .filter(row => row?.date_start >= windowStart && row?.date_start <= windowEnd)
     .sort((left, right) => String(left?.date_start || '').localeCompare(String(right?.date_start || '')));
 }
 
-function sumRecentNetRevenue(revenueData, days = 7, referenceDate = getTodayInTimeZone()) {
+function sumRecentNetRevenue(revenueData, days = 7, referenceDate = getTodayInTimeZone(), options = {}) {
   const dailyRevenue = revenueData?.dailyRevenue;
-  const windowStart = getWindowStart(days, referenceDate);
+  const { windowStart, windowEnd } = resolveWindowBounds(days, referenceDate, options);
   if (!dailyRevenue || typeof dailyRevenue !== 'object' || Array.isArray(dailyRevenue)) {
+    return 0;
+  }
+  if (!windowStart || !windowEnd) {
     return 0;
   }
 
   return Object.entries(dailyRevenue).reduce((sum, [date, value]) => {
-    if (date < windowStart) return sum;
+    if (date < windowStart || date > windowEnd) return sum;
     const paid = Number(value?.revenue || 0);
     const refunded = Number(value?.refunded || 0);
     return sum + paid - refunded;
@@ -60,9 +88,12 @@ function buildWeekdayScaleContext(insights, rules, referenceDate = getTodayInTim
     lookbackDays = 28,
     cautionRatio = 1.15,
     suppressRatio = 1.4,
+    includeCurrentDay = true,
   } = options;
   const currentWeekday = getWeekdayName(referenceDate);
-  const recentInsights = filterAllRecentInsights(insights, lookbackDays, referenceDate);
+  const recentInsights = filterAllRecentInsights(insights, lookbackDays, referenceDate, {
+    includeCurrentDay,
+  });
   if (!currentWeekday || recentInsights.length === 0) {
     return { status: 'neutral', weekday: currentWeekday };
   }
@@ -100,6 +131,9 @@ function buildWeekdayScaleContext(insights, rules, referenceDate = getTodayInTim
   }
 
   const comparable = weekdayRows.filter(day => day.observations > 0 && day.spend >= rules.minSpendForDecision);
+  if (comparable.length < 3) {
+    return { status: 'neutral', weekday: currentWeekday };
+  }
   const medianCpa = median(comparable.filter(day => Number.isFinite(day.cpa)).map(day => day.cpa));
   const medianEfficiency = median(comparable.filter(day => day.purchaseEfficiency > 0).map(day => day.purchaseEfficiency));
   if (!Number.isFinite(medianCpa) || !Number.isFinite(medianEfficiency) || medianCpa <= 0 || medianEfficiency <= 0) {
@@ -147,6 +181,7 @@ function buildProfitContext(campaignInsights, revenueData, cogsData, days = 7, r
   const {
     paymentFeeRate = config.fees.paymentFeeRate,
     minCoverageRatio = 0.8,
+    includeCurrentDay = true,
   } = options;
 
   if (!revenueData?.dailyRevenue || !cogsData?.dailyCOGS) {
@@ -155,8 +190,14 @@ function buildProfitContext(campaignInsights, revenueData, cogsData, days = 7, r
 
   const dailyMerged = transforms.buildDailyMerged(revenueData.dailyRevenue, campaignInsights, cogsData.dailyCOGS);
   const profitWaterfall = transforms.buildProfitWaterfall(dailyMerged, cogsData.dailyCOGS, paymentFeeRate);
-  const windowStart = getWindowStart(days, referenceDate);
-  const rows = profitWaterfall.filter(row => row?.date && row.date >= windowStart);
+  const { windowStart, windowEnd } = resolveWindowBounds(days, referenceDate, { includeCurrentDay });
+  const rows = profitWaterfall.filter(row =>
+    row?.date
+    && windowStart
+    && windowEnd
+    && row.date >= windowStart
+    && row.date <= windowEnd
+  );
 
   if (rows.length === 0) {
     return null;
@@ -170,6 +211,12 @@ function buildProfitContext(campaignInsights, revenueData, cogsData, days = 7, r
     summary.shipping += Number(row?.cogsShipping || 0);
     summary.paymentFees += Number(row?.paymentFees || 0);
     summary.coveredDays += row?.hasCOGS ? 1 : 0;
+    summary.partialCoveredDays += row?.hasPartialCOGS ? 1 : 0;
+    summary.coverageWeight += Number.isFinite(row?.cogsCoverageRatio)
+      ? row.cogsCoverageRatio
+      : row?.hasCOGS
+      ? 1
+      : 0;
     return summary;
   }, {
     netRevenue: 0,
@@ -179,16 +226,26 @@ function buildProfitContext(campaignInsights, revenueData, cogsData, days = 7, r
     shipping: 0,
     paymentFees: 0,
     coveredDays: 0,
+    partialCoveredDays: 0,
+    coverageWeight: 0,
   });
 
-  const coverageRatio = rows.length > 0 ? totals.coveredDays / rows.length : 0;
+  const coverageRatio = rows.length > 0 ? totals.coverageWeight / rows.length : 0;
+  const confidence = coverageRatio >= minCoverageRatio
+    ? 'high'
+    : coverageRatio >= 0.4
+    ? 'medium'
+    : 'low';
 
   return {
     days,
     rowCount: rows.length,
     coveredDays: totals.coveredDays,
+    partialCoveredDays: totals.partialCoveredDays,
+    coverageWeight: parseFloat(totals.coverageWeight.toFixed(3)),
     coverageRatio,
     hasReliableCoverage: coverageRatio >= minCoverageRatio,
+    confidence,
     netRevenue: Math.round(totals.netRevenue),
     trueNetProfit: Math.round(totals.trueNetProfit),
     adSpendKRW: Math.round(totals.adSpendKRW),
@@ -201,6 +258,7 @@ function buildProfitContext(campaignInsights, revenueData, cogsData, days = 7, r
 
 module.exports = {
   getWindowStart,
+  resolveWindowBounds,
   filterRecentInsights,
   filterAllRecentInsights,
   sumRecentNetRevenue,

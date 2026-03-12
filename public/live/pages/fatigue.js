@@ -52,7 +52,7 @@
     }
 
     if (inactive.length === 0 && noData.length === 0) {
-      inactiveContainer.innerHTML = `<div class="empty-state">${esc(tr('No paused ads in this window.', '이 기간에 중지된 광고가 없습니다.'))}</div>`;
+      inactiveContainer.innerHTML = `<div class="empty-state">${esc(tr('No paused ads in this time frame.', '이 기간에 중지된 광고가 없습니다.'))}</div>`;
       return;
     }
 
