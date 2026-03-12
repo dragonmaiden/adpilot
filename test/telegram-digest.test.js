@@ -164,7 +164,7 @@ test('scan summary plan writes a higher-signal digest instead of a generic room-
 
   assert.equal(plan.shouldSend, true);
   assert.equal(plan.category, 'digest');
-  assert.match(plan.text, /Do not scale account budget on Wednesday yet/i);
+  assert.match(plan.text, /Treat scaling as contribution-margin constrained, not ROAS-only/i);
   assert.match(plan.text, /Account performance is overly concentrated in one campaign and one lead creative/i);
   assert.match(plan.text, /Refund rate 15.0%/i);
 });

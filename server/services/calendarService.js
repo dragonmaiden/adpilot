@@ -373,11 +373,15 @@ function buildProductExplorerRows(orders, cogsItems) {
       qty: 0,
       cost: 0,
       shipping: 0,
+      missingCostCount: 0,
     };
 
     existing.qty += 1;
     existing.cost += Number(item?.cost || 0);
     existing.shipping += Number(item?.shipping || 0);
+    if (Array.isArray(item?.warnings) && item.warnings.includes('missing_cost_and_shipping')) {
+      existing.missingCostCount += 1;
+    }
     cogsByExactKey.set(key, existing);
   }
 
@@ -444,7 +448,7 @@ function buildProductExplorerRows(orders, cogsItems) {
         const matchedQty = Math.min(bucket.qty, cogsMatch?.qty || 0);
         product.coveredQty += matchedQty;
 
-        if (!cogsMatch || cogsMatch.qty !== bucket.qty) {
+        if (!cogsMatch || cogsMatch.qty !== bucket.qty || Number(cogsMatch.missingCostCount || 0) > 0) {
           product.exactCostCoverage = false;
           product.missingCostDates.add(exactKey.split('|')[0]);
           continue;
@@ -650,6 +654,7 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage) {
     confidence: coverage?.confidence || { level: 'low', label: 'Waiting for data' },
     cogsCoverageRatio: coverage?.coverageRatio ?? 0,
     daysWithCOGS: coverage?.daysWithCOGS ?? 0,
+    daysWithPartialCOGS: coverage?.daysWithPartialCOGS ?? 0,
     totalDays: coverage?.totalDays ?? 0,
   };
 }
@@ -657,7 +662,7 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage) {
 function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, operationsByDate, reconciliationByDate) {
   return dateKeys.map(date => {
     const merged = maps.mergedByDate.get(date) || { date, revenue: 0, refunded: 0, netRevenue: 0, orders: 0, spend: 0, spendKrw: 0, purchases: 0 };
-    const profit = maps.profitByDate.get(date) || { date, cogs: 0, cogsShipping: 0, paymentFees: 0, trueNetProfit: 0, hasCOGS: false };
+    const profit = maps.profitByDate.get(date) || { date, cogs: 0, cogsShipping: 0, paymentFees: 0, trueNetProfit: 0, hasCOGS: false, hasPartialCOGS: false, cogsCoverageRatio: 0 };
     const orders = ordersByDate.get(date) || [];
     const orderMetrics = buildOrderMetrics(orders);
     const reconciliation = reconciliationByDate.get(date) || null;
@@ -687,7 +692,9 @@ function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, opera
       reconciliationGapCount: reconciliationGapAmount > 0 ? 1 : 0,
       reconciliationGapAmount,
       hasCOGS: !!profit.hasCOGS,
-      coverageLevel: profit.hasCOGS ? 'covered' : 'missing',
+      hasPartialCOGS: !!profit.hasPartialCOGS,
+      cogsCoverageRatio: Number(profit.cogsCoverageRatio || 0),
+      coverageLevel: profit.hasCOGS ? 'covered' : profit.hasPartialCOGS ? 'partial' : 'missing',
     };
   });
 }

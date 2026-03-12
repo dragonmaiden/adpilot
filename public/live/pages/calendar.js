@@ -590,7 +590,18 @@
       { label: tr('Gross Revenue', '총매출'), value: formatKrw(summary.grossRevenue || 0), sub: tr(`${formatCount(summary.recognizedOrders || 0)} recognized orders`, `인식 주문 ${formatCount(summary.recognizedOrders || 0)}건`), tone: 'positive', icon: 'shopping-bag' },
       { label: tr('Refunded', '환불'), value: formatSignedKrw(-(summary.refundedAmount || 0)), sub: tr(`${formatPercent(summary.refundRate || 0)} refund rate`, `환불률 ${formatPercent(summary.refundRate || 0)}`), tone: (summary.refundedAmount || 0) > 0 ? 'negative' : 'neutral', icon: 'rotate-ccw' },
       { label: tr('Net Revenue', '순매출'), value: formatKrw(summary.netRevenue || 0), sub: tr(`${formatCount(summary.dayCount || selection.dayCount || 0)} selected days`, `선택 일수 ${formatCount(summary.dayCount || selection.dayCount || 0)}일`), tone: 'positive', icon: 'wallet' },
-      { label: 'COGS', value: formatSignedKrw(-(summary.cogs || 0)), sub: tr(`${formatCount(summary.daysWithCOGS || 0)} covered days`, `커버 일수 ${formatCount(summary.daysWithCOGS || 0)}일`), tone: 'negative', icon: 'package' },
+      {
+        label: 'COGS',
+        value: formatSignedKrw(-(summary.cogs || 0)),
+        sub: Number(summary.daysWithPartialCOGS || 0) > 0
+          ? tr(
+            `${formatCount(summary.daysWithCOGS || 0)} covered · ${formatCount(summary.daysWithPartialCOGS || 0)} partial days`,
+            `완전 커버 ${formatCount(summary.daysWithCOGS || 0)}일 · 부분 커버 ${formatCount(summary.daysWithPartialCOGS || 0)}일`
+          )
+          : tr(`${formatCount(summary.daysWithCOGS || 0)} covered days`, `커버 일수 ${formatCount(summary.daysWithCOGS || 0)}일`),
+        tone: 'negative',
+        icon: 'package',
+      },
       { label: tr('Shipping', '배송비'), value: formatSignedKrw(-(summary.shipping || 0)), sub: tr('Operational shipping cost', '운영 배송비'), tone: 'negative', icon: 'truck' },
       { label: tr('Payment Fees', '결제 수수료'), value: formatSignedKrw(-(summary.paymentFees || 0)), sub: tr('3.3% applied to net revenue', '순매출 기준 3.3% 적용'), tone: 'negative', icon: 'credit-card' },
       { label: tr('Ad Spend', '광고비'), value: formatSignedKrw(-(summary.adSpendKRW || 0)), sub: tr(`${formatUsd(summary.adSpend || 0, 2)} media spend`, `광고비 ${formatUsd(summary.adSpend || 0, 2)}`), tone: 'negative', icon: 'megaphone' },
@@ -625,7 +636,13 @@
             <td>${formatKrw(day.paymentFees || 0)}</td>
             <td style="font-weight:600;color:${(day.trueNetProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-error)'}">${formatSignedKrw(day.trueNetProfit || 0)}</td>
             <td>${Number(day.roas || 0).toFixed(2)}x</td>
-            <td>${day.hasCOGS ? `<span class="badge badge-success">${esc(tr('Covered', '커버됨'))}</span>` : `<span class="badge badge-warning">${esc(tr('Pending', '대기'))}</span>`}</td>
+            <td>${
+              day.hasCOGS
+                ? `<span class="badge badge-success">${esc(tr('Covered', '커버됨'))}</span>`
+                : day.hasPartialCOGS
+                ? `<span class="badge badge-warning">${esc(tr('Partial', '부분 커버'))}</span>`
+                : `<span class="badge badge-warning">${esc(tr('Pending', '대기'))}</span>`
+            }</td>
           </tr>
         `).join('')
       : `<tr><td colspan="11" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No daily rows in this selection.', '선택 범위에 일별 행이 없습니다.'))}</td></tr>`;

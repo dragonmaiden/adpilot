@@ -52,6 +52,25 @@
     });
   }
 
+  function formatDateKey(value) {
+    if (!value) return '—';
+    const dt = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(dt.getTime())) return value;
+    return dt.toLocaleDateString(getLocale(), {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
+  function formatDateRange(range) {
+    if (!range?.from || !range?.to) return '—';
+    const suffix = Number(range.days || 0) > 0
+      ? tr(` · ${range.days} days`, ` · ${range.days.toLocaleString(getLocale())}일`)
+      : '';
+    return `${formatDateKey(range.from)} → ${formatDateKey(range.to)}${suffix}`;
+  }
+
   function formatSourceStatus(source) {
     if (!source) return { text: tr('Unknown', '알 수 없음'), badge: 'badge-neutral' };
     if (source.stale) return { text: tr('Cached Data', '캐시 데이터'), badge: 'badge-warning' };
@@ -102,6 +121,7 @@
       const k = overview?.kpis || {};
       const imwebAuth = settingsData?.imweb?.auth || null;
       const imwebData = settingsData?.imweb?.data || settingsData?.sources?.imweb || null;
+      const cogsData = settingsData?.cogs || null;
       const telegramStatus = settingsData?.telegram || null;
 
       const imwebStatusEl = document.getElementById('settingsImwebStatus');
@@ -216,20 +236,72 @@
       }
 
       if (analyticsData) {
+        const cogsStatusEl = document.getElementById('settingsCogsStatus');
+        if (cogsStatusEl) {
+          const statusMeta = formatSourceStatus(cogsData?.data || settingsData?.sources?.cogs || null);
+          cogsStatusEl.className = `badge ${statusMeta.badge}`;
+          cogsStatusEl.textContent = statusMeta.text;
+        }
+
+        const cogsSourceEl = document.getElementById('settingsCogsSource');
+        if (cogsSourceEl) {
+          const sheetLabels = (Array.isArray(cogsData?.sheets) ? cogsData.sheets : [])
+            .map(sheet => String(sheet?.sheetName || sheet?.label || '').trim())
+            .filter(Boolean);
+          cogsSourceEl.textContent = sheetLabels.length > 0
+            ? `${sheetLabels.join(', ')} · Google Sheets`
+            : 'Google Sheets';
+        }
+
+        const cogsCoverageEl = document.getElementById('settingsCogsCoverage');
+        if (cogsCoverageEl) {
+          cogsCoverageEl.textContent = formatDateRange(cogsData?.coverage || null);
+        }
+
         const cogsItemsEl = document.getElementById('settingsCogsItems');
         if (cogsItemsEl) {
+          const itemCount = Number(cogsData?.totals?.itemCount ?? analyticsData.cogsItems ?? 0);
+          const purchaseCount = Number(cogsData?.totals?.purchaseCount ?? 0);
+          const missingCostItems = Number(cogsData?.totals?.missingCostItemCount ?? 0);
           cogsItemsEl.textContent = tr(
-            `${(analyticsData.cogsItems || '—').toString()} items`,
-            `${(analyticsData.cogsItems || '—').toString()}개 항목`
+            `${itemCount.toLocaleString(getLocale())} items · ${purchaseCount.toLocaleString(getLocale())} purchase orders${missingCostItems > 0 ? ` · ${missingCostItems.toLocaleString(getLocale())} missing cost rows` : ''}`,
+            `${itemCount.toLocaleString(getLocale())}개 항목 · 주문 ${purchaseCount.toLocaleString(getLocale())}건${missingCostItems > 0 ? ` · 원가 누락 ${missingCostItems.toLocaleString(getLocale())}행` : ''}`
           );
         }
         const cogsTotalEl = document.getElementById('settingsCogs');
         if (cogsTotalEl) {
-          const productCost = analyticsData.totalCOGS || 0;
-          const shipping = analyticsData.totalShipping || 0;
-          cogsTotalEl.textContent = productCost > 0
-            ? tr(`₩${productCost.toLocaleString(getLocale())} product + ₩${shipping.toLocaleString(getLocale())} shipping`, `상품 ₩${productCost.toLocaleString(getLocale())} + 배송 ₩${shipping.toLocaleString(getLocale())}`)
+          const productCost = Number(cogsData?.totals?.totalCOGS ?? analyticsData.totalCOGS ?? 0);
+          const shipping = Number(cogsData?.totals?.totalShipping ?? analyticsData.totalShipping ?? 0);
+          cogsTotalEl.textContent = productCost !== 0 || shipping !== 0
+            ? tr(`Net ₩${productCost.toLocaleString(getLocale())} product + ₩${shipping.toLocaleString(getLocale())} shipping`, `순 상품 ₩${productCost.toLocaleString(getLocale())} + 배송 ₩${shipping.toLocaleString(getLocale())}`)
             : '—';
+        }
+
+        const cogsNoteEl = document.getElementById('settingsCogsNote');
+        if (cogsNoteEl) {
+          const validation = cogsData?.validation || {};
+          const refundCost = Number(cogsData?.totals?.refundCOGS || 0);
+          const refundShipping = Number(cogsData?.totals?.refundShipping || 0);
+          const warningRows = Number(validation.rowsWithWarnings || 0);
+          const noteParts = [];
+
+          if (refundCost > 0 || refundShipping > 0) {
+            noteParts.push(tr(
+              `Refund adjustments applied: -₩${refundCost.toLocaleString(getLocale())} product, -₩${refundShipping.toLocaleString(getLocale())} shipping`,
+              `환불 조정 반영: 상품 -₩${refundCost.toLocaleString(getLocale())}, 배송 -₩${refundShipping.toLocaleString(getLocale())}`
+            ));
+          }
+
+          if (warningRows > 0) {
+            noteParts.push(tr(
+              `${warningRows.toLocaleString(getLocale())} sheet rows need review`,
+              `검토 필요 행 ${warningRows.toLocaleString(getLocale())}개`
+            ));
+          }
+
+          cogsNoteEl.textContent = noteParts.length > 0
+            ? noteParts.join(' · ')
+            : tr('No COGS row warnings in the latest scan.', '최신 스캔 기준 COGS 행 경고가 없습니다.');
         }
       }
     } catch (e) {

@@ -32,6 +32,15 @@ function getActualPurchasesForDate(entry) {
   return null;
 }
 
+function getCogsCoverageRatio(entry) {
+  if (!entry || typeof entry !== 'object') return 0;
+  const ratio = Number(entry.costCoverageRatio);
+  if (Number.isFinite(ratio)) {
+    return Math.max(0, Math.min(1, ratio));
+  }
+  return entry.isComplete === false ? 0 : 1;
+}
+
 /**
  * Merge revenueByDay (dict) + dailyInsights (Meta rows) + daily COGS order counts into a sorted array.
  * @param {Object} revenueByDay – { "2026-03-10": { revenue, refunded, orders }, ... }
@@ -305,9 +314,12 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate) {
     const dateKey = (day.date || '').slice(0, 10);
     const netRevenue = day.revenue - day.refunded;
     const cogsEntry = cogsDict[dateKey];
-    const hasCOGS = !!cogsEntry;
-    const cogs = hasCOGS ? (cogsEntry.cost || cogsEntry.cogs || 0) : 0;
-    const cogsShipping = hasCOGS ? (cogsEntry.shipping || 0) : 0;
+    const hasAnyCOGS = !!cogsEntry;
+    const coverageRatio = getCogsCoverageRatio(cogsEntry);
+    const hasCOGS = hasAnyCOGS && coverageRatio >= 1;
+    const hasPartialCOGS = hasAnyCOGS && coverageRatio < 1;
+    const cogs = hasAnyCOGS ? (cogsEntry.cost || cogsEntry.cogs || 0) : 0;
+    const cogsShipping = hasAnyCOGS ? (cogsEntry.shipping || 0) : 0;
     const adSpendKRW = convertUsdToKrw(day.spend || 0);
     const paymentFees = netRevenue * feeRate;
     const trueNetProfit = calcGrossProfit(netRevenue, cogs + cogsShipping + paymentFees, day.spend || 0);
@@ -323,6 +335,12 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate) {
       paymentFees: Math.round(paymentFees),
       trueNetProfit: Math.round(trueNetProfit),
       hasCOGS,
+      hasPartialCOGS,
+      cogsCoverageRatio: coverageRatio,
+      purchaseCogs: hasAnyCOGS ? Number(cogsEntry.purchaseCost || 0) : 0,
+      refundCogs: hasAnyCOGS ? Number(cogsEntry.refundCost || 0) : 0,
+      purchaseShipping: hasAnyCOGS ? Number(cogsEntry.purchaseShipping || 0) : 0,
+      refundShipping: hasAnyCOGS ? Number(cogsEntry.refundShipping || 0) : 0,
     };
   });
 }
@@ -424,9 +442,18 @@ function buildDataCoverage(dailyMerged, dailyCOGS) {
   const cogsDict = dailyCOGS || {};
   const totalDays = dailyMerged.length;
   const dates = dailyMerged.map(day => day.date);
-  const coveredDates = dates.filter(date => !!cogsDict[date.slice(0, 10)]);
-  const daysWithCOGS = coveredDates.length;
-  const coverageRatio = totalDays > 0 ? daysWithCOGS / totalDays : 0;
+  const fullCoveredDates = dates.filter(date => {
+    const entry = cogsDict[date.slice(0, 10)];
+    return !!entry && getCogsCoverageRatio(entry) >= 1;
+  });
+  const partialCoveredDates = dates.filter(date => {
+    const entry = cogsDict[date.slice(0, 10)];
+    return !!entry && getCogsCoverageRatio(entry) > 0 && getCogsCoverageRatio(entry) < 1;
+  });
+  const coverageScore = dates.reduce((sum, date) => sum + getCogsCoverageRatio(cogsDict[date.slice(0, 10)]), 0);
+  const daysWithCOGS = fullCoveredDates.length;
+  const daysWithPartialCOGS = partialCoveredDates.length;
+  const coverageRatio = totalDays > 0 ? coverageScore / totalDays : 0;
 
   let level;
   let label;
@@ -446,7 +473,7 @@ function buildDataCoverage(dailyMerged, dailyCOGS) {
     color = '#f87171';
   }
 
-  const sortedCovered = coveredDates.sort();
+  const sortedCovered = fullCoveredDates.slice().sort();
   const cogsCoveredRange = sortedCovered.length > 0
     ? { from: sortedCovered[0], to: sortedCovered[sortedCovered.length - 1] }
     : { from: null, to: null };
@@ -456,7 +483,8 @@ function buildDataCoverage(dailyMerged, dailyCOGS) {
 
   for (const date of dates) {
     const key = date.slice(0, 10);
-    if (!cogsDict[key]) {
+    const entry = cogsDict[key];
+    if (!entry || getCogsCoverageRatio(entry) <= 0) {
       if (!gapStart) gapStart = date;
     } else if (gapStart) {
       const previous = dates[dates.indexOf(date) - 1] || gapStart;
@@ -473,6 +501,7 @@ function buildDataCoverage(dailyMerged, dailyCOGS) {
   return {
     totalDays,
     daysWithCOGS,
+    daysWithPartialCOGS,
     coverageRatio: parseFloat(coverageRatio.toFixed(3)),
     confidence: { level, label, color },
     cogsCoveredRange,

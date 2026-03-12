@@ -327,13 +327,14 @@ function optimizationTimeline({ timeline, scanTimeline, totalOptimizations, tota
 /**
  * Build /api/settings response.
  */
-function settings({ rules, scheduler, meta, imweb, telegram, sources, currency }) {
+function settings({ rules, scheduler, meta, imweb, telegram, sources, currency, cogs }) {
   return {
     apiVersion: API_VERSION,
     rules: rules ?? {},
     scheduler: scheduler ?? {},
     meta: meta ?? {},
     imweb: imweb ?? {},
+    cogs: cogs ?? {},
     telegram: telegram ?? {},
     sources: sources ?? {},
     currency: currency ?? {},

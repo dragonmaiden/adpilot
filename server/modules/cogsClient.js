@@ -13,6 +13,7 @@ const SPREADSHEET_ID = config.cogs.spreadsheetId;
 const SHEET_GIDS = config.cogs.sheetGids;
 const PRIMARY_REFUND_COLUMNS = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']);
 const REFUND_NOTE_KEYWORDS = ['취소', '환불', '반환'];
+const MONTH_SHEET_RE = /^\s*\d{1,2}\s*월(?:\s|$)/;
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -31,11 +32,15 @@ function asArray(value) {
  * Fetch a single sheet tab as CSV and parse into rows.
  * Uses the public /export?format=csv endpoint (no auth needed for public sheets).
  */
-async function fetchSheetCSV(gid) {
-  const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
+async function fetchSheetCSV(ref) {
+  const gid = ref && typeof ref === 'object' ? String(ref.gid || '').trim() : String(ref || '').trim();
+  const sheetName = ref && typeof ref === 'object' ? String(ref.sheetName || '').trim() : '';
+  const url = gid
+    ? `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${encodeURIComponent(gid)}`
+    : `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
   const res = await fetch(url);
   if (!res.ok) {
-    throw new Error(`Google Sheets CSV export failed (gid=${gid}): HTTP ${res.status}`);
+    throw new Error(`Google Sheets CSV export failed (${gid ? `gid=${gid}` : `sheet=${sheetName}`}): HTTP ${res.status}`);
   }
   const text = await res.text();
   return parseCSV(text);
@@ -52,6 +57,18 @@ async function fetchWorkbookZip() {
   return new AdmZip(buffer);
 }
 
+function parseSharedStrings(zip) {
+  if (!zip.getEntry('xl/sharedStrings.xml')) {
+    return [];
+  }
+
+  const parsed = xmlParser.parse(zip.readAsText('xl/sharedStrings.xml'));
+  return asArray(parsed.sst?.si).map(entry => {
+    if (typeof entry?.t === 'string') return entry.t;
+    return asArray(entry?.r).map(run => String(run?.t || '')).join('');
+  });
+}
+
 function parseWorkbookSheets(zip) {
   const workbook = xmlParser.parse(zip.readAsText('xl/workbook.xml'));
   const rels = xmlParser.parse(zip.readAsText('xl/_rels/workbook.xml.rels'));
@@ -63,10 +80,78 @@ function parseWorkbookSheets(zip) {
   return asArray(workbook.workbook?.sheets?.sheet).map(sheet => {
     const target = relMap.get(sheet['r:id']);
     return {
-      name: sheet.name || '',
+      name: String(sheet.name || '').trim(),
       path: target ? `xl/${target}` : null,
     };
   }).filter(sheet => sheet.path);
+}
+
+function normalizeSheetLabel(value) {
+  return String(value || '').trim();
+}
+
+function getMonthSortKey(label) {
+  const match = normalizeSheetLabel(label).match(/(\d{1,2})\s*월/);
+  return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+}
+
+function getMonthIdentity(label) {
+  const match = normalizeSheetLabel(label).match(/(\d{1,2}\s*월)/);
+  return match ? match[1].replace(/\s+/g, '') : normalizeSheetLabel(label);
+}
+
+function isMonthlySheetLabel(label) {
+  return MONTH_SHEET_RE.test(normalizeSheetLabel(label));
+}
+
+function buildSheetTargets(workbookSheets = []) {
+  const workbookByIdentity = new Map(
+    workbookSheets.map(sheet => [getMonthIdentity(sheet.name), sheet])
+  );
+  const targets = new Map();
+
+  for (const [label, gid] of Object.entries(SHEET_GIDS)) {
+    const normalizedLabel = normalizeSheetLabel(label);
+    const identity = getMonthIdentity(normalizedLabel);
+    const workbookSheet = workbookByIdentity.get(identity)
+      || workbookSheets.find(sheet => getMonthIdentity(sheet.name) === identity)
+      || workbookSheets.find(sheet => normalizeSheetLabel(sheet.name).includes(normalizedLabel));
+    targets.set(identity, {
+      label: normalizedLabel,
+      gid: String(gid || '').trim() || null,
+      sheetName: workbookSheet?.name || normalizedLabel,
+      path: workbookSheet?.path || null,
+      discovered: false,
+    });
+  }
+
+  for (const workbookSheet of workbookSheets) {
+    const label = normalizeSheetLabel(workbookSheet.name);
+    if (!isMonthlySheetLabel(label)) continue;
+    const identity = getMonthIdentity(label);
+    if (targets.has(identity)) {
+      const existing = targets.get(identity);
+      existing.sheetName = workbookSheet.name;
+      existing.path = workbookSheet.path;
+      targets.set(identity, existing);
+      continue;
+    }
+
+    targets.set(identity, {
+      label,
+      gid: null,
+      sheetName: workbookSheet.name,
+      path: workbookSheet.path,
+      discovered: true,
+    });
+  }
+
+  return Array.from(targets.values())
+    .sort((left, right) => {
+      const monthDelta = getMonthSortKey(left.label) - getMonthSortKey(right.label);
+      if (monthDelta !== 0) return monthDelta;
+      return left.label.localeCompare(right.label);
+    });
 }
 
 function parseWorkbookStyles(zip) {
@@ -89,6 +174,15 @@ function parseWorkbookStyles(zip) {
 
 function getColumnFromCellRef(ref) {
   return String(ref || '').replace(/[0-9]/g, '');
+}
+
+function columnRefToIndex(ref) {
+  const letters = getColumnFromCellRef(ref).toUpperCase();
+  let index = 0;
+  for (const char of letters) {
+    index = (index * 26) + (char.charCodeAt(0) - 64);
+  }
+  return Math.max(index - 1, 0);
 }
 
 function hasRefundStyle(cell, styles) {
@@ -122,20 +216,68 @@ function readWorksheetRefundRows(zip, sheetPath, styles) {
   return refundRows;
 }
 
-async function fetchWorkbookRefundMarkers() {
+async function fetchWorkbookMetadata() {
   const zip = await fetchWorkbookZip();
   const workbookSheets = parseWorkbookSheets(zip);
   const styles = parseWorkbookStyles(zip);
-  const markerMap = {};
-  const sheetEntries = Object.entries(SHEET_GIDS);
+  const sharedStrings = parseSharedStrings(zip);
+  return { zip, workbookSheets, styles, sharedStrings };
+}
 
-  sheetEntries.forEach(([label], index) => {
-    const sheet = workbookSheets.find(entry => entry.name.includes(label)) || workbookSheets[index];
-    if (!sheet) return;
-    markerMap[label] = readWorksheetRefundRows(zip, sheet.path, styles);
-  });
+function buildRefundMarkerMap(workbookMeta, sheetTargets) {
+  if (!workbookMeta?.zip || !Array.isArray(sheetTargets) || sheetTargets.length === 0) {
+    return {};
+  }
+
+  const workbookByLabel = new Map((workbookMeta.workbookSheets || []).map(sheet => [normalizeSheetLabel(sheet.name), sheet]));
+  const markerMap = {};
+
+  for (const target of sheetTargets) {
+    const workbookSheet = workbookByLabel.get(normalizeSheetLabel(target.sheetName || target.label))
+      || (target.path ? { path: target.path } : null);
+    if (!workbookSheet?.path) continue;
+    markerMap[target.label] = readWorksheetRefundRows(workbookMeta.zip, workbookSheet.path, workbookMeta.styles);
+  }
 
   return markerMap;
+}
+
+function getCellTextValue(cell, sharedStrings = []) {
+  if (!cell) return '';
+  if (cell.is && typeof cell.is === 'object') {
+    if (typeof cell.is.t === 'string') return cell.is.t;
+    return asArray(cell.is.r).map(run => String(run?.t || '')).join('');
+  }
+
+  const raw = cell.v == null ? '' : String(cell.v);
+  switch (String(cell.t || '').toLowerCase()) {
+    case 's':
+      return String(sharedStrings[Number.parseInt(raw, 10)] || '');
+    case 'b':
+      return raw === '1' ? 'TRUE' : 'FALSE';
+    case 'str':
+    case 'inlineStr':
+      return raw;
+    default:
+      return raw;
+  }
+}
+
+function readWorksheetRows(zip, sheetPath, sharedStrings = []) {
+  const worksheet = xmlParser.parse(zip.readAsText(sheetPath)).worksheet || {};
+  const rows = asArray(worksheet.sheetData?.row);
+
+  return rows.map(row => {
+    const cells = asArray(row.c);
+    const columns = [];
+
+    for (const cell of cells) {
+      const index = columnRefToIndex(cell.r);
+      columns[index] = getCellTextValue(cell, sharedStrings).trim();
+    }
+
+    return columns.map(value => value == null ? '' : String(value));
+  }).filter(row => row.length > 0);
 }
 
 /**
@@ -231,12 +373,30 @@ function normalizeSheetDate(value) {
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
 
+  if (/^\d{4,5}(?:\.\d+)?$/.test(input)) {
+    const serial = Number.parseFloat(input);
+    if (Number.isFinite(serial) && serial > 20000 && serial < 70000) {
+      const excelEpochUtc = Date.UTC(1899, 11, 30);
+      const date = new Date(excelEpochUtc + Math.round(serial) * 86400000);
+      return date.toISOString().slice(0, 10);
+    }
+  }
+
   return input;
 }
 
 function hasRefundNoteKeyword(note) {
   const text = String(note || '').trim();
   return REFUND_NOTE_KEYWORDS.some(keyword => text.includes(keyword));
+}
+
+function noteContainsCurrency(note) {
+  const text = String(note || '').trim();
+  return /₩\s*\d|(?:^|[^\d])\d{1,3}(?:,\d{3})+(?:$|[^\d])/.test(text);
+}
+
+function looksLikeUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
 }
 
 /**
@@ -258,7 +418,8 @@ function parseOrderItems(rows, options = {}) {
 
     const sheetRowNumber = i + 1;
     const sequenceNo = String(row[0] || '').trim();
-    const date = normalizeSheetDate(row[1]);
+    const rawDate = String(row[1] || '').trim();
+    const date = normalizeSheetDate(rawDate);
     const name = String(row[2] || '').trim();
     const orderNumber = String(row[3] || '').trim();
     const productUrl = String(row[4] || '').trim();
@@ -291,6 +452,17 @@ function parseOrderItems(rows, options = {}) {
 
     if (!hasContent) continue;
 
+    const warnings = [];
+    if (!isRefund && productName && cost === 0 && shipping === 0) {
+      warnings.push('missing_cost_and_shipping');
+    }
+    if (!isRefund && noteContainsCurrency(note)) {
+      warnings.push('currency_in_note');
+    }
+    if (looksLikeUrl(orderNumber)) {
+      warnings.push('order_number_looks_like_url');
+    }
+
     items.push({
       sheetLabel,
       rowNumber: sheetRowNumber,
@@ -309,6 +481,8 @@ function parseOrderItems(rows, options = {}) {
       note,
       isRefund,
       refundSignals,
+      warnings,
+      rawDate,
     });
   }
 
@@ -324,9 +498,13 @@ function createOrderSummary(item) {
     name: item.name,
     sheetLabel: item.sheetLabel,
     purchaseItemCount: 0,
+    costedItemCount: 0,
+    missingCostItemCount: 0,
     refundItemCount: 0,
     cost: 0,
     shipping: 0,
+    refundCost: 0,
+    refundShipping: 0,
     items: [],
   };
 }
@@ -335,11 +513,70 @@ function createPeriodAggregate() {
   return {
     cost: 0,
     shipping: 0,
+    purchaseCost: 0,
+    purchaseShipping: 0,
+    refundCost: 0,
+    refundShipping: 0,
     items: 0,
+    costedItems: 0,
+    missingCostItems: 0,
     purchases: 0,
+    completePurchases: 0,
+    incompletePurchases: 0,
     refunds: 0,
     refundOnlyOrders: 0,
     partiallyRefundedOrders: 0,
+    costCoverageRatio: 1,
+    isComplete: true,
+  };
+}
+
+function finalizePeriodAggregate(aggregate) {
+  const purchaseItems = Number(aggregate.items || 0);
+  const costedItems = Number(aggregate.costedItems || 0);
+  aggregate.cost = Number(aggregate.purchaseCost || 0) - Number(aggregate.refundCost || 0);
+  aggregate.shipping = Number(aggregate.purchaseShipping || 0) - Number(aggregate.refundShipping || 0);
+  aggregate.costCoverageRatio = purchaseItems > 0
+    ? Number((costedItems / purchaseItems).toFixed(3))
+    : 1;
+  aggregate.isComplete = Number(aggregate.missingCostItems || 0) === 0;
+  return aggregate;
+}
+
+function buildValidationSummary(items) {
+  const rowsWithWarnings = [];
+  let missingValueRows = 0;
+  let currencyInNoteRows = 0;
+  let malformedOrderNumberRows = 0;
+  let refundValueRows = 0;
+
+  for (const item of items) {
+    const warnings = Array.isArray(item?.warnings) ? item.warnings : [];
+    if (warnings.includes('missing_cost_and_shipping')) missingValueRows += 1;
+    if (warnings.includes('currency_in_note')) currencyInNoteRows += 1;
+    if (warnings.includes('order_number_looks_like_url')) malformedOrderNumberRows += 1;
+    if (item?.isRefund && (Number(item?.cost || 0) > 0 || Number(item?.shipping || 0) > 0)) refundValueRows += 1;
+
+    if (warnings.length > 0) {
+      rowsWithWarnings.push({
+        sheetLabel: item.sheetLabel,
+        rowNumber: item.rowNumber,
+        date: item.date,
+        orderNumber: item.orderNumber,
+        productName: item.productName,
+        note: item.note,
+        warnings,
+      });
+    }
+  }
+
+  return {
+    rowsWithWarnings: rowsWithWarnings.length,
+    missingValueRows,
+    currencyInNoteRows,
+    malformedOrderNumberRows,
+    refundValueRows,
+    samples: rowsWithWarnings.slice(0, 10),
   };
 }
 
@@ -353,8 +590,15 @@ function aggregateCOGSItems(items) {
     order.items.push(item);
     if (item.isRefund) {
       order.refundItemCount++;
-    } else if (item.cost > 0 || item.shipping > 0) {
+      order.refundCost += item.cost;
+      order.refundShipping += item.shipping;
+    } else {
       order.purchaseItemCount++;
+      if (item.cost > 0 || item.shipping > 0) {
+        order.costedItemCount++;
+      } else {
+        order.missingCostItemCount++;
+      }
       order.cost += item.cost;
       order.shipping += item.shipping;
     }
@@ -362,10 +606,16 @@ function aggregateCOGSItems(items) {
     orderMap.set(orderKey, order);
   }
 
-  let totalCOGS = 0;
-  let totalShipping = 0;
+  let totalPurchaseCOGS = 0;
+  let totalPurchaseShipping = 0;
+  let totalRefundCOGS = 0;
+  let totalRefundShipping = 0;
   let itemCount = 0;
+  let costedItemCount = 0;
+  let missingCostItemCount = 0;
   let purchaseCount = 0;
+  let completePurchaseCount = 0;
+  let incompletePurchaseCount = 0;
   let refundCount = 0;
   let refundOnlyOrderCount = 0;
   let partiallyRefundedOrderCount = 0;
@@ -375,8 +625,12 @@ function aggregateCOGSItems(items) {
   const orders = [];
 
   for (const order of orderMap.values()) {
-    const hasPurchase = order.purchaseItemCount > 0 || order.cost > 0 || order.shipping > 0;
+    const hasPurchase = order.purchaseItemCount > 0;
     const hasRefund = order.refundItemCount > 0;
+    const hasIncompleteCosting = hasPurchase && order.missingCostItemCount > 0;
+    const costCoverageRatio = hasPurchase
+      ? Number((order.costedItemCount / order.purchaseItemCount).toFixed(3))
+      : 1;
 
     const summary = {
       orderKey: order.orderKey,
@@ -386,13 +640,22 @@ function aggregateCOGSItems(items) {
       name: order.name,
       sheetLabel: order.sheetLabel,
       itemCount: order.purchaseItemCount,
+      costedItemCount: order.costedItemCount,
+      missingCostItemCount: order.missingCostItemCount,
       refundItemCount: order.refundItemCount,
       cost: order.cost,
       shipping: order.shipping,
+      refundCost: order.refundCost,
+      refundShipping: order.refundShipping,
+      netCost: order.cost - order.refundCost,
+      netShipping: order.shipping - order.refundShipping,
       hasPurchase,
       hasRefund,
       isRefundOnly: hasRefund && !hasPurchase,
       isPartiallyRefunded: hasRefund && hasPurchase,
+      hasIncompleteCosting,
+      costCoverageRatio,
+      isComplete: !hasIncompleteCosting,
     };
     orders.push(summary);
 
@@ -405,26 +668,53 @@ function aggregateCOGSItems(items) {
     if (!monthlyCOGS[monthKey]) monthlyCOGS[monthKey] = createPeriodAggregate();
 
     if (hasPurchase) {
-      totalCOGS += order.cost;
-      totalShipping += order.shipping;
+      totalPurchaseCOGS += order.cost;
+      totalPurchaseShipping += order.shipping;
       itemCount += order.purchaseItemCount;
+      costedItemCount += order.costedItemCount;
+      missingCostItemCount += order.missingCostItemCount;
       purchaseCount++;
+      if (hasIncompleteCosting) {
+        incompletePurchaseCount++;
+      } else {
+        completePurchaseCount++;
+      }
 
-      dailyCOGS[order.date].cost += order.cost;
-      dailyCOGS[order.date].shipping += order.shipping;
+      dailyCOGS[order.date].purchaseCost += order.cost;
+      dailyCOGS[order.date].purchaseShipping += order.shipping;
       dailyCOGS[order.date].items += order.purchaseItemCount;
+      dailyCOGS[order.date].costedItems += order.costedItemCount;
+      dailyCOGS[order.date].missingCostItems += order.missingCostItemCount;
       dailyCOGS[order.date].purchases++;
+      if (hasIncompleteCosting) {
+        dailyCOGS[order.date].incompletePurchases++;
+      } else {
+        dailyCOGS[order.date].completePurchases++;
+      }
 
-      monthlyCOGS[monthKey].cost += order.cost;
-      monthlyCOGS[monthKey].shipping += order.shipping;
+      monthlyCOGS[monthKey].purchaseCost += order.cost;
+      monthlyCOGS[monthKey].purchaseShipping += order.shipping;
       monthlyCOGS[monthKey].items += order.purchaseItemCount;
+      monthlyCOGS[monthKey].costedItems += order.costedItemCount;
+      monthlyCOGS[monthKey].missingCostItems += order.missingCostItemCount;
       monthlyCOGS[monthKey].purchases++;
+      if (hasIncompleteCosting) {
+        monthlyCOGS[monthKey].incompletePurchases++;
+      } else {
+        monthlyCOGS[monthKey].completePurchases++;
+      }
     }
 
     if (hasRefund) {
       refundCount++;
+      totalRefundCOGS += order.refundCost;
+      totalRefundShipping += order.refundShipping;
       dailyCOGS[order.date].refunds++;
+      dailyCOGS[order.date].refundCost += order.refundCost;
+      dailyCOGS[order.date].refundShipping += order.refundShipping;
       monthlyCOGS[monthKey].refunds++;
+      monthlyCOGS[monthKey].refundCost += order.refundCost;
+      monthlyCOGS[monthKey].refundShipping += order.refundShipping;
 
       if (summary.isRefundOnly) {
         refundOnlyOrderCount++;
@@ -438,13 +728,27 @@ function aggregateCOGSItems(items) {
     }
   }
 
+  Object.values(dailyCOGS).forEach(finalizePeriodAggregate);
+  Object.values(monthlyCOGS).forEach(finalizePeriodAggregate);
+
+  const totalCOGS = totalPurchaseCOGS - totalRefundCOGS;
+  const totalShipping = totalPurchaseShipping - totalRefundShipping;
+
   return {
     totalCOGS,
     totalShipping,
     totalCOGSWithShipping: totalCOGS + totalShipping,
+    grossCOGS: totalPurchaseCOGS,
+    grossShipping: totalPurchaseShipping,
+    refundCOGS: totalRefundCOGS,
+    refundShipping: totalRefundShipping,
     itemCount,
+    costedItemCount,
+    missingCostItemCount,
     orderCount: orders.length,
     purchaseCount,
+    completePurchaseCount,
+    incompletePurchaseCount,
     refundCount,
     refundOnlyOrderCount,
     partiallyRefundedOrderCount,
@@ -452,6 +756,7 @@ function aggregateCOGSItems(items) {
     monthlyCOGS,
     items,
     orders,
+    validation: buildValidationSummary(items),
     lastFetched: new Date().toISOString(),
   };
 }
@@ -462,30 +767,52 @@ function aggregateCOGSItems(items) {
 async function fetchAllCOGS() {
   console.log('[COGS] Fetching COGS data from Google Sheets...');
 
-  let refundMarkers = {};
+  let workbookMeta = null;
   try {
-    refundMarkers = await fetchWorkbookRefundMarkers();
+    workbookMeta = await fetchWorkbookMetadata();
   } catch (err) {
     console.warn('[COGS]   ⚠ Workbook style parse failed, falling back to note-only refund detection:', err.message);
   }
 
+  const sheetTargets = buildSheetTargets(workbookMeta?.workbookSheets || []);
+  const fallbackTargets = sheetTargets.length > 0
+    ? sheetTargets
+    : Object.entries(SHEET_GIDS).map(([label, gid]) => ({
+        label: normalizeSheetLabel(label),
+        gid: String(gid || '').trim() || null,
+        sheetName: normalizeSheetLabel(label),
+        path: null,
+        discovered: false,
+      }));
+  const refundMarkers = buildRefundMarkerMap(workbookMeta, fallbackTargets);
   const allItems = [];
+  const sheets = [];
 
-  for (const [label, gid] of Object.entries(SHEET_GIDS)) {
+  for (const target of fallbackTargets) {
     try {
-      const rows = await fetchSheetCSV(gid);
+      const rows = target.gid
+        ? await fetchSheetCSV({ gid: target.gid })
+        : readWorksheetRows(workbookMeta.zip, target.path, workbookMeta.sharedStrings);
       const items = parseOrderItems(rows, {
-        sheetLabel: label,
-        refundRows: refundMarkers[label] || new Set(),
+        sheetLabel: target.label,
+        refundRows: refundMarkers[target.label] || new Set(),
       });
       allItems.push(...items);
-      console.log(`[COGS]   → Sheet "${label}": ${items.length} rows`);
+      sheets.push({
+        label: target.label,
+        sheetName: target.sheetName,
+        gid: target.gid,
+        discovered: !!target.discovered,
+        itemRows: items.length,
+      });
+      console.log(`[COGS]   → Sheet "${target.label}": ${items.length} rows`);
     } catch (err) {
-      console.warn(`[COGS]   ⚠ Sheet "${label}" (gid=${gid}) failed:`, err.message);
+      console.warn(`[COGS]   ⚠ Sheet "${target.label}" (${target.gid ? `gid=${target.gid}` : `sheet=${target.sheetName}`}) failed:`, err.message);
     }
   }
 
   const result = aggregateCOGSItems(allItems);
+  result.sheets = sheets;
 
   console.log(
     `[COGS] Total: ₩${result.totalCOGS.toLocaleString()} product + ` +
@@ -499,9 +826,12 @@ async function fetchAllCOGS() {
 module.exports = {
   fetchAllCOGS,
   fetchSheetCSV,
-  fetchWorkbookRefundMarkers,
+  fetchWorkbookMetadata,
+  buildSheetTargets,
+  buildRefundMarkerMap,
   parseOrderItems,
   parseCSV,
   parseKRW,
+  normalizeSheetDate,
   aggregateCOGSItems,
 };

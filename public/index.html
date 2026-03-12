@@ -1213,15 +1213,15 @@
         <div class="api-status">
           <div class="api-row">
             <span class="api-label" data-i18n="settings.connStatus">Connection Status</span>
-            <span class="badge badge-warning" data-i18n="settings.partial">Partial</span>
+            <span class="badge badge-neutral" id="settingsCogsStatus" data-i18n="misc.unknown">Unknown</span>
           </div>
           <div class="api-row">
             <span class="api-label" data-i18n="settings.source">Source</span>
-            <span class="api-value">SHUE 2월 주문 (Google Sheets)</span>
+            <span class="api-value" id="settingsCogsSource">—</span>
           </div>
           <div class="api-row">
             <span class="api-label" data-i18n="settings.coverage">Coverage</span>
-            <span class="api-value" data-i18n="settings.cogsRangeFallback">Feb 8 – Feb 28, 2026 (no March data)</span>
+            <span class="api-value" id="settingsCogsCoverage" data-i18n="settings.cogsRangeFallback">Feb 8 – Feb 28, 2026 (no March data)</span>
           </div>
           <div class="api-row">
             <span class="api-label" data-i18n="settings.lineItems">Line Items</span>
@@ -1230,6 +1230,10 @@
           <div class="api-row">
             <span class="api-label" data-i18n="settings.totalCogs">Total COGS</span>
             <span class="api-value" id="settingsCogs">—</span>
+          </div>
+          <div class="api-row">
+            <span class="api-label" data-i18n="settings.dataNote">Data Note</span>
+            <span class="api-value" id="settingsCogsNote">—</span>
           </div>
         </div>
       </div>

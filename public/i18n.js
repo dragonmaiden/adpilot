@@ -321,6 +321,7 @@ const I18N = {
   'settings.revenue':       { en: 'Revenue',                  kr: '매출' },
   'settings.source':        { en: 'Source',                   kr: '소스' },
   'settings.coverage':      { en: 'Coverage',                 kr: '범위' },
+  'settings.dataNote':      { en: 'Data Note',                kr: '데이터 메모' },
   'settings.lineItems':     { en: 'Line Items',               kr: '항목수' },
   'settings.totalCogs':     { en: 'Total COGS',               kr: '총 매출원가' },
   'settings.telegramBot':   { en: 'Telegram Approval Bot',    kr: '텔레그램 승인 봇' },

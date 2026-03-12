@@ -471,6 +471,10 @@ app.post('/api/seed-token', writeLimiter, async (req, res) => {
 app.get('/api/settings', (req, res) => {
   const settings = runtimeSettings.getSettings();
   const sourceHealth = scheduler.getSourceHealth();
+  const latestData = scheduler.getLatestData();
+  const cogsData = latestData.cogsData || null;
+  const cogsDates = Object.keys(cogsData?.dailyCOGS || {}).sort();
+  const cogsSheets = Array.isArray(cogsData?.sheets) ? cogsData.sheets : [];
   res.json(contracts.settings({
     rules: settings.rules,
     scheduler: settings.scheduler,
@@ -484,6 +488,29 @@ app.get('/api/settings', (req, res) => {
       unitCode: config.imweb.unitCode,
       auth: imweb.getAuthState(),
       data: sourceHealth.imweb || {},
+    },
+    cogs: {
+      data: sourceHealth.cogs || {},
+      sheets: cogsSheets,
+      coverage: {
+        from: cogsDates[0] || null,
+        to: cogsDates[cogsDates.length - 1] || null,
+        days: cogsDates.length,
+      },
+      totals: {
+        totalCOGS: cogsData?.totalCOGS ?? 0,
+        totalShipping: cogsData?.totalShipping ?? 0,
+        totalCOGSWithShipping: cogsData?.totalCOGSWithShipping ?? 0,
+        grossCOGS: cogsData?.grossCOGS ?? 0,
+        grossShipping: cogsData?.grossShipping ?? 0,
+        refundCOGS: cogsData?.refundCOGS ?? 0,
+        refundShipping: cogsData?.refundShipping ?? 0,
+        itemCount: cogsData?.itemCount ?? 0,
+        purchaseCount: cogsData?.purchaseCount ?? 0,
+        incompletePurchaseCount: cogsData?.incompletePurchaseCount ?? 0,
+        missingCostItemCount: cogsData?.missingCostItemCount ?? 0,
+      },
+      validation: cogsData?.validation ?? {},
     },
     telegram: telegram.getStatus(),
     sources: sourceHealth,
