@@ -43,6 +43,7 @@ function createLatestDataState() {
     revenueData: null,
     orders: [],
     cogsData: null,
+    economicsLedger: null,
     sources: createSourcesState(),
   };
 }
@@ -168,6 +169,7 @@ function normalizeLatestData(raw) {
     revenueData: raw.revenueData && typeof raw.revenueData === 'object' ? raw.revenueData : null,
     orders: asArray(raw.orders),
     cogsData: raw.cogsData && typeof raw.cogsData === 'object' ? raw.cogsData : null,
+    economicsLedger: raw.economicsLedger && typeof raw.economicsLedger === 'object' ? raw.economicsLedger : null,
     timestamp: typeof raw.timestamp === 'string' ? raw.timestamp : null,
   };
 

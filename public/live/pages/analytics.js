@@ -149,7 +149,7 @@
     const heroRunRateEl = document.getElementById('profitHeroRunRate');
 
     if (heroKickerEl) {
-      heroKickerEl.textContent = tr(`${windowLabel} window true net profit`, `${windowLabel} 기준 실질 순이익`);
+      heroKickerEl.textContent = tr(`${windowLabel} time frame true net profit`, `${windowLabel} 기준 실질 순이익`);
     }
 
     if (verdictEl && amountEl) {
@@ -177,7 +177,7 @@
         ? tr(` · ${coverage.daysWithPartialCOGS} partial`, ` · 부분 커버 ${coverage.daysWithPartialCOGS.toLocaleString(getLocale())}일`)
         : '';
       heroSubEl.textContent = tr(
-        `${windowLabel} window · ${waterfall.length} days shown · ${coverage.daysWithCOGS} fully covered of ${coverage.totalDays} (${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage)${partialNote}`,
+        `${windowLabel} time frame · ${waterfall.length} days shown · ${coverage.daysWithCOGS} fully covered of ${coverage.totalDays} (${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage)${partialNote}`,
         `${windowLabel} 기준 · ${waterfall.length.toLocaleString(getLocale())}일 표시 · ${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 완전 커버 (${(coverage.coverageRatio * 100).toFixed(0)}% 가중 커버)${partialNote}`
       );
     }
@@ -308,7 +308,7 @@
 
     if (windowEl) {
       windowEl.textContent = report?.matchWindowMinutes
-        ? tr(`Match window ${report.matchWindowMinutes}m · ${rangeMeta.label} view`, `매칭 범위 ${report.matchWindowMinutes}분 · ${rangeMeta.label} 보기`)
+        ? tr(`Match time frame ${report.matchWindowMinutes}m · ${rangeMeta.label} view`, `매칭 범위 ${report.matchWindowMinutes}분 · ${rangeMeta.label} 보기`)
         : tr(`${rangeMeta.label} view`, `${rangeMeta.label} 보기`);
     }
 
@@ -378,10 +378,10 @@
       const medium = confidence.medium || 0;
       const low = confidence.low || 0;
       noteEl.textContent = visibleReport.daily.length === 0
-        ? tr('No reconciliation rows fall inside the selected window.', '선택한 기간에 해당하는 대사 행이 없습니다.')
+        ? tr('No reconciliation rows fall inside the selected time frame.', '선택한 기간에 해당하는 대사 행이 없습니다.')
         : methodMismatchCount > 0
         ? tr(`${high} high / ${medium} medium / ${low} low-confidence matches. Matched settlement rows are currently colliding with non-card IMWEB payment labels, so treat this as a validation signal rather than a direct payment-method map.`, `높음 ${high}건 / 중간 ${medium}건 / 낮음 ${low}건 일치입니다. 현재 카드 외 IMWEB 결제 라벨과 일부 충돌하므로 직접적인 결제수단 매핑이 아니라 검증 신호로 해석하세요.`)
-        : tr(`${high} high / ${medium} medium / ${low} low-confidence matches across the selected settlement window.`, `선택한 정산 기간 기준 높음 ${high}건 / 중간 ${medium}건 / 낮음 ${low}건 일치입니다.`);
+        : tr(`${high} high / ${medium} medium / ${low} low-confidence matches across the selected settlement time frame.`, `선택한 정산 기간 기준 높음 ${high}건 / 중간 ${medium}건 / 낮음 ${low}건 일치입니다.`);
     }
 
     if (bodyEl) {
@@ -484,10 +484,10 @@
       const mediaWindowMeta = getSeriesWindowMeta('media-profitability');
 
       if (weekdayChartWindowEl) {
-        weekdayChartWindowEl.textContent = tr(`${mediaWindowMeta.label} window`, `${mediaWindowMeta.label} 기준`);
+        weekdayChartWindowEl.textContent = tr(`${mediaWindowMeta.label} time frame`, `${mediaWindowMeta.label} 기준`);
       }
       if (weekdayTableWindowEl) {
-        weekdayTableWindowEl.textContent = tr(`Net revenue, ad spend, and CPA by weekday · ${mediaWindowMeta.label} window`, `요일별 순매출, 광고비, CPA · ${mediaWindowMeta.label} 기준`);
+        weekdayTableWindowEl.textContent = tr(`Net revenue, ad spend, and CPA by weekday · ${mediaWindowMeta.label} time frame`, `요일별 순매출, 광고비, CPA · ${mediaWindowMeta.label} 기준`);
       }
       if (analyticsNoticeEl) {
         if (imwebSource?.stale) {

@@ -148,7 +148,7 @@
     updateLiveKpi(
       'activeCampaigns',
       activeCampaigns.length.toString(),
-      tr(`${campaigns.length} campaigns tracked in this window`, `이 기간 추적 캠페인 ${campaigns.length.toLocaleString(getLocale())}개`),
+      tr(`${campaigns.length} campaigns tracked in this time frame`, `이 기간 추적 캠페인 ${campaigns.length.toLocaleString(getLocale())}개`),
       activeCampaigns.length > 0 ? 'positive' : 'neutral'
     );
     updateLiveKpi(
@@ -282,7 +282,7 @@
         title: bestScaleCandidate ? bestScaleCandidate.name : tr('No scale candidate right now', '현재 확장 후보 없음'),
         detail: bestScaleCandidate
           ? tr(`${getAttributedPurchases(bestScaleCandidate.metricsWindow)} Meta-attributed purchases · ${formatUsd(bestScaleCandidate.metricsWindow.cpa || 0, 2)} CPA`, `메타 귀속 구매 ${getAttributedPurchases(bestScaleCandidate.metricsWindow).toLocaleString(getLocale())}건 · CPA ${formatUsd(bestScaleCandidate.metricsWindow.cpa || 0, 2)}`)
-          : tr('No active campaign has recent attributed purchase volume in this window.', '이 기간에 최근 귀속 구매가 있는 활성 캠페인이 없습니다.')
+          : tr('No active campaign has recent attributed purchase volume in this time frame.', '이 기간에 최근 귀속 구매가 있는 활성 캠페인이 없습니다.')
       },
       {
         tone: burnRiskCampaign ? 'negative' : 'positive',

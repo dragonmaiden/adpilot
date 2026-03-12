@@ -11,6 +11,9 @@ const transforms = require('../transforms/charts');
 const { calcROAS } = require('../domain/metrics');
 const { getTodayInTimeZone, shiftDate } = require('../domain/time');
 const runtimeSettings = require('../runtime/runtimeSettings');
+const { filterDuplicateApprovalOptimizations } = require('../services/optimizationDedupService');
+const { arbitrateOptimizations } = require('../services/optimizationArbitrationService');
+const { buildEconomicsLedger } = require('../services/economicsLedgerService');
 
 function nowIso() {
   return new Date().toISOString();
@@ -270,11 +273,44 @@ async function runScan(manual = false) {
     const cogsResult = await fetchCogs(scanResult);
     sourceStatus.cogs = cogsResult.ok;
 
+    console.log('[SCHEDULER] Step 3c: Building economics ledger...');
+    try {
+      const latestData = scanStore.getLatestData();
+      const economicsLedger = buildEconomicsLedger({
+        orders: latestData.orders,
+        cogsData: latestData.cogsData,
+        campaignInsights: latestData.campaignInsights,
+        campaigns: latestData.campaigns,
+      });
+      scanStore.patchLatestData({ economicsLedger });
+      scanStore.saveLatestData();
+      pushStep(scanResult, {
+        step: 'economics_ledger',
+        status: 'ok',
+        rows: economicsLedger.summary.totalRows,
+        recognizedOrders: economicsLedger.summary.recognizedOrders,
+        matchedOrdersToCogs: economicsLedger.summary.matchedOrdersToCogs,
+        fallbackMatchedOrdersToCogs: economicsLedger.summary.fallbackMatchedOrdersToCogs,
+        unmatchedCogsOrders: economicsLedger.summary.unmatchedCogsOrders,
+      });
+      console.log(
+        `[SCHEDULER]   → ${economicsLedger.summary.totalRows} ledger rows, `
+        + `${economicsLedger.summary.matchedOrdersToCogs}/${economicsLedger.summary.recognizedOrders} orders linked to COGS`
+        + (economicsLedger.summary.fallbackMatchedOrdersToCogs > 0
+          ? ` (${economicsLedger.summary.fallbackMatchedOrdersToCogs} via conservative fallback matching)`
+          : '')
+      );
+    } catch (err) {
+      console.warn('[SCHEDULER]   ⚠ Economics ledger build failed:', err.message);
+      pushError(scanResult, 'economics_ledger', err);
+      pushStep(scanResult, { step: 'economics_ledger', status: 'failed' });
+    }
+
     if (sourceStatus.metaStructure && sourceStatus.metaInsights) {
       console.log('[SCHEDULER] Step 4: Running optimization engine...');
       const latestData = scanStore.getLatestData();
       const optimizer = new OptimizationEngine(scanId);
-      const optimizations = await optimizer.analyze(
+      const analyzedOptimizations = await optimizer.analyze(
         metaStructureResult.campaigns,
         metaStructureResult.adSets,
         metaStructureResult.ads,
@@ -285,10 +321,34 @@ async function runScan(manual = false) {
         latestData.sources?.imweb || null,
         latestData.cogsData || null
       );
+      const arbitrated = arbitrateOptimizations(analyzedOptimizations, {
+        adSets: metaStructureResult.adSets,
+        ads: metaStructureResult.ads,
+      });
+      const deduped = filterDuplicateApprovalOptimizations(
+        arbitrated.optimizations,
+        scanStore.getAllOptimizations()
+      );
+      const optimizations = deduped.optimizations;
+      optimizer.actions = optimizations;
 
       scanResult.optimizations = optimizations;
-      pushStep(scanResult, { step: 'optimizer', status: 'ok', totalOptimizations: optimizations.length });
-      console.log(`[SCHEDULER]   → ${optimizations.length} optimizations generated`);
+      pushStep(scanResult, {
+        step: 'optimizer',
+        status: 'ok',
+        totalOptimizations: optimizations.length,
+        suppressedArbitratedActions: arbitrated.suppressed.length,
+        suppressedDuplicateApprovals: deduped.suppressed.length,
+      });
+      console.log(
+        `[SCHEDULER]   → ${optimizations.length} optimizations generated`
+        + (arbitrated.suppressed.length > 0
+          ? ` (${arbitrated.suppressed.length} dominated action${arbitrated.suppressed.length === 1 ? '' : 's'} suppressed)`
+          : '')
+        + (deduped.suppressed.length > 0
+          ? ` (${deduped.suppressed.length} duplicate approval${deduped.suppressed.length === 1 ? '' : 's'} suppressed)`
+          : '')
+      );
 
       await telegram.sendScanSummary(scanResult, latestData);
 
