@@ -168,3 +168,24 @@ test('scan summary plan writes a higher-signal digest instead of a generic room-
   assert.match(plan.text, /Account performance is overly concentrated in one campaign and one lead creative/i);
   assert.match(plan.text, /Refund rate 15.0%/i);
 });
+
+test('scan summary plan falls back to live context when scan stats are not populated yet', () => {
+  const plan = buildScanSummaryPlan({
+    optimizations: [
+      {
+        id: 'opt1',
+        type: 'budget',
+        level: 'account',
+        targetName: 'Overall Profitability',
+        action: 'True net profit is ₩2,050,000 — room to scale',
+        reason: 'Last 7d true net profit is ₩2,050,000 on ₩5,500,000 net revenue (37.3% true net margin)',
+        priority: 'medium',
+        executed: false,
+      },
+    ],
+  }, buildLatestData(), { summary: { fingerprint: null, sentAt: null } }, REFERENCE_NOW);
+
+  assert.equal(plan.shouldSend, true);
+  assert.match(plan.text, /1 active campaign · 2 active ads/i);
+  assert.doesNotMatch(plan.text, /\$0\.00 spent \(7d\)/i);
+});

@@ -48,6 +48,32 @@ function markSourceFailure(sourceKey, attemptedAt, err, { hasData = false } = {}
   });
 }
 
+function buildScanStats(latestData, until) {
+  const dailyMerged = transforms.buildDailyMerged(
+    latestData?.revenueData?.dailyRevenue,
+    latestData?.campaignInsights,
+    latestData?.cogsData?.dailyCOGS
+  );
+  const trailingSevenDays = dailyMerged.filter(day => day.date >= shiftDate(until, -6));
+  const totalSpend7d = trailingSevenDays.reduce((sum, day) => sum + (day.spend || 0), 0);
+  const totalPurchases7d = trailingSevenDays.reduce((sum, day) => sum + (day.purchases || 0), 0);
+  const totalNetRevenue7d = trailingSevenDays.reduce((sum, day) => sum + (day.netRevenue || 0), 0);
+  const avgCPA7d = totalPurchases7d > 0 ? totalSpend7d / totalPurchases7d : null;
+
+  return {
+    totalSpend7d: totalSpend7d.toFixed(2),
+    totalPurchases7d,
+    avgCPA7d: avgCPA7d != null ? avgCPA7d.toFixed(2) : 'N/A',
+    activeCampaigns: (latestData?.campaigns || [])
+      .filter(campaign => String(campaign?.status || '').toUpperCase() === 'ACTIVE')
+      .length,
+    activeAds: (latestData?.ads || [])
+      .filter(ad => String(ad?.effective_status || ad?.status || '').toUpperCase() === 'ACTIVE')
+      .length,
+    roas: trailingSevenDays.length > 0 ? calcROAS(totalNetRevenue7d, totalSpend7d).toFixed(2) + 'x' : 'N/A',
+  };
+}
+
 async function fetchMetaStructure(scanResult) {
   console.log('[SCHEDULER] Step 1: Fetching Meta Ads campaigns, ad sets, ads...');
   const attemptedAt = nowIso();
@@ -350,6 +376,7 @@ async function runScan(manual = false) {
           : '')
       );
 
+      scanResult.stats = buildScanStats(latestData, until);
       await telegram.sendScanSummary(scanResult, latestData);
 
       const byType = {};
@@ -422,25 +449,7 @@ async function runScan(manual = false) {
       }
     }
 
-    const dailyMerged = transforms.buildDailyMerged(
-      latestData.revenueData?.dailyRevenue,
-      latestData.campaignInsights,
-      latestData.cogsData?.dailyCOGS
-    );
-    const trailingSevenDays = dailyMerged.filter(day => day.date >= shiftDate(until, -6));
-    const totalSpend7d = trailingSevenDays.reduce((sum, day) => sum + (day.spend || 0), 0);
-    const totalPurchases7d = trailingSevenDays.reduce((sum, day) => sum + (day.purchases || 0), 0);
-    const totalNetRevenue7d = trailingSevenDays.reduce((sum, day) => sum + (day.netRevenue || 0), 0);
-    const avgCPA7d = totalPurchases7d > 0 ? totalSpend7d / totalPurchases7d : null;
-
-    scanResult.stats = {
-      totalSpend7d: totalSpend7d.toFixed(2),
-      totalPurchases7d,
-      avgCPA7d: avgCPA7d != null ? avgCPA7d.toFixed(2) : 'N/A',
-      activeCampaigns: (latestData.campaigns || []).filter(campaign => campaign.status === 'ACTIVE').length,
-      activeAds: (latestData.ads || []).filter(ad => ad.effective_status === 'ACTIVE').length,
-      roas: trailingSevenDays.length > 0 ? calcROAS(totalNetRevenue7d, totalSpend7d).toFixed(2) + 'x' : 'N/A',
-    };
+    scanResult.stats = buildScanStats(latestData, until);
     scanResult.sourceHealth = scanStore.getSourceHealth();
   } catch (err) {
     console.error('[SCHEDULER] SCAN FAILED:', err.message);

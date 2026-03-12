@@ -240,6 +240,18 @@ function buildNotificationDecision({ category, fingerprint, state, now = new Dat
 
 function buildScanDigestMessage(scanResult, context, recommendations, category) {
   const stats = scanResult.stats || {};
+  const recentMetrics = summarizeInsights(
+    filterAllRecentInsights(
+      context.campaignInsights,
+      PERFORMANCE_LOOKBACK_DAYS,
+      getTodayInTimeZone()
+    )
+  );
+  const summaryStats = {
+    activeCampaigns: stats.activeCampaigns ?? context.activeCampaignCount ?? 0,
+    activeAds: stats.activeAds ?? context.activeAds.length,
+    totalSpend7d: stats.totalSpend7d ?? recentMetrics.spend ?? 0,
+  };
   const profitContext = context.profitContext;
   const sourceHealth = context.sources || {};
   const imwebStatus = sourceHealth.imweb?.status === 'connected' ? 'fresh' : 'cached';
@@ -275,7 +287,7 @@ function buildScanDigestMessage(scanResult, context, recommendations, category) 
 
   return `${header}
 
-📊 ${pluralize(Number(stats.activeCampaigns || 0), 'active campaign')} · ${pluralize(Number(stats.activeAds || 0), 'active ad')} · ${formatUsd(stats.totalSpend7d || 0)} spent (${PERFORMANCE_LOOKBACK_DAYS}d)
+📊 ${pluralize(Number(summaryStats.activeCampaigns || 0), 'active campaign')} · ${pluralize(Number(summaryStats.activeAds || 0), 'active ad')} · ${formatUsd(summaryStats.totalSpend7d || 0)} spent (${PERFORMANCE_LOOKBACK_DAYS}d)
 ${profitLine}
 ↩️ Refund rate ${(context.refundRate * 100).toFixed(1)}% · Imweb ${imwebStatus}
 ${weekdayLine}
@@ -358,7 +370,9 @@ function buildScanSummaryPlan(scanResult, latestData, state, now = new Date()) {
       ? buildScanDigestMessage(scanResult, {
         actionable,
         advisory,
+        activeCampaignCount,
         activeAds,
+        campaignInsights: latestData?.campaignInsights || [],
         refundRate,
         profitContext,
         weekdayScaleContext,
