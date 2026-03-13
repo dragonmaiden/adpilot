@@ -207,7 +207,7 @@ test('buildAutofillNotification includes revenue and size labeling', async () =>
       productNames: ['실크 모노그램 방도'],
     });
 
-    assert.match(small, /Revenue:<\/b> ₩111,000 · 🐟 small fish \$\$/);
+    assert.match(small, /Revenue:<\/b> ₩111,000 · 🐟 small fish ₩₩/);
 
     const big = service.buildAutofillNotification({
       orderNo: '2',
@@ -219,7 +219,7 @@ test('buildAutofillNotification includes revenue and size labeling', async () =>
       productNames: ['실크 모노그램 방도'],
     });
 
-    assert.match(big, /Revenue:<\/b> ₩300,000 · 🐋 BIG FISH \$\$!/);
+    assert.match(big, /Revenue:<\/b> ₩300,000 · 🐋 BIG FISH ₩₩!/);
   });
 });
 

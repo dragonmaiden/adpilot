@@ -274,8 +274,8 @@ function formatStoreMoney(amount) {
 
 function getOrderSizeLabel(amount) {
   return Number(amount || 0) >= BIG_FISH_THRESHOLD_KRW
-    ? '🐋 BIG FISH $$!'
-    : '🐟 small fish $$';
+    ? '🐋 BIG FISH ₩₩!'
+    : '🐟 small fish ₩₩';
 }
 
 function buildAutofillNotification(result) {
