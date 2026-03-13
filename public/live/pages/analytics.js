@@ -548,11 +548,6 @@
         refundChartInstance.data.labels = monthlyRefunds.map(month => month.month);
         refundChartInstance.data.datasets[0].data = monthlyRefunds.map(month => month.revenue || 0);
         refundChartInstance.data.datasets[1].data = monthlyRefunds.map(month => month.refunded || 0);
-        refundChartInstance.data.datasets[2].data = monthlyRefunds.map(month => {
-          const revenue = Number(month.revenue || 0);
-          const refunded = Number(month.refunded || 0);
-          return revenue > 0 ? Number(((refunded / revenue) * 100).toFixed(1)) : 0;
-        });
         refundChartInstance.update();
       }
 

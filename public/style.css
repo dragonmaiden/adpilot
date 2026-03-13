@@ -582,7 +582,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .chart-card { padding: var(--space-5); }
 .chart-container { position: relative; height: 260px; }
-.chart-container canvas { width: 100% !important; }
+.chart-container canvas { width: 100% !important; height: 100% !important; display: block; }
 
 .charts-grid {
   display: grid;

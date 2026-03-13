@@ -1092,6 +1092,34 @@ let profitTrendChart, weeklyProfitChart, weekdayChartInstance, weeklyCpaChartIns
 function initAnalyticsCharts() {
   analyticsChartsInitialized = true;
   const c = getChartColors();
+  const refundRateLabelPlugin = {
+    id: 'refundRateLabelPlugin',
+    afterDatasetsDraw(chart) {
+      const revenue = chart.data?.datasets?.[0]?.data || [];
+      const refunded = chart.data?.datasets?.[1]?.data || [];
+      const bars = chart.getDatasetMeta(1)?.data || [];
+      if (bars.length === 0) return;
+
+      const { ctx, chartArea } = chart;
+      ctx.save();
+      ctx.fillStyle = c.gold || '#FFC553';
+      ctx.font = '600 11px IBM Plex Sans KR, Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+
+      bars.forEach((bar, index) => {
+        const revenueValue = Number(revenue[index] || 0);
+        if (revenueValue <= 0) return;
+
+        const refundedValue = Number(refunded[index] || 0);
+        const rate = ((refundedValue / revenueValue) * 100).toFixed(1);
+        const y = Math.max(bar.y - 6, chartArea.top + 14);
+        ctx.fillText(`${rate}%`, bar.x, y);
+      });
+
+      ctx.restore();
+    },
+  };
 
   // ── Daily Profit Trend (empty) ──
   const profitCtx = document.getElementById('profitTrendChart');
@@ -1260,6 +1288,7 @@ function initAnalyticsCharts() {
   if (refCtx) {
     refundChartInstance = new Chart(refCtx, {
       type: 'bar',
+      plugins: [refundRateLabelPlugin],
       data: {
         labels: [],
         datasets: [
@@ -1279,19 +1308,6 @@ function initAnalyticsCharts() {
             barPercentage: 0.58,
             categoryPercentage: 0.72,
           },
-          {
-            label: 'Refund Rate (%)',
-            data: [],
-            type: 'line',
-            borderColor: c.gold,
-            backgroundColor: 'transparent',
-            borderWidth: 2.5,
-            pointRadius: 5,
-            pointHoverRadius: 6,
-            pointBackgroundColor: c.gold,
-            tension: 0.25,
-            yAxisID: 'y1',
-          },
         ]
       },
       options: {
@@ -1304,26 +1320,21 @@ function initAnalyticsCharts() {
           legend: { display: true, position: 'top', labels: { color: c.text, boxWidth: 12, padding: 16 } },
           tooltip: {
             callbacks: {
-              label: ctx => {
-                if (ctx.dataset.yAxisID === 'y1') {
-                  return `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toFixed(1)}%`;
-                }
-                return `${ctx.dataset.label}: \u20a9${Number(ctx.parsed.y || 0).toLocaleString()}`;
-              }
+              label: ctx => `${ctx.dataset.label}: \u20a9${Number(ctx.parsed.y || 0).toLocaleString()}`,
+              afterBody: items => {
+                if (!Array.isArray(items) || items.length === 0) return [];
+                const index = items[0].dataIndex;
+                const revenueValue = Number(items[0].chart.data?.datasets?.[0]?.data?.[index] || 0);
+                const refundedValue = Number(items[0].chart.data?.datasets?.[1]?.data?.[index] || 0);
+                if (revenueValue <= 0) return [];
+                return [`Refund Rate: ${((refundedValue / revenueValue) * 100).toFixed(1)}%`];
+              },
             }
           }
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: c.textFaint } },
           y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => formatChartKrwTick(v) } },
-          y1: {
-            position: 'right',
-            grid: { display: false },
-            ticks: {
-              color: c.gold,
-              callback: v => `${v}%`,
-            },
-          },
         }
       }
     });
