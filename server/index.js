@@ -23,6 +23,7 @@ const analyticsService = require('./services/analyticsService');
 const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
 const reconciliationService = require('./services/reconciliationService');
+const operatorSummaryService = require('./services/operatorSummaryService');
 const cogsAutofillService = require('./services/cogsAutofillService');
 const imwebAppInstallService = require('./services/imwebAppInstallService');
 const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
@@ -312,6 +313,14 @@ app.get('/api/health', (req, res) => {
 app.get('/api/overview', async (req, res) => {
   try {
     res.json(await overviewService.getOverviewResponse());
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
+});
+
+app.get('/api/operator-summary', async (req, res) => {
+  try {
+    res.json(await operatorSummaryService.getOperatorSummaryResponse());
   } catch (err) {
     handleInternalError(req, res, err);
   }

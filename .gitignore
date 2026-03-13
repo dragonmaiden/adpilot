@@ -7,3 +7,5 @@ server/data/logs/
 eslint.config.mjs
 *.log
 .DS_Store
+.openclaw/
+.tmp-header*.png
