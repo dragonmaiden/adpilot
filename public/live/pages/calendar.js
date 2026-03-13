@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum, tr, getLocale, localizeOptimizationText } = live.shared;
+  const { esc, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum, tr, getLocale } = live.shared;
   const { fetchCalendarAnalysis } = live.api;
 
   const KST_TIME_ZONE = 'Asia/Seoul';
@@ -119,19 +119,6 @@
       return formatUtcDate(start, { month: 'long', day: 'numeric', year: 'numeric' });
     }
     return `${formatUtcDate(start, { month: 'short', day: 'numeric' })} – ${formatUtcDate(end, { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  }
-
-  function formatKstTimestamp(timestamp) {
-    const date = new Date(timestamp);
-    if (Number.isNaN(date.getTime())) return '—';
-    return date.toLocaleString(getLocale(), {
-      timeZone: KST_TIME_ZONE,
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
   }
 
   function ensureCalendarStateInitialized() {
@@ -491,72 +478,6 @@
       .join(' · ') || '—';
   }
 
-  function translateEventTitle(title) {
-    switch (String(title || '')) {
-      case 'Scan completed':
-        return tr('Scan completed', '스캔 완료');
-      case 'Optimization suggested':
-        return tr('Optimization suggested', '최적화 제안');
-      case 'Optimization executed':
-        return tr('Optimization executed', '최적화 실행됨');
-      case 'Optimization execution update':
-        return tr('Optimization execution update', '최적화 실행 업데이트');
-      case 'Settlement gap detected':
-        return tr('Settlement gap detected', '정산 차이 감지');
-      default:
-        return localizeOptimizationText(title);
-    }
-  }
-
-  function renderCalendarEvent(event) {
-    const iconMap = {
-      scan: 'radar',
-      optimization: 'zap',
-      execution: 'send',
-      reconciliation_gap: 'shield-alert',
-      refund_spike: 'rotate-ccw',
-    };
-    const statusClass = event?.status === 'ok'
-      ? 'ok'
-      : event?.status === 'error'
-      ? 'error'
-      : event?.status === 'warning'
-      ? 'warning'
-      : '';
-    const meta = [];
-    if (event?.meta?.targetName) meta.push(esc(event.meta.targetName));
-    if (event?.meta?.priority) {
-      const priorityLabel = {
-        critical: tr('Critical', '치명적'),
-        high: tr('High', '높음'),
-        medium: tr('Medium', '보통'),
-        low: tr('Low', '낮음'),
-      }[String(event.meta.priority || '').toLowerCase()] || humanizeEnum(event.meta.priority);
-      meta.push(esc(priorityLabel));
-    }
-    if (event?.scanId) meta.push(`#${esc(String(event.scanId))}`);
-    const summary = event?.type === 'reconciliation_gap'
-      ? tr(
-        `Settlement ${formatSignedKrw(event?.meta?.settlementGap || 0)} · Imweb ${formatSignedKrw(event?.meta?.imwebGap || 0)}`,
-        `정산 ${formatSignedKrw(event?.meta?.settlementGap || 0)} · Imweb ${formatSignedKrw(event?.meta?.imwebGap || 0)}`
-      )
-      : localizeOptimizationText(event?.summary || '—');
-
-    return `
-      <div class="calendar-event">
-        <div class="calendar-event-icon ${statusClass}">
-          <i data-lucide="${esc(iconMap[event?.type] || 'activity')}"></i>
-        </div>
-        <div class="calendar-event-main">
-          <div class="calendar-event-title">${esc(translateEventTitle(event?.title || tr('Event', '이벤트')))}</div>
-          <div class="calendar-event-summary">${esc(summary)}</div>
-          ${meta.length > 0 ? `<div class="calendar-event-meta">${meta.join(' · ')}</div>` : ''}
-        </div>
-        <div class="calendar-event-time">${esc(event?.timestamp ? formatKstTimestamp(event.timestamp) : formatUtcDate(event?.date, { month: 'short', day: 'numeric' }))}</div>
-      </div>
-    `;
-  }
-
   function renderCalendarSelectionDeck() {
     const container = document.getElementById('calendarSelectionDeck');
     if (!container) return;
@@ -583,8 +504,6 @@
     const selection = calendarState.data.selection || {};
     const summary = selection.summary || {};
     const isProfitPositive = (summary.trueNetProfit || 0) >= 0;
-    const reconciliation = selection.reconciliation || {};
-    const overlap = reconciliation.summary?.overlap || {};
 
     const waterfallCards = [
       { label: tr('Gross Revenue', '총매출'), value: formatKrw(summary.grossRevenue || 0), sub: tr(`${formatCount(summary.recognizedOrders || 0)} recognized orders`, `인식 주문 ${formatCount(summary.recognizedOrders || 0)}건`), tone: 'positive', icon: 'shopping-bag' },
@@ -621,8 +540,6 @@
     const orderRows = Array.isArray(selection.orders) ? selection.orders : [];
     const productRows = Array.isArray(selection.products) ? selection.products : [];
     const campaignRows = Array.isArray(selection.campaigns) ? selection.campaigns : [];
-    const operations = Array.isArray(selection.operations) ? selection.operations : [];
-
     const dailyBody = dailyRows.length > 0
       ? dailyRows.map(day => `
           <tr>
@@ -701,43 +618,6 @@
           </tr>
         `).join('')
       : `<tr><td colspan="9" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No campaign insight rows in this selection.', '선택 범위에 캠페인 인사이트 행이 없습니다.'))}</td></tr>`;
-
-    const reconRows = Array.isArray(reconciliation.daily) ? reconciliation.daily : [];
-    const reconciliationSummary = reconciliation.ready === false
-      ? `<p class="calendar-coverage-note">${esc(tr('Settlement reconciliation is unavailable for this environment.', '이 환경에서는 정산 대사를 사용할 수 없습니다.'))}</p>`
-      : `
-        <div class="calendar-reconciliation-grid">
-          <div class="calendar-reconciliation-item">
-            <div class="calendar-reconciliation-label">${esc(tr('Matched Net', '일치 순액'))}</div>
-            <div class="calendar-reconciliation-value">${formatSignedKrw(overlap.netAmount || 0)}</div>
-          </div>
-          <div class="calendar-reconciliation-item">
-            <div class="calendar-reconciliation-label">${esc(tr('Settlement Gaps', '정산 차이'))}</div>
-            <div class="calendar-reconciliation-value">${formatCount(overlap.unmatchedSettlementCount || 0)}</div>
-          </div>
-          <div class="calendar-reconciliation-item">
-            <div class="calendar-reconciliation-label">${esc(tr('Imweb Gaps', 'Imweb 차이'))}</div>
-            <div class="calendar-reconciliation-value">${formatCount(overlap.unmatchedImwebCount || 0)}</div>
-          </div>
-          <div class="calendar-reconciliation-item">
-            <div class="calendar-reconciliation-label">${esc(tr('Method Drift', '결제 방식 차이'))}</div>
-            <div class="calendar-reconciliation-value">${formatCount(overlap.methodMismatchCount || 0)}</div>
-          </div>
-        </div>
-      `;
-
-    const reconBody = reconRows.length > 0
-      ? reconRows.map(day => `
-          <tr>
-            <td style="font-weight:600">${esc(formatUtcDate(day.date, { month: 'short', day: 'numeric' }))}</td>
-            <td>${formatSignedKrw(day.settlement?.netAmount || 0)}</td>
-            <td>${formatSignedKrw(day.imweb?.netAmount || 0)}</td>
-            <td style="color:var(--color-success)">${formatSignedKrw(day.matched?.netAmount || 0)}</td>
-            <td style="color:${(day.unmatchedSettlement?.netAmount || 0) === 0 ? 'var(--color-text)' : 'var(--color-warning)'}">${formatSignedKrw(day.unmatchedSettlement?.netAmount || 0)}</td>
-            <td style="color:${(day.unmatchedImweb?.netAmount || 0) === 0 ? 'var(--color-text)' : 'var(--color-warning)'}">${formatSignedKrw(day.unmatchedImweb?.netAmount || 0)}</td>
-          </tr>
-        `).join('')
-      : `<tr><td colspan="6" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No reconciliation gaps in this selection.', '선택 범위에 대사 차이가 없습니다.'))}</td></tr>`;
 
     container.innerHTML = `
       <div class="card">
@@ -858,41 +738,6 @@
               </tr>
             </thead>
             <tbody>${campaignBody}</tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <h2>${esc(tr('Operations & Reconciliation Timeline', '운영 및 정산 타임라인'))}</h2>
-            <div class="calendar-card-note">${esc(tr('Scans, optimizer actions, execution updates, and reconciliation gaps for the active selection.', '선택 범위의 스캔, 최적화 조치, 실행 업데이트, 정산 차이를 보여줍니다.'))}</div>
-          </div>
-          <span class="calendar-card-note">${tr(`${formatCount(operations.length)} events`, `${formatCount(operations.length)}개 이벤트`)}</span>
-        </div>
-        ${reconciliationSummary}
-        <div class="calendar-timeline">
-          ${operations.length > 0
-            ? operations.map(renderCalendarEvent).join('')
-            : `<div class="empty-state">${esc(tr('No operations in this selection.', '선택 범위에 운영 이벤트가 없습니다.'))}</div>`}
-        </div>
-        <div class="card-header" style="margin-top:16px">
-          <h2>${esc(tr('Daily Reconciliation Gaps', '일별 정산 차이'))}</h2>
-          <span class="calendar-card-note">${tr(`${formatCount(reconRows.length)} rows`, `${formatCount(reconRows.length)}행`)}</span>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>${esc(tr('Date', '날짜'))}</th>
-                <th>${esc(tr('Settlement Net', '정산 순액'))}</th>
-                <th>${esc(tr('Imweb Net', 'Imweb 순액'))}</th>
-                <th>${esc(tr('Matched', '일치'))}</th>
-                <th>${esc(tr('Settlement Gap', '정산 차이'))}</th>
-                <th>${esc(tr('Imweb Gap', 'Imweb 차이'))}</th>
-              </tr>
-            </thead>
-            <tbody>${reconBody}</tbody>
           </table>
         </div>
       </div>

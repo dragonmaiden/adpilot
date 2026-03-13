@@ -1690,8 +1690,35 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   min-width: 0;
 }
 
+.ai-ops-section {
+  margin-top: var(--space-5);
+}
+
+.ai-ops-section + .ai-ops-section {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-divider);
+}
+
+.ai-ops-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.ai-ops-section-head h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.ai-ops-section-head #optActivityStats,
 .history-toolbar #optStats {
   min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
 }
 
 /* ============================================
@@ -2450,109 +2477,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   color: var(--color-success);
 }
 
-.calendar-reconciliation-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-.calendar-reconciliation-item {
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-}
-
-.calendar-reconciliation-label {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.calendar-reconciliation-value {
-  margin-top: 6px;
-  font-size: var(--text-base);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
-.calendar-timeline {
-  display: flex;
-  flex-direction: column;
-}
-
-.calendar-event {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-divider);
-}
-
-.calendar-event:last-child {
-  border-bottom: none;
-}
-
-.calendar-event-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-surface-offset);
-  color: var(--color-primary);
-}
-
-.calendar-event-icon.warning {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
-}
-
-.calendar-event-icon.error {
-  background: var(--color-error-subtle);
-  color: var(--color-error);
-}
-
-.calendar-event-icon.ok {
-  background: var(--color-success-subtle);
-  color: var(--color-success);
-}
-
-.calendar-event-main {
-  min-width: 0;
-}
-
-.calendar-event-title {
-  font-size: var(--text-sm);
-  font-weight: 700;
-}
-
-.calendar-event-summary {
-  margin-top: 2px;
-  font-size: var(--text-xs);
-  color: var(--color-text-muted);
-  line-height: 1.5;
-}
-
-.calendar-event-meta {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
-}
-
-.calendar-event-time {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
-  white-space: nowrap;
-}
-
 /* ============================================
    RESPONSIVE
    ============================================ */
@@ -2725,14 +2649,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .calendar-day-profit,
   .calendar-day-orders {
     font-size: 0.68rem;
-  }
-
-  .calendar-event {
-    grid-template-columns: 36px minmax(0, 1fr);
-  }
-
-  .calendar-event-time {
-    grid-column: 2;
   }
 
   /* Table mobile UX */

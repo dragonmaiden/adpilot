@@ -12,6 +12,12 @@
     schedule: 'clock',
     targeting: 'target',
   };
+  const ACTIVITY_KIND_META = {
+    scan: { icon: 'radar', badgeClass: 'badge-neutral', label: () => tr('Scan', '스캔') },
+    approval: { icon: 'send', badgeClass: 'badge-warning', label: () => tr('Approval', '승인') },
+    execution: { icon: 'check-check', badgeClass: 'badge-success', label: () => tr('Executed', '실행') },
+    resolved: { icon: 'archive', badgeClass: 'badge-neutral', label: () => tr('Resolved', '해결됨') },
+  };
 
   function renderCandlestickStats(data) {
     const el = document.getElementById('candlestickStats');
@@ -174,6 +180,122 @@
       .filter(opt => matchHistoryStatus(opt, statusFilter))
       .slice()
       .sort((left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || '')));
+  }
+
+  function buildRecentActivityEntries(optimizations, scansData, currentIds) {
+    const excluded = currentIds || new Set();
+    const scanEntries = [];
+    const decisionEntries = [];
+
+    for (const scan of Array.isArray(scansData?.history) ? scansData.history : []) {
+      if (!scan?.time) continue;
+      scanEntries.push({
+        id: `scan:${scan.scanId || scan.time}`,
+        kind: 'scan',
+        timestamp: scan.time,
+        title: tr('Scan completed', '스캔 완료'),
+        target: tr(
+          `${Number(scan?.optimizations || 0)} optimization${Number(scan?.optimizations || 0) === 1 ? '' : 's'} generated`,
+          `최적화 ${Number(scan?.optimizations || 0).toLocaleString(getLocale())}건 생성`
+        ),
+        detail: tr(
+          `${Number(scan?.errors || 0)} errors recorded in this run`,
+          `이번 실행에서 오류 ${Number(scan?.errors || 0).toLocaleString(getLocale())}건 기록`
+        ),
+        meta: scan?.scanId ? tr(`Scan ${String(scan.scanId).slice(-6)}`, `스캔 ${String(scan.scanId).slice(-6)}`) : '',
+      });
+    }
+
+    for (const opt of Array.isArray(optimizations) ? optimizations : []) {
+      if (!opt?.timestamp || excluded.has(opt.id) || opt.status === 'advisory') continue;
+
+      let kind = null;
+      let title = '';
+      if (opt.status === 'awaiting_telegram' || opt.status === 'needs_approval') {
+        kind = 'approval';
+        title = opt.status === 'awaiting_telegram'
+          ? tr('Sent to Telegram for approval', '텔레그램 승인 요청 전송')
+          : tr('Approval required', '승인 필요');
+      } else if (opt.status === 'executed') {
+        kind = 'execution';
+        title = tr('Optimization executed', '최적화 실행됨');
+      } else if (opt.status === 'rejected' || opt.status === 'expired') {
+        kind = 'resolved';
+        title = opt.status === 'rejected'
+          ? tr('Approval rejected', '승인 거절')
+          : tr('Approval expired', '승인 만료');
+      }
+
+      if (!kind) continue;
+
+      decisionEntries.push({
+        id: `activity:${opt.id}`,
+        kind,
+        timestamp: opt.timestamp,
+        title,
+        target: opt.targetName || tr('Account-wide', '계정 전체'),
+        detail: localizeOptimizationText(opt.action || opt.reason || tr('No action text available.', '조치 문구가 없습니다.')),
+        meta: localizeOptimizationText(opt.executionResult || opt.reason || ''),
+        priority: opt.priority ? priorityMeta(opt.priority) : null,
+      });
+    }
+
+    const sortByTimestampDesc = (left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || ''));
+    const scanLimit = decisionEntries.length > 0 ? 4 : 6;
+    return [...decisionEntries.sort(sortByTimestampDesc), ...scanEntries.sort(sortByTimestampDesc).slice(0, scanLimit)]
+      .sort(sortByTimestampDesc)
+      .slice(0, 10);
+  }
+
+  function renderActivityFeed(data, scansData, currentIds) {
+    const container = document.getElementById('optActivityLog');
+    const statsEl = document.getElementById('optActivityStats');
+    if (!container) return;
+
+    const entries = buildRecentActivityEntries(data.optimizations || [], scansData, currentIds);
+
+    if (statsEl) {
+      const scanCount = entries.filter(entry => entry.kind === 'scan').length;
+      const decisionCount = entries.length - scanCount;
+      statsEl.textContent = tr(
+        `${entries.length} recent events · ${scanCount} scans · ${decisionCount} decision updates`,
+        `최근 이벤트 ${entries.length.toLocaleString(getLocale())}건 · 스캔 ${scanCount.toLocaleString(getLocale())}건 · 의사결정 업데이트 ${decisionCount.toLocaleString(getLocale())}건`
+      );
+    }
+
+    if (entries.length === 0) {
+      container.innerHTML = `<div class="empty-state">${esc(tr('No recent agent activity yet.', '최근 에이전트 활동이 아직 없습니다.'))}</div>`;
+      return;
+    }
+
+    container.innerHTML = entries.map(entry => {
+      const meta = ACTIVITY_KIND_META[entry.kind] || ACTIVITY_KIND_META.scan;
+      const timeLabel = entry.timestamp
+        ? timeSince(new Date(entry.timestamp))
+        : tr('Timestamp unavailable', '시간 정보 없음');
+
+      return `
+        <div class="optimization-item grouped">
+          <div class="opt-icon">
+            <i data-lucide="${meta.icon}"></i>
+          </div>
+          <div class="opt-content">
+            <div class="opt-header">
+              <span class="opt-action">${esc(entry.title)}</span>
+              <span class="badge ${meta.badgeClass}">${esc(meta.label())}</span>
+              ${entry.priority ? `<span class="badge ${entry.priority.className}">${esc(entry.priority.label)}</span>` : ''}
+            </div>
+            <div class="opt-target">${esc(entry.target || '—')}</div>
+            <div class="opt-reason">${esc(entry.detail || tr('No detail available.', '세부 정보가 없습니다.'))}</div>
+            <div class="opt-time">${esc(timeLabel)}${entry.meta ? ` · ${esc(entry.meta)}` : ''}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (window.lucide) {
+      lucide.createIcons();
+    }
   }
 
   function bindExecuteButtons(scope = document) {
@@ -423,6 +545,7 @@
     if (!optData) return;
 
     const queueMeta = renderCurrentQueue(optData, scansData);
+    renderActivityFeed(optData, scansData, queueMeta.currentIds);
     renderOptimizationHistory(optData, queueMeta.currentIds);
     updateCharts(optData, spendData, queueMeta);
   }

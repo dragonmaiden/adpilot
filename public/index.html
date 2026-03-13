@@ -704,7 +704,7 @@
             <h2 data-i18n="calendar.selectedTitle">Selected Range</h2>
             <span class="badge badge-neutral" data-i18n="calendar.selectedHint">Choose a day or drag across a period</span>
           </div>
-          <p class="card-desc" data-i18n="calendar.selectedDesc">The drilldown will populate with profit, orders, refunds, campaign estimates, product mix, and operating events for the selected KST date range.</p>
+          <p class="card-desc" data-i18n="calendar.selectedDesc">The drilldown will populate with profit, orders, refunds, campaign estimates, and product mix for the selected KST date range.</p>
         </div>
       </div>
     </section>
@@ -917,32 +917,47 @@
 
       <div class="card">
         <div class="card-header">
-          <h2 data-i18n="opt.liveLog">Historical AI Suggestions &amp; Outcomes</h2>
-          <div class="history-toolbar">
-            <span id="optStats"></span>
-            <div class="filter-group">
-              <select class="select-input" id="optTypeFilter">
-                <option value="all" data-i18n="opt.allTypes">All Types</option>
-                <option value="budget" data-i18n="opt.budget">Budget</option>
-                <option value="bid" data-i18n="opt.bid">Bid</option>
-                <option value="creative" data-i18n="opt.creative">Creative</option>
-                <option value="status" data-i18n="opt.status">Status</option>
-                <option value="schedule" data-i18n="opt.schedule">Schedule</option>
-                <option value="targeting" data-i18n="opt.targeting">Targeting</option>
-              </select>
-              <select class="select-input" id="optStatusFilter">
-                <option value="all" data-i18n="opt.allStatuses">All Statuses</option>
-                <option value="open" data-i18n="opt.openBacklog">Open Backlog</option>
-                <option value="awaiting_telegram" data-i18n="opt.awaitingTelegram">Awaiting Telegram</option>
-                <option value="advisory" data-i18n="opt.advisoryOnly">Advisory Only</option>
-                <option value="executed" data-i18n="kpi.autoExec">Executed</option>
-                <option value="resolved" data-i18n="opt.resolved">Rejected / Expired</option>
-              </select>
-            </div>
+          <h2 data-i18n="opt.activityHub">AI Activity &amp; Outcomes</h2>
+        </div>
+        <p class="card-desc" data-i18n="opt.activityHubDesc">Recent scan runs and execution updates live here, while the suggestion archive stays below for deeper review.</p>
+        <div class="ai-ops-section">
+          <div class="ai-ops-section-head">
+            <h3 data-i18n="opt.recentActivity">Recent Agent Activity</h3>
+            <span id="optActivityStats"></span>
+          </div>
+          <div class="optimization-log optimization-log-grouped" id="optActivityLog">
+            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
           </div>
         </div>
-        <div class="optimization-log" id="optimizationLog">
-          <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+        <div class="ai-ops-section">
+          <div class="ai-ops-section-head">
+            <h3 data-i18n="opt.archiveTitle">Historical AI Suggestions &amp; Outcomes</h3>
+            <div class="history-toolbar">
+              <span id="optStats"></span>
+              <div class="filter-group">
+                <select class="select-input" id="optTypeFilter">
+                  <option value="all" data-i18n="opt.allTypes">All Types</option>
+                  <option value="budget" data-i18n="opt.budget">Budget</option>
+                  <option value="bid" data-i18n="opt.bid">Bid</option>
+                  <option value="creative" data-i18n="opt.creative">Creative</option>
+                  <option value="status" data-i18n="opt.status">Status</option>
+                  <option value="schedule" data-i18n="opt.schedule">Schedule</option>
+                  <option value="targeting" data-i18n="opt.targeting">Targeting</option>
+                </select>
+                <select class="select-input" id="optStatusFilter">
+                  <option value="all" data-i18n="opt.allStatuses">All Statuses</option>
+                  <option value="open" data-i18n="opt.openBacklog">Open Backlog</option>
+                  <option value="awaiting_telegram" data-i18n="opt.awaitingTelegram">Awaiting Telegram</option>
+                  <option value="advisory" data-i18n="opt.advisoryOnly">Advisory Only</option>
+                  <option value="executed" data-i18n="kpi.autoExec">Executed</option>
+                  <option value="resolved" data-i18n="opt.resolved">Rejected / Expired</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="optimization-log" id="optimizationLog">
+            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+          </div>
         </div>
       </div>
     </section>
