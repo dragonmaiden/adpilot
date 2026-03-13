@@ -302,18 +302,38 @@ function getOrderAutofillTimestamp(order) {
   return null;
 }
 
-function isRecentEnough(date, lookbackDays) {
+function parseTimestamp(value) {
+  if (!value) return null;
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function resolveWindowStart(options = {}) {
+  const sinceTime = parseTimestamp(options.sinceTime);
+  if (sinceTime) return sinceTime;
+
+  const lookbackDays = Number.isFinite(options.lookbackDays)
+    ? Number(options.lookbackDays)
+    : DEFAULT_POLL_LOOKBACK_DAYS;
+  if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
+    return null;
+  }
+
+  return new Date(Date.now() - (lookbackDays * 24 * 60 * 60 * 1000));
+}
+
+function isRecentEnough(date, windowStart) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return false;
   }
-  if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
+  if (!(windowStart instanceof Date) || Number.isNaN(windowStart.getTime())) {
     return true;
   }
 
-  return date.getTime() >= Date.now() - (lookbackDays * 24 * 60 * 60 * 1000);
+  return date.getTime() >= windowStart.getTime();
 }
 
-function isEligibleRecentOrder(order, lookbackDays) {
+function isEligibleRecentOrder(order, options = {}) {
   const orderNo = asString(order?.orderNo);
   if (!orderNo) {
     return false;
@@ -336,7 +356,7 @@ function isEligibleRecentOrder(order, lookbackDays) {
   }
 
   const effectiveTimestamp = getOrderAutofillTimestamp(order);
-  return isRecentEnough(effectiveTimestamp, lookbackDays);
+  return isRecentEnough(effectiveTimestamp, resolveWindowStart(options));
 }
 
 function buildRowsForOrder(order, nextSequenceNo) {
@@ -529,9 +549,10 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
   const lookbackDays = Number.isFinite(options.lookbackDays)
     ? Number(options.lookbackDays)
     : DEFAULT_POLL_LOOKBACK_DAYS;
+  const windowStart = resolveWindowStart(options);
 
   const eligibleOrders = (Array.isArray(orders) ? orders : [])
-    .filter(order => isEligibleRecentOrder(order, lookbackDays))
+    .filter(order => isEligibleRecentOrder(order, { lookbackDays, sinceTime: windowStart }))
     .sort((left, right) => {
       const leftTime = getOrderAutofillTimestamp(left)?.getTime() || 0;
       const rightTime = getOrderAutofillTimestamp(right)?.getTime() || 0;
@@ -578,6 +599,7 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
     ok: true,
     status: 'ok',
     lookbackDays,
+    windowStartAt: windowStart ? windowStart.toISOString() : null,
     eligibleOrders: eligibleOrders.length,
     appended,
     duplicates,

@@ -579,6 +579,98 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
   }
 });
 
+test('syncRecentOrdersToCogs respects an explicit scan window start and skips older paid orders', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  const now = Date.now();
+  let appendCount = 0;
+
+  global.fetch = async (url, options = {}) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    appendCount += 1;
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 1 }, echoedBody: JSON.parse(options.body) }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({
+          workbookSheets: [{ name: '3월 주문', path: 'xl/worksheets/sheet2.xml' }],
+        }),
+        buildSheetTargets: () => [
+          { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+        ],
+        fetchSheetCSV: async () => [
+          ['번호', '날짜', '이름', '주문번호'],
+          [],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for scan window test');
+        },
+      },
+    }, async service => {
+      const olderPaid = createOrder({
+        orderNo: '20260313021',
+        ordererName: '이전 스캔 주문',
+        orderStatus: 'OPEN',
+        wtime: new Date(now - (6 * 60 * 60 * 1000)).toISOString(),
+        totalPaymentPrice: 111000,
+        payments: [
+          {
+            paidPrice: 111000,
+            paymentStatus: 'PAYMENT_COMPLETE',
+            paymentCompleteTime: new Date(now - (5 * 60 * 60 * 1000)).toISOString(),
+          },
+        ],
+        sections: [{ sectionItems: [{ productInfo: { prodName: '오래된 주문' } }] }],
+      });
+      const recentPaid = createOrder({
+        orderNo: '20260313022',
+        ordererName: '현재 스캔 주문',
+        orderStatus: 'OPEN',
+        wtime: new Date(now - (30 * 60 * 1000)).toISOString(),
+        totalPaymentPrice: 222000,
+        payments: [
+          {
+            paidPrice: 222000,
+            paymentStatus: 'PAYMENT_COMPLETE',
+            paymentCompleteTime: new Date(now - (20 * 60 * 1000)).toISOString(),
+          },
+        ],
+        sections: [{ sectionItems: [{ productInfo: { prodName: '최근 주문' } }] }],
+      });
+
+      const result = await service.syncRecentOrdersToCogs(
+        [olderPaid, recentPaid],
+        { sinceTime: new Date(now - (45 * 60 * 1000)).toISOString() }
+      );
+
+      assert.equal(result.status, 'ok');
+      assert.equal(result.eligibleOrders, 1);
+      assert.equal(result.appended.length, 1);
+      assert.equal(result.appended[0].orderNo, '20260313022');
+      assert.equal(appendCount, 1);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('syncRecentOrdersToCogs keeps processing after one eligible order fails to append', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();

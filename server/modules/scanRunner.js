@@ -264,12 +264,22 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
   }
 
   try {
-    const result = await cogsAutofillService.syncRecentOrdersToCogs(orders);
+    const previousScanTime = scanStore.getLastScanTime();
+    const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
+    const graceMinutes = 10;
+    const maxLookbackMinutes = Math.max(intervalMinutes * 2, intervalMinutes + 15);
+    const fallbackWindowStart = new Date(Date.now() - (maxLookbackMinutes * 60 * 1000));
+    const scanWindowStart = previousScanTime
+      ? new Date(Math.max(previousScanTime.getTime() - (graceMinutes * 60 * 1000), fallbackWindowStart.getTime()))
+      : fallbackWindowStart;
+    const result = await cogsAutofillService.syncRecentOrdersToCogs(orders, {
+      sinceTime: scanWindowStart,
+    });
 
     pushStep(scanResult, {
       step: 'cogs_autofill',
       status: 'ok',
-      lookbackDays: result.lookbackDays,
+      windowStartAt: result.windowStartAt,
       eligibleOrders: result.eligibleOrders,
       appendedOrders: result.appended.length,
       duplicateOrders: result.duplicates.length,
@@ -281,7 +291,7 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
       + `${result.duplicates.length} duplicates, `
       + `${result.skipped.length} skipped, `
       + `${result.errors.length} failed `
-      + `(${result.eligibleOrders} recent paid order${result.eligibleOrders === 1 ? '' : 's'} checked)`
+      + `(${result.eligibleOrders} recent paid order${result.eligibleOrders === 1 ? '' : 's'} checked since ${result.windowStartAt || 'startup'})`
     );
 
     for (const failure of result.errors) {
