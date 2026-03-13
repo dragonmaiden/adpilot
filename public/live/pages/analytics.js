@@ -174,9 +174,12 @@
       const partialNote = Number(coverage.daysWithPartialCOGS || 0) > 0
         ? tr(` · ${coverage.daysWithPartialCOGS} partial`, ` · 부분 커버 ${coverage.daysWithPartialCOGS.toLocaleString(getLocale())}일`)
         : '';
+      const pendingNote = Number(coverage.daysWithPendingRecovery || 0) > 0
+        ? tr(` · ${coverage.daysWithPendingRecovery} recovery-pending`, ` · 환급 대기 ${coverage.daysWithPendingRecovery.toLocaleString(getLocale())}일`)
+        : '';
       heroSubEl.textContent = tr(
-        `${windowLabel} time frame · ${waterfall.length} days shown · ${coverage.daysWithCOGS} fully covered of ${coverage.totalDays} (${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage)${partialNote}`,
-        `${windowLabel} 기준 · ${waterfall.length.toLocaleString(getLocale())}일 표시 · ${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 완전 커버 (${(coverage.coverageRatio * 100).toFixed(0)}% 가중 커버)${partialNote}`
+        `${windowLabel} time frame · ${waterfall.length} days shown · ${coverage.daysWithCOGS} fully covered of ${coverage.totalDays} (${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage)${partialNote}${pendingNote}`,
+        `${windowLabel} 기준 · ${waterfall.length.toLocaleString(getLocale())}일 표시 · ${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 완전 커버 (${(coverage.coverageRatio * 100).toFixed(0)}% 가중 커버)${partialNote}${pendingNote}`
       );
     }
 
@@ -204,9 +207,12 @@
       const partialText = Number(coverage.daysWithPartialCOGS || 0) > 0
         ? tr(` · ${coverage.daysWithPartialCOGS} partial`, ` · 부분 ${coverage.daysWithPartialCOGS.toLocaleString(getLocale())}일`)
         : '';
+      const pendingText = Number(coverage.daysWithPendingRecovery || 0) > 0
+        ? tr(` · ${coverage.daysWithPendingRecovery} recovery-pending`, ` · 환급 대기 ${coverage.daysWithPendingRecovery.toLocaleString(getLocale())}일`)
+        : '';
       cogsSub.textContent = tr(
-        `${coverage.daysWithCOGS} fully covered of ${coverage.totalDays}${partialText}`,
-        `${coverage.totalDays.toLocaleString(getLocale())}일 중 완전 커버 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일${partialText}`
+        `${coverage.daysWithCOGS} fully covered of ${coverage.totalDays}${partialText}${pendingText}`,
+        `${coverage.totalDays.toLocaleString(getLocale())}일 중 완전 커버 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일${partialText}${pendingText}`
       );
     }
 
@@ -253,7 +259,13 @@
         row.trueNetProfit >= 0 ? '#4ade80' : '#f87171'
       );
       profitWaterfallChart.data.datasets[0].backgroundColor = waterfall.map(row =>
-        row.hasCOGS ? 'rgba(74, 222, 128, 0.75)' : row.hasPartialCOGS ? 'rgba(251, 191, 36, 0.65)' : 'rgba(74, 222, 128, 0.35)'
+        row.hasPartialCOGS
+          ? 'rgba(251, 191, 36, 0.65)'
+          : row.hasPendingRecovery
+            ? 'rgba(249, 115, 22, 0.72)'
+            : row.hasCOGS
+              ? 'rgba(74, 222, 128, 0.75)'
+              : 'rgba(74, 222, 128, 0.35)'
       );
       profitWaterfallChart.update();
     }
@@ -285,11 +297,11 @@
       coverageContent.innerHTML = `
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
           <span class="confidence-badge confidence-${confLevel}">${esc(conf.label)}</span>
-          <span style="font-size:0.85rem;color:var(--color-text-muted)">${tr(`${coverage.daysWithCOGS} fully covered days · ${coverage.daysWithPartialCOGS || 0} partial · ${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage`, `완전 커버 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 · 부분 커버 ${(coverage.daysWithPartialCOGS || 0).toLocaleString(getLocale())}일 · 가중 커버 ${(coverage.coverageRatio * 100).toFixed(0)}%`)}</span>
+          <span style="font-size:0.85rem;color:var(--color-text-muted)">${tr(`${coverage.daysWithCOGS} fully covered days · ${coverage.daysWithPartialCOGS || 0} incomplete · ${coverage.daysWithPendingRecovery || 0} recovery-pending · ${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage`, `완전 커버 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 · 미완성 ${(coverage.daysWithPartialCOGS || 0).toLocaleString(getLocale())}일 · 환급 대기 ${(coverage.daysWithPendingRecovery || 0).toLocaleString(getLocale())}일 · 가중 커버 ${(coverage.coverageRatio * 100).toFixed(0)}%`)}</span>
         </div>
         ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">${esc(tr('Covered', '커버 구간'))}: <strong>${esc(coveredRange.from)}</strong> ${esc(tr('to', '부터'))} <strong>${esc(coveredRange.to)}</strong></p>` : ''}
         ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">${esc(tr('Missing', '누락'))}: ${missing.map(item => esc(item)).join(', ')}</p>` : ''}
-        <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">${esc(tr('Days without COGS data are shown dimmed in the waterfall chart. Profit for those days only accounts for revenue, ad spend, and payment fees.', 'COGS 데이터가 없는 날짜는 워터폴 차트에서 흐리게 표시됩니다. 해당 날짜 수익은 매출, 광고비, 결제 수수료만 반영합니다.'))}</p>
+        <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">${esc(tr('Yellow means true missing cost entry. Orange means canceled orders still waiting on supplier-side recovery. Dimmed days have no COGS rows yet.', '노란색은 실제 원가 미입력, 주황색은 취소 후 공급처 환급 대기, 흐린 날짜는 COGS 행이 아직 없는 상태입니다.'))}</p>
       `;
     }
   }

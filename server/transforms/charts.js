@@ -316,6 +316,9 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate) {
     const cogsEntry = cogsDict[dateKey];
     const hasAnyCOGS = !!cogsEntry;
     const coverageRatio = getCogsCoverageRatio(cogsEntry);
+    const pendingRecoveryItems = hasAnyCOGS ? Number(cogsEntry.pendingRecoveryItems || 0) : 0;
+    const pendingRecoveryOrders = hasAnyCOGS ? Number(cogsEntry.pendingRecoveryOrders || 0) : 0;
+    const hasPendingRecovery = pendingRecoveryItems > 0 || pendingRecoveryOrders > 0;
     const hasCOGS = hasAnyCOGS && coverageRatio >= 1;
     const hasPartialCOGS = hasAnyCOGS && coverageRatio < 1;
     const cogs = hasAnyCOGS ? (cogsEntry.cost || cogsEntry.cogs || 0) : 0;
@@ -336,7 +339,10 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate) {
       trueNetProfit: Math.round(trueNetProfit),
       hasCOGS,
       hasPartialCOGS,
+      hasPendingRecovery,
       cogsCoverageRatio: coverageRatio,
+      pendingRecoveryItems,
+      pendingRecoveryOrders,
       purchaseCogs: hasAnyCOGS ? Number(cogsEntry.purchaseCost || 0) : 0,
       refundCogs: hasAnyCOGS ? Number(cogsEntry.refundCost || 0) : 0,
       purchaseShipping: hasAnyCOGS ? Number(cogsEntry.purchaseShipping || 0) : 0,
@@ -450,9 +456,14 @@ function buildDataCoverage(dailyMerged, dailyCOGS) {
     const entry = cogsDict[date.slice(0, 10)];
     return !!entry && getCogsCoverageRatio(entry) > 0 && getCogsCoverageRatio(entry) < 1;
   });
+  const pendingRecoveryDates = dates.filter(date => {
+    const entry = cogsDict[date.slice(0, 10)];
+    return !!entry && (Number(entry.pendingRecoveryItems || 0) > 0 || Number(entry.pendingRecoveryOrders || 0) > 0);
+  });
   const coverageScore = dates.reduce((sum, date) => sum + getCogsCoverageRatio(cogsDict[date.slice(0, 10)]), 0);
   const daysWithCOGS = fullCoveredDates.length;
   const daysWithPartialCOGS = partialCoveredDates.length;
+  const daysWithPendingRecovery = pendingRecoveryDates.length;
   const coverageRatio = totalDays > 0 ? coverageScore / totalDays : 0;
 
   let level;
@@ -502,6 +513,7 @@ function buildDataCoverage(dailyMerged, dailyCOGS) {
     totalDays,
     daysWithCOGS,
     daysWithPartialCOGS,
+    daysWithPendingRecovery,
     coverageRatio: parseFloat(coverageRatio.toFixed(3)),
     confidence: { level, label, color },
     cogsCoveredRange,

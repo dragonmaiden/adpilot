@@ -26,7 +26,9 @@ function makeItem(overrides = {}) {
     delivery: true,
     note: '',
     isRefund: false,
+    isPendingRecovery: false,
     refundSignals: {},
+    pendingRecoverySignals: {},
     warnings: [],
     ...overrides,
   };
@@ -107,6 +109,7 @@ test('coverage and waterfall mark partial COGS days separately from fully covere
   const dailyMerged = [
     { date: '2026-03-10', revenue: 300000, refunded: 0, spend: 50 },
     { date: '2026-03-11', revenue: 200000, refunded: 0, spend: 50 },
+    { date: '2026-03-12', revenue: 100000, refunded: 0, spend: 25 },
   ];
   const dailyCOGS = {
     '2026-03-10': {
@@ -121,16 +124,51 @@ test('coverage and waterfall mark partial COGS days separately from fully covere
       costCoverageRatio: 0.5,
       isComplete: false,
     },
+    '2026-03-12': {
+      cost: 0,
+      shipping: 0,
+      costCoverageRatio: 1,
+      isComplete: true,
+      pendingRecoveryItems: 1,
+      pendingRecoveryOrders: 1,
+    },
   };
 
   const coverage = buildDataCoverage(dailyMerged, dailyCOGS);
   const waterfall = buildProfitWaterfall(dailyMerged, dailyCOGS, 0.033);
 
-  assert.equal(coverage.daysWithCOGS, 1);
+  assert.equal(coverage.daysWithCOGS, 2);
   assert.equal(coverage.daysWithPartialCOGS, 1);
-  assert.equal(coverage.coverageRatio, 0.75);
+  assert.equal(coverage.daysWithPendingRecovery, 1);
+  assert.equal(coverage.coverageRatio, 0.833);
   assert.equal(waterfall[0].hasCOGS, true);
   assert.equal(waterfall[0].hasPartialCOGS, false);
   assert.equal(waterfall[1].hasCOGS, false);
   assert.equal(waterfall[1].hasPartialCOGS, true);
+  assert.equal(waterfall[2].hasPendingRecovery, true);
+});
+
+test('aggregateCOGSItems tracks pending recovery rows separately from incomplete costing', () => {
+  const result = aggregateCOGSItems([
+    makeItem({
+      orderNumber: 'pending-order',
+      orderKey: 'pending-order',
+      productName: 'Cancelled hold row',
+      note: '중간상 환급대기',
+      isPendingRecovery: true,
+    }),
+    makeItem({
+      rowNumber: 2,
+      orderNumber: 'costed-order',
+      orderKey: 'costed-order',
+      cost: 50000,
+      shipping: 4000,
+    }),
+  ]);
+
+  assert.equal(result.pendingRecoveryItemCount, 1);
+  assert.equal(result.pendingRecoveryOrderCount, 1);
+  assert.equal(result.missingCostItemCount, 0);
+  assert.equal(result.dailyCOGS['2026-03-10'].pendingRecoveryItems, 1);
+  assert.equal(result.dailyCOGS['2026-03-10'].costCoverageRatio, 1);
 });

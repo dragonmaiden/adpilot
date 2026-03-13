@@ -13,6 +13,7 @@ const SPREADSHEET_ID = config.cogs.spreadsheetId;
 const SHEET_GIDS = config.cogs.sheetGids;
 const PRIMARY_REFUND_COLUMNS = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']);
 const REFUND_NOTE_KEYWORDS = ['취소', '환불', '반환'];
+const PENDING_RECOVERY_NOTE_KEYWORDS = ['환급대기', '환불대기', '회수대기', '정산대기', '잔액추적', '중간상', '보류'];
 const MONTH_SHEET_RE = /^\s*\d{1,2}\s*월(?:\s|$)/;
 
 const xmlParser = new XMLParser({
@@ -390,6 +391,11 @@ function hasRefundNoteKeyword(note) {
   return REFUND_NOTE_KEYWORDS.some(keyword => text.includes(keyword));
 }
 
+function hasPendingRecoveryNoteKeyword(note) {
+  const text = String(note || '').trim();
+  return PENDING_RECOVERY_NOTE_KEYWORDS.some(keyword => text.includes(keyword));
+}
+
 function noteContainsCurrency(note) {
   const text = String(note || '').trim();
   return /₩\s*\d|(?:^|[^\d])\d{1,3}(?:,\d{3})+(?:$|[^\d])/.test(text);
@@ -447,13 +453,17 @@ function parseOrderItems(rows, options = {}) {
       noteKeyword: hasRefundNoteKeyword(note),
     };
     const isRefund = refundSignals.redText || refundSignals.noteKeyword;
+    const pendingRecoverySignals = {
+      noteKeyword: hasPendingRecoveryNoteKeyword(note),
+    };
+    const isPendingRecovery = !isRefund && productName && cost === 0 && shipping === 0 && pendingRecoverySignals.noteKeyword;
     const hasMonetaryValue = cost > 0 || shipping > 0;
-    const hasContent = hasMonetaryValue || productName || note || isRefund;
+    const hasContent = hasMonetaryValue || productName || note || isRefund || isPendingRecovery;
 
     if (!hasContent) continue;
 
     const warnings = [];
-    if (!isRefund && productName && cost === 0 && shipping === 0) {
+    if (!isRefund && !isPendingRecovery && productName && cost === 0 && shipping === 0) {
       warnings.push('missing_cost_and_shipping');
     }
     if (!isRefund && noteContainsCurrency(note)) {
@@ -481,6 +491,8 @@ function parseOrderItems(rows, options = {}) {
       note,
       isRefund,
       refundSignals,
+      isPendingRecovery,
+      pendingRecoverySignals,
       warnings,
       rawDate,
     });
@@ -500,6 +512,7 @@ function createOrderSummary(item) {
     purchaseItemCount: 0,
     costedItemCount: 0,
     missingCostItemCount: 0,
+    pendingRecoveryItemCount: 0,
     refundItemCount: 0,
     cost: 0,
     shipping: 0,
@@ -520,9 +533,11 @@ function createPeriodAggregate() {
     items: 0,
     costedItems: 0,
     missingCostItems: 0,
+    pendingRecoveryItems: 0,
     purchases: 0,
     completePurchases: 0,
     incompletePurchases: 0,
+    pendingRecoveryOrders: 0,
     refunds: 0,
     refundOnlyOrders: 0,
     partiallyRefundedOrders: 0,
@@ -592,6 +607,8 @@ function aggregateCOGSItems(items) {
       order.refundItemCount++;
       order.refundCost += item.cost;
       order.refundShipping += item.shipping;
+    } else if (item.isPendingRecovery) {
+      order.pendingRecoveryItemCount++;
     } else {
       order.purchaseItemCount++;
       if (item.cost > 0 || item.shipping > 0) {
@@ -613,9 +630,11 @@ function aggregateCOGSItems(items) {
   let itemCount = 0;
   let costedItemCount = 0;
   let missingCostItemCount = 0;
+  let pendingRecoveryItemCount = 0;
   let purchaseCount = 0;
   let completePurchaseCount = 0;
   let incompletePurchaseCount = 0;
+  let pendingRecoveryOrderCount = 0;
   let refundCount = 0;
   let refundOnlyOrderCount = 0;
   let partiallyRefundedOrderCount = 0;
@@ -627,6 +646,7 @@ function aggregateCOGSItems(items) {
   for (const order of orderMap.values()) {
     const hasPurchase = order.purchaseItemCount > 0;
     const hasRefund = order.refundItemCount > 0;
+    const hasPendingRecovery = order.pendingRecoveryItemCount > 0;
     const hasIncompleteCosting = hasPurchase && order.missingCostItemCount > 0;
     const costCoverageRatio = hasPurchase
       ? Number((order.costedItemCount / order.purchaseItemCount).toFixed(3))
@@ -642,6 +662,7 @@ function aggregateCOGSItems(items) {
       itemCount: order.purchaseItemCount,
       costedItemCount: order.costedItemCount,
       missingCostItemCount: order.missingCostItemCount,
+      pendingRecoveryItemCount: order.pendingRecoveryItemCount,
       refundItemCount: order.refundItemCount,
       cost: order.cost,
       shipping: order.shipping,
@@ -651,6 +672,7 @@ function aggregateCOGSItems(items) {
       netShipping: order.shipping - order.refundShipping,
       hasPurchase,
       hasRefund,
+      hasPendingRecovery,
       isRefundOnly: hasRefund && !hasPurchase,
       isPartiallyRefunded: hasRefund && hasPurchase,
       hasIncompleteCosting,
@@ -659,7 +681,7 @@ function aggregateCOGSItems(items) {
     };
     orders.push(summary);
 
-    if (!order.date || (!hasPurchase && !hasRefund)) {
+    if (!order.date || (!hasPurchase && !hasRefund && !hasPendingRecovery)) {
       continue;
     }
 
@@ -705,6 +727,15 @@ function aggregateCOGSItems(items) {
       }
     }
 
+    if (hasPendingRecovery) {
+      pendingRecoveryItemCount += order.pendingRecoveryItemCount;
+      pendingRecoveryOrderCount++;
+      dailyCOGS[order.date].pendingRecoveryItems += order.pendingRecoveryItemCount;
+      dailyCOGS[order.date].pendingRecoveryOrders++;
+      monthlyCOGS[monthKey].pendingRecoveryItems += order.pendingRecoveryItemCount;
+      monthlyCOGS[monthKey].pendingRecoveryOrders++;
+    }
+
     if (hasRefund) {
       refundCount++;
       totalRefundCOGS += order.refundCost;
@@ -745,10 +776,12 @@ function aggregateCOGSItems(items) {
     itemCount,
     costedItemCount,
     missingCostItemCount,
+    pendingRecoveryItemCount,
     orderCount: orders.length,
     purchaseCount,
     completePurchaseCount,
     incompletePurchaseCount,
+    pendingRecoveryOrderCount,
     refundCount,
     refundOnlyOrderCount,
     partiallyRefundedOrderCount,

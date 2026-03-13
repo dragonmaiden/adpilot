@@ -124,6 +124,7 @@ const I18N = {
   'analytics.waterfallTitle': { en: 'Daily Profit Waterfall', kr: '일별 수익 워터폴' },
   'analytics.waterfall.fullCoverage': { en: 'All items costed', kr: '모든 품목 원가 입력 완료' },
   'analytics.waterfall.partialCoverage': { en: 'COGS rows present but incomplete', kr: '원가 행은 있으나 미완성' },
+  'analytics.waterfall.pendingRecovery': { en: 'Canceled / recovery pending', kr: '취소 후 환급 대기' },
   'analytics.waterfall.missingCoverage': { en: 'No COGS rows yet', kr: '원가 행 아직 없음' },
   'analytics.coverageTitle': { en: 'Data Coverage & Confidence', kr: '데이터 커버리지 및 신뢰도' },
   'analytics.coverageWaiting': { en: 'Waiting for data...', kr: '데이터 대기 중...' },
