@@ -268,7 +268,7 @@ function sendTokenAlert(errorMsg) {
     const telegram = require('./telegram');
     telegram.sendMessage(
       `🔴 <b>Imweb Token Failure</b>\n\n${errorMsg}\n\n` +
-      `Revenue data is stale. Re-seed via /api/seed-token or update IMWEB_REFRESH_TOKEN on Render.`
+      `Revenue data is stale. Update IMWEB_REFRESH_TOKEN on Render or restore a valid persisted Imweb token.`
     ).catch(() => {}); // fire-and-forget
   } catch (_) { /* telegram not available */ }
 }

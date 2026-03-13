@@ -274,13 +274,19 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
       appendedOrders: result.appended.length,
       duplicateOrders: result.duplicates.length,
       skippedOrders: result.skipped.length,
+      failedOrders: result.errors.length,
     });
     console.log(
       `[SCHEDULER]   → ${result.appended.length} appended, `
       + `${result.duplicates.length} duplicates, `
-      + `${result.skipped.length} skipped `
+      + `${result.skipped.length} skipped, `
+      + `${result.errors.length} failed `
       + `(${result.eligibleOrders} recent paid order${result.eligibleOrders === 1 ? '' : 's'} checked)`
     );
+
+    for (const failure of result.errors) {
+      pushError(scanResult, 'cogs_autofill_order', new Error(`${failure.orderNo || 'unknown order'}: ${failure.error}`));
+    }
 
     for (const appended of result.appended) {
       await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(appended));

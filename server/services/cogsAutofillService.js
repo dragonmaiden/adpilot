@@ -223,6 +223,12 @@ function getOrderProductNames(order) {
   return productNames.length > 0 ? productNames : [''];
 }
 
+function getOrderSections(order) {
+  if (Array.isArray(order?.sections)) return order.sections;
+  if (Array.isArray(order?.orderSections)) return order.orderSections;
+  return [];
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -287,8 +293,19 @@ function isEligibleRecentOrder(order, lookbackDays) {
     return false;
   }
 
+  const orderStatus = asString(order?.orderStatus).toUpperCase();
+  const hasPreparedSection = getOrderSections(order).some(section => (
+    asString(section?.orderSectionStatus || section?.status).toUpperCase() === 'PRODUCT_PREPARATION'
+  ));
+  const hasCompletedPayment = normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
+  const isOperationallyEligible = hasPreparedSection || (orderStatus === 'OPEN' && hasCompletedPayment);
+
+  if (!isOperationallyEligible) {
+    return false;
+  }
+
   const cashTotals = getOrderCashTotals(order);
-  if (!cashTotals.approvedAmount) {
+  if (!cashTotals.approvedAmount && !hasCompletedPayment) {
     return false;
   }
 
@@ -500,15 +517,23 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
   const appended = [];
   const duplicates = [];
   const skipped = [];
+  const errors = [];
 
   for (const order of eligibleOrders) {
-    const result = await syncOrderToCogsSheet(order);
-    if (result?.status === 'appended') {
-      appended.push(result);
-    } else if (result?.status === 'duplicate') {
-      duplicates.push(result);
-    } else {
-      skipped.push(result);
+    try {
+      const result = await syncOrderToCogsSheet(order);
+      if (result?.status === 'appended') {
+        appended.push(result);
+      } else if (result?.status === 'duplicate') {
+        duplicates.push(result);
+      } else {
+        skipped.push(result);
+      }
+    } catch (err) {
+      errors.push({
+        orderNo: asString(order?.orderNo),
+        error: err.message,
+      });
     }
   }
 
@@ -520,6 +545,7 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
     appended,
     duplicates,
     skipped,
+    errors,
   };
 }
 

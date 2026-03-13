@@ -412,6 +412,7 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       const recentPaid = createOrder({
         orderNo: '20260313001',
         ordererName: '최근 결제',
+        orderStatus: 'OPEN',
         wtime: new Date(now - (2 * 60 * 60 * 1000)).toISOString(),
         totalPaymentPrice: 111000,
         payments: [
@@ -426,6 +427,7 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       const recentDuplicate = createOrder({
         orderNo: '20260313002',
         ordererName: '중복 결제',
+        orderStatus: 'OPEN',
         wtime: new Date(now - (3 * 60 * 60 * 1000)).toISOString(),
         totalPaymentPrice: 99000,
         payments: [
@@ -440,6 +442,7 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       const stalePaid = createOrder({
         orderNo: '20260301001',
         ordererName: '오래된 결제',
+        orderStatus: 'OPEN',
         wtime: new Date(now - (10 * 24 * 60 * 60 * 1000)).toISOString(),
         totalPaymentPrice: 88000,
         payments: [
@@ -450,6 +453,22 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
           },
         ],
         sections: [{ sectionItems: [{ productInfo: { prodName: '스카프 C' } }] }],
+      });
+      const refundedClosed = createOrder({
+        orderNo: '20260313004',
+        orderStatus: 'CLOSED',
+        ordererName: '환불 완료',
+        wtime: new Date(now - (2 * 60 * 60 * 1000)).toISOString(),
+        totalPaymentPrice: 0,
+        totalRefundedPrice: 111000,
+        payments: [
+          {
+            paidPrice: 111000,
+            paymentStatus: 'REFUND_COMPLETE',
+            paymentCompleteTime: new Date(now - (30 * 60 * 1000)).toISOString(),
+          },
+        ],
+        sections: [{ sectionItems: [{ productInfo: { prodName: '스카프 환불' } }] }],
       });
       const unpaid = createOrder({
         orderNo: '20260313003',
@@ -462,7 +481,7 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       });
 
       const result = await service.syncRecentOrdersToCogs(
-        [stalePaid, recentDuplicate, unpaid, recentPaid],
+        [stalePaid, recentDuplicate, unpaid, refundedClosed, recentPaid],
         { lookbackDays: 3 }
       );
 
@@ -472,9 +491,112 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       assert.equal(result.appended.length, 1);
       assert.equal(result.duplicates.length, 1);
       assert.equal(result.skipped.length, 0);
+      assert.equal(result.errors.length, 0);
       assert.equal(result.appended[0].orderNo, '20260313001');
       assert.equal(result.duplicates[0].orderNo, '20260313002');
       assert.equal(appendCount, 1);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('syncRecentOrdersToCogs keeps processing after one eligible order fails to append', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  const now = Date.now();
+  let tokenRequests = 0;
+  let appendRequests = 0;
+
+  global.fetch = async (url, options = {}) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      tokenRequests += 1;
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    appendRequests += 1;
+    const payload = JSON.parse(options.body);
+    const firstOrderNo = payload.values?.[0]?.[3];
+    if (firstOrderNo === '20260313011') {
+      return {
+        ok: false,
+        json: async () => ({ error: { message: 'append failed for first order' } }),
+      };
+    }
+
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 1 } }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({
+          workbookSheets: [{ name: '3월 주문', path: 'xl/worksheets/sheet2.xml' }],
+        }),
+        buildSheetTargets: () => [
+          { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+        ],
+        fetchSheetCSV: async () => [
+          ['번호', '날짜', '이름', '주문번호'],
+          [],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for batch append error test');
+        },
+      },
+    }, async service => {
+      const first = createOrder({
+        orderNo: '20260313011',
+        ordererName: '첫번째 실패',
+        orderStatus: 'OPEN',
+        wtime: new Date(now - (2 * 60 * 60 * 1000)).toISOString(),
+        totalPaymentPrice: 111000,
+        payments: [
+          {
+            paidPrice: 111000,
+            paymentStatus: 'PAYMENT_COMPLETE',
+            paymentCompleteTime: new Date(now - (90 * 60 * 1000)).toISOString(),
+          },
+        ],
+        sections: [{ sectionItems: [{ productInfo: { prodName: '실패 주문' } }] }],
+      });
+      const second = createOrder({
+        orderNo: '20260313012',
+        ordererName: '두번째 성공',
+        orderStatus: 'OPEN',
+        wtime: new Date(now - (60 * 60 * 1000)).toISOString(),
+        totalPaymentPrice: 222000,
+        payments: [
+          {
+            paidPrice: 222000,
+            paymentStatus: 'PAYMENT_COMPLETE',
+            paymentCompleteTime: new Date(now - (30 * 60 * 1000)).toISOString(),
+          },
+        ],
+        sections: [{ sectionItems: [{ productInfo: { prodName: '성공 주문' } }] }],
+      });
+
+      const result = await service.syncRecentOrdersToCogs([first, second], { lookbackDays: 3 });
+
+      assert.equal(result.eligibleOrders, 2);
+      assert.equal(result.errors.length, 1);
+      assert.equal(result.errors[0].orderNo, '20260313011');
+      assert.equal(result.appended.length, 1);
+      assert.equal(result.appended[0].orderNo, '20260313012');
+      assert.equal(appendRequests, 2);
+      assert.equal(tokenRequests, 1);
     });
   } finally {
     global.fetch = originalFetch;
