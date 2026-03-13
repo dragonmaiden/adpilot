@@ -1644,6 +1644,11 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   gap: var(--space-4);
 }
 
+.waterfall-coverage-legend {
+  margin-top: var(--space-4);
+  flex-wrap: wrap;
+}
+
 .legend-item {
   display: flex;
   align-items: center;
@@ -1656,6 +1661,19 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   width: 8px;
   height: 8px;
   border-radius: 50%;
+}
+
+.waterfall-dot-full {
+  background: rgba(74, 222, 128, 0.85);
+}
+
+.waterfall-dot-partial {
+  background: rgba(251, 191, 36, 0.8);
+}
+
+.waterfall-dot-missing {
+  background: rgba(74, 222, 128, 0.35);
+  border: 1px solid rgba(74, 222, 128, 0.55);
 }
 
 .filter-group {

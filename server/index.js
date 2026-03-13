@@ -23,6 +23,7 @@ const analyticsService = require('./services/analyticsService');
 const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
 const reconciliationService = require('./services/reconciliationService');
+const cogsAutofillService = require('./services/cogsAutofillService');
 const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
 
 function isValidMetaId(id) {
@@ -43,6 +44,46 @@ function validateMetaIdParam(req, res, next) {
 
 function isFiniteNumberInRange(value, min, max) {
   return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+}
+
+function isValidWebhookToken(req) {
+  const expectedToken = cogsAutofillService.getWebhookToken();
+  if (!expectedToken) return true;
+
+  const candidates = [
+    req.get('x-imweb-webhook-token'),
+    req.get('x-webhook-token'),
+    req.query?.token,
+    req.body?.token,
+    req.body?.webhookToken,
+    req.body?.secret,
+  ];
+
+  return candidates.some(candidate => String(candidate || '').trim() === expectedToken);
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function buildCogsAutofillNotification(result) {
+  const products = Array.isArray(result?.productNames) && result.productNames.length > 0
+    ? result.productNames.map(name => `• ${escapeHtml(name)}`).join('\n')
+    : '• Product name unavailable';
+
+  return `🧾 <b>New Imweb Order Logged</b>
+
+<b>Order:</b> ${escapeHtml(result?.orderNo)}
+<b>Date:</b> ${escapeHtml(result?.orderDate)}
+<b>Customer:</b> ${escapeHtml(result?.customerName)}
+<b>Sheet:</b> ${escapeHtml(result?.sheetName)}
+<b>Rows appended:</b> ${escapeHtml(result?.rowCount)}
+
+<b>Products:</b>
+${products}`;
 }
 
 // ── Validate required env vars on startup ──
@@ -137,6 +178,22 @@ app.use((req, res, next) => {
   next();
 });
 
+app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
+  try {
+    if (!isValidWebhookToken(req)) {
+      return res.status(401).json({ ok: false, error: 'Invalid webhook token' });
+    }
+
+    const result = await cogsAutofillService.handleWebhookPayload(req.body || {});
+    if (result?.status === 'appended') {
+      await telegram.sendMessage(buildCogsAutofillNotification(result));
+    }
+    res.json(result);
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
+});
+
 app.use('/api', apiLimiter);
 app.use('/api', (req, res, next) => {
   if (req.path === '/health') return next();
@@ -200,6 +257,27 @@ app.post('/api/scan', scanLimiter, async (req, res) => {
   // Don't await — respond immediately, scan runs in background
   scheduler.runScan(true);
   res.json({ status: 'started', message: 'Manual scan initiated' });
+});
+
+app.post('/api/cogs/autofill-order', writeLimiter, async (req, res) => {
+  try {
+    if (!cogsAutofillService.isConfigured()) {
+      return res.status(503).json({ ok: false, error: 'COGS autofill is not configured' });
+    }
+
+    const orderNo = String(req.body?.orderNo || '').trim();
+    if (!orderNo) {
+      return res.status(400).json({ ok: false, error: 'orderNo is required' });
+    }
+
+    const result = await cogsAutofillService.syncImwebOrderToCogs(orderNo);
+    if (result?.status === 'appended') {
+      await telegram.sendMessage(buildCogsAutofillNotification(result));
+    }
+    res.json(result);
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
 });
 
 // ── Campaign actions (write operations — require Telegram approval) ──

@@ -1047,6 +1047,7 @@ function initProfitCharts() {
         ]
       },
       options: {
+        maintainAspectRatio: false,
         plugins: {
           legend: {
             display: true,
@@ -1267,23 +1268,62 @@ function initAnalyticsCharts() {
             data: [],
             backgroundColor: 'rgba(32, 128, 141, 0.8)',
             borderRadius: 4,
+            barPercentage: 0.58,
+            categoryPercentage: 0.72,
           },
           {
             label: 'Refunded (\u20a9)',
             data: [],
             backgroundColor: 'rgba(239, 68, 68, 0.7)',
             borderRadius: 4,
-          }
+            barPercentage: 0.58,
+            categoryPercentage: 0.72,
+          },
+          {
+            label: 'Refund Rate (%)',
+            data: [],
+            type: 'line',
+            borderColor: c.gold,
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            pointRadius: 5,
+            pointHoverRadius: 6,
+            pointBackgroundColor: c.gold,
+            tension: 0.25,
+            yAxisID: 'y1',
+          },
         ]
       },
       options: {
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
         plugins: {
           legend: { display: true, position: 'top', labels: { color: c.text, boxWidth: 12, padding: 16 } },
-          tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': \u20a9' + ctx.parsed.y.toLocaleString() } }
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                if (ctx.dataset.yAxisID === 'y1') {
+                  return `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toFixed(1)}%`;
+                }
+                return `${ctx.dataset.label}: \u20a9${Number(ctx.parsed.y || 0).toLocaleString()}`;
+              }
+            }
+          }
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: c.textFaint } },
           y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => formatChartKrwTick(v) } },
+          y1: {
+            position: 'right',
+            grid: { display: false },
+            ticks: {
+              color: c.gold,
+              callback: v => `${v}%`,
+            },
+          },
         }
       }
     });

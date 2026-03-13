@@ -69,6 +69,11 @@ const config = {
       '2월': process.env.COGS_GID_FEB || '0',
       '3월': process.env.COGS_GID_MAR || '456791124',
     },
+    autofill: {
+      googleClientEmail: process.env.COGS_GOOGLE_CLIENT_EMAIL || '',
+      googlePrivateKey: process.env.COGS_GOOGLE_PRIVATE_KEY || '',
+      webhookToken: process.env.IMWEB_WEBHOOK_TOKEN || '',
+    },
   },
 
   // Card settlement reconciliation (Google Sheets)

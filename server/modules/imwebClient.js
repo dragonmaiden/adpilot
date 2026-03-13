@@ -419,6 +419,30 @@ async function getAllOrders() {
   return allOrders;
 }
 
+async function getOrder(orderNo) {
+  const normalizedOrderNo = String(orderNo || '').trim();
+  if (!normalizedOrderNo) {
+    throw new Error('orderNo is required');
+  }
+
+  try {
+    const payload = await imwebApi(`/orders/${encodeURIComponent(normalizedOrderNo)}`, 'GET');
+    const order = payload?.data?.order || payload?.data || payload?.order || payload;
+    if (!order || typeof order !== 'object') {
+      throw new Error('unexpected payload shape');
+    }
+    return order;
+  } catch (err) {
+    console.warn(`[IMWEB] Direct getOrder failed for ${normalizedOrderNo}, falling back to paginated search: ${err.message}`);
+    const orders = await getAllOrders();
+    const fallback = orders.find(order => String(order?.orderNo || '').trim() === normalizedOrderNo);
+    if (!fallback) {
+      throw new Error(`Order ${normalizedOrderNo} not found`);
+    }
+    return fallback;
+  }
+}
+
 // Process orders into revenue metrics
 function processOrders(orders) {
   let totalRevenue = 0;
@@ -486,5 +510,6 @@ module.exports = {
   seedRefreshToken,
   getAuthState,
   getAllOrders,
+  getOrder,
   processOrders,
 };

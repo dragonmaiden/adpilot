@@ -470,10 +470,23 @@
       <div class="card chart-card">
         <div class="card-header">
           <h2 data-i18n="analytics.waterfallTitle">Daily Profit Waterfall</h2>
-          <span class="chart-days" id="profitWaterfallDays" data-series-window-badge="profit-structure"></span>
         </div>
         <div class="chart-container" style="height:380px">
           <canvas id="profitWaterfallChart"></canvas>
+        </div>
+        <div class="chart-legend waterfall-coverage-legend" id="profitWaterfallLegend">
+          <span class="legend-item">
+            <span class="dot waterfall-dot-full"></span>
+            <span data-i18n="analytics.waterfall.fullCoverage">Full COGS coverage</span>
+          </span>
+          <span class="legend-item">
+            <span class="dot waterfall-dot-partial"></span>
+            <span data-i18n="analytics.waterfall.partialCoverage">Partial COGS coverage</span>
+          </span>
+          <span class="legend-item">
+            <span class="dot waterfall-dot-missing"></span>
+            <span data-i18n="analytics.waterfall.missingCoverage">Missing COGS coverage</span>
+          </span>
         </div>
       </div>
 
