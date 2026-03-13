@@ -24,6 +24,7 @@ const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
 const reconciliationService = require('./services/reconciliationService');
 const operatorSummaryService = require('./services/operatorSummaryService');
+const briefService = require('./services/briefService');
 const cogsAutofillService = require('./services/cogsAutofillService');
 const imwebAppInstallService = require('./services/imwebAppInstallService');
 const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
@@ -321,6 +322,14 @@ app.get('/api/overview', async (req, res) => {
 app.get('/api/operator-summary', async (req, res) => {
   try {
     res.json(await operatorSummaryService.getOperatorSummaryResponse());
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
+});
+
+app.get('/api/operator-brief', async (req, res) => {
+  try {
+    res.json(await briefService.getOperatorBriefResponse());
   } catch (err) {
     handleInternalError(req, res, err);
   }

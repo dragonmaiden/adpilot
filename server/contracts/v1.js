@@ -371,6 +371,16 @@ function operatorSummary(data) {
   };
 }
 
+/**
+ * Build /api/operator-brief response.
+ */
+function operatorBrief(data) {
+  return {
+    apiVersion: API_VERSION,
+    ...data,
+  };
+}
+
 module.exports = {
   API_VERSION,
   overview,
@@ -388,4 +398,5 @@ module.exports = {
   snapshotsList,
   snapshotDetail,
   operatorSummary,
+  operatorBrief,
 };
