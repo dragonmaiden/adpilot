@@ -81,11 +81,15 @@ function markOrderImported(orderNo, metadata = {}) {
   saveState(state);
 }
 
-function wasOrderImported(orderNo) {
+function getImportedOrderMetadata(orderNo) {
   const normalizedOrderNo = asString(orderNo);
-  if (!normalizedOrderNo) return false;
+  if (!normalizedOrderNo) return null;
   const state = loadState();
-  return Boolean(state.importedOrders[normalizedOrderNo]);
+  return state.importedOrders[normalizedOrderNo] || null;
+}
+
+function wasOrderImported(orderNo) {
+  return Boolean(getImportedOrderMetadata(orderNo));
 }
 
 function base64UrlEncode(input) {
@@ -201,6 +205,28 @@ async function fetchExistingRows(target) {
   }
 }
 
+function getSheetCacheKey(target) {
+  if (target?.gid) return `gid:${target.gid}`;
+  return `sheet:${asString(target?.sheetName || target?.label)}`;
+}
+
+async function getRowsForTarget(target, sheetCache) {
+  if (!(sheetCache instanceof Map)) {
+    return fetchExistingRows(target);
+  }
+
+  const cacheKey = getSheetCacheKey(target);
+  if (!sheetCache.has(cacheKey)) {
+    sheetCache.set(cacheKey, await fetchExistingRows(target));
+  }
+  return sheetCache.get(cacheKey);
+}
+
+function setRowsForTarget(target, rows, sheetCache) {
+  if (!(sheetCache instanceof Map)) return;
+  sheetCache.set(getSheetCacheKey(target), rows);
+}
+
 function getNextSequenceNumber(rows) {
   return (Array.isArray(rows) ? rows : []).reduce((max, row) => {
     const candidate = Number.parseInt(asString(row?.[0]), 10);
@@ -289,7 +315,7 @@ function isRecentEnough(date, lookbackDays) {
 
 function isEligibleRecentOrder(order, lookbackDays) {
   const orderNo = asString(order?.orderNo);
-  if (!orderNo || wasOrderImported(orderNo)) {
+  if (!orderNo) {
     return false;
   }
 
@@ -429,10 +455,6 @@ async function syncOrderToCogsSheet(order, options = {}) {
     throw new Error('Order is missing orderNo');
   }
 
-  if (wasOrderImported(normalizedOrderNo)) {
-    return { ok: true, status: 'duplicate', reason: 'order already imported' };
-  }
-
   const orderDate = order?.wtime ? formatDateInTimeZone(order.wtime) : '';
   if (!orderDate) {
     throw new Error(`Order ${normalizedOrderNo} is missing wtime`);
@@ -440,18 +462,19 @@ async function syncOrderToCogsSheet(order, options = {}) {
   const customerName = asString(order?.ordererName || order?.memberName);
   const productNames = getOrderProductNames(order).filter(Boolean);
 
+  const importedMetadata = getImportedOrderMetadata(normalizedOrderNo);
   const target = options.target || await resolveTargetSheet(orderDate);
-  const existingRows = await fetchExistingRows(target);
+  const existingRows = options.existingRows || await getRowsForTarget(target, options.sheetCache);
   if (hasOrderNumber(existingRows, normalizedOrderNo)) {
     markOrderImported(normalizedOrderNo, {
-      source: 'sheet_duplicate',
+      source: importedMetadata ? (importedMetadata.source || 'sheet_duplicate') : 'sheet_duplicate',
       sheetName: target.sheetName,
       orderDate,
     });
     return {
       ok: true,
       status: 'duplicate',
-      reason: 'order already exists in sheet',
+      reason: importedMetadata ? 'order already imported' : 'order already exists in sheet',
       orderNo: normalizedOrderNo,
       orderDate,
       customerName,
@@ -463,8 +486,9 @@ async function syncOrderToCogsSheet(order, options = {}) {
   const nextSequenceNo = getNextSequenceNumber(existingRows);
   const rows = buildRowsForOrder(order, nextSequenceNo);
   await appendRowsToSheet(target, rows);
+  setRowsForTarget(target, existingRows.concat(rows), options.sheetCache);
   markOrderImported(normalizedOrderNo, {
-    source: 'append',
+    source: importedMetadata ? 'recovered_append' : 'append',
     sheetName: target.sheetName,
     orderDate,
     rowCount: rows.length,
@@ -518,10 +542,23 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
   const duplicates = [];
   const skipped = [];
   const errors = [];
+  const targetCache = new Map();
+  const sheetCache = new Map();
 
   for (const order of eligibleOrders) {
     try {
-      const result = await syncOrderToCogsSheet(order);
+      const orderDate = order?.wtime ? formatDateInTimeZone(order.wtime) : '';
+      const targetKey = String(orderDate || '').slice(0, 7);
+      let target = targetCache.get(targetKey);
+      if (!target) {
+        target = await resolveTargetSheet(orderDate);
+        targetCache.set(targetKey, target);
+      }
+
+      const result = await syncOrderToCogsSheet(order, {
+        target,
+        sheetCache,
+      });
       if (result?.status === 'appended') {
         appended.push(result);
       } else if (result?.status === 'duplicate') {
@@ -580,6 +617,7 @@ module.exports = {
   findTargetForMonth,
   resolveTargetSheet,
   buildAutofillNotification,
+  getImportedOrderMetadata,
   syncOrderToCogsSheet,
   syncImwebOrderToCogs,
   syncRecentOrdersToCogs,

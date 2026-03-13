@@ -233,6 +233,76 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
   }
 });
 
+test('syncOrderToCogsSheet recovers when imported state exists but the sheet row is missing', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  let appendCount = 0;
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {
+      '20260313225187': {
+        orderNo: '20260313225187',
+        importedAt: '2026-03-13T00:00:00.000Z',
+        source: 'append',
+        sheetName: '3월 주문',
+        orderDate: '2026-03-13',
+      },
+    },
+  }, null, 2));
+
+  global.fetch = async (url) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    appendCount += 1;
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 2 } }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({
+          workbookSheets: [{ name: '3월 주문', path: 'xl/worksheets/sheet2.xml' }],
+        }),
+        buildSheetTargets: () => [
+          { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+        ],
+        fetchSheetCSV: async () => [
+          ['번호', '날짜', '이름', '주문번호'],
+          [],
+          ['101', '2026-03-13', '다른 고객', '20260313009999'],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for stale imported-state recovery test');
+        },
+      },
+    }, async service => {
+      const result = await service.syncOrderToCogsSheet(createOrder());
+      assert.equal(result.status, 'appended');
+      assert.equal(result.orderNo, '20260313225187');
+      assert.equal(appendCount, 1);
+
+      const state = JSON.parse(fs.readFileSync(path.join(dataDir, 'cogs_autofill_state.json'), 'utf8'));
+      assert.equal(state.importedOrders['20260313225187'].source, 'recovered_append');
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('handleWebhookPayload processes deposit-complete and product-preparation order events and ignores unsupported events', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
@@ -267,10 +337,18 @@ test('handleWebhookPayload processes deposit-complete and product-preparation or
         buildSheetTargets: () => [
           { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
         ],
-        fetchSheetCSV: async () => [
-          ['번호', '날짜', '이름', '주문번호'],
-          [],
-        ],
+        fetchSheetCSV: async () => (
+          appendCount > 0
+            ? [
+              ['번호', '날짜', '이름', '주문번호'],
+              [],
+              ['101', '2026-03-13', '홍신희', '20260313225187'],
+            ]
+            : [
+              ['번호', '날짜', '이름', '주문번호'],
+              [],
+            ]
+        ),
       },
       imwebClient: {
         getOrder: async () => {
