@@ -301,6 +301,68 @@ test('handleWebhookPayload processes deposit-complete and product-preparation or
   }
 });
 
+test('handleWebhookPayload accepts eventType payloads from Imweb order webhooks', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  let getOrderCalls = 0;
+  let appendCount = 0;
+
+  global.fetch = async (url) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    appendCount += 1;
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 1 } }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({
+          workbookSheets: [{ name: '3월 주문', path: 'xl/worksheets/sheet2.xml' }],
+        }),
+        buildSheetTargets: () => [
+          { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+        ],
+        fetchSheetCSV: async () => [
+          ['번호', '날짜', '이름', '주문번호'],
+          [],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          getOrderCalls += 1;
+          return createOrder({ orderNo: '202603138754779', ordererName: '박유림' });
+        },
+      },
+    }, async service => {
+      const appended = await service.handleWebhookPayload({
+        eventType: 'ORDER_DEPOSIT_COMPLETE',
+        orderNo: '202603138754779',
+      });
+
+      assert.equal(appended.status, 'appended');
+      assert.equal(appended.orderNo, '202603138754779');
+      assert.equal(appended.customerName, '박유림');
+      assert.equal(getOrderCalls, 1);
+      assert.equal(appendCount, 1);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('resolveTargetSheet falls back to the conventional month tab name when workbook discovery is unavailable', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();

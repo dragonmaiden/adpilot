@@ -276,13 +276,17 @@ function extractWebhookEventName(payload) {
   const candidates = [
     payload?.eventName,
     payload?.event,
+    payload?.eventType,
     payload?.type,
     payload?.topic,
     payload?.code,
     payload?.webhookEvent,
     payload?.data?.eventName,
     payload?.data?.event,
+    payload?.data?.eventType,
     payload?.payload?.eventName,
+    payload?.payload?.event,
+    payload?.payload?.eventType,
   ];
 
   for (const candidate of candidates) {
