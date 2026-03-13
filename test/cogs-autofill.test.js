@@ -67,6 +67,8 @@ function createOrder(overrides = {}) {
     orderNo: '20260313225187',
     wtime: '2026-03-13T02:36:00.000Z',
     ordererName: '홍신희',
+    totalPaymentPrice: 111000,
+    totalRefundedPrice: 0,
     sections: [
       {
         sectionItems: [
@@ -151,6 +153,8 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
       assert.equal(result.sheetName, '3월 주문');
       assert.equal(result.rowCount, 2);
       assert.equal(result.sequenceNo, 102);
+      assert.equal(result.netRevenue, 111000);
+      assert.equal(result.approvedAmount, 111000);
       assert.equal(appendRequests.length, 1);
 
       const appendRequest = appendRequests[0];
@@ -173,6 +177,50 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
   } finally {
     global.fetch = originalFetch;
   }
+});
+
+test('buildAutofillNotification includes revenue and size labeling', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const small = service.buildAutofillNotification({
+      orderNo: '1',
+      orderDate: '2026-03-13',
+      customerName: '홍신희',
+      netRevenue: 111000,
+      sheetName: '3월 주문',
+      rowCount: 1,
+      productNames: ['실크 모노그램 방도'],
+    });
+
+    assert.match(small, /Revenue:<\/b> ₩111,000 · 🐟 Small fish/);
+
+    const big = service.buildAutofillNotification({
+      orderNo: '2',
+      orderDate: '2026-03-13',
+      customerName: '홍신희',
+      netRevenue: 800000,
+      sheetName: '3월 주문',
+      rowCount: 1,
+      productNames: ['실크 모노그램 방도'],
+    });
+
+    assert.match(big, /Revenue:<\/b> ₩800,000 · 🐋 Big fish/);
+  });
 });
 
 test('syncOrderToCogsSheet skips appending when the order number already exists in the target sheet', async () => {

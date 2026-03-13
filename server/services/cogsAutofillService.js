@@ -14,6 +14,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
+const BIG_FISH_THRESHOLD_KRW = 500 * Number(config.currency?.usdToKrw || 1450);
 const SUPPORTED_EVENTS = new Set([
   'ORDER_DEPOSIT_COMPLETE',
   'ORDER_PRODUCT_PREPARATION',
@@ -262,16 +263,34 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;');
 }
 
+function formatStoreMoney(amount) {
+  const numeric = Number(amount || 0);
+  return new Intl.NumberFormat('ko-KR', {
+    style: 'currency',
+    currency: config.currency?.storeCurrency || 'KRW',
+    maximumFractionDigits: 0,
+  }).format(Math.round(numeric));
+}
+
+function getOrderSizeLabel(amount) {
+  return Number(amount || 0) >= BIG_FISH_THRESHOLD_KRW
+    ? '🐋 Big fish'
+    : '🐟 Small fish';
+}
+
 function buildAutofillNotification(result) {
   const products = Array.isArray(result?.productNames) && result.productNames.length > 0
     ? result.productNames.map(name => `• ${escapeHtml(name)}`).join('\n')
     : '• Product name unavailable';
+  const revenue = Number(result?.netRevenue ?? result?.approvedAmount ?? 0);
+  const sizeLabel = getOrderSizeLabel(revenue);
 
   return `🧾 <b>New Imweb Order Logged</b>
 
 <b>Order:</b> ${escapeHtml(result?.orderNo)}
 <b>Date:</b> ${escapeHtml(result?.orderDate)}
 <b>Customer:</b> ${escapeHtml(result?.customerName)}
+<b>Revenue:</b> ${escapeHtml(formatStoreMoney(revenue))} · ${escapeHtml(sizeLabel)}
 <b>Sheet:</b> ${escapeHtml(result?.sheetName)}
 <b>Rows appended:</b> ${escapeHtml(result?.rowCount)}
 
@@ -481,6 +500,7 @@ async function syncOrderToCogsSheet(order, options = {}) {
   }
   const customerName = asString(order?.ordererName || order?.memberName);
   const productNames = getOrderProductNames(order).filter(Boolean);
+  const cashTotals = getOrderCashTotals(order);
 
   const importedMetadata = getImportedOrderMetadata(normalizedOrderNo);
   const target = options.target || await resolveTargetSheet(orderDate);
@@ -500,6 +520,9 @@ async function syncOrderToCogsSheet(order, options = {}) {
       customerName,
       productNames,
       sheetName: target.sheetName,
+      approvedAmount: cashTotals.approvedAmount,
+      netRevenue: cashTotals.netPaidAmount,
+      refundedAmount: cashTotals.refundedAmount,
     };
   }
 
@@ -524,6 +547,9 @@ async function syncOrderToCogsSheet(order, options = {}) {
     sheetName: target.sheetName,
     rowCount: rows.length,
     sequenceNo: nextSequenceNo,
+    approvedAmount: cashTotals.approvedAmount,
+    netRevenue: cashTotals.netPaidAmount,
+    refundedAmount: cashTotals.refundedAmount,
   };
 }
 
