@@ -30,3 +30,8 @@
 - Monthly COGS tabs follow Korean month naming like `2월 주문`, `3월 주문`, `4월 주문`.
 - If a number comes from a local snapshot rather than live API, say so explicitly.
 - `@MetaAdsPro_bot` should proactively surface sharp opportunities or risks on heartbeat, but stay read-only and avoid generic status spam.
+
+## Analysis lessons
+
+- See `LESSONS.md` for specific past mistakes and corrections.
+- When in doubt, update LESSONS.md so future sessions benefit from today's errors.
