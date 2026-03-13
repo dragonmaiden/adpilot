@@ -14,7 +14,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
-const BIG_FISH_THRESHOLD_KRW = 500 * Number(config.currency?.usdToKrw || 1450);
+const BIG_FISH_THRESHOLD_KRW = 200000;
 const SUPPORTED_EVENTS = new Set([
   'ORDER_DEPOSIT_COMPLETE',
   'ORDER_PRODUCT_PREPARATION',
@@ -274,8 +274,8 @@ function formatStoreMoney(amount) {
 
 function getOrderSizeLabel(amount) {
   return Number(amount || 0) >= BIG_FISH_THRESHOLD_KRW
-    ? '🐋 Big fish'
-    : '🐟 Small fish';
+    ? '🐋 BIG FISH $$!'
+    : '🐟 small fish $$';
 }
 
 function buildAutofillNotification(result) {

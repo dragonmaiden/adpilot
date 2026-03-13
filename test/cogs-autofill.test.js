@@ -207,19 +207,19 @@ test('buildAutofillNotification includes revenue and size labeling', async () =>
       productNames: ['실크 모노그램 방도'],
     });
 
-    assert.match(small, /Revenue:<\/b> ₩111,000 · 🐟 Small fish/);
+    assert.match(small, /Revenue:<\/b> ₩111,000 · 🐟 small fish \$\$/);
 
     const big = service.buildAutofillNotification({
       orderNo: '2',
       orderDate: '2026-03-13',
       customerName: '홍신희',
-      netRevenue: 800000,
+      netRevenue: 300000,
       sheetName: '3월 주문',
       rowCount: 1,
       productNames: ['실크 모노그램 방도'],
     });
 
-    assert.match(big, /Revenue:<\/b> ₩800,000 · 🐋 Big fish/);
+    assert.match(big, /Revenue:<\/b> ₩300,000 · 🐋 BIG FISH \$\$!/);
   });
 });
 
