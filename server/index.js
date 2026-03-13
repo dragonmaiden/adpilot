@@ -24,6 +24,7 @@ const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
 const reconciliationService = require('./services/reconciliationService');
 const cogsAutofillService = require('./services/cogsAutofillService');
+const imwebAppInstallService = require('./services/imwebAppInstallService');
 const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
 
 function isValidMetaId(id) {
@@ -84,6 +85,74 @@ function buildCogsAutofillNotification(result) {
 
 <b>Products:</b>
 ${products}`;
+}
+
+function renderImwebInstallPage({ title, body, statusCode = 200 }) {
+  return {
+    statusCode,
+    html: `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f1ea; color: #173042; }
+      main { max-width: 720px; margin: 48px auto; padding: 32px; background: rgba(255,255,255,0.82); border: 1px solid rgba(23,48,66,0.14); border-radius: 24px; box-shadow: 0 24px 60px rgba(23,48,66,0.08); }
+      h1 { margin: 0 0 16px; font-size: 28px; line-height: 1.15; }
+      p, li { font-size: 15px; line-height: 1.6; }
+      code { background: rgba(23,48,66,0.08); padding: 2px 6px; border-radius: 6px; }
+      .meta { margin-top: 20px; padding: 16px; background: rgba(23,48,66,0.05); border-radius: 16px; }
+      .meta strong { display: inline-block; min-width: 128px; }
+      .cta { display: inline-block; margin-top: 20px; padding: 10px 16px; border-radius: 999px; background: #0f7f89; color: white; text-decoration: none; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main>
+      ${body}
+    </main>
+  </body>
+</html>`,
+  };
+}
+
+function buildImwebInstallSuccessPage(result) {
+  const configuredSite = config.imweb.siteCode
+    ? `<p><strong>Configured Site</strong> <code>${escapeHtml(config.imweb.siteCode)}</code></p>`
+    : '';
+  const nextStep = result.integrationStatus === 'already_complete'
+    ? 'The site was already marked complete in Imweb. You can now verify the site status in Imweb Developers.'
+    : 'Imweb install finished and the site integration completion call succeeded. You can now verify that the site moves to 연동완료 in Imweb Developers.';
+
+  return renderImwebInstallPage({
+    title: 'Imweb Install Complete',
+    body: `
+      <h1>Imweb Install Complete</h1>
+      <p>${escapeHtml(nextStep)}</p>
+      <div class="meta">
+        <p><strong>Site Code</strong> <code>${escapeHtml(result.siteCode)}</code></p>
+        <p><strong>Redirect URI</strong> <code>${escapeHtml(result.redirectUri)}</code></p>
+        <p><strong>Service URL</strong> <code>${escapeHtml(result.serviceUrl)}</code></p>
+        <p><strong>Scope</strong> <code>${escapeHtml(result.scope)}</code></p>
+        <p><strong>Status</strong> <code>${escapeHtml(result.integrationStatus)}</code></p>
+        ${configuredSite}
+      </div>
+      <a class="cta" href="/">Open AdPilot</a>
+    `,
+  });
+}
+
+function buildImwebInstallErrorPage(err, statusCode = 500) {
+  return renderImwebInstallPage({
+    title: 'Imweb Install Failed',
+    statusCode,
+    body: `
+      <h1>Imweb Install Failed</h1>
+      <p>${escapeHtml(err?.message || 'Unknown install error')}</p>
+      <p>Please confirm the Imweb app uses the correct Service URL and Redirect URI, then try the install again.</p>
+      <a class="cta" href="/">Open AdPilot</a>
+    `,
+  });
 }
 
 // ── Validate required env vars on startup ──
@@ -191,6 +260,42 @@ app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
     res.json(result);
   } catch (err) {
     handleInternalError(req, res, err);
+  }
+});
+
+app.get('/imweb/install', async (req, res) => {
+  try {
+    const install = imwebAppInstallService.beginInstall({
+      req,
+      siteCode: req.query?.siteCode,
+    });
+    res.redirect(302, install.authorizeUrl);
+  } catch (err) {
+    const page = buildImwebInstallErrorPage(err, 400);
+    res.status(page.statusCode).type('html').send(page.html);
+  }
+});
+
+app.get('/imweb/oauth/callback', async (req, res) => {
+  try {
+    if (req.query?.error) {
+      const page = buildImwebInstallErrorPage(new Error(`${req.query.error}: ${req.query.error_description || 'OAuth callback returned an error'}`), 400);
+      return res.status(page.statusCode).type('html').send(page.html);
+    }
+
+    const code = String(req.query?.code || '').trim();
+    const state = String(req.query?.state || '').trim();
+    if (!code || !state) {
+      const page = buildImwebInstallErrorPage(new Error('Missing OAuth code or state'), 400);
+      return res.status(page.statusCode).type('html').send(page.html);
+    }
+
+    const result = await imwebAppInstallService.finalizeInstall({ req, code, state });
+    const page = buildImwebInstallSuccessPage(result);
+    res.status(page.statusCode).type('html').send(page.html);
+  } catch (err) {
+    const page = buildImwebInstallErrorPage(err, 500);
+    res.status(page.statusCode).type('html').send(page.html);
   }
 });
 
@@ -564,6 +669,12 @@ app.get('/api/settings', (req, res) => {
     imweb: {
       siteCode: config.imweb.siteCode,
       unitCode: config.imweb.unitCode,
+      app: {
+        serviceUrl: imwebAppInstallService.getServiceUrl(req),
+        redirectUri: imwebAppInstallService.getRedirectUri(req),
+        installScope: imwebAppInstallService.getInstallScope(),
+        installedSite: imwebAppInstallService.getInstalledSite(),
+      },
       auth: imweb.getAuthState(),
       data: sourceHealth.imweb || {},
     },

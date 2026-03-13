@@ -357,39 +357,128 @@ async function ensureToken() {
   }
 }
 
+async function requestImwebWithAccessToken(path, method = 'GET', params = {}, options = {}) {
+  const explicitAccessToken = typeof options.accessTokenOverride === 'string'
+    ? options.accessTokenOverride.trim()
+    : '';
+  const explicitSiteCode = typeof options.siteCodeOverride === 'string'
+    ? options.siteCodeOverride.trim()
+    : '';
+
+  const bearerToken = explicitAccessToken || accessToken;
+  if (!bearerToken) {
+    throw new Error('No Imweb access token available');
+  }
+
+  const siteCode = explicitSiteCode || config.imweb.siteCode;
+  const url = new URL(`${config.imweb.baseUrl}${path}`);
+  if (method === 'GET' && params && typeof params === 'object') {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        url.searchParams.set(key, value);
+      }
+    });
+  }
+
+  const headers = {
+    'Authorization': `Bearer ${bearerToken}`,
+    ...(siteCode ? { 'x-site-code': siteCode } : {}),
+    ...(options.extraHeaders || {}),
+  };
+
+  const requestOptions = {
+    method,
+    headers,
+  };
+
+  if (method !== 'GET') {
+    if (options.formEncoded) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      requestOptions.body = new URLSearchParams(params).toString();
+    } else if (params !== null && params !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      requestOptions.body = JSON.stringify(params);
+    }
+  }
+
+  const response = await fetch(url.toString(), requestOptions);
+  return readImwebResponse(response, `Imweb ${method} ${path}`);
+}
+
 // ── Make authenticated API request ──
 async function imwebApi(path, method = 'GET', params = {}) {
   await ensureToken();
-  const url = new URL(`${config.imweb.baseUrl}${path}`);
-
-  const buildHeaders = () => ({
-    'Authorization': `Bearer ${accessToken}`,
-    'x-site-code': config.imweb.siteCode,
-    'Content-Type': 'application/json',
-  });
 
   async function requestOnce(retryOnAuthFailure) {
-    const headers = buildHeaders();
-    const options = method === 'GET'
-      ? { headers }
-      : { method, headers, body: JSON.stringify(params) };
-    const res = await fetch(url.toString(), options);
+    const requestPromise = requestImwebWithAccessToken(path, method, params);
+    const res = await requestPromise.catch(err => {
+      if (!retryOnAuthFailure) throw err;
+      const statusMatch = String(err.message || '').match(/HTTP (\d{3})/);
+      const status = statusMatch ? Number(statusMatch[1]) : null;
+      if ((status === 401 || status === 403) && refreshToken) {
+        return { __retryAuthFailure: true };
+      }
+      throw err;
+    });
 
-    if (retryOnAuthFailure && (res.status === 401 || res.status === 403) && refreshToken) {
-      console.warn(`[IMWEB] ${method} ${path} returned ${res.status}; attempting token refresh and one retry`);
+    if (res && res.__retryAuthFailure) {
+      console.warn(`[IMWEB] ${method} ${path} returned auth failure; attempting token refresh and one retry`);
       tokenExpiry = 0;
       await refreshAccessToken();
       return requestOnce(false);
     }
 
-    return readImwebResponse(res, `Imweb ${method} ${path}`);
-  }
-
-  if (method === 'GET') {
-    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    return res;
   }
 
   return requestOnce(true);
+}
+
+async function authorizeWithCode({ code, redirectUri, source = 'oauth_install' }) {
+  const normalizedCode = String(code || '').trim();
+  const normalizedRedirectUri = String(redirectUri || '').trim();
+  if (!normalizedCode) {
+    throw new Error('authorization code is required');
+  }
+  if (!normalizedRedirectUri) {
+    throw new Error('redirectUri is required');
+  }
+  if (!hasImwebClientCredentials()) {
+    throw new Error('Imweb client credentials are missing');
+  }
+
+  const response = await fetch(`${config.imweb.baseUrl}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      clientId: config.imweb.clientId,
+      clientSecret: config.imweb.clientSecret,
+      redirectUri: normalizedRedirectUri,
+      code: normalizedCode,
+      grantType: 'authorization_code',
+    }).toString(),
+  });
+  const data = await readImwebResponse(response, 'Imweb authorization-code token exchange');
+
+  saveTokens(data, { source });
+  return data.data || data;
+}
+
+async function getSiteInfo({ accessToken: accessTokenOverride, siteCode }) {
+  const payload = await requestImwebWithAccessToken('/site-info', 'GET', {}, {
+    accessTokenOverride,
+    siteCodeOverride: siteCode,
+  });
+  return payload?.data || payload;
+}
+
+async function completeIntegration({ accessToken: accessTokenOverride, siteCode, configData = null }) {
+  const body = configData ? { configData } : null;
+  const payload = await requestImwebWithAccessToken('/site-info/integration-complete', 'PATCH', body, {
+    accessTokenOverride,
+    siteCodeOverride: siteCode,
+  });
+  return payload?.data ?? payload;
 }
 
 // ═══════════════════════════════════════════════
@@ -508,7 +597,10 @@ module.exports = {
   loadTokens,
   refreshAccessToken,
   seedRefreshToken,
+  authorizeWithCode,
   getAuthState,
+  getSiteInfo,
+  completeIntegration,
   getAllOrders,
   getOrder,
   processOrders,
