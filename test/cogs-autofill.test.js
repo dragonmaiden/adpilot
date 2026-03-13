@@ -233,7 +233,7 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
   }
 });
 
-test('handleWebhookPayload processes ORDER_PRODUCT_PREPARATION inline orders and ignores unsupported events', async () => {
+test('handleWebhookPayload processes deposit-complete and product-preparation order events and ignores unsupported events', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
   const originalFetch = global.fetch;
@@ -279,18 +279,22 @@ test('handleWebhookPayload processes ORDER_PRODUCT_PREPARATION inline orders and
         },
       },
     }, async service => {
-      const ignored = await service.handleWebhookPayload({ eventName: 'ORDER_DEPOSIT_COMPLETE', orderNo: '20260313225187' });
-      assert.equal(ignored.status, 'ignored');
+      const depositComplete = await service.handleWebhookPayload({ eventName: 'ORDER_DEPOSIT_COMPLETE', orderNo: '20260313225187' });
+      assert.equal(depositComplete.status, 'appended');
+      assert.deepEqual(depositComplete.productNames, ['실크 모노그램 방도', '에르 스카프']);
+      assert.equal(getOrderCalls, 1);
 
       const appended = await service.handleWebhookPayload({
         eventName: 'ORDER_PRODUCT_PREPARATION',
         data: { order: createOrder() },
       });
 
-      assert.equal(appended.status, 'appended');
-      assert.deepEqual(appended.productNames, ['실크 모노그램 방도', '에르 스카프']);
-      assert.equal(getOrderCalls, 0);
+      assert.equal(appended.status, 'duplicate');
+      assert.equal(getOrderCalls, 1);
       assert.equal(appendCount, 1);
+
+      const ignored = await service.handleWebhookPayload({ eventName: 'ORDER_CANCEL_REQUEST', orderNo: '20260313225187' });
+      assert.equal(ignored.status, 'ignored');
     });
   } finally {
     global.fetch = originalFetch;

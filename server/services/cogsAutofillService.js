@@ -12,7 +12,10 @@ const STATE_FILE = path.join(runtimePaths.dataDir, 'cogs_autofill_state.json');
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
-const SUPPORTED_EVENTS = new Set(['ORDER_PRODUCT_PREPARATION']);
+const SUPPORTED_EVENTS = new Set([
+  'ORDER_DEPOSIT_COMPLETE',
+  'ORDER_PRODUCT_PREPARATION',
+]);
 
 let googleAccessToken = null;
 let googleAccessTokenExpiry = 0;
