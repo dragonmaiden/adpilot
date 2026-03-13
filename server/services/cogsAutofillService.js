@@ -7,11 +7,13 @@ const cogsClient = require('../modules/cogsClient');
 const imweb = require('../modules/imwebClient');
 const { getOrderItems } = require('../domain/imwebAttribution');
 const { formatDateInTimeZone } = require('../domain/time');
+const { getOrderCashTotals, normalizeImwebPayments } = require('../domain/imwebPayments');
 
 const STATE_FILE = path.join(runtimePaths.dataDir, 'cogs_autofill_state.json');
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
+const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const SUPPORTED_EVENTS = new Set([
   'ORDER_DEPOSIT_COMPLETE',
   'ORDER_PRODUCT_PREPARATION',
@@ -221,6 +223,79 @@ function getOrderProductNames(order) {
   return productNames.length > 0 ? productNames : [''];
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function buildAutofillNotification(result) {
+  const products = Array.isArray(result?.productNames) && result.productNames.length > 0
+    ? result.productNames.map(name => `• ${escapeHtml(name)}`).join('\n')
+    : '• Product name unavailable';
+
+  return `🧾 <b>New Imweb Order Logged</b>
+
+<b>Order:</b> ${escapeHtml(result?.orderNo)}
+<b>Date:</b> ${escapeHtml(result?.orderDate)}
+<b>Customer:</b> ${escapeHtml(result?.customerName)}
+<b>Sheet:</b> ${escapeHtml(result?.sheetName)}
+<b>Rows appended:</b> ${escapeHtml(result?.rowCount)}
+
+<b>Products:</b>
+${products}`;
+}
+
+function getOrderAutofillTimestamp(order) {
+  const approvals = normalizeImwebPayments([order])
+    .filter(payment => payment.type === 'approval')
+    .map(payment => payment.completedAt)
+    .filter(Boolean);
+
+  const candidates = [
+    approvals.length > 0 ? approvals[approvals.length - 1] : null,
+    order?.mtime,
+    order?.wtime,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const date = new Date(candidate);
+    if (!Number.isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  return null;
+}
+
+function isRecentEnough(date, lookbackDays) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return false;
+  }
+  if (!Number.isFinite(lookbackDays) || lookbackDays <= 0) {
+    return true;
+  }
+
+  return date.getTime() >= Date.now() - (lookbackDays * 24 * 60 * 60 * 1000);
+}
+
+function isEligibleRecentOrder(order, lookbackDays) {
+  const orderNo = asString(order?.orderNo);
+  if (!orderNo || wasOrderImported(orderNo)) {
+    return false;
+  }
+
+  const cashTotals = getOrderCashTotals(order);
+  if (!cashTotals.approvedAmount) {
+    return false;
+  }
+
+  const effectiveTimestamp = getOrderAutofillTimestamp(order);
+  return isRecentEnough(effectiveTimestamp, lookbackDays);
+}
+
 function buildRowsForOrder(order, nextSequenceNo) {
   const orderDate = order?.wtime ? formatDateInTimeZone(order.wtime) : '';
   const customerName = asString(order?.ordererName || order?.memberName);
@@ -396,6 +471,58 @@ async function syncImwebOrderToCogs(orderNo) {
   return syncOrderToCogsSheet(order);
 }
 
+async function syncRecentOrdersToCogs(orders, options = {}) {
+  if (!isConfigured()) {
+    return {
+      ok: false,
+      status: 'disabled',
+      reason: 'COGS autofill is not configured',
+      lookbackDays: options.lookbackDays ?? DEFAULT_POLL_LOOKBACK_DAYS,
+      eligibleOrders: 0,
+      appended: [],
+      duplicates: [],
+      skipped: [],
+    };
+  }
+
+  const lookbackDays = Number.isFinite(options.lookbackDays)
+    ? Number(options.lookbackDays)
+    : DEFAULT_POLL_LOOKBACK_DAYS;
+
+  const eligibleOrders = (Array.isArray(orders) ? orders : [])
+    .filter(order => isEligibleRecentOrder(order, lookbackDays))
+    .sort((left, right) => {
+      const leftTime = getOrderAutofillTimestamp(left)?.getTime() || 0;
+      const rightTime = getOrderAutofillTimestamp(right)?.getTime() || 0;
+      return leftTime - rightTime;
+    });
+
+  const appended = [];
+  const duplicates = [];
+  const skipped = [];
+
+  for (const order of eligibleOrders) {
+    const result = await syncOrderToCogsSheet(order);
+    if (result?.status === 'appended') {
+      appended.push(result);
+    } else if (result?.status === 'duplicate') {
+      duplicates.push(result);
+    } else {
+      skipped.push(result);
+    }
+  }
+
+  return {
+    ok: true,
+    status: 'ok',
+    lookbackDays,
+    eligibleOrders: eligibleOrders.length,
+    appended,
+    duplicates,
+    skipped,
+  };
+}
+
 async function handleWebhookPayload(payload) {
   const eventName = extractWebhookEventName(payload);
   if (!SUPPORTED_EVENTS.has(eventName)) {
@@ -426,7 +553,9 @@ module.exports = {
   hasOrderNumber,
   findTargetForMonth,
   resolveTargetSheet,
+  buildAutofillNotification,
   syncOrderToCogsSheet,
   syncImwebOrderToCogs,
+  syncRecentOrdersToCogs,
   handleWebhookPayload,
 };

@@ -70,23 +70,6 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;');
 }
 
-function buildCogsAutofillNotification(result) {
-  const products = Array.isArray(result?.productNames) && result.productNames.length > 0
-    ? result.productNames.map(name => `• ${escapeHtml(name)}`).join('\n')
-    : '• Product name unavailable';
-
-  return `🧾 <b>New Imweb Order Logged</b>
-
-<b>Order:</b> ${escapeHtml(result?.orderNo)}
-<b>Date:</b> ${escapeHtml(result?.orderDate)}
-<b>Customer:</b> ${escapeHtml(result?.customerName)}
-<b>Sheet:</b> ${escapeHtml(result?.sheetName)}
-<b>Rows appended:</b> ${escapeHtml(result?.rowCount)}
-
-<b>Products:</b>
-${products}`;
-}
-
 function renderImwebInstallPage({ title, body, statusCode = 200 }) {
   return {
     statusCode,
@@ -255,7 +238,7 @@ app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
 
     const result = await cogsAutofillService.handleWebhookPayload(req.body || {});
     if (result?.status === 'appended') {
-      await telegram.sendMessage(buildCogsAutofillNotification(result));
+      await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
     }
     res.json(result);
   } catch (err) {
@@ -377,7 +360,7 @@ app.post('/api/cogs/autofill-order', writeLimiter, async (req, res) => {
 
     const result = await cogsAutofillService.syncImwebOrderToCogs(orderNo);
     if (result?.status === 'appended') {
-      await telegram.sendMessage(buildCogsAutofillNotification(result));
+      await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
     }
     res.json(result);
   } catch (err) {

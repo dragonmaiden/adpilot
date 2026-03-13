@@ -14,6 +14,7 @@ const runtimeSettings = require('../runtime/runtimeSettings');
 const { filterDuplicateApprovalOptimizations } = require('../services/optimizationDedupService');
 const { arbitrateOptimizations } = require('../services/optimizationArbitrationService');
 const { buildEconomicsLedger } = require('../services/economicsLedgerService');
+const cogsAutofillService = require('../services/cogsAutofillService');
 
 function nowIso() {
   return new Date().toISOString();
@@ -249,6 +250,51 @@ async function fetchCogs(scanResult) {
   }
 }
 
+async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
+  console.log('[SCHEDULER] Step 3a: Reconciling recent paid Imweb orders into the COGS sheet...');
+
+  if (!cogsAutofillService.isConfigured()) {
+    pushStep(scanResult, {
+      step: 'cogs_autofill',
+      status: 'skipped',
+      reason: 'disabled',
+    });
+    console.log('[SCHEDULER]   → skipped (COGS autofill is not configured)');
+    return { ok: false, skipped: true, result: null };
+  }
+
+  try {
+    const result = await cogsAutofillService.syncRecentOrdersToCogs(orders);
+
+    pushStep(scanResult, {
+      step: 'cogs_autofill',
+      status: 'ok',
+      lookbackDays: result.lookbackDays,
+      eligibleOrders: result.eligibleOrders,
+      appendedOrders: result.appended.length,
+      duplicateOrders: result.duplicates.length,
+      skippedOrders: result.skipped.length,
+    });
+    console.log(
+      `[SCHEDULER]   → ${result.appended.length} appended, `
+      + `${result.duplicates.length} duplicates, `
+      + `${result.skipped.length} skipped `
+      + `(${result.eligibleOrders} recent paid order${result.eligibleOrders === 1 ? '' : 's'} checked)`
+    );
+
+    for (const appended of result.appended) {
+      await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(appended));
+    }
+
+    return { ok: true, result };
+  } catch (err) {
+    console.error('[SCHEDULER]   ⚠ COGS autofill reconciliation failed:', err.message);
+    pushError(scanResult, 'cogs_autofill', err);
+    pushStep(scanResult, { step: 'cogs_autofill', status: 'failed' });
+    return { ok: false, result: null };
+  }
+}
+
 async function runScan(manual = false) {
   if (scanStore.getIsScanning()) {
     console.log('[SCHEDULER] Scan already in progress, skipping');
@@ -295,6 +341,10 @@ async function runScan(manual = false) {
 
     const imwebResult = await fetchImwebOrders(scanResult);
     sourceStatus.imweb = imwebResult.ok;
+
+    if (imwebResult.ok) {
+      await reconcileRecentImwebOrdersToCogs(scanResult, imwebResult.orders);
+    }
 
     const cogsResult = await fetchCogs(scanResult);
     sourceStatus.cogs = cogsResult.ok;
