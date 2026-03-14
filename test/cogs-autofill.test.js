@@ -192,13 +192,10 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
       assert.deepEqual(firstRow.slice(0, 7), ['102', '2026-03-13', '홍신희', '20260313225187', '', '', '실크 모노그램 방도']);
       assert.deepEqual(secondRow.slice(0, 7), ['', '', '', '', '', '', '에르 스카프']);
       assert.equal(firstRow[11], '');
-      assert.match(firstRow[12], /delivery note: 문 앞에 놓아주세요/);
-      assert.match(firstRow[12], /customer name: 홍신희/);
-      assert.match(firstRow[12], /phone: 01012341234/);
-      assert.match(firstRow[12], /receiver: 홍신희/);
-      assert.match(firstRow[12], /receiver phone: 01012341234/);
-      assert.match(firstRow[12], /zipcode: 06236/);
-      assert.match(firstRow[12], /address: 서울 강남구 테헤란로 123 5층/);
+      assert.equal(
+        firstRow[12],
+        'receiver: 홍신희 | phone: 01012341234 | address: 06236 서울 강남구 테헤란로 123 5층 | delivery note: 문 앞에 놓아주세요'
+      );
       assert.deepEqual(secondRow.slice(12, 17), ['', '', '', '', '']);
       assert.equal(firstRow[9], 'FALSE');
       assert.equal(firstRow[10], 'FALSE');

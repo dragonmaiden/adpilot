@@ -459,17 +459,19 @@ function buildNotificationProductLines(order) {
 }
 
 function buildCompactDeliveryDetails(details = {}) {
+  const primaryPhone = asString(details.receiverPhone || details.customerPhone);
+  const combinedAddress = [asString(details.zipcode), asString(details.address)]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
   const fields = [
-    ['delivery note', details.deliveryNote],
-    ['customer name', details.customerName],
-    ['phone', details.customerPhone],
     ['receiver', details.receiverName],
-    ['receiver phone', details.receiverPhone],
-    ['zipcode', details.zipcode],
-    ['address', details.address],
+    ['phone', primaryPhone],
+    ['address', combinedAddress],
+    ['delivery note', details.deliveryNote],
   ].filter(([, value]) => asString(value));
 
-  return fields.map(([label, value]) => `${label}: ${asString(value)}`).join('\n');
+  return fields.map(([label, value]) => `${label}: ${asString(value)}`).join(' | ');
 }
 
 function getOrderAutofillTimestamp(order) {

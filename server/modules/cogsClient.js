@@ -442,8 +442,11 @@ function parseCompactDeliveryCell(value) {
   }
 
   const parsed = {};
-  const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
-  for (const line of lines) {
+  const parts = text
+    .split(/\s*\|\s*|\n+/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  for (const line of parts) {
     const separatorIndex = line.indexOf(':');
     if (separatorIndex <= 0) continue;
 
@@ -453,11 +456,22 @@ function parseCompactDeliveryCell(value) {
 
     if (label === 'delivery note') parsed.note = fieldValue;
     if (label === 'customer name') parsed.customerName = fieldValue;
-    if (label === 'phone') parsed.ordererPhone = fieldValue;
+    if (label === 'phone') {
+      parsed.ordererPhone = fieldValue;
+      parsed.receiverPhone = parsed.receiverPhone || fieldValue;
+    }
     if (label === 'receiver') parsed.receiverName = fieldValue;
     if (label === 'receiver phone') parsed.receiverPhone = fieldValue;
     if (label === 'zipcode') parsed.zipcode = fieldValue;
-    if (label === 'address') parsed.address = fieldValue;
+    if (label === 'address') {
+      const zipcodeMatch = fieldValue.match(/^(\d{5})\s+(.+)$/);
+      if (zipcodeMatch) {
+        parsed.zipcode = parsed.zipcode || zipcodeMatch[1];
+        parsed.address = zipcodeMatch[2].trim();
+      } else {
+        parsed.address = fieldValue;
+      }
+    }
   }
 
   return Object.keys(parsed).length > 0 ? parsed : null;
