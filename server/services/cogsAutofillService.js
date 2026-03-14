@@ -367,7 +367,7 @@ function buildAutofillNotification(result) {
     : '• Product name unavailable';
 
   const sections = [
-    '🧾 <b>New Imweb Order Logged</b>',
+    '🧾 <b>New Imweb Order Logged 🎉🎉</b>',
     '',
     `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
     `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,

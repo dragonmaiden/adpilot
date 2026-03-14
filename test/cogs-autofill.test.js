@@ -245,7 +245,7 @@ test('buildAutofillNotification formats the public Shue order summary', async ()
       productLines: ['실크 모노그램 방도', '에르 스카프 (od202601302d5ef0d5fc48b)'],
     });
 
-    assert.match(message, /🧾 <b>New Imweb Order Logged<\/b>/);
+    assert.match(message, /🧾 <b>New Imweb Order Logged 🎉🎉<\/b>/);
     assert.match(message, /Order: 202603145648900/);
     assert.match(message, /Date: 2026-03-13/);
     assert.match(message, /Customer: 홍신희/);
