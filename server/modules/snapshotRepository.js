@@ -14,7 +14,7 @@ function saveSnapshotFile(filename, data) {
   fs.writeFileSync(path.join(SNAP_DIR, filename), JSON.stringify(data, null, 2));
 }
 
-function cleanupSnapshots(maxScanSets = 48) {
+function cleanupSnapshots(maxScanSets = 240) {
   try {
     const files = fs.readdirSync(SNAP_DIR).filter(f => f.endsWith('.json'));
     const scanIds = [...new Set(files.map(f => f.split('_')[0]))].sort();
@@ -64,7 +64,7 @@ function saveSnapshot(scanId, snapshotData) {
     });
   }
 
-  cleanupSnapshots(48);
+  cleanupSnapshots(240);
 }
 
 function getSnapshotsList() {

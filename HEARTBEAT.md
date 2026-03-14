@@ -28,11 +28,11 @@ From the brief, extract the most commercially important signal:
 - `alerts.activeCount > 0`
 - `scorecard.grossProfit < 0`
 
-**Reply HEARTBEAT_OK only when:**
-- there is no materially useful signal in `signals`
-- `approvals.pendingCount === 0`
-- `alerts.activeCount === 0`
-- nothing commercially important changed
+**Reply HEARTBEAT_OK when:**
+- nothing commercially important **changed** since your last heartbeat message
+- even if there are pending approvals or alerts — if you already flagged them and nothing is different, say HEARTBEAT_OK. Do NOT repeat the same alert every heartbeat. The user already saw it.
+
+**The key rule: only message when something CHANGED.** A pending approval that was pending last heartbeat is not new information. A CPA that spiked in the last 2 hours is.
 
 ## Step 3: Format for Telegram
 

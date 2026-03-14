@@ -15,6 +15,8 @@ const { filterDuplicateApprovalOptimizations } = require('../services/optimizati
 const { arbitrateOptimizations } = require('../services/optimizationArbitrationService');
 const { buildEconomicsLedger } = require('../services/economicsLedgerService');
 const cogsAutofillService = require('../services/cogsAutofillService');
+const policyLabService = require('../services/policyLabService');
+const observabilityService = require('../services/observabilityService');
 
 function nowIso() {
   return new Date().toISOString();
@@ -349,6 +351,7 @@ async function runScan(manual = false) {
   };
 
   try {
+    policyLabService.ensureInitialized(runtimeSettings.getRules());
     const metaStructureResult = await fetchMetaStructure(scanResult);
     sourceStatus.metaStructure = metaStructureResult.ok;
 
@@ -401,7 +404,9 @@ async function runScan(manual = false) {
     if (sourceStatus.metaStructure && sourceStatus.metaInsights) {
       console.log('[SCHEDULER] Step 4: Running optimization engine...');
       const latestData = scanStore.getLatestData();
-      const optimizer = new OptimizationEngine(scanId);
+      const optimizer = new OptimizationEngine(scanId, {
+        budgetPolicy: policyLabService.getChampionPolicy(runtimeSettings.getRules()),
+      });
       const analyzedOptimizations = await optimizer.analyze(
         metaStructureResult.campaigns,
         metaStructureResult.adSets,
@@ -413,6 +418,13 @@ async function runScan(manual = false) {
         latestData.sources?.imweb || null,
         latestData.cogsData || null
       );
+      const championTraces = optimizer.getDecisionTraces();
+      policyLabService.recordDecisionTraces(championTraces);
+      const shadowResult = policyLabService.runShadowEvaluation({
+        scanId,
+        championTraces,
+        rules: runtimeSettings.getRules(),
+      });
       const arbitrated = arbitrateOptimizations(analyzedOptimizations, {
         adSets: metaStructureResult.adSets,
         ads: metaStructureResult.ads,
@@ -429,6 +441,8 @@ async function runScan(manual = false) {
         step: 'optimizer',
         status: 'ok',
         totalOptimizations: optimizations.length,
+        budgetDecisionTraces: championTraces.length,
+        shadowEvaluations: shadowResult.challengerTraces.length,
         suppressedArbitratedActions: arbitrated.suppressed.length,
         suppressedDuplicateApprovals: deduped.suppressed.length,
       });
@@ -457,6 +471,7 @@ async function runScan(manual = false) {
       if (runtimeSettings.getRules().autonomousMode) {
         console.log('[SCHEDULER] Step 5: Processing approval-required optimizations...');
         const executed = await optimizer.processApprovalQueue();
+        policyLabService.refreshBudgetOutcomes();
         pushStep(scanResult, {
           step: 'execution',
           status: 'ok',
@@ -515,10 +530,20 @@ async function runScan(manual = false) {
       }
     }
 
+    policyLabService.refreshBudgetOutcomes();
+
     scanResult.stats = buildScanStats(latestData, until);
     scanResult.sourceHealth = scanStore.getSourceHealth();
   } catch (err) {
     console.error('[SCHEDULER] SCAN FAILED:', err.message);
+    observabilityService.captureException(err, {
+      category: 'scan.error',
+      title: 'Scheduled scan failed',
+      tags: {
+        scan_id: scanId,
+        manual: manual ? 'true' : 'false',
+      },
+    });
     pushError(scanResult, 'fatal', err);
   } finally {
     scanResult.endTime = new Date().toISOString();
@@ -551,6 +576,23 @@ async function runScan(manual = false) {
 
   console.log(`\n[SCHEDULER] Scan complete in ${scanResult.durationMs}ms`);
   console.log(`[SCHEDULER] ${scanResult.optimizations.length} optimizations, ${scanResult.errors.length} errors\n`);
+  observabilityService.captureMessage(
+    `Scan ${scanId} completed with ${scanResult.optimizations.length} optimizations`,
+    scanResult.errors.length > 0 ? 'warning' : 'info',
+    {
+      category: 'scan.complete',
+      title: 'Scan completed',
+      tags: {
+        scan_id: scanId,
+        manual: manual ? 'true' : 'false',
+        status: scanResult.status,
+      },
+      data: {
+        optimizationCount: scanResult.optimizations.length,
+        errorCount: scanResult.errors.length,
+      },
+    }
+  );
 
   return scanResult;
 }

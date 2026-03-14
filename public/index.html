@@ -987,6 +987,104 @@
           </div>
         </details>
       </div>
+
+      <div class="section-head section-head-compact karpathy-head">
+        <div>
+          <div class="section-kicker">Karpathy</div>
+          <h2>Policy Lab, strategy progression, and decision traces</h2>
+        </div>
+        <p class="section-note">Structured optimizer traces, challenger policies, replay progress, and observability live here without polluting the immediate approval queue.</p>
+      </div>
+
+      <div class="karpathy-top-grid">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="section-kicker">Learning Loop</div>
+              <h2>Summary</h2>
+            </div>
+            <span id="karpathySummaryMeta"></span>
+          </div>
+          <p class="card-desc">Champion and challenger status, shadow divergence, completed outcomes, and Sentry health.</p>
+          <div class="karpathy-summary-grid" id="karpathySummary">
+            <div class="empty-state">Waiting for policy-lab data...</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="section-kicker">Strategy Progression</div>
+              <h2>Research timeline</h2>
+            </div>
+            <span id="karpathyTimelineMeta"></span>
+          </div>
+          <p class="card-desc">Candidate creation, replay outcomes, and promotion readiness are summarized here and echoed onto the spend chart above.</p>
+          <div class="karpathy-timeline" id="karpathyTimeline">
+            <div class="empty-state">Waiting for policy-lab data...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="karpathy-layout">
+        <div class="card karpathy-trace-card">
+          <div class="card-header">
+            <div>
+              <div class="section-kicker">Decision Trace Explorer</div>
+              <h2>Structured budget traces</h2>
+            </div>
+            <span id="karpathyTraceStats"></span>
+          </div>
+          <p class="card-desc">Filter by policy, verdict, control surface, or target to inspect what the budget engine saw, which gates fired, and why it chose scale, reduce, hold, or suppress.</p>
+          <div class="history-toolbar">
+            <div class="filter-group">
+              <select class="select-input" id="karpathyTracePolicyFilter">
+                <option value="all">All policies</option>
+              </select>
+              <select class="select-input" id="karpathyTraceVerdictFilter">
+                <option value="all">All verdicts</option>
+              </select>
+              <select class="select-input" id="karpathyTraceSurfaceFilter">
+                <option value="all">All control surfaces</option>
+              </select>
+              <input class="search-input" id="karpathyTraceTargetFilter" type="search" placeholder="Filter target name" />
+            </div>
+          </div>
+          <div class="optimization-log optimization-log-grouped karpathy-trace-list" id="karpathyTraceExplorer">
+            <div class="empty-state">Waiting for policy-lab data...</div>
+          </div>
+        </div>
+
+        <div class="karpathy-side-rail">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="section-kicker">Metrics Progression</div>
+                <h2>Champion vs challenger</h2>
+              </div>
+              <span id="karpathyMetricsMeta"></span>
+            </div>
+            <p class="card-desc">Replay score deltas, realized rewards, approval friction, duplicate pressure, and the latest scored outcomes.</p>
+            <div class="karpathy-metrics" id="karpathyMetrics">
+              <div class="empty-state">Waiting for policy-lab data...</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="section-kicker">Observability Rail</div>
+                <h2>Warnings and failures</h2>
+              </div>
+              <span id="karpathyObservabilityMeta"></span>
+            </div>
+            <p class="card-desc">Recent Sentry-backed or locally captured warnings from the optimizer, research worker, replay loop, and execution path.</p>
+            <div class="optimization-log optimization-log-grouped karpathy-observability-list" id="karpathyObservability">
+              <div class="empty-state">Waiting for policy-lab data...</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- Fatigue Detection Page -->

@@ -23,6 +23,14 @@ const {
 } = require('../domain/performanceContext');
 const { buildCampaignEconomics } = require('../services/campaignEconomicsService');
 const {
+  buildDefaultChampionPolicy,
+  classifyControlSurface,
+  evaluateBudgetSnapshot,
+  createDecisionTrace,
+} = require('../services/budgetPolicyService');
+const policyLabService = require('../services/policyLabService');
+const observabilityService = require('../services/observabilityService');
+const {
   OPTIMIZATION_TYPES,
   isBudgetDecreaseAction,
   isBudgetIncreaseAction,
@@ -47,10 +55,18 @@ const MIN_REALLOCATION_PURCHASE_DAYS = 3;
 const SCALE_TREND_CAUTION_RATIO = 1.2;
 const SCALE_TREND_SUPPRESS_RATIO = 1.45;
 
+function parseActionPercent(actionText, fallbackPercent) {
+  const match = String(actionText || '').match(/(\d+(?:\.\d+)?)%/);
+  const parsed = match ? Number.parseFloat(match[1]) : fallbackPercent;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackPercent;
+}
+
 class OptimizationEngine {
-  constructor(scanId = Date.now()) {
+  constructor(scanId = Date.now(), options = {}) {
     this.actions = []; // Generated actions for this scan
     this.scanId = scanId;
+    this.decisionTraces = [];
+    this.budgetPolicy = options.budgetPolicy || null;
   }
 
   getRules() {
@@ -321,8 +337,8 @@ class OptimizationEngine {
   }
 
   // ── Log an optimization action ──
-  addAction(type, level, targetId, targetName, action, reason, impact, priority = 'medium') {
-    this.actions.push({
+  addAction(type, level, targetId, targetName, action, reason, impact, priority = 'medium', metadata = null) {
+    const optimization = {
       id: `opt_${this.scanId}_${this.actions.length}`,
       timestamp: new Date().toISOString(),
       scanId: this.scanId,
@@ -338,14 +354,23 @@ class OptimizationEngine {
       approvalStatus: null,
       approvalRequestedAt: null,
       executionResult: null,
-    });
+      ...(metadata && typeof metadata === 'object' ? metadata : {}),
+    };
+    this.actions.push(optimization);
+    return optimization;
+  }
+
+  getDecisionTraces() {
+    return this.decisionTraces.slice();
   }
 
   // ── Run all optimization checks ──
   async analyze(campaignData, adSetData, adData, campaignInsights, adSetInsights, adInsights, revenueData, revenueSource = null, cogsData = null) {
     const rules = this.getRules();
     this.actions = [];
+    this.decisionTraces = [];
     const referenceDate = getTodayInTimeZone();
+    const budgetPolicy = this.budgetPolicy || buildDefaultChampionPolicy(rules);
     const profitContext = buildProfitContext(campaignInsights, revenueData, cogsData, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), {
       minCoverageRatio: MIN_PROFIT_COVERAGE_RATIO,
       includeCurrentDay: false,
@@ -373,10 +398,10 @@ class OptimizationEngine {
     console.log(`[OPTIMIZER] Starting scan ${this.scanId}...`);
 
     // 1. Campaign-level optimizations
-    this.analyzeCampaigns(campaignData, campaignInsights, campaignEconomics, referenceDate, campaignRiskContext);
+    this.analyzeCampaigns(campaignData, campaignInsights, campaignEconomics, referenceDate, campaignRiskContext, adSetData, budgetPolicy);
 
     // 2. Ad set-level optimizations
-    this.analyzeAdSets(adSetData, adSetInsights, campaignData);
+    this.analyzeAdSets(adSetData, adSetInsights, campaignData, budgetPolicy);
 
     // 3. Ad-level optimizations (fatigue, creative performance)
     this.analyzeAds(adData, adInsights);
@@ -397,8 +422,17 @@ class OptimizationEngine {
   }
 
   // ── 1. Campaign-Level Analysis ──
-  analyzeCampaigns(campaigns, insights, campaignEconomicsContext = null, referenceDate = getTodayInTimeZone(), campaignRiskContext = null) {
+  analyzeCampaigns(
+    campaigns,
+    insights,
+    campaignEconomicsContext = null,
+    referenceDate = getTodayInTimeZone(),
+    campaignRiskContext = null,
+    adSets = [],
+    budgetPolicy = null
+  ) {
     const rules = this.getRules();
+    const activeBudgetPolicy = budgetPolicy || this.budgetPolicy || buildDefaultChampionPolicy(rules);
     const campaignEconomicsById = new Map(
       (campaignEconomicsContext?.campaigns || []).map(campaign => [String(campaign.campaignId), campaign])
     );
@@ -420,15 +454,85 @@ class OptimizationEngine {
       const hasDecisionData = evidence.observationDays >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
       const riskSnapshot = campaignRiskContext?.get(String(campaign.id)) || null;
       const trendContext = this.buildScaleTrendContext(cInsights, rules);
+      const campaignEconomics = campaignEconomicsById.get(String(campaign.id)) || null;
+      const weekdayScaleContext = buildWeekdayScaleContext(campaignHistory, rules, referenceDate, {
+        lookbackDays: SCHEDULE_LOOKBACK_DAYS,
+        cautionRatio: WEEKDAY_SCALE_CAUTION_RATIO,
+        suppressRatio: WEEKDAY_SCALE_SUPPRESS_RATIO,
+        includeCurrentDay: false,
+      });
+      const controlSurface = classifyControlSurface({
+        level: 'campaign',
+        campaign,
+        adSets,
+      });
+      const budgetSnapshot = {
+        targetId: campaign.id,
+        targetName: campaign.name,
+        targetLevel: 'campaign',
+        currentBudgetCents: Number.parseInt(campaign.daily_budget || campaign.dailyBudget || 0, 10),
+        avgCpa: avgCPA,
+        spend: totalSpend,
+        purchases: totalPurchases,
+        evidence,
+        economics: {
+          targetCpa: campaignEconomics?.targetCpa ?? null,
+          breakEvenCpa: campaignEconomics?.breakEvenCpa ?? null,
+          estimatedRevenue: campaignEconomics?.estimatedRevenue ?? 0,
+          estimatedTrueNetProfit: campaignEconomics?.estimatedTrueNetProfit ?? 0,
+          estimatedMargin: campaignEconomics?.estimatedMargin ?? 0,
+          coverageRatio: campaignEconomics?.coverageRatio ?? (campaignEconomics?.hasReliableEstimate ? 1 : 0),
+          confidence: campaignEconomics?.confidence ?? 'low',
+          confidenceLabel: campaignEconomics?.confidenceLabel ?? 'Low confidence',
+          hasReliableEstimate: campaignEconomics?.hasReliableEstimate ?? false,
+        },
+        weekday: weekdayScaleContext,
+        trend: trendContext,
+        risk: {
+          activeCampaignCount: riskSnapshot?.activeCampaignCount ?? 0,
+          activeAdCount: riskSnapshot?.activeAdCount ?? 0,
+          severeFatigueBlock: Boolean(riskSnapshot?.severeFatigueBlock),
+          hasConcentrationRisk: Boolean(riskSnapshot?.hasConcentrationRisk),
+          hasCreativeDepthRisk: Boolean(riskSnapshot?.hasCreativeDepthRisk),
+          fatiguedAds: riskSnapshot?.fatiguedAds ?? [],
+        },
+        controlSurface,
+        reviewWindowHours: 72,
+        timestamp: new Date().toISOString(),
+      };
+      const budgetEvaluation = evaluateBudgetSnapshot(budgetSnapshot, activeBudgetPolicy, rules);
+      const budgetTrace = createDecisionTrace({
+        scanId: this.scanId,
+        mode: 'champion',
+        policy: activeBudgetPolicy,
+        snapshot: budgetSnapshot,
+        evaluation: budgetEvaluation,
+      });
+      this.decisionTraces.push(budgetTrace);
 
-      // Rule: High CPA warning
-      if (hasDecisionData && avgCPA && avgCPA > rules.cpaWarningThreshold) {
-        this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', campaign.id, campaign.name,
-          `Reduce daily budget by ${Math.min(rules.maxBudgetChangePercent, 15)}%`,
-          `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} (above $${rules.cpaWarningThreshold} threshold)`,
-          `Expected to reduce wasted spend by ~$${(totalSpend * 0.15 / cInsights.length).toFixed(2)}/day`,
-          avgCPA > rules.cpaPauseThreshold ? 'critical' : 'high'
+      if (budgetEvaluation.shouldCreateOptimization && budgetEvaluation.verdict === 'reduce') {
+        const targetCpaSuffix = campaignEconomics?.targetCpa
+          ? ` versus estimated target CPA $${campaignEconomics.targetCpa.toFixed(2)}`
+          : '';
+        const budgetAction = this.addAction(
+          OPTIMIZATION_TYPES.BUDGET,
+          'campaign',
+          campaign.id,
+          campaign.name,
+          `Reduce daily budget by ${budgetEvaluation.actionPercent}%`,
+          `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)}${targetCpaSuffix}. ${budgetEvaluation.reasoning}`,
+          budgetEvaluation.impactSummary,
+          budgetEvaluation.priority,
+          {
+            policyVersionId: activeBudgetPolicy.id,
+            traceId: budgetTrace.traceId,
+            controlSurface,
+            decisionVerdict: budgetEvaluation.verdict,
+            decisionActionPercent: budgetEvaluation.actionPercent,
+            traceActionPercent: budgetEvaluation.actionPercent,
+          }
         );
+        budgetTrace.optimizationId = budgetAction.id;
       }
 
       // Rule: CPA too high — pause campaign
@@ -441,47 +545,42 @@ class OptimizationEngine {
         );
       }
 
-      // Rule: Campaign performing well — increase budget
-      const campaignEconomics = campaignEconomicsById.get(String(campaign.id)) || null;
-      const weekdayScaleContext = buildWeekdayScaleContext(campaignHistory, rules, referenceDate, {
-        lookbackDays: SCHEDULE_LOOKBACK_DAYS,
-        cautionRatio: WEEKDAY_SCALE_CAUTION_RATIO,
-        suppressRatio: WEEKDAY_SCALE_SUPPRESS_RATIO,
-        includeCurrentDay: false,
-      });
-
-      const scaleDecision = this.buildScaleDecision({
-        campaign,
-        totals,
-        evidence,
-        rules,
-        campaignEconomics,
-        weekdayScaleContext,
-        trendContext,
-        riskSnapshot,
-      });
-
-      if (hasDecisionData && scaleDecision.shouldScale) {
+      if (budgetEvaluation.shouldCreateOptimization && budgetEvaluation.verdict === 'scale') {
         const confidenceLabel = campaignEconomics?.confidenceLabel || `${campaignEconomics?.confidence || 'low'} confidence`;
         const confidencePrefix = campaignEconomics?.confidence === 'high'
           ? 'Campaign contribution estimate is'
           : 'Directional campaign contribution estimate is';
-        const caveatSuffix = scaleDecision.cautions.length > 0
-          ? ` Scale caveats: ${scaleDecision.cautions.join('; ')}.`
+        const caveatSuffix = budgetEvaluation.cautions.length > 0
+          ? ` Scale caveats: ${budgetEvaluation.cautions.join('; ')}.`
           : '';
-        const targetCpaSuffix = scaleDecision.dynamicTargetCpa > 0
-          ? ` versus estimated target CPA $${scaleDecision.dynamicTargetCpa.toFixed(2)}`
+        const targetCpaSuffix = campaignEconomics?.targetCpa > 0
+          ? ` versus estimated target CPA $${campaignEconomics.targetCpa.toFixed(2)}`
           : '';
-        const breakEvenSuffix = scaleDecision.breakEvenCpa
-          ? ` and break-even CPA $${scaleDecision.breakEvenCpa.toFixed(2)}`
+        const breakEvenSuffix = campaignEconomics?.breakEvenCpa
+          ? ` and break-even CPA $${campaignEconomics.breakEvenCpa.toFixed(2)}`
           : '';
-        const scaleReason = `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)}${targetCpaSuffix}${breakEvenSuffix}, with ${totalPurchases} Meta-attributed purchases. ${confidencePrefix} ₩${campaignEconomics.estimatedTrueNetProfit.toLocaleString()} on ₩${campaignEconomics.estimatedRevenue.toLocaleString()} estimated attributable revenue at ${(campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin (${confidenceLabel.toLowerCase()} daily AOV proxy).${caveatSuffix}`;
-        this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', campaign.id, campaign.name,
-          `Increase daily budget by $${(scaleDecision.increase / 100).toFixed(2)} (${scaleDecision.increasePercent}%)`,
-          scaleReason,
-          `Estimated +${scaleDecision.impactRange.min} to +${scaleDecision.impactRange.max} Meta-attributed purchases/day if CPA holds. Review after 48-72 hours.`,
-          scaleDecision.priority
+        const impactRange = this.buildScaleImpactRange(
+          budgetEvaluation.actionDollars,
+          avgCPA,
+          budgetEvaluation.cautions.length + budgetEvaluation.penalties.length,
+          budgetEvaluation.confidence
         );
+        const scaleReason = `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)}${targetCpaSuffix}${breakEvenSuffix}, with ${totalPurchases} Meta-attributed purchases. ${confidencePrefix} ₩${campaignEconomics.estimatedTrueNetProfit.toLocaleString()} on ₩${campaignEconomics.estimatedRevenue.toLocaleString()} estimated attributable revenue at ${(campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin (${confidenceLabel.toLowerCase()} daily AOV proxy).${caveatSuffix}`;
+        const budgetAction = this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', campaign.id, campaign.name,
+          `Increase daily budget by $${budgetEvaluation.actionDollars.toFixed(2)} (${budgetEvaluation.actionPercent}%)`,
+          scaleReason,
+          `Estimated +${impactRange.min} to +${impactRange.max} Meta-attributed purchases/day if CPA holds. Review after 48-72 hours.`,
+          budgetEvaluation.priority,
+          {
+            policyVersionId: activeBudgetPolicy.id,
+            traceId: budgetTrace.traceId,
+            controlSurface,
+            decisionVerdict: budgetEvaluation.verdict,
+            decisionActionPercent: budgetEvaluation.actionPercent,
+            traceActionPercent: budgetEvaluation.actionPercent,
+          }
+        );
+        budgetTrace.optimizationId = budgetAction.id;
       }
 
       // Rule: High frequency warning (audience saturation)
@@ -497,8 +596,9 @@ class OptimizationEngine {
   }
 
   // ── 2. Ad Set-Level Analysis ──
-  analyzeAdSets(adSets, insights, campaigns) {
+  analyzeAdSets(adSets, insights, campaigns, budgetPolicy = null) {
     const rules = this.getRules();
+    const activeBudgetPolicy = budgetPolicy || this.budgetPolicy || buildDefaultChampionPolicy(rules);
     for (const adSet of adSets) {
       if (adSet.effective_status !== 'ACTIVE') continue;
 
@@ -509,7 +609,61 @@ class OptimizationEngine {
       const totalSpend = totals.spend;
       const totalPurchases = totals.purchases;
       const avgCPA = totals.cpa;
-      const hasDecisionData = asInsights.length >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
+      const evidence = this.buildDecisionEvidence(asInsights, totals);
+      const hasDecisionData = evidence.observationDays >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
+      const parentCampaign = campaigns.find(c => c.id === adSet.campaign_id);
+      const campaignInsights = parentCampaign
+        ? filterRecentInsights(insights, 'campaign_id', adSet.campaign_id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS)
+        : [];
+      const campaignTotals = summarizeInsights(campaignInsights);
+      const controlSurface = classifyControlSurface({
+        level: 'adset',
+        campaign: parentCampaign,
+        adSet,
+      });
+      const budgetSnapshot = {
+        targetId: adSet.id,
+        targetName: adSet.name,
+        targetLevel: 'adset',
+        currentBudgetCents: Number.parseInt(adSet?.daily_budget || 0, 10),
+        avgCpa: avgCPA,
+        spend: totalSpend,
+        purchases: totalPurchases,
+        evidence,
+        economics: {
+          targetCpa: campaignTotals?.cpa ?? null,
+          breakEvenCpa: null,
+          estimatedRevenue: 0,
+          estimatedTrueNetProfit: 0,
+          estimatedMargin: 0,
+          coverageRatio: 0,
+          confidence: 'low',
+          confidenceLabel: 'Low confidence',
+          hasReliableEstimate: false,
+        },
+        weekday: { status: 'neutral', reason: '' },
+        trend: { status: 'neutral', reason: '' },
+        risk: {
+          activeCampaignCount: 0,
+          activeAdCount: 0,
+          severeFatigueBlock: false,
+          hasConcentrationRisk: false,
+          hasCreativeDepthRisk: false,
+          fatiguedAds: [],
+        },
+        controlSurface,
+        reviewWindowHours: 72,
+        timestamp: new Date().toISOString(),
+      };
+      const budgetEvaluation = evaluateBudgetSnapshot(budgetSnapshot, activeBudgetPolicy, rules);
+      const budgetTrace = createDecisionTrace({
+        scanId: this.scanId,
+        mode: 'champion',
+        policy: activeBudgetPolicy,
+        snapshot: budgetSnapshot,
+        evaluation: budgetEvaluation,
+      });
+      this.decisionTraces.push(budgetTrace);
 
       // Rule: Ad set spending with zero conversions
       if (hasDecisionData && totalPurchases === 0) {
@@ -539,21 +693,25 @@ class OptimizationEngine {
         }
       }
 
-      // Rule: Ad set CPA much higher than campaign average
-      const parentCampaign = campaigns.find(c => c.id === adSet.campaign_id);
-      if (parentCampaign && hasDecisionData && avgCPA) {
-        const campaignInsights = filterRecentInsights(insights, 'campaign_id', adSet.campaign_id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
-        const campaignTotals = summarizeInsights(campaignInsights);
-        const campaignCPA = campaignTotals.cpa;
-
-        if (campaignCPA && avgCPA > campaignCPA * 1.5) {
-          this.addAction(OPTIMIZATION_TYPES.BUDGET, 'adset', adSet.id, adSet.name,
-            `Reduce budget — CPA ${((avgCPA / campaignCPA - 1) * 100).toFixed(0)}% above campaign average`,
-            `Ad set CPA: $${avgCPA.toFixed(2)} vs campaign avg: $${campaignCPA.toFixed(2)}`,
-            `Reallocate budget to better performing ad sets`,
-            'high'
-          );
-        }
+      if (budgetEvaluation.shouldCreateOptimization && budgetEvaluation.verdict === 'reduce') {
+        const campaignCpaSuffix = campaignTotals?.cpa
+          ? ` vs campaign avg $${campaignTotals.cpa.toFixed(2)}`
+          : '';
+        const budgetAction = this.addAction(OPTIMIZATION_TYPES.BUDGET, 'adset', adSet.id, adSet.name,
+          `Reduce daily budget by ${budgetEvaluation.actionPercent}%`,
+          `Ad set CPA is $${avgCPA.toFixed(2)}${campaignCpaSuffix}. ${budgetEvaluation.reasoning}`,
+          budgetEvaluation.impactSummary,
+          budgetEvaluation.priority,
+          {
+            policyVersionId: activeBudgetPolicy.id,
+            traceId: budgetTrace.traceId,
+            controlSurface,
+            decisionVerdict: budgetEvaluation.verdict,
+            decisionActionPercent: budgetEvaluation.actionPercent,
+            traceActionPercent: budgetEvaluation.actionPercent,
+          }
+        );
+        budgetTrace.optimizationId = budgetAction.id;
       }
     }
   }
@@ -781,6 +939,28 @@ class OptimizationEngine {
         const entities = action.level === 'campaign' ? await meta.getCampaigns() : await meta.getAdSets();
         const entity = entities.find(item => item.id === action.targetId);
         const currentBudget = Number.parseInt(entity?.daily_budget || 0, 10);
+        const explicitPercent = Number(action.decisionActionPercent || action.traceActionPercent || 0);
+        const actionPercent = explicitPercent > 0
+          ? explicitPercent
+          : parseActionPercent(action.action, rules.maxBudgetChangePercent);
+
+        if (!entity) {
+          action.executed = false;
+          action.executionResult = `Failed: ${action.level} not found in Meta`;
+          return action;
+        }
+
+        if (action.level === 'adset' && !entity?.daily_budget) {
+          action.executed = false;
+          action.executionResult = 'Failed: ad set budget is controlled at campaign level';
+          return action;
+        }
+
+        if (entity?.lifetime_budget && !entity?.daily_budget) {
+          action.executed = false;
+          action.executionResult = `Failed: ${action.level} uses lifetime budget, not daily budget`;
+          return action;
+        }
 
         if (!Number.isFinite(currentBudget) || currentBudget <= 0) {
           action.executed = false;
@@ -790,15 +970,43 @@ class OptimizationEngine {
 
         let newBudget = currentBudget;
         if (isBudgetDecreaseAction(action.action)) {
-          const match = action.action.match(/(\d+)%/);
-          const pct = match ? parseInt(match[1], 10) : rules.maxBudgetChangePercent;
-          newBudget = Math.max(100, Math.round(currentBudget * (1 - pct / 100)));
+          newBudget = Math.max(100, Math.round(currentBudget * (1 - actionPercent / 100)));
         } else if (isBudgetIncreaseAction(action.action)) {
-          newBudget = Math.round(currentBudget * (1 + rules.maxBudgetChangePercent / 100));
+          newBudget = Math.round(currentBudget * (1 + actionPercent / 100));
         } else {
           action.executed = false;
           action.executionResult = 'Suggestion only — unsupported budget action';
           return action;
+        }
+
+        if (action.level === 'campaign') {
+          const account = await meta.getAdAccount();
+          const accountStatus = Number.parseInt(account?.account_status, 10);
+          const disableReason = Number.parseInt(account?.disable_reason, 10);
+          const minCampaignBudget = Number.parseInt(account?.min_campaign_group_spend_cap || 0, 10);
+
+          if (Number.isFinite(accountStatus) && accountStatus !== 1) {
+            action.executed = false;
+            action.executionResult = `Failed: ad account status ${accountStatus} blocks campaign budget updates`;
+            return action;
+          }
+
+          if (Number.isFinite(disableReason) && disableReason !== 0) {
+            action.executed = false;
+            action.executionResult = `Failed: ad account disable reason ${disableReason} blocks campaign budget updates`;
+            return action;
+          }
+
+          if (
+            isBudgetDecreaseAction(action.action)
+            && Number.isFinite(minCampaignBudget)
+            && minCampaignBudget > 0
+            && newBudget < minCampaignBudget
+          ) {
+            action.executed = false;
+            action.executionResult = `Failed: requested campaign budget falls below Meta minimum of $${(minCampaignBudget / 100).toFixed(2)}/day`;
+            return action;
+          }
         }
 
         result = action.level === 'campaign'
@@ -834,10 +1042,49 @@ class OptimizationEngine {
 
       action.executed = true;
       action.executionResult = result ? 'Success' : 'No action taken';
+      if (action.executed) {
+        policyLabService.seedBudgetOutcomeFromAction(action);
+        observabilityService.captureMessage(
+          `Optimization executed: ${action.action}`,
+          'info',
+          {
+            category: 'optimizer.execution',
+            title: 'Optimization executed',
+            tags: {
+              optimization_type: action.type,
+              optimization_level: action.level,
+              policy_version: action.policyVersionId || 'manual',
+              control_surface: action.controlSurface || 'unknown',
+              decision_verdict: action.decisionVerdict || 'unknown',
+            },
+            data: {
+              targetId: action.targetId,
+              targetName: action.targetName,
+              traceId: action.traceId || null,
+            },
+          }
+        );
+      }
       console.log(`[OPTIMIZER] Executed: ${action.action} → ${action.executionResult}`);
     } catch (err) {
       action.executed = false;
       action.executionResult = `Failed: ${err.message}`;
+      observabilityService.captureException(err, {
+        category: 'optimizer.execution',
+        title: 'Optimization execution failed',
+        tags: {
+          optimization_type: action.type,
+          optimization_level: action.level,
+          policy_version: action.policyVersionId || 'manual',
+          control_surface: action.controlSurface || 'unknown',
+        },
+        data: {
+          targetId: action.targetId,
+          targetName: action.targetName,
+          traceId: action.traceId || null,
+          action: action.action,
+        },
+      });
       console.error(`[OPTIMIZER] Execution failed: ${err.message}`);
     }
 

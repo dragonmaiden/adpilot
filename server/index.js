@@ -21,6 +21,7 @@ const campaignService = require('./services/campaignService');
 const postmortemService = require('./services/postmortemService');
 const recommendationQualityService = require('./services/recommendationQualityService');
 const aiOperationsService = require('./services/aiOperationsService');
+const policyLabService = require('./services/policyLabService');
 const analyticsService = require('./services/analyticsService');
 const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
@@ -29,6 +30,7 @@ const operatorSummaryService = require('./services/operatorSummaryService');
 const briefService = require('./services/briefService');
 const cogsAutofillService = require('./services/cogsAutofillService');
 const imwebAppInstallService = require('./services/imwebAppInstallService');
+const observabilityService = require('./services/observabilityService');
 const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
 
 function isValidMetaId(id) {
@@ -37,6 +39,14 @@ function isValidMetaId(id) {
 
 function handleInternalError(req, res, err) {
   console.error(`[API] ${req.method} ${req.path} error:`, err);
+  observabilityService.captureException(err, {
+    category: 'api.error',
+    title: `${req.method} ${req.path} failed`,
+    tags: {
+      method: req.method,
+      path: req.path,
+    },
+  });
   res.status(500).json({ error: 'Internal server error' });
 }
 
@@ -160,6 +170,9 @@ if (runtimePaths.usedFallback) {
 } else {
   console.log(`[INIT] Data directory ready: ${DATA_DIR}`);
 }
+
+observabilityService.initObservability('adpilot-server');
+policyLabService.ensureInitialized(runtimeSettings.getRules());
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || `http://localhost:${config.server.port}`;
 const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY;
@@ -736,6 +749,46 @@ app.get('/api/recommendation-quality', (req, res) => {
 
 app.get('/api/ai-operations', (req, res) => {
   res.json(aiOperationsService.getAiOperationsResponse());
+});
+
+app.get('/api/policy-lab', (req, res) => {
+  res.json(contracts.policyLab(policyLabService.getPolicyLabResponse()));
+});
+
+app.get('/api/policy-lab/experiments', (req, res) => {
+  res.json(contracts.policyLabExperiments(policyLabService.getExperimentsResponse()));
+});
+
+app.get('/api/policy-lab/traces', (req, res) => {
+  res.json(contracts.policyLabTraces(policyLabService.getTracesResponse()));
+});
+
+app.get('/api/policy-lab/outcomes', (req, res) => {
+  res.json(contracts.policyLabOutcomes(policyLabService.getOutcomesResponse()));
+});
+
+app.get('/api/policy-lab/observability', (req, res) => {
+  res.json(contracts.policyLabObservability(policyLabService.getObservabilityResponse()));
+});
+
+app.get('/api/karpathy', (req, res) => {
+  res.json(contracts.policyLab(policyLabService.getPolicyLabResponse()));
+});
+
+app.get('/api/karpathy/experiments', (req, res) => {
+  res.json(contracts.policyLabExperiments(policyLabService.getExperimentsResponse()));
+});
+
+app.get('/api/karpathy/traces', (req, res) => {
+  res.json(contracts.policyLabTraces(policyLabService.getTracesResponse()));
+});
+
+app.get('/api/karpathy/outcomes', (req, res) => {
+  res.json(contracts.policyLabOutcomes(policyLabService.getOutcomesResponse()));
+});
+
+app.get('/api/karpathy/observability', (req, res) => {
+  res.json(contracts.policyLabObservability(policyLabService.getObservabilityResponse()));
 });
 
 // ── Optimization Timeline (for micro-adjustment chart) ──

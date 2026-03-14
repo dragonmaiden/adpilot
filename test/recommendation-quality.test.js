@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 async function withMockedService(overrides, run) {
   const servicePath = require.resolve('../server/services/recommendationQualityService');
   const dependencyEntries = [
-    [require.resolve('../server/modules/scheduler'), overrides.scheduler],
+    [require.resolve('../server/modules/scanStore'), overrides.scanStore],
     [require.resolve('../server/contracts/v1'), overrides.contracts],
   ];
 
@@ -48,7 +48,7 @@ test('recommendation quality summarizes recent churn, open approvals, and stale 
 
   try {
     await withMockedService({
-      scheduler: {
+      scanStore: {
         getAllOptimizations: () => ([
           {
             id: 'opt-open',

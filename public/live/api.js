@@ -82,6 +82,26 @@
     return api('/ai-operations');
   }
 
+  function fetchPolicyLab() {
+    return api('/karpathy');
+  }
+
+  function fetchPolicyLabExperiments() {
+    return api('/karpathy/experiments');
+  }
+
+  function fetchPolicyLabTraces() {
+    return api('/karpathy/traces');
+  }
+
+  function fetchPolicyLabOutcomes() {
+    return api('/karpathy/outcomes');
+  }
+
+  function fetchPolicyLabObservability() {
+    return api('/karpathy/observability');
+  }
+
   function fetchAnalytics() {
     return api('/analytics');
   }
@@ -139,6 +159,11 @@
     fetchOverview,
     fetchOptimizations,
     fetchAiOperations,
+    fetchPolicyLab,
+    fetchPolicyLabExperiments,
+    fetchPolicyLabTraces,
+    fetchPolicyLabOutcomes,
+    fetchPolicyLabObservability,
     fetchAnalytics,
     fetchCalendarAnalysis,
     fetchCampaigns,

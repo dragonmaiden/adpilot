@@ -6,12 +6,14 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "policy-lab": "node server/workers/policyLabWorker.js"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@sentry/node": "^10.43.0",
     "adm-zip": "^0.5.16",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",

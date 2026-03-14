@@ -232,6 +232,9 @@ function optimizations({ total, showing, optimizations: opts, stats }) {
       status: o.status ?? 'unknown',
       timestamp: o.timestamp ?? null,
       scanId: o.scanId ?? null,
+      policyVersionId: o.policyVersionId ?? null,
+      traceId: o.traceId ?? null,
+      controlSurface: o.controlSurface ?? null,
     })),
     stats: {
       byType: stats?.byType ?? {},
@@ -278,6 +281,41 @@ function aiOperations({ generatedAt, windowHours, latestScanId, summary, quality
     activity: activity ?? [],
     decisionMarkers: decisionMarkers ?? [],
     clusters: clusters ?? [],
+  };
+}
+
+function policyLab(data) {
+  return {
+    apiVersion: API_VERSION,
+    ...data,
+  };
+}
+
+function policyLabExperiments(data) {
+  return {
+    apiVersion: API_VERSION,
+    ...data,
+  };
+}
+
+function policyLabTraces(data) {
+  return {
+    apiVersion: API_VERSION,
+    ...data,
+  };
+}
+
+function policyLabOutcomes(data) {
+  return {
+    apiVersion: API_VERSION,
+    ...data,
+  };
+}
+
+function policyLabObservability(data) {
+  return {
+    apiVersion: API_VERSION,
+    ...data,
   };
 }
 
@@ -427,6 +465,11 @@ module.exports = {
   optimizations,
   recommendationQuality,
   aiOperations,
+  policyLab,
+  policyLabExperiments,
+  policyLabTraces,
+  policyLabOutcomes,
+  policyLabObservability,
   scans,
   spendDaily,
   reconciliation,

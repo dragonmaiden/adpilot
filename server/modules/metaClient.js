@@ -49,6 +49,11 @@ async function metaApiPaginated(endpoint, params = {}) {
 // READ OPERATIONS
 // ═══════════════════════════════════════════════
 
+// Get ad account status and budget constraints
+async function getAdAccount(fields = 'id,account_status,disable_reason,currency,timezone_name,timezone_offset_hours_utc,amount_spent,balance,spend_cap,min_campaign_group_spend_cap') {
+  return metaApi(`/${AD_ACCOUNT}`, 'GET', { fields });
+}
+
 // Get all campaigns with status and budgets
 async function getCampaigns() {
   return metaApiPaginated(`/${AD_ACCOUNT}/campaigns`, {
@@ -190,6 +195,7 @@ async function updateCampaignBidStrategy(campaignId, bidStrategy) {
 
 module.exports = {
   // Read
+  getAdAccount,
   getCampaigns,
   getAdSets,
   getAds,

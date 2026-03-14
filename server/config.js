@@ -117,6 +117,13 @@ const config = {
     chatId: process.env.TELEGRAM_CHAT_ID,
   },
 
+  // Observability
+  sentry: {
+    dsn: process.env.SENTRY_DSN || '',
+    environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
+    release: process.env.SENTRY_RELEASE || process.env.RENDER_GIT_COMMIT || process.env.npm_package_version || 'local',
+  },
+
   // Server
   server: {
     port: parseInt(process.env.PORT || '3001', 10),

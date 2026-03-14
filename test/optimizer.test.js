@@ -265,3 +265,30 @@ test('analyzeBudgetReallocation follows contribution estimates instead of issuin
   assert.match(engine.actions[0].reason, /estimated contribution/i);
   assert.match(engine.actions[0].action, /Reallocate \$45\.00\/day/);
 });
+
+test('analyzeAdSets skips budget reduction actions when the ad set budget is controlled at campaign level', () => {
+  const engine = new OptimizationEngine(11);
+  const adSets = [
+    {
+      id: 'as1',
+      name: 'CBO Ad Set',
+      campaign_id: 'c1',
+      effective_status: 'ACTIVE',
+    },
+  ];
+  const campaigns = [
+    { id: 'c1', name: 'Campaign Alpha' },
+  ];
+  const insights = [
+    { adset_id: 'as1', campaign_id: 'c1', date_start: '2026-03-08', spend: '30', actions: createActions(1) },
+    { adset_id: 'as1', campaign_id: 'c1', date_start: '2026-03-09', spend: '30', actions: createActions(1) },
+    { adset_id: 'as1', campaign_id: 'c1', date_start: '2026-03-10', spend: '30', actions: createActions(1) },
+    { adset_id: 'as2', campaign_id: 'c1', date_start: '2026-03-08', spend: '30', actions: createActions(5) },
+    { adset_id: 'as2', campaign_id: 'c1', date_start: '2026-03-09', spend: '30', actions: createActions(5) },
+    { adset_id: 'as2', campaign_id: 'c1', date_start: '2026-03-10', spend: '30', actions: createActions(5) },
+  ];
+
+  engine.analyzeAdSets(adSets, insights, campaigns);
+
+  assert.equal(engine.actions.length, 0);
+});

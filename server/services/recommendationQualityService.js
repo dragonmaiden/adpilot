@@ -1,4 +1,4 @@
-const scheduler = require('../modules/scheduler');
+const scanStore = require('../modules/scanStore');
 const contracts = require('../contracts/v1');
 const {
   getApprovalDedupKey,
@@ -79,7 +79,7 @@ function getRecommendationQualityResponse() {
   const nowMs = Date.now();
   const windowMs = WINDOW_HOURS * 60 * 60 * 1000;
   const staleAlertMs = STALE_ALERT_HOURS * 60 * 60 * 1000;
-  const optimizations = scheduler.getAllOptimizations() || [];
+  const optimizations = scanStore.getAllOptimizations() || [];
   const recentOptimizations = optimizations.filter(opt => isRecent(opt, nowMs, windowMs));
   const recentScaleRecommendations = recentOptimizations
     .filter(opt => opt.type === 'budget' && opt.level === 'campaign' && isBudgetIncreaseAction(opt.action))
