@@ -6,10 +6,49 @@
   }
 
   const API_BASE = window.location.origin + '/api';
+  const API_KEY_STORAGE_KEY = 'adpilot_key';
   let apiKeyPrompted = false;
 
+  function readStorage(storage, key) {
+    try {
+      return storage.getItem(key) || '';
+    } catch (err) {
+      return '';
+    }
+  }
+
+  function writeStorage(storage, key, value) {
+    try {
+      if (value) {
+        storage.setItem(key, value);
+      } else {
+        storage.removeItem(key);
+      }
+    } catch (err) {
+      // Ignore storage write failures and fall back to in-memory prompt flow.
+    }
+  }
+
   function getApiKey() {
-    return (sessionStorage.getItem('adpilot_key') || '').trim();
+    const sessionKey = readStorage(window.sessionStorage, API_KEY_STORAGE_KEY).trim();
+    if (sessionKey) return sessionKey;
+
+    const persistedKey = readStorage(window.localStorage, API_KEY_STORAGE_KEY).trim();
+    if (persistedKey) {
+      writeStorage(window.sessionStorage, API_KEY_STORAGE_KEY, persistedKey);
+    }
+    return persistedKey;
+  }
+
+  function storeApiKey(key) {
+    const trimmed = String(key || '').trim();
+    writeStorage(window.sessionStorage, API_KEY_STORAGE_KEY, trimmed);
+    writeStorage(window.localStorage, API_KEY_STORAGE_KEY, trimmed);
+  }
+
+  function clearApiKey() {
+    writeStorage(window.sessionStorage, API_KEY_STORAGE_KEY, '');
+    writeStorage(window.localStorage, API_KEY_STORAGE_KEY, '');
   }
 
   function promptForApiKey() {
@@ -19,7 +58,7 @@
     const key = window.prompt('Enter your AdPilot API key:');
     const trimmed = key ? key.trim() : '';
     if (trimmed) {
-      sessionStorage.setItem('adpilot_key', trimmed);
+      storeApiKey(trimmed);
       window.location.reload();
     }
   }
@@ -48,7 +87,8 @@
         timeoutId = null;
       }
       if (res.status === 401) {
-        sessionStorage.removeItem('adpilot_key');
+        clearApiKey();
+        apiKeyPrompted = false;
         promptForApiKey();
         return null;
       }
