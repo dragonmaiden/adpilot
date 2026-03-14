@@ -173,6 +173,7 @@ if (runtimePaths.usedFallback) {
 
 observabilityService.initObservability('adpilot-server');
 policyLabService.ensureInitialized(runtimeSettings.getRules());
+policyLabService.runResearchIteration(runtimeSettings.getRules());
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || `http://localhost:${config.server.port}`;
 const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY;

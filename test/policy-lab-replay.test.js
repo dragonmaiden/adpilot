@@ -95,3 +95,34 @@ test('runStructuredSearch can surface a promotion-ready challenger when replay s
   assert.ok(research.experiments.length > 0);
   assert.ok(research.experiments.some(experiment => experiment.status === 'promotion_ready'));
 });
+
+test('runStructuredSearch falls back to bootstrap replay from live traces when no outcomes exist yet', () => {
+  const rules = {
+    maxBudgetChangePercent: 20,
+    cpaWarningThreshold: 30,
+    cpaPauseThreshold: 50,
+    minSpendForDecision: 20,
+  };
+  const championPolicy = buildDefaultChampionPolicy(rules);
+  const snapshot = createSnapshot();
+  const championDecision = evaluateBudgetSnapshot(snapshot, championPolicy, rules);
+  const championTrace = createDecisionTrace({
+    scanId: 1001,
+    mode: 'champion',
+    policy: championPolicy,
+    snapshot,
+    evaluation: championDecision,
+  });
+
+  const research = runStructuredSearch({
+    championPolicy,
+    traces: [championTrace],
+    outcomes: [],
+    rules,
+  });
+
+  assert.equal(research.scoreMode, 'bootstrap_proxy');
+  assert.equal(research.replaySampleSize, 1);
+  assert.ok(research.experiments.length > 0);
+  assert.ok(research.experiments.every(experiment => experiment.scoreMode === 'bootstrap_proxy'));
+});

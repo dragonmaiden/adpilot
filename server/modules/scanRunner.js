@@ -420,6 +420,7 @@ async function runScan(manual = false) {
       );
       const championTraces = optimizer.getDecisionTraces();
       policyLabService.recordDecisionTraces(championTraces);
+      const researchResult = policyLabService.runResearchIteration(runtimeSettings.getRules());
       const shadowResult = policyLabService.runShadowEvaluation({
         scanId,
         championTraces,
@@ -442,6 +443,9 @@ async function runScan(manual = false) {
         status: 'ok',
         totalOptimizations: optimizations.length,
         budgetDecisionTraces: championTraces.length,
+        policyLabCandidates: researchResult.experiments.length,
+        policyLabReplaySamples: researchResult.replaySampleSize,
+        policyLabScoreMode: researchResult.scoreMode,
         shadowEvaluations: shadowResult.challengerTraces.length,
         suppressedArbitratedActions: arbitrated.suppressed.length,
         suppressedDuplicateApprovals: deduped.suppressed.length,

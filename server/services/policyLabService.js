@@ -80,7 +80,7 @@ function getActiveShadowPolicy() {
   }
 
   const fallback = policies
-    .filter(policy => ['challenger', 'promotion_ready'].includes(policy.status))
+    .filter(policy => ['active_candidate', 'challenger', 'promotion_ready'].includes(policy.status))
     .sort((left, right) => asNumber(right.scoreSummary?.improvementRatio, 0) - asNumber(left.scoreSummary?.improvementRatio, 0));
   return fallback[0] || null;
 }
@@ -143,11 +143,11 @@ function runShadowEvaluation({ scanId, championTraces, rules = {} }) {
   policyLabStore.addShadowDecisionLogs(shadowLogs);
 
   observabilityService.captureMessage(
-    `Shadow evaluation completed for ${challengerTraces.length} budget traces`,
+    `Live comparison completed for ${challengerTraces.length} budget traces`,
     'info',
     {
-      category: 'policy_lab.shadow',
-      title: 'Shadow evaluation completed',
+      category: 'policy_lab.live_compare',
+      title: 'Live comparison completed',
       tags: {
         challenger_policy: candidatePolicy.id,
         scan_id: scanId,
@@ -339,7 +339,7 @@ function createExperimentMarkers(experiments) {
       kind: experiment.status === 'promotion_ready' ? 'promoted' : 'challenger',
       title: experiment.status === 'promotion_ready' ? 'Promotion-ready challenger' : 'Challenger evaluated',
       detail: experiment.replaySummary?.sampleSize
-        ? `${experiment.replaySummary.sampleSize} replay samples · ${(asNumber(experiment.replaySummary.improvementRatio, 0) * 100).toFixed(1)}% improvement`
+        ? `${experiment.replaySummary.sampleSize} ${experiment.scoreMode === 'bootstrap_proxy' ? 'bootstrap' : 'replay'} samples · ${(asNumber(experiment.replaySummary.improvementRatio, 0) * 100).toFixed(1)}% improvement`
         : 'Insufficient replay data',
       count: 1,
     }));
@@ -423,19 +423,26 @@ function getPolicyLabResponse() {
     summary: {
       championPolicyId: championPolicy?.id || null,
       championPolicyLabel: championPolicy?.label || null,
-      challengerCount: policies.filter(policy => ['challenger', 'promotion_ready'].includes(policy.status)).length,
+      challengerCount: policies.filter(policy => ['active_candidate', 'challenger', 'promotion_ready'].includes(policy.status)).length,
       promotionReadyCount: policies.filter(policy => policy.status === 'promotion_ready').length,
+      activeCandidateCount: policies.filter(policy => policy.status === 'active_candidate').length,
       lastResearchRunAt: meta.lastResearchRunAt || null,
       shadowDivergenceRate: metrics.summary.shadowDivergenceRate,
+      liveDivergenceRate: metrics.summary.shadowDivergenceRate,
       sentryStatus: observabilityService.getStatus(),
       completedOutcomeCount: outcomes.filter(outcome => outcome.status === 'complete').length,
       decisionTraceCount: traces.length,
       activeShadowPolicyId: activeShadow?.id || null,
       activeShadowPolicyLabel: activeShadow?.label || null,
+      activeLearningPolicyId: activeShadow?.id || null,
+      activeLearningPolicyLabel: activeShadow?.label || null,
+      evaluationMode: meta.lastResearchSummary?.scoreMode || null,
+      replaySampleSize: asNumber(meta.lastResearchSummary?.replaySampleSize, 0),
     },
     learningLoop: {
       championPolicy,
       activeShadowPolicy: activeShadow,
+      activeLearningPolicy: activeShadow,
       lastResearchSummary: meta.lastResearchSummary || null,
     },
     strategyMarkers: createExperimentMarkers(experiments).slice(-20),
@@ -532,12 +539,20 @@ function runResearchIteration(rules = {}) {
     experimentsToAdd.push(experiment);
   }
 
-  policiesToUpsert.forEach(policy => policyLabStore.upsertPolicy(policy));
-  policyLabStore.addExperiments(experimentsToAdd);
-
   const bestPolicy = policiesToUpsert
     .slice()
     .sort((left, right) => asNumber(right.scoreSummary?.improvementRatio, 0) - asNumber(left.scoreSummary?.improvementRatio, 0))[0] || null;
+
+  if (bestPolicy && bestPolicy.status !== 'promotion_ready') {
+    bestPolicy.status = 'active_candidate';
+    const bestExperiment = experimentsToAdd.find(entry => entry.policyId === bestPolicy.id);
+    if (bestExperiment) {
+      bestExperiment.status = 'active_candidate';
+    }
+  }
+
+  policiesToUpsert.forEach(policy => policyLabStore.upsertPolicy(policy));
+  policyLabStore.addExperiments(experimentsToAdd);
 
   policyLabStore.updateMetaState({
     lastResearchRunAt: nowIso(),
@@ -546,6 +561,7 @@ function runResearchIteration(rules = {}) {
       experimentCount: experimentsToAdd.length,
       bestPolicyId: bestPolicy?.id || null,
       bestImprovementRatio: asNumber(bestPolicy?.scoreSummary?.improvementRatio, 0),
+      scoreMode: research.scoreMode,
     },
     activeShadowPolicyId: bestPolicy?.id || null,
   });
@@ -563,6 +579,7 @@ function runResearchIteration(rules = {}) {
       data: {
         replaySampleSize: research.replaySampleSize,
         bestImprovementRatio: asNumber(bestPolicy?.scoreSummary?.improvementRatio, 0),
+        scoreMode: research.scoreMode,
       },
       source: 'policy-lab-worker',
     }
@@ -573,6 +590,7 @@ function runResearchIteration(rules = {}) {
     bestPolicy,
     experiments: experimentsToAdd,
     replaySampleSize: research.replaySampleSize,
+    scoreMode: research.scoreMode,
   };
 }
 

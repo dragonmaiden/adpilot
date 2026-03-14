@@ -185,6 +185,18 @@
     }
   }
 
+  function traceModeLabel(mode) {
+    switch (String(mode || '').toLowerCase()) {
+      case 'challenger_shadow':
+        return tr('Live compare', '라이브 비교');
+      case 'research_replay':
+        return tr('Research replay', '연구 리플레이');
+      case 'champion':
+      default:
+        return tr('Champion', '챔피언');
+    }
+  }
+
   function levelMeta(level) {
     switch (String(level || '').toLowerCase()) {
       case 'error':
@@ -194,6 +206,18 @@
       case 'info':
       default:
         return { label: tr('Info', '정보'), className: 'badge-info' };
+    }
+  }
+
+  function experimentStatusMeta(status) {
+    switch (String(status || '').toLowerCase()) {
+      case 'promotion_ready':
+        return { label: tr('Promotion ready', '승격 준비'), className: 'badge-success' };
+      case 'active_candidate':
+        return { label: tr('Active candidate', '활성 후보'), className: 'badge-warning' };
+      case 'challenger':
+      default:
+        return { label: tr('Candidate', '후보'), className: 'badge-info' };
     }
   }
 
@@ -574,8 +598,8 @@
       const labSummary = policyLab?.summary || {};
       karpathyEl.textContent = policyLab
         ? tr(
-            `${formatCount(labSummary.challengerCount || 0)} challengers · ${formatCount(summary.actionNowFamilies || 0)} live decisions · ${labSummary.lastResearchRunAt ? `last run ${formatRelative(labSummary.lastResearchRunAt)}` : 'no recent run'}`,
-            `${formatCount(labSummary.challengerCount || 0)}개 도전자 · 라이브 결정 ${formatCount(summary.actionNowFamilies || 0)}개 · ${labSummary.lastResearchRunAt ? `최근 실행 ${formatRelative(labSummary.lastResearchRunAt)}` : '최근 실행 없음'}`
+            `${formatCount(labSummary.challengerCount || 0)} live candidates · ${formatCount(summary.actionNowFamilies || 0)} live decisions · ${labSummary.lastResearchRunAt ? `last run ${formatRelative(labSummary.lastResearchRunAt)}` : 'no recent run'}`,
+            `라이브 후보 ${formatCount(labSummary.challengerCount || 0)}개 · 라이브 결정 ${formatCount(summary.actionNowFamilies || 0)}개 · ${labSummary.lastResearchRunAt ? `최근 실행 ${formatRelative(labSummary.lastResearchRunAt)}` : '최근 실행 없음'}`
           )
         : tr('No policy-lab data yet', '아직 정책 실험 데이터 없음');
     }
@@ -886,14 +910,17 @@
 
     if (metaEl) {
       metaEl.textContent = summary.lastResearchRunAt
-        ? tr(`Last run ${formatRelative(summary.lastResearchRunAt)}`, `최근 실행 ${formatRelative(summary.lastResearchRunAt)}`)
+        ? tr(
+            `Last run ${formatRelative(summary.lastResearchRunAt)} · ${formatCount(summary.replaySampleSize || 0)} ${summary.evaluationMode === 'bootstrap_proxy' ? 'bootstrap' : 'replay'} samples`,
+            `최근 실행 ${formatRelative(summary.lastResearchRunAt)} · ${formatCount(summary.replaySampleSize || 0)}개 ${summary.evaluationMode === 'bootstrap_proxy' ? '부트스트랩' : '리플레이'} 샘플`
+          )
         : tr('No research runs yet', '아직 연구 실행 없음');
     }
 
     const cards = [
       { label: tr('Champion', '챔피언'), value: summary.championPolicyLabel || '—', meta: summary.championPolicyId || '—' },
-      { label: tr('Active challengers', '활성 도전자'), value: formatCount(summary.challengerCount || 0), meta: tr(`${formatCount(summary.promotionReadyCount || 0)} promotion-ready`, `${formatCount(summary.promotionReadyCount || 0)}개 승격 준비`) },
-      { label: tr('Shadow divergence', '섀도우 분기'), value: `${Math.round((summary.shadowDivergenceRate || 0) * 100)}%`, meta: summary.activeShadowPolicyLabel || tr('No active shadow policy', '활성 섀도우 정책 없음') },
+      { label: tr('Live candidates', '라이브 후보'), value: formatCount(summary.challengerCount || 0), meta: tr(`${formatCount(summary.promotionReadyCount || 0)} promotion-ready`, `${formatCount(summary.promotionReadyCount || 0)}개 승격 준비`) },
+      { label: tr('Live divergence', '라이브 분기'), value: `${Math.round((summary.liveDivergenceRate || summary.shadowDivergenceRate || 0) * 100)}%`, meta: summary.activeLearningPolicyLabel || summary.activeShadowPolicyLabel || tr('No active learning policy', '활성 학습 정책 없음') },
       { label: tr('Completed outcomes', '완료된 결과'), value: formatCount(summary.completedOutcomeCount || 0), meta: tr(`${formatCount(summary.decisionTraceCount || 0)} total traces`, `총 ${formatCount(summary.decisionTraceCount || 0)}개 트레이스`) },
       { label: tr('Observability', '관측 상태'), value: sentryLabel, meta: sentryStatus.lastEventAt ? tr(`Last event ${formatRelative(sentryStatus.lastEventAt)}`, `최근 이벤트 ${formatRelative(sentryStatus.lastEventAt)}`) : tr('No events yet', '아직 이벤트 없음') },
     ];
@@ -917,8 +944,8 @@
 
     if (metaEl) {
       metaEl.textContent = tr(
-        `${formatCount(markers.length)} chart markers · ${formatCount(experiments.length)} logged challengers`,
-        `${formatCount(markers.length)}개 차트 마커 · ${formatCount(experiments.length)}개 도전자`
+        `${formatCount(markers.length)} chart markers · ${formatCount(experiments.length)} logged iterations`,
+        `${formatCount(markers.length)}개 차트 마커 · ${formatCount(experiments.length)}개 학습 반복`
       );
     }
 
@@ -931,6 +958,7 @@
       ? experiments.slice(0, 10).map(experiment => {
           const visual = eventVisual(experiment.status === 'promotion_ready' ? 'promoted' : 'challenger');
           const replay = experiment.replaySummary || {};
+          const status = experimentStatusMeta(experiment.status);
           return `
             <div class="karpathy-timeline-item">
               <div class="opt-icon">
@@ -939,13 +967,14 @@
               <div class="opt-content">
                 <div class="opt-header">
                   <span class="opt-action">${esc(experiment.label || experiment.policyId || tr('Challenger policy', '도전자 정책'))}</span>
-                  <span class="badge ${experiment.status === 'promotion_ready' ? 'badge-success' : 'badge-info'}">${esc(experiment.status || 'challenger')}</span>
+                  <span class="badge ${status.className}">${esc(status.label)}</span>
                 </div>
                 <div class="opt-reason">${esc(experiment.summaryLine || tr('No diff summary recorded.', '차이 요약이 없습니다.'))}</div>
                 <div class="opt-cluster-meta">
                   <span class="opt-cluster-stat"><strong>${esc(formatCount(replay.sampleSize || 0))}</strong>${esc(tr('replay samples', '리플레이 샘플'))}</span>
                   <span class="opt-cluster-stat"><strong>${esc(`${Math.round((replay.improvementRatio || 0) * 100)}%`)}</strong>${esc(tr('score lift', '점수 상승'))}</span>
                   <span class="opt-cluster-stat"><strong>${esc(`${Math.round((replay.divergenceRate || 0) * 100)}%`)}</strong>${esc(tr('divergence', '분기율'))}</span>
+                  <span class="opt-cluster-stat"><strong>${esc(experiment.scoreMode === 'bootstrap_proxy' ? tr('Bootstrap', '부트스트랩') : tr('Replay', '리플레이'))}</strong>${esc(tr('mode', '모드'))}</span>
                 </div>
                 <div class="opt-time">${esc(formatRelative(experiment.createdAt))}</div>
               </div>
@@ -1015,7 +1044,7 @@
           <strong>${esc(formatCount(summary.approvalFriction || 0))}</strong>
         </div>
         <div class="karpathy-metric-card">
-          <span>${esc(tr('Shadow divergence', '섀도우 분기'))}</span>
+          <span>${esc(tr('Live divergence', '라이브 분기'))}</span>
           <strong>${esc(`${Math.round((summary.shadowDivergenceRate || 0) * 100)}%`)}</strong>
         </div>
       </div>
@@ -1164,7 +1193,7 @@
                 <div class="opt-header">
                   <span class="opt-action">${esc(trace.entity?.targetName || tr('Unknown target', '알 수 없는 대상'))}</span>
                   <span class="badge ${verdict.className}">${esc(verdict.label)}</span>
-                  <span class="badge badge-neutral">${esc(trace.mode || 'champion')}</span>
+                  <span class="badge badge-neutral">${esc(traceModeLabel(trace.mode))}</span>
                 </div>
                 <div class="opt-target">${esc(trace.policyVersionId || '—')} · ${esc(controlSurfaceLabel(trace.controlSurface))}</div>
               </div>
