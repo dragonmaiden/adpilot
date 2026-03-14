@@ -4,11 +4,12 @@ const schedulerLoop = require('./schedulerLoop');
 const snapshotRepository = require('./snapshotRepository');
 
 function startScheduler() {
-  return schedulerLoop.startScheduler(scanRunner.runScan);
+  return schedulerLoop.startScheduler(scanRunner.runScan, scanRunner.runCommerceSync);
 }
 
 module.exports = {
   runScan: scanRunner.runScan,
+  runCommerceSync: scanRunner.runCommerceSync,
   startScheduler,
   stopScheduler: schedulerLoop.stopScheduler,
   getNextScheduledRunAt: schedulerLoop.getNextScheduledRunAt,

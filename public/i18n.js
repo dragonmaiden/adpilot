@@ -303,8 +303,8 @@ const I18N = {
 
   // ── Settings Page ──
   'settings.agentConfig':       { en: 'Agent Configuration',         kr: '에이전트 설정' },
-  'settings.scanFreq':          { en: 'Scan Frequency',              kr: '스캔 주기' },
-  'settings.scanFreqDesc':      { en: 'How often the agent scans your campaigns for optimization opportunities', kr: '에이전트가 캠페인 최적화 기회를 스캔하는 주기' },
+  'settings.scanFreq':          { en: 'Commerce Sync Frequency',     kr: '커머스 동기화 주기' },
+  'settings.scanFreqDesc':      { en: 'How often orders and COGS sync refresh. Heavy Meta analysis and optimizer runs every 30 minutes.', kr: '주문과 COGS 동기화가 갱신되는 주기입니다. 무거운 Meta 분석과 옵티마이저는 30분마다 실행됩니다.' },
   'settings.maxBudgetChange':   { en: 'Max Daily Budget Change',     kr: '최대 일일 예산 변경폭' },
   'settings.maxBudgetDesc':     { en: "Maximum percentage the agent can adjust a campaign's daily budget per scan", kr: '에이전트가 스캔당 조정할 수 있는 최대 예산 비율' },
   'settings.autoPause':         { en: 'Auto-pause Threshold (CPA)',  kr: '자동 중지 임계값 (CPA)' },
@@ -329,7 +329,7 @@ const I18N = {
   'settings.high':              { en: 'High',   kr: '높음' },
 
   // Scan frequency options
-  'settings.every3':    { en: 'Every 3 minutes',  kr: '3분마다' },
+  'settings.every5':    { en: 'Every 5 minutes',  kr: '5분마다' },
   'settings.every15':   { en: 'Every 15 minutes', kr: '15분마다' },
   'settings.every30':   { en: 'Every 30 minutes', kr: '30분마다' },
   'settings.everyHour': { en: 'Every hour',       kr: '1시간마다' },

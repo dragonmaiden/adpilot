@@ -80,7 +80,7 @@ test('operator summary composes live business context into one read-only brief',
     runtimeSettings: {
       getSettings: () => ({
         rules: { autonomousMode: true },
-        scheduler: { scanIntervalMinutes: 30 },
+        scheduler: { scanIntervalMinutes: 5, analysisIntervalMinutes: 30 },
       }),
     },
     contracts: {
@@ -162,6 +162,8 @@ test('operator summary composes live business context into one read-only brief',
 
       assert.equal(summary.ready, true);
       assert.equal(summary.scan.intervalMinutes, 30);
+      assert.equal(summary.scan.commerceIntervalMinutes, 5);
+      assert.equal(summary.scan.analysisIntervalMinutes, 30);
       assert.equal(summary.scan.activeCampaigns, 2);
       assert.equal(summary.kpis.netRevenue, 10500000);
       assert.equal(summary.profit.coverage.confidence, 'high');

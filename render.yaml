@@ -36,4 +36,6 @@ services:
       - key: TELEGRAM_CHAT_ID
         sync: false
       - key: SCAN_INTERVAL_MINUTES
-        value: "3"
+        value: "5"
+      - key: ANALYSIS_INTERVAL_MINUTES
+        value: "30"

@@ -69,7 +69,8 @@ const config = {
 
   // Scheduler
   scheduler: {
-    scanIntervalMinutes: parseInt(process.env.SCAN_INTERVAL_MINUTES || '3', 10),
+    scanIntervalMinutes: parseInt(process.env.SCAN_INTERVAL_MINUTES || '5', 10),
+    analysisIntervalMinutes: parseInt(process.env.ANALYSIS_INTERVAL_MINUTES || '30', 10),
     dataRetentionDays: 90,
   },
 

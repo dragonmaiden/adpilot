@@ -380,6 +380,7 @@ function createState() {
   );
   return {
     lastScanTime: parseLastScanTime(lastScanResult, latestData),
+    lastCommerceSyncTime: parseLastScanTime(lastScanResult, latestData),
     lastScanResult,
     scanHistory: normalizeScanHistory(loadData(SCAN_HISTORY_FILE, []), lastScanResult),
     allOptimizations: asArray(loadData(ALL_OPTIMIZATIONS_FILE, [])).slice(-MAX_OPTIMIZATIONS),
@@ -442,6 +443,15 @@ function getLastScanTime() {
 function setLastScanTime(scanTime) {
   state.lastScanTime = scanTime;
   return state.lastScanTime;
+}
+
+function getLastCommerceSyncTime() {
+  return state.lastCommerceSyncTime || null;
+}
+
+function setLastCommerceSyncTime(syncTime) {
+  state.lastCommerceSyncTime = syncTime;
+  return state.lastCommerceSyncTime;
 }
 
 function getScanHistory() {
@@ -519,6 +529,8 @@ module.exports = {
   setLastScanResult,
   getLastScanTime,
   setLastScanTime,
+  getLastCommerceSyncTime,
+  setLastCommerceSyncTime,
   getScanHistory,
   addScanHistory,
   getAllOptimizations,

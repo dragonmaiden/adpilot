@@ -879,7 +879,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  Port: ${PORT}`);
   console.log(`  Data: ${DATA_DIR}`);
   console.log(`  Mode: ${runtimeSettings.getRules().autonomousMode ? 'AUTONOMOUS' : 'SUGGESTION ONLY'}`);
-  console.log(`  Scan interval: ${runtimeSettings.getSchedulerSettings().scanIntervalMinutes} min`);
+  console.log(`  Commerce sync: ${runtimeSettings.getSchedulerSettings().scanIntervalMinutes} min`);
+  console.log(`  Analysis loop: ${runtimeSettings.getSchedulerSettings().analysisIntervalMinutes} min`);
   console.log('='.repeat(60) + '\n');
 
   // Start the scheduler

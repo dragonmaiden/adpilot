@@ -14,6 +14,7 @@ const MUTABLE_RULE_KEYS = [
 
 const MUTABLE_SCHEDULER_KEYS = [
   'scanIntervalMinutes',
+  'analysisIntervalMinutes',
 ];
 
 function pick(source, keys) {
@@ -50,6 +51,9 @@ function validateSettingsPatch(updates) {
   if (updates.scanIntervalMinutes !== undefined && (!Number.isFinite(updates.scanIntervalMinutes) || updates.scanIntervalMinutes < 1 || updates.scanIntervalMinutes > 1440)) {
     errors.push('scanIntervalMinutes must be a number between 1 and 1440');
   }
+  if (updates.analysisIntervalMinutes !== undefined && (!Number.isFinite(updates.analysisIntervalMinutes) || updates.analysisIntervalMinutes < 1 || updates.analysisIntervalMinutes > 1440)) {
+    errors.push('analysisIntervalMinutes must be a number between 1 and 1440');
+  }
   if (updates.budgetReallocationEnabled !== undefined && typeof updates.budgetReallocationEnabled !== 'boolean') {
     errors.push('budgetReallocationEnabled must be a boolean');
   }
@@ -78,16 +82,21 @@ function loadState() {
       cpaPauseThreshold: raw.rules?.cpaPauseThreshold,
       budgetReallocationEnabled: raw.rules?.budgetReallocationEnabled,
       scanIntervalMinutes: raw.scheduler?.scanIntervalMinutes,
+      analysisIntervalMinutes: raw.scheduler?.analysisIntervalMinutes,
     };
 
-    // Migrate the old default scan interval to the new faster default when no custom
-    // scheduler choice was made beyond the legacy 30-minute baseline.
-    if (persisted.scanIntervalMinutes === 30 && defaultState.scheduler.scanIntervalMinutes === 3) {
-      persisted.scanIntervalMinutes = 3;
-      raw.scheduler = {
-        ...(raw.scheduler || {}),
-        scanIntervalMinutes: 3,
-      };
+    // Migrate the old single-loop scheduler into the new split cadence:
+    // commerce sync every 5 minutes, heavy analysis every 30 minutes.
+    if (persisted.analysisIntervalMinutes === undefined) {
+      const currentInterval = persisted.scanIntervalMinutes;
+      if (currentInterval === 30 || currentInterval === 3) {
+        persisted.scanIntervalMinutes = defaultState.scheduler.scanIntervalMinutes;
+        raw.scheduler = {
+          ...(raw.scheduler || {}),
+          scanIntervalMinutes: defaultState.scheduler.scanIntervalMinutes,
+          analysisIntervalMinutes: defaultState.scheduler.analysisIntervalMinutes,
+        };
+      }
     }
 
     const errors = validateSettingsPatch(Object.fromEntries(
