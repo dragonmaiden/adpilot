@@ -8,7 +8,7 @@ const snapshotRepository = require('./snapshotRepository');
 const { validateMetaCampaigns, validateMetaInsights, validateImwebOrders, logValidation } = require('../validation/vendorSchemas');
 const cogsClient = require('./cogsClient');
 const transforms = require('../transforms/charts');
-const { calcROAS } = require('../domain/metrics');
+const { calcROAS, convertUsdToKrw } = require('../domain/metrics');
 const { getTodayInTimeZone, shiftDate } = require('../domain/time');
 const runtimeSettings = require('../runtime/runtimeSettings');
 const { filterDuplicateApprovalOptimizations } = require('../services/optimizationDedupService');
@@ -252,6 +252,41 @@ async function fetchCogs(scanResult) {
   }
 }
 
+async function fetchLiveMetaSpend(scanResult) {
+  console.log('[SCHEDULER] Step 3d: Fetching live Meta spend snapshot...');
+  const dateKey = getTodayInTimeZone();
+
+  try {
+    const accountInsights = await meta.getAccountInsights(dateKey, dateKey);
+    const rows = Array.isArray(accountInsights?.data) ? accountInsights.data : [];
+    const spendUsd = rows.reduce((sum, row) => sum + Number(row?.spend || 0), 0);
+    const spendKrw = Math.round(convertUsdToKrw(spendUsd));
+
+    const samples = scanStore.addLiveSpendSample({
+      timestamp: new Date().toISOString(),
+      dateKey,
+      spendKrw,
+    });
+
+    pushStep(scanResult, {
+      step: 'meta_spend_live',
+      status: 'ok',
+      date: dateKey,
+      spendUsd,
+      spendKrw,
+      sampleCountToday: samples.filter(sample => sample.dateKey === dateKey).length,
+    });
+    console.log(`[SCHEDULER]   → ${spendUsd.toFixed(2)} USD (${spendKrw.toLocaleString()} KRW) cumulative spend today`);
+
+    return { ok: true, spendUsd, spendKrw, dateKey };
+  } catch (err) {
+    console.error('[SCHEDULER]   ⚠ Live Meta spend fetch failed:', err.message);
+    pushError(scanResult, 'meta_spend_live', err);
+    pushStep(scanResult, { step: 'meta_spend_live', status: 'failed', date: dateKey });
+    return { ok: false, dateKey };
+  }
+}
+
 async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
   console.log('[SCHEDULER] Step 3a: Reconciling recent paid Imweb orders into the COGS sheet...');
 
@@ -357,6 +392,7 @@ async function refreshCommerceData(scanResult) {
     autofill: null,
     cogs: null,
     economics: null,
+    spend: null,
   };
 
   if (result.imweb.ok) {
@@ -365,6 +401,7 @@ async function refreshCommerceData(scanResult) {
 
   result.cogs = await fetchCogs(scanResult);
   result.economics = rebuildEconomicsLedger(scanResult);
+  result.spend = await fetchLiveMetaSpend(scanResult);
   return result;
 }
 

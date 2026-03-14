@@ -40,7 +40,7 @@ function kstIso(dateKey, hour, minute = 0) {
   return new Date(`${dateKey}T${hh}:${mm}:00+09:00`).toISOString();
 }
 
-test('buildLivePerformanceResponse returns intraday chart, spend snapshots, and confidence-aware summary', async () => {
+test('buildLivePerformanceResponse prefers fast live spend samples and returns confidence-aware intraday summary', async () => {
   const dateKey = getTodayInTimeZone();
   const currentHour = getHourInTimeZone(new Date());
   const firstHour = Math.max(0, currentHour - 1);
@@ -51,6 +51,10 @@ test('buildLivePerformanceResponse returns intraday chart, spend snapshots, and 
     campaigns: [{ id: 'c1', name: 'Main', status: 'ACTIVE', dailyBudget: 10000 }],
     campaignInsights: [
       { campaign_id: 'c1', date_start: dateKey, spend: 20 },
+    ],
+    liveSpendSamples: [
+      { timestamp: kstIso(dateKey, firstHour, 15), dateKey, spendKrw: 7200 },
+      { timestamp: kstIso(dateKey, secondHour, 15), dateKey, spendKrw: 28800 },
     ],
     revenueData: {
       totalRevenue: 150000,
@@ -122,8 +126,8 @@ test('buildLivePerformanceResponse returns intraday chart, spend snapshots, and 
     const response = service.buildLivePerformanceResponse();
 
     assert.equal(response.intraday.date, dateKey);
-    assert.equal(response.intraday.chart.snapshotCount, 2);
-    assert.equal(response.intraday.chart.usingSnapshotSpend, true);
+    assert.equal(response.intraday.chart.sampleCount, 2);
+    assert.equal(response.intraday.chart.sampleSource, 'live');
     assert.equal(response.intraday.summary.ordersSoFar, 2);
     assert.equal(response.intraday.confidence.level, 'medium');
     assert.ok(response.intraday.summary.spendSoFarKrw > 0);
@@ -161,8 +165,8 @@ test('buildLivePerformanceResponse falls back to current spend when no intraday 
   }, async service => {
     const response = service.buildLivePerformanceResponse();
 
-    assert.equal(response.intraday.chart.snapshotCount, 0);
-    assert.equal(response.intraday.chart.usingSnapshotSpend, false);
+    assert.equal(response.intraday.chart.sampleCount, 0);
+    assert.equal(response.intraday.chart.sampleSource, 'fallback');
     assert.ok(response.intraday.summary.spendSoFarKrw > 0);
     assert.equal(response.intraday.summary.ordersSoFar, 0);
     assert.equal(response.intraday.confidence.level, 'neutral');
@@ -202,6 +206,6 @@ test('buildLivePerformanceResponse keeps intraday output focused on today even w
     assert.ok(Array.isArray(response.intraday.chart.points));
     assert.equal(response.intraday.chart.points.length, 24);
     assert.equal('benchmark' in response.intraday.chart, false);
-    assert.equal(response.intraday.chart.usingSnapshotSpend, false);
+    assert.equal(response.intraday.chart.sampleSource, 'fallback');
   });
 });

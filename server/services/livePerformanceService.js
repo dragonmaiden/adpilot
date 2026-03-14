@@ -35,6 +35,18 @@ function sumTodaySpendKrw(campaignInsights, dateKey) {
   return roundMoney(convertUsdToKrw(spendUsd));
 }
 
+function getLiveSpendSamples(latestData, dateKey) {
+  return asArray(latestData?.liveSpendSamples)
+    .filter(sample => String(sample?.dateKey || '') === String(dateKey) && sample?.timestamp)
+    .map(sample => ({
+      scanId: `live-${sample.timestamp}`,
+      timestamp: sample.timestamp,
+      hour: getHourInTimeZone(sample.timestamp, KST_TIME_ZONE),
+      spendKrw: asNumber(sample.spendKrw),
+    }))
+    .sort((left, right) => String(left.timestamp).localeCompare(String(right.timestamp)));
+}
+
 function buildSnapshotSpendSampleIndex(snapshotMetas, allowedDateKeys = null) {
   const metas = asArray(snapshotMetas);
   const allowed = allowedDateKeys instanceof Set
@@ -331,10 +343,17 @@ function buildLivePerformanceResponse(query = {}) {
   const dateKey = getTodayInTimeZone(KST_TIME_ZONE);
   const now = new Date();
   const currentHour = getHourInTimeZone(now, KST_TIME_ZONE);
-  const snapshotMetas = asArray(scheduler.getSnapshotsList()).slice().reverse();
-
-  const snapshotSampleIndex = buildSnapshotSpendSampleIndex(snapshotMetas, [dateKey]);
-  const spendSamples = getSnapshotSpendSamples(dateKey, snapshotSampleIndex);
+  const liveSpendSamples = getLiveSpendSamples(latestData, dateKey);
+  const snapshotMetas = liveSpendSamples.length === 0
+    ? asArray(scheduler.getSnapshotsList()).slice().reverse()
+    : [];
+  const snapshotSampleIndex = liveSpendSamples.length === 0
+    ? buildSnapshotSpendSampleIndex(snapshotMetas, [dateKey])
+    : null;
+  const snapshotSpendSamples = liveSpendSamples.length === 0
+    ? getSnapshotSpendSamples(dateKey, snapshotSampleIndex)
+    : [];
+  const spendSamples = liveSpendSamples.length > 0 ? liveSpendSamples : snapshotSpendSamples;
   const fallbackSample = getLiveSpendFallback(latestData, dateKey);
   const spendSeries = buildHourlySpendSeries(spendSamples, fallbackSample, currentHour);
 
@@ -365,6 +384,12 @@ function buildLivePerformanceResponse(query = {}) {
     confidence,
   });
 
+  const sampleSource = liveSpendSamples.length > 0
+    ? 'live'
+    : snapshotSpendSamples.length > 0
+      ? 'snapshot'
+      : 'fallback';
+
   return contracts.livePerformance({
     generatedAt: new Date().toISOString(),
     intraday: {
@@ -394,8 +419,8 @@ function buildLivePerformanceResponse(query = {}) {
       }),
       chart: {
         points,
-        snapshotCount: spendSamples.length,
-        usingSnapshotSpend: spendSamples.length > 0,
+        sampleCount: spendSamples.length,
+        sampleSource,
       },
     },
   });
