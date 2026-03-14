@@ -180,7 +180,7 @@
             pointRadius: 0,
             tension: 0.35,
             fill: false,
-            yAxisID: 'y1',
+            yAxisID: 'y',
           },
         ],
       },
@@ -222,16 +222,6 @@
             ticks: {
               color: colors.text,
               callback: value => formatCompactKrw(value),
-            },
-          },
-          y1: {
-            position: 'right',
-            grid: { drawOnChartArea: false },
-            ticks: {
-              color: colors.text,
-              callback: value => value < 0
-                ? `-${formatCompactKrw(Math.abs(value))}`
-                : formatCompactKrw(value),
             },
           },
         },
@@ -428,7 +418,6 @@
     chart.options.scales.y.grid.color = colors.grid;
     chart.options.scales.y.ticks.color = colors.text;
     chart.options.scales.x.ticks.color = colors.text;
-    chart.options.scales.y1.ticks.color = colors.text;
     chart.update();
   }
 
