@@ -74,6 +74,7 @@ function loadState() {
 
   try {
     const raw = JSON.parse(fs.readFileSync(runtimePaths.runtimeSettingsFile, 'utf8'));
+    let shouldPersistMigration = false;
     const persisted = {
       autonomousMode: raw.rules?.autonomousMode,
       maxBudgetChangePercent: raw.rules?.maxBudgetChangePercent,
@@ -96,6 +97,7 @@ function loadState() {
         ...(raw.scheduler || {}),
         scanIntervalMinutes: 10,
       };
+      shouldPersistMigration = true;
     }
 
     const errors = validateSettingsPatch(Object.fromEntries(
@@ -117,6 +119,22 @@ function loadState() {
         ...(raw.scheduler || {}),
       },
     };
+
+    if (raw.schemaVersion !== SETTINGS_SCHEMA_VERSION) {
+      shouldPersistMigration = true;
+    }
+
+    if (shouldPersistMigration) {
+      raw.schemaVersion = SETTINGS_SCHEMA_VERSION;
+      fs.writeFileSync(runtimePaths.runtimeSettingsFile, JSON.stringify({
+        schemaVersion: raw.schemaVersion,
+        rules: nextState.rules,
+        scheduler: nextState.scheduler,
+        updatedAt: new Date().toISOString(),
+      }, null, 2));
+    }
+
+    return nextState;
   } catch (err) {
     console.warn(`[SETTINGS] Failed to load persisted runtime settings: ${err.message}`);
     return cloneState(defaultState);
