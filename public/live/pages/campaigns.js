@@ -152,13 +152,14 @@
         labels: [],
         datasets: [
           {
-            label: tr('Spend', '지출'),
+            label: tr('Ad Spending', '광고비'),
             data: [],
             borderColor: colors.spend,
             backgroundColor: colors.spend + '20',
             borderWidth: 2,
             pointRadius: 0,
             tension: 0.35,
+            stepped: 'before',
             yAxisID: 'y',
           },
           {
@@ -331,7 +332,7 @@
     const summary = intraday?.summary || {};
     const metrics = [
       {
-        label: tr('Spend so far', '현재까지 지출'),
+        label: tr('Ad spending so far', '현재까지 광고비'),
         value: formatCompactKrw(summary.spendSoFarKrw || 0),
         meta: summary.totalDailyBudgetKrw > 0
           ? tr(
@@ -817,7 +818,7 @@
                 </div>
               </div>
               <div class="live-ad-metrics">
-                <div><span>${esc(tr('Spend', '지출'))}</span><strong>${formatUsd(ad.spend || 0, 2)}</strong></div>
+                <div><span>${esc(tr('Ad spend', '광고비'))}</span><strong>${formatUsd(ad.spend || 0, 2)}</strong></div>
                 <div><span>${esc(tr('Meta-attributed purchases', '메타 귀속 구매'))}</span><strong>${getAttributedPurchases(ad).toLocaleString(getLocale())}</strong></div>
                 <div><span>CPA</span><strong style="color:${cpaColor}">${cpaStr}</strong></div>
                 <div><span>CTR</span><strong>${Number(ad.avgCTR || 0).toFixed(2)}%</strong></div>
