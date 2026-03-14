@@ -760,6 +760,19 @@
         </div>
       </div>
 
+      <div class="card live-active-priority-card" id="activeCampaignsCard">
+        <div class="card-header">
+          <div>
+            <div class="section-kicker" data-i18n="campaigns.topAdsKicker">Top Active Ads</div>
+            <h2><span data-i18n="campaigns.liveAds">Top Active Ads</span></h2>
+          </div>
+          <span id="activeCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
+        </div>
+        <div id="activeAdsContainer" style="padding:0 20px 20px">
+          <div class="empty-state" data-i18n="misc.loading">Loading live ad data...</div>
+        </div>
+      </div>
+
       <div class="card live-intraday-card">
         <div class="card-header live-intraday-header">
           <div>
@@ -836,17 +849,6 @@
           <div class="operator-signal-grid" id="operatorSignalGrid">
             <div class="empty-state" data-i18n="campaigns.signalsLoading">Loading operator signals...</div>
           </div>
-        </div>
-      </div>
-
-      <!-- Live / Active Section -->
-      <div class="card" id="activeCampaignsCard">
-        <div class="card-header">
-          <h2><span style="display:inline-block;width:8px;height:8px;background:#4ade80;border-radius:50%;margin-right:8px;animation:livePulse 2s infinite"></span><span data-i18n="campaigns.liveAds">Live Ad Watchlist</span></h2>
-          <span id="activeCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
-        </div>
-        <div id="activeAdsContainer" style="padding:0 20px 20px">
-          <div class="empty-state" data-i18n="misc.loading">Loading live ad data...</div>
         </div>
       </div>
 

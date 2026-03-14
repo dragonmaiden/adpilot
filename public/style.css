@@ -1040,13 +1040,17 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   gap: var(--space-4);
 }
 
+.live-active-priority-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-offset) 92%, transparent), var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 14%, var(--color-border));
+}
+
 .live-intraday-card {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--color-primary-subtle) 72%, transparent) 0%, transparent 42%),
-    linear-gradient(180deg, color-mix(in srgb, var(--color-surface-2) 92%, transparent), var(--color-surface));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-offset) 90%, transparent), var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 14%, var(--color-border));
 }
 
 .live-intraday-header {
@@ -1076,12 +1080,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .live-intraday-takeaway[data-tone="positive"] {
   border-color: color-mix(in srgb, var(--color-success) 28%, var(--color-border));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-success-subtle) 72%, transparent), transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-success-subtle) 56%, transparent), color-mix(in srgb, var(--color-surface) 94%, transparent));
 }
 
 .live-intraday-takeaway[data-tone="warning"] {
   border-color: color-mix(in srgb, var(--color-warning) 28%, var(--color-border));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-warning-subtle) 72%, transparent), transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-warning-subtle) 56%, transparent), color-mix(in srgb, var(--color-surface) 94%, transparent));
 }
 
 .live-intraday-takeaway[data-tone="neutral"] {
@@ -1184,7 +1188,8 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .live-daily-context-card {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-2) 88%, transparent), var(--color-surface));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-offset) 88%, transparent), var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-border));
 }
 
 .live-daily-context-stats {

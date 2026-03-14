@@ -182,7 +182,7 @@ function buildConfidenceMeta(exactCoverageRatio, orderCount) {
   };
 }
 
-function buildTakeaway({ spendSoFarKrw, revenueSoFarKrw, contributionAfterAdsKrw, paceDeltaPct, confidence }) {
+function buildTakeaway({ spendSoFarKrw, revenueSoFarKrw, profitKrw, confidence }) {
   if (spendSoFarKrw <= 0 && revenueSoFarKrw <= 0) {
     return {
       tone: 'neutral',
@@ -191,23 +191,23 @@ function buildTakeaway({ spendSoFarKrw, revenueSoFarKrw, contributionAfterAdsKrw
     };
   }
 
-  if (paceDeltaPct >= 12 && contributionAfterAdsKrw < 0) {
+  if (spendSoFarKrw > 0 && profitKrw < 0 && revenueSoFarKrw < spendSoFarKrw) {
     return {
       tone: 'warning',
-      headline: 'Spending early, payoff still lagging',
-      detail: 'Today is ahead of even spend pace, but contribution after ad spend has not caught up yet.',
+      headline: 'Spend is active, but payback is lagging',
+      detail: 'Revenue and profit are still trailing current ad spend, so the day has not paid back cleanly yet.',
     };
   }
 
-  if (paceDeltaPct <= -12 && contributionAfterAdsKrw > 0) {
+  if (spendSoFarKrw > 0 && profitKrw > 0 && revenueSoFarKrw >= spendSoFarKrw * 1.5) {
     return {
       tone: 'positive',
-      headline: 'Efficient start with room to spend',
-      detail: 'Revenue is keeping up while spend is still behind even pace, so the day is paying back cleanly so far.',
+      headline: 'Today is paying back well so far',
+      detail: 'Revenue and profit are both keeping up with current spend, so the live shape looks healthy.',
     };
   }
 
-  if (contributionAfterAdsKrw > 0) {
+  if (profitKrw > 0) {
     return {
       tone: confidence.level === 'low' ? 'neutral' : 'positive',
       headline: 'Spend is converting into profit so far',
@@ -222,22 +222,22 @@ function buildTakeaway({ spendSoFarKrw, revenueSoFarKrw, contributionAfterAdsKrw
     headline: 'Today is live, but not yet paying back cleanly',
     detail: confidence.level === 'low'
       ? 'Profit confidence is still partial, so focus on pace and revenue first.'
-      : 'Spend is active, but contribution after ad spend is still below zero right now.',
+      : 'Spend is active, but profit is still below zero right now.',
   };
 }
 
-function buildHighlights({ paceDeltaPct, spendSoFarKrw, revenueSoFarKrw, contributionAfterAdsKrw, orderCount, confidence, totalDailyBudgetKrw, expectedSpendKrw }) {
+function buildHighlights({ spendSoFarKrw, revenueSoFarKrw, profitKrw, orderCount, confidence, totalDailyBudgetKrw }) {
   const highlights = [];
 
   if (totalDailyBudgetKrw > 0) {
-    const direction = paceDeltaPct >= 0 ? 'ahead of' : 'behind';
-    highlights.push(`Spend is ${Math.abs(paceDeltaPct).toFixed(0)}% ${direction} even pace (${formatCompactKrw(spendSoFarKrw)} vs ${formatCompactKrw(expectedSpendKrw)} expected).`);
+    const usagePct = totalDailyBudgetKrw > 0 ? (spendSoFarKrw / totalDailyBudgetKrw) * 100 : 0;
+    highlights.push(`Spend so far is ${formatCompactKrw(spendSoFarKrw)}, or ${usagePct.toFixed(0)}% of today’s active budget.`);
   } else {
-    highlights.push(`Spend so far is ${formatCompactKrw(spendSoFarKrw)} and there is no active budget pool configured for pace comparisons.`);
+    highlights.push(`Spend so far is ${formatCompactKrw(spendSoFarKrw)} and there is no active budget pool configured today.`);
   }
 
   if (orderCount > 0) {
-    highlights.push(`Revenue is ${formatCompactKrw(revenueSoFarKrw)} from ${orderCount.toLocaleString()} orders, with contribution after ad spend at ${formatSignedCompactKrw(contributionAfterAdsKrw)}.`);
+    highlights.push(`Revenue is ${formatCompactKrw(revenueSoFarKrw)} from ${orderCount.toLocaleString()} orders, with profit at ${formatSignedCompactKrw(profitKrw)}.`);
   } else {
     highlights.push('There are no recognized orders yet today, so this is still a pacing read more than a profitability read.');
   }
@@ -278,11 +278,6 @@ function buildLivePerformanceResponse() {
   }, 0);
   const totalDailyBudgetKrw = roundMoney(convertUsdToKrw(totalDailyBudgetUsd));
 
-  const minutesIntoDay = currentHour * 60 + now.getMinutes();
-  const expectedSpendKrw = totalDailyBudgetKrw > 0
-    ? roundMoney((totalDailyBudgetKrw * minutesIntoDay) / (24 * 60))
-    : 0;
-
   const points = [];
   let cumulativeRevenue = 0;
   let cumulativeContributionBeforeAds = 0;
@@ -301,9 +296,6 @@ function buildLivePerformanceResponse() {
       hour,
       label: String(hour).padStart(2, '0'),
       cumulativeSpendKrw: cumulativeSpend,
-      expectedSpendKrw: hour <= currentHour && totalDailyBudgetKrw > 0
-        ? roundMoney((totalDailyBudgetKrw * ((hour + 1) * 60)) / (24 * 60))
-        : null,
       cumulativeRevenueKrw: hour <= currentHour ? cumulativeRevenue : null,
       cumulativeContributionBeforeAdsKrw: hour <= currentHour ? roundMoney(cumulativeContributionBeforeAds) : null,
       cumulativeContributionAfterAdsKrw: hour <= currentHour ? contributionAfterAds : null,
@@ -320,14 +312,12 @@ function buildLivePerformanceResponse() {
   const aovKrw = orderCount > 0 ? roundMoney(revenueSoFarKrw / orderCount) : 0;
   const roas = spendSoFarKrw > 0 ? revenueSoFarKrw / spendSoFarKrw : 0;
   const poas = spendSoFarKrw > 0 ? contributionBeforeAdsKrw / spendSoFarKrw : 0;
-  const paceDeltaPct = expectedSpendKrw > 0 ? ((spendSoFarKrw - expectedSpendKrw) / expectedSpendKrw) * 100 : 0;
 
   const confidence = buildConfidenceMeta(economics.exactCoverageRatio, orderCount);
   const takeaway = buildTakeaway({
     spendSoFarKrw,
     revenueSoFarKrw,
-    contributionAfterAdsKrw,
-    paceDeltaPct,
+    profitKrw: contributionAfterAdsKrw,
     confidence,
   });
 
@@ -338,28 +328,25 @@ function buildLivePerformanceResponse() {
       timeZone: KST_TIME_ZONE,
       summary: {
         spendSoFarKrw,
-        expectedSpendKrw,
         totalDailyBudgetKrw,
         revenueSoFarKrw,
         contributionBeforeAdsKrw,
         contributionAfterAdsKrw,
+        profitKrw: contributionAfterAdsKrw,
         ordersSoFar: orderCount,
         aovKrw,
         roas,
         poas,
-        paceDeltaPct,
       },
       confidence,
       takeaway,
       highlights: buildHighlights({
-        paceDeltaPct,
         spendSoFarKrw,
         revenueSoFarKrw,
-        contributionAfterAdsKrw,
+        profitKrw: contributionAfterAdsKrw,
         orderCount,
         confidence,
         totalDailyBudgetKrw,
-        expectedSpendKrw,
       }),
       chart: {
         points,

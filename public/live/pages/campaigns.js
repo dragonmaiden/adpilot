@@ -25,7 +25,6 @@
       spend: '#A84B2F',
       revenue: '#4ade80',
       contribution: '#20808D',
-      expected: style.getPropertyValue('--color-text-muted').trim() || '#94a3b8',
     };
   }
 
@@ -173,17 +172,7 @@
             yAxisID: 'y',
           },
           {
-            label: tr('Expected pace', '기대 페이스'),
-            data: [],
-            borderColor: colors.expected,
-            borderDash: [5, 5],
-            borderWidth: 1.5,
-            pointRadius: 0,
-            tension: 0.2,
-            yAxisID: 'y',
-          },
-          {
-            label: tr('Contribution after ads', '광고비 후 기여이익'),
+            label: tr('Profit', '이익'),
             data: [],
             borderColor: colors.contribution,
             backgroundColor: colors.contribution + '18',
@@ -367,14 +356,14 @@
         meta: tr('Recognized cash only', '인식된 현금 기준'),
       },
       {
-        label: tr('Contribution before ads', '광고비 전 기여이익'),
+        label: tr('Profit before ads', '광고비 전 이익'),
         value: formatSignedCompactKrw(summary.contributionBeforeAdsKrw || 0),
         meta: tr('Revenue minus COGS, shipping, and fees', '매출에서 원가, 배송, 결제 수수료 차감'),
       },
       {
-        label: tr('Contribution after ads', '광고비 후 기여이익'),
-        value: formatSignedCompactKrw(summary.contributionAfterAdsKrw || 0),
-        meta: tr('Best intraday payback read', '오늘 payback을 가장 잘 보여주는 값'),
+        label: tr('Profit', '이익'),
+        value: formatSignedCompactKrw(summary.profitKrw ?? summary.contributionAfterAdsKrw ?? 0),
+        meta: tr('After product costs, fees, and ad spend', '상품 원가, 수수료, 광고비 차감 후'),
       },
       {
         label: 'ROAS',
@@ -428,15 +417,13 @@
     chart.data.labels = points.map(point => point.label);
     chart.data.datasets[0].data = points.map(point => point.cumulativeSpendKrw);
     chart.data.datasets[1].data = points.map(point => point.cumulativeRevenueKrw);
-    chart.data.datasets[2].data = points.map(point => point.expectedSpendKrw);
-    chart.data.datasets[3].data = points.map(point => point.cumulativeContributionAfterAdsKrw);
+    chart.data.datasets[2].data = points.map(point => point.cumulativeContributionAfterAdsKrw);
     chart.data.datasets[0].borderColor = colors.spend;
     chart.data.datasets[0].backgroundColor = colors.spend + '20';
     chart.data.datasets[1].borderColor = colors.revenue;
     chart.data.datasets[1].backgroundColor = colors.revenue + '20';
-    chart.data.datasets[2].borderColor = colors.expected;
-    chart.data.datasets[3].borderColor = colors.contribution;
-    chart.data.datasets[3].backgroundColor = colors.contribution + '18';
+    chart.data.datasets[2].borderColor = colors.contribution;
+    chart.data.datasets[2].backgroundColor = colors.contribution + '18';
     chart.options.plugins.legend.labels.color = colors.text;
     chart.options.scales.y.grid.color = colors.grid;
     chart.options.scales.y.ticks.color = colors.text;

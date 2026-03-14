@@ -186,6 +186,7 @@ const I18N = {
   'campaigns.latestTitle':   { en: 'Approval-required actions', kr: '승인 필요한 조치' },
   'campaigns.latestButton':  { en: 'Open AI Operations', kr: 'AI 운영 열기' },
   'campaigns.latestLoading': { en: 'Loading action queue...', kr: '조치 대기열 불러오는 중...' },
+  'campaigns.topAdsKicker': { en: 'Top Active Ads', kr: '핵심 활성 광고' },
   'campaigns.signalsKicker': { en: 'Operator Signals', kr: '운영 신호' },
   'campaigns.signalsTitle':  { en: 'What changed in the account', kr: '계정에서 달라진 점' },
   'campaigns.signalsLoading': { en: 'Loading operator signals...', kr: '운영 신호 불러오는 중...' },
