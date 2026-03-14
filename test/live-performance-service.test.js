@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getTodayInTimeZone, getHourInTimeZone } = require('../server/domain/time');
+const { getTodayInTimeZone, getHourInTimeZone, shiftDate } = require('../server/domain/time');
 
 async function withMockedLivePerformanceService(overrides, run) {
   const servicePath = require.resolve('../server/services/livePerformanceService');
@@ -166,5 +166,84 @@ test('buildLivePerformanceResponse falls back to current spend when no intraday 
     assert.ok(response.intraday.summary.spendSoFarKrw > 0);
     assert.equal(response.intraday.summary.ordersSoFar, 0);
     assert.equal(response.intraday.confidence.level, 'neutral');
+  });
+});
+
+test('buildLivePerformanceResponse reacts to the selected window with an intraday benchmark', async () => {
+  const dateKey = getTodayInTimeZone();
+  const previousDateKey = shiftDate(dateKey, -1);
+  const currentHour = getHourInTimeZone(new Date());
+  const compareHour = Math.max(1, currentHour);
+
+  const latestData = {
+    timestamp: kstIso(dateKey, compareHour, 30),
+    campaigns: [{ id: 'c1', name: 'Main', status: 'ACTIVE', dailyBudget: 10000 }],
+    campaignInsights: [
+      { campaign_id: 'c1', date_start: dateKey, spend: 12 },
+    ],
+    revenueData: {
+      totalRevenue: 240000,
+    },
+    cogsData: {
+      totalCOGSWithShipping: 84000,
+    },
+    economicsLedger: {
+      orderSnapshots: [
+        {
+          date: previousDateKey,
+          orderedAt: kstIso(previousDateKey, compareHour, 0),
+          recognizedCash: true,
+          netPaidAmount: 120000,
+          approvedAmount: 120000,
+          cogsMatched: true,
+          cogsCost: 36000,
+          cogsShipping: 6000,
+        },
+      ],
+    },
+  };
+
+  const snapshots = [
+    {
+      scanId: 'prev-1',
+      timestamp: kstIso(previousDateKey, compareHour, 5),
+    },
+    {
+      scanId: 'prev-2',
+      timestamp: kstIso(previousDateKey, compareHour, 35),
+    },
+  ];
+
+  const snapshotData = {
+    'prev-1': {
+      data: {
+        meta_insights: {
+          campaignInsights: [{ campaign_id: 'c1', date_start: previousDateKey, spend: 4 }],
+        },
+      },
+    },
+    'prev-2': {
+      data: {
+        meta_insights: {
+          campaignInsights: [{ campaign_id: 'c1', date_start: previousDateKey, spend: 9 }],
+        },
+      },
+    },
+  };
+
+  await withMockedLivePerformanceService({
+    scheduler: {
+      getLatestData: () => latestData,
+      getSnapshotsList: () => snapshots,
+      getSnapshot: scanId => snapshotData[String(scanId)] || null,
+    },
+  }, async service => {
+    const response = service.buildLivePerformanceResponse({ days: '7d' });
+
+    assert.equal(response.intraday.chart.benchmark.windowKey, '7d');
+    assert.equal(response.intraday.chart.benchmark.sampleCount, 1);
+    assert.equal(response.intraday.chart.benchmark.points.length, 24);
+    assert.ok(response.intraday.chart.benchmark.points[compareHour].cumulativeRevenueKrw > 0);
+    assert.ok(Number.isFinite(response.intraday.chart.benchmark.points[compareHour].cumulativeContributionAfterAdsKrw));
   });
 });

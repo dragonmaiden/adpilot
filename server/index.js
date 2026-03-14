@@ -362,7 +362,7 @@ app.get('/api/campaigns', (req, res) => {
 
 app.get('/api/live-performance', (req, res) => {
   try {
-    res.json(livePerformanceService.buildLivePerformanceResponse());
+    res.json(livePerformanceService.buildLivePerformanceResponse(req.query));
   } catch (err) {
     handleInternalError(req, res, err);
   }

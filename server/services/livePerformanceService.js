@@ -2,7 +2,14 @@ const config = require('../config');
 const contracts = require('../contracts/v1');
 const scheduler = require('../modules/scheduler');
 const { convertUsdToKrw } = require('../domain/metrics');
-const { getTodayInTimeZone, getHourInTimeZone, formatDateInTimeZone, KST_TIME_ZONE } = require('../domain/time');
+const { getTodayInTimeZone, getHourInTimeZone, formatDateInTimeZone, shiftDate, KST_TIME_ZONE } = require('../domain/time');
+
+const LIVE_PERFORMANCE_WINDOWS = Object.freeze({
+  '7d': { key: '7d', days: 7, label: '7D' },
+  '14d': { key: '14d', days: 14, label: '14D' },
+  '30d': { key: '30d', days: 30, label: '30D' },
+  all: { key: 'all', days: null, label: 'All' },
+});
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -50,6 +57,11 @@ function getSnapshotSpendSamples(dateKey) {
   }
 
   return samples.sort((left, right) => String(left.timestamp).localeCompare(String(right.timestamp)));
+}
+
+function getLivePerformanceWindow(query = {}) {
+  const key = String(query?.days || query?.window || '7d').trim().toLowerCase();
+  return LIVE_PERFORMANCE_WINDOWS[key] || LIVE_PERFORMANCE_WINDOWS['7d'];
 }
 
 function getLiveSpendFallback(latestData, dateKey) {
@@ -147,6 +159,117 @@ function buildHourlySpendSeries(spendSamples, fallbackSample, currentHour) {
     hourlySpend,
     sampleCount: sorted.length,
     samples: sorted,
+  };
+}
+
+function buildIntradayPoints({ economics, spendSeries, currentHour }) {
+  const points = [];
+  let cumulativeRevenue = 0;
+  let cumulativeContributionBeforeAds = 0;
+  let cumulativeOrders = 0;
+
+  for (let hour = 0; hour < 24; hour += 1) {
+    cumulativeRevenue += roundMoney(economics.hourlyRevenue[hour]);
+    cumulativeContributionBeforeAds += roundMoney(economics.hourlyContributionBeforeAds[hour]);
+    cumulativeOrders += asNumber(economics.hourlyOrders[hour]);
+    const cumulativeSpend = spendSeries.hourlySpend[hour];
+    const contributionAfterAds = Number.isFinite(cumulativeSpend)
+      ? roundMoney(cumulativeContributionBeforeAds - cumulativeSpend)
+      : null;
+
+    points.push({
+      hour,
+      label: String(hour).padStart(2, '0'),
+      cumulativeSpendKrw: cumulativeSpend,
+      cumulativeRevenueKrw: hour <= currentHour ? cumulativeRevenue : null,
+      cumulativeContributionBeforeAdsKrw: hour <= currentHour ? roundMoney(cumulativeContributionBeforeAds) : null,
+      cumulativeContributionAfterAdsKrw: hour <= currentHour ? contributionAfterAds : null,
+      hourlyOrders: hour <= currentHour ? asNumber(economics.hourlyOrders[hour]) : null,
+    });
+  }
+
+  return {
+    points,
+    orderCount: cumulativeOrders,
+  };
+}
+
+function buildBenchmarkDateKeys({ window, currentDateKey, orderSnapshots }) {
+  if (window.days) {
+    const dates = [];
+    for (let index = 1; index <= window.days; index += 1) {
+      const shifted = shiftDate(currentDateKey, -index);
+      if (shifted) dates.push(shifted);
+    }
+    return dates;
+  }
+
+  const dateKeys = new Set();
+  for (const row of asArray(orderSnapshots)) {
+    if (row?.recognizedCash && row?.date && String(row.date) < currentDateKey) {
+      dateKeys.add(String(row.date));
+    }
+  }
+
+  for (const meta of asArray(scheduler.getSnapshotsList())) {
+    if (!meta?.timestamp) continue;
+    const dateKey = formatDateInTimeZone(meta.timestamp, KST_TIME_ZONE);
+    if (dateKey < currentDateKey) {
+      dateKeys.add(dateKey);
+    }
+  }
+
+  return Array.from(dateKeys).sort((left, right) => left.localeCompare(right));
+}
+
+function buildIntradayBenchmark({ latestData, currentDateKey, currentHour, window }) {
+  const dateKeys = buildBenchmarkDateKeys({
+    window,
+    currentDateKey,
+    orderSnapshots: latestData?.economicsLedger?.orderSnapshots,
+  });
+
+  const spendSums = new Array(24).fill(0);
+  const revenueSums = new Array(24).fill(0);
+  const profitSums = new Array(24).fill(0);
+  let sampleCount = 0;
+
+  for (const dateKey of dateKeys) {
+    const spendSamples = getSnapshotSpendSamples(dateKey);
+    if (spendSamples.length === 0) continue;
+
+    const spendSeries = buildHourlySpendSeries(spendSamples, null, currentHour);
+    const economics = buildHourlyEconomics(latestData?.economicsLedger?.orderSnapshots, latestData, dateKey);
+    const { points } = buildIntradayPoints({ economics, spendSeries, currentHour });
+    sampleCount += 1;
+
+    for (let hour = 0; hour < 24; hour += 1) {
+      spendSums[hour] += asNumber(points[hour]?.cumulativeSpendKrw);
+      revenueSums[hour] += asNumber(points[hour]?.cumulativeRevenueKrw);
+      profitSums[hour] += asNumber(points[hour]?.cumulativeContributionAfterAdsKrw);
+    }
+  }
+
+  if (sampleCount === 0) {
+    return {
+      windowKey: window.key,
+      windowLabel: window.label,
+      sampleCount: 0,
+      points: [],
+    };
+  }
+
+  return {
+    windowKey: window.key,
+    windowLabel: window.label,
+    sampleCount,
+    points: new Array(24).fill(null).map((_, hour) => ({
+      hour,
+      label: String(hour).padStart(2, '0'),
+      cumulativeSpendKrw: roundMoney(spendSums[hour] / sampleCount),
+      cumulativeRevenueKrw: roundMoney(revenueSums[hour] / sampleCount),
+      cumulativeContributionAfterAdsKrw: roundMoney(profitSums[hour] / sampleCount),
+    })),
   };
 }
 
@@ -258,10 +381,11 @@ function formatSignedCompactKrw(value) {
   return rounded >= 0 ? formatCompactKrw(rounded) : `-${formatCompactKrw(Math.abs(rounded))}`;
 }
 
-function buildLivePerformanceResponse() {
+function buildLivePerformanceResponse(query = {}) {
   const latestData = scheduler.getLatestData();
   const campaigns = asArray(latestData?.campaigns);
   const activeCampaigns = campaigns.filter(campaign => String(campaign?.status) === 'ACTIVE');
+  const window = getLivePerformanceWindow(query);
   const dateKey = getTodayInTimeZone(KST_TIME_ZONE);
   const now = new Date();
   const currentHour = getHourInTimeZone(now, KST_TIME_ZONE);
@@ -271,6 +395,12 @@ function buildLivePerformanceResponse() {
   const spendSeries = buildHourlySpendSeries(spendSamples, fallbackSample, currentHour);
 
   const economics = buildHourlyEconomics(latestData?.economicsLedger?.orderSnapshots, latestData, dateKey);
+  const benchmark = buildIntradayBenchmark({
+    latestData,
+    currentDateKey: dateKey,
+    currentHour,
+    window,
+  });
 
   const totalDailyBudgetUsd = activeCampaigns.reduce((sum, campaign) => {
     const dailyBudgetCents = asNumber(campaign?.dailyBudget ?? campaign?.daily_budget);
@@ -278,37 +408,13 @@ function buildLivePerformanceResponse() {
   }, 0);
   const totalDailyBudgetKrw = roundMoney(convertUsdToKrw(totalDailyBudgetUsd));
 
-  const points = [];
-  let cumulativeRevenue = 0;
-  let cumulativeContributionBeforeAds = 0;
-  let cumulativeOrders = 0;
-
-  for (let hour = 0; hour < 24; hour += 1) {
-    cumulativeRevenue += roundMoney(economics.hourlyRevenue[hour]);
-    cumulativeContributionBeforeAds += roundMoney(economics.hourlyContributionBeforeAds[hour]);
-    cumulativeOrders += asNumber(economics.hourlyOrders[hour]);
-    const cumulativeSpend = spendSeries.hourlySpend[hour];
-    const contributionAfterAds = Number.isFinite(cumulativeSpend)
-      ? roundMoney(cumulativeContributionBeforeAds - cumulativeSpend)
-      : null;
-
-    points.push({
-      hour,
-      label: String(hour).padStart(2, '0'),
-      cumulativeSpendKrw: cumulativeSpend,
-      cumulativeRevenueKrw: hour <= currentHour ? cumulativeRevenue : null,
-      cumulativeContributionBeforeAdsKrw: hour <= currentHour ? roundMoney(cumulativeContributionBeforeAds) : null,
-      cumulativeContributionAfterAdsKrw: hour <= currentHour ? contributionAfterAds : null,
-      hourlyOrders: hour <= currentHour ? asNumber(economics.hourlyOrders[hour]) : null,
-    });
-  }
+  const { points, orderCount } = buildIntradayPoints({ economics, spendSeries, currentHour });
 
   const currentPoint = points[Math.min(currentHour, points.length - 1)] || null;
   const spendSoFarKrw = asNumber(currentPoint?.cumulativeSpendKrw);
   const revenueSoFarKrw = asNumber(currentPoint?.cumulativeRevenueKrw);
   const contributionBeforeAdsKrw = asNumber(currentPoint?.cumulativeContributionBeforeAdsKrw);
   const contributionAfterAdsKrw = asNumber(currentPoint?.cumulativeContributionAfterAdsKrw);
-  const orderCount = cumulativeOrders;
   const aovKrw = orderCount > 0 ? roundMoney(revenueSoFarKrw / orderCount) : 0;
   const roas = spendSoFarKrw > 0 ? revenueSoFarKrw / spendSoFarKrw : 0;
   const poas = spendSoFarKrw > 0 ? contributionBeforeAdsKrw / spendSoFarKrw : 0;
@@ -350,6 +456,7 @@ function buildLivePerformanceResponse() {
       }),
       chart: {
         points,
+        benchmark,
         snapshotCount: spendSamples.length,
         usingSnapshotSpend: spendSamples.length > 0,
       },

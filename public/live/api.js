@@ -158,8 +158,11 @@
     return api(`/campaigns${suffix}`);
   }
 
-  function fetchLivePerformance() {
-    return api('/live-performance');
+  function fetchLivePerformance(windowKey) {
+    const search = new URLSearchParams();
+    if (windowKey) search.set('days', windowKey);
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return api(`/live-performance${suffix}`);
   }
 
   function fetchPostmortem(windowKey) {

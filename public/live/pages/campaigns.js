@@ -183,6 +183,30 @@
             fill: false,
             yAxisID: 'y',
           },
+          {
+            label: tr('Window avg revenue', '기간 평균 매출'),
+            data: [],
+            borderColor: colors.revenue + '80',
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.2,
+            borderDash: [6, 6],
+            fill: false,
+            yAxisID: 'y',
+          },
+          {
+            label: tr('Window avg profit', '기간 평균 이익'),
+            data: [],
+            borderColor: colors.contribution + '88',
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.2,
+            borderDash: [6, 6],
+            fill: false,
+            yAxisID: 'y',
+          },
         ],
       },
       options: {
@@ -404,17 +428,24 @@
     const chart = ensureIntradayChart();
     if (!chart) return;
     const points = intraday?.chart?.points || [];
+    const benchmarkPoints = intraday?.chart?.benchmark?.points || [];
     const colors = getIntradayChartColors();
     chart.data.labels = points.map(point => point.label);
     chart.data.datasets[0].data = points.map(point => point.cumulativeSpendKrw);
     chart.data.datasets[1].data = points.map(point => point.cumulativeRevenueKrw);
     chart.data.datasets[2].data = points.map(point => point.cumulativeContributionAfterAdsKrw);
+    chart.data.datasets[3].data = benchmarkPoints.map(point => point.cumulativeRevenueKrw);
+    chart.data.datasets[4].data = benchmarkPoints.map(point => point.cumulativeContributionAfterAdsKrw);
     chart.data.datasets[0].borderColor = colors.spend;
     chart.data.datasets[0].backgroundColor = colors.spend + '20';
     chart.data.datasets[1].borderColor = colors.revenue;
     chart.data.datasets[1].backgroundColor = colors.revenue + '20';
     chart.data.datasets[2].borderColor = colors.contribution;
     chart.data.datasets[2].backgroundColor = colors.contribution + '18';
+    chart.data.datasets[3].borderColor = colors.revenue + '80';
+    chart.data.datasets[4].borderColor = colors.contribution + '88';
+    chart.data.datasets[3].hidden = benchmarkPoints.length === 0;
+    chart.data.datasets[4].hidden = benchmarkPoints.length === 0;
     chart.options.plugins.legend.labels.color = colors.text;
     chart.options.scales.y.grid.color = colors.grid;
     chart.options.scales.y.ticks.color = colors.text;
@@ -448,16 +479,27 @@
     }
 
     if (asOfEl) {
+      const benchmark = intraday.chart?.benchmark || null;
+      const benchmarkText = benchmark?.sampleCount > 0
+        ? tr(
+            ` · ${benchmark.windowLabel} benchmark ${benchmark.sampleCount}d`,
+            ` · ${benchmark.windowLabel} 기준 ${Number(benchmark.sampleCount || 0).toLocaleString(getLocale())}일`
+          )
+        : '';
       asOfEl.textContent = tr(
-        `KST · ${intraday.chart?.snapshotCount || 0} spend snapshots today`,
-        `KST · 오늘 지출 스냅샷 ${Number(intraday.chart?.snapshotCount || 0).toLocaleString(getLocale())}개`
+        `KST · ${intraday.chart?.snapshotCount || 0} spend snapshots today${benchmarkText}`,
+        `KST · 오늘 지출 스냅샷 ${Number(intraday.chart?.snapshotCount || 0).toLocaleString(getLocale())}개${benchmarkText}`
       );
     }
     if (takeawayEl) takeawayEl.dataset.tone = intraday.takeaway?.tone || 'neutral';
     if (pillEl) {
-      pillEl.textContent = intraday.chart?.usingSnapshotSpend
+      const benchmark = intraday.chart?.benchmark || null;
+      const basePill = intraday.chart?.usingSnapshotSpend
         ? tr('Live scan spend', '라이브 스캔 지출')
         : tr('Current-state fallback', '현재 상태 대체값');
+      pillEl.textContent = benchmark?.sampleCount > 0
+        ? tr(`${basePill} · ${benchmark.windowLabel} benchmark`, `${basePill} · ${benchmark.windowLabel} 기준`)
+        : basePill;
     }
     if (headlineEl) headlineEl.textContent = intraday.takeaway?.headline || tr('Intraday pace ready', '당일 페이스 준비됨');
     if (detailEl) detailEl.textContent = intraday.takeaway?.detail || tr('Today’s pacing story is ready.', '오늘 페이싱 스토리가 준비되었습니다.');
@@ -835,7 +877,7 @@
     const windowMeta = getSeriesWindowMeta('campaigns');
     const [campaignData, livePerformance, postmortem, optData, analyticsData, overviewData, scansData, spendDaily] = await Promise.all([
       fetchCampaigns(windowMeta.key),
-      fetchLivePerformance(),
+      fetchLivePerformance(windowMeta.key),
       fetchPostmortem(windowMeta.key),
       fetchOptimizations(12),
       fetchAnalytics(),
