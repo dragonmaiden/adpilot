@@ -43,7 +43,7 @@ async function withMockedService(overrides, run) {
   }
 }
 
-test('ai operations groups raw rows into clusters and separates queue from backlog', async () => {
+test('ai operations groups raw rows into owner-facing buckets instead of keeping every old approval open', async () => {
   const originalDateNow = Date.now;
   Date.now = () => new Date('2026-03-14T08:00:00.000Z').getTime();
 
@@ -68,7 +68,7 @@ test('ai operations groups raw rows into clusters and separates queue from backl
         targetName: 'Older Winner',
         action: 'Increase daily budget by $22.00 (20%)',
         priority: 'medium',
-        timestamp: '2026-03-13T08:00:00.000Z',
+        timestamp: '2026-03-13T18:00:00.000Z',
         scanId: 180,
       },
       {
@@ -79,7 +79,7 @@ test('ai operations groups raw rows into clusters and separates queue from backl
         targetName: 'Older Winner',
         action: 'Increase daily budget by $24.00 (20%)',
         priority: 'medium',
-        timestamp: '2026-03-13T09:00:00.000Z',
+        timestamp: '2026-03-13T19:00:00.000Z',
         scanId: 181,
       },
       {
@@ -140,25 +140,115 @@ test('ai operations groups raw rows into clusters and separates queue from backl
       assert.equal(response.summary.rawRecommendationCount, 5);
       assert.equal(response.summary.clusterCount, 3);
       assert.equal(response.summary.actionNowFamilies, 1);
+      assert.equal(response.summary.blockedFamilies, 1);
       assert.equal(response.summary.openBacklogFamilies, 1);
-      assert.equal(response.summary.openBacklogItems, 2);
+      assert.equal(response.summary.openBacklogItems, 1);
+      assert.equal(response.summary.watchingFamilies, 0);
+      assert.equal(response.summary.archivedFamilies, 1);
       assert.equal(response.summary.compressionRatio, 1.7);
       assert.equal(response.quality.level, 'medium');
 
       assert.equal(response.queue.immediate.length, 1);
       assert.equal(response.queue.immediate[0].targetName, 'Winner');
+      assert.equal(response.queue.immediate[0].currentStatus, 'action_now');
       assert.equal(response.queue.backlog.length, 1);
       assert.equal(response.queue.backlog[0].targetName, 'Older Winner');
+      assert.equal(response.queue.backlog[0].currentStatus, 'stale');
       assert.equal(response.queue.backlog[0].count, 2);
       assert.equal(response.queue.backlog[0].stale, true);
+      assert.equal(response.queue.backlog[0].actionableNow, false);
 
       const profitabilityCluster = response.clusters.find(cluster => cluster.targetName === 'Overall Profitability');
-      assert.ok(profitabilityCluster);
-      assert.equal(profitabilityCluster.count, 2);
+      assert.equal(profitabilityCluster, undefined);
 
       assert.equal(response.activity.length, 2);
       assert.equal(response.decisionMarkers.length, 2);
       assert.equal(response.systemChatter.scanCount, 3);
+    });
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
+test('delivery failures and resolved approvals do not remain live owner approvals', async () => {
+  const originalDateNow = Date.now;
+  Date.now = () => new Date('2026-03-14T08:00:00.000Z').getTime();
+
+  try {
+    const optimizations = [
+      {
+        id: 'opt-failed',
+        type: 'budget',
+        level: 'campaign',
+        targetId: 'c1',
+        targetName: 'Failed Delivery Campaign',
+        action: 'Increase daily budget by $20.00 (20%)',
+        priority: 'medium',
+        timestamp: '2026-03-14T07:30:00.000Z',
+        scanId: 200,
+        executionResult: 'Failed to send Telegram approval request',
+      },
+      {
+        id: 'opt-open-old',
+        type: 'budget',
+        level: 'campaign',
+        targetId: 'c2',
+        targetName: 'Resolved Campaign',
+        action: 'Increase daily budget by $20.00 (20%)',
+        priority: 'medium',
+        timestamp: '2026-03-14T06:00:00.000Z',
+        scanId: 199,
+      },
+      {
+        id: 'opt-expired-new',
+        type: 'budget',
+        level: 'campaign',
+        targetId: 'c2',
+        targetName: 'Resolved Campaign',
+        action: 'Increase daily budget by $20.00 (20%)',
+        priority: 'medium',
+        timestamp: '2026-03-14T07:00:00.000Z',
+        scanId: 200,
+        approvalStatus: 'expired',
+        executionResult: 'Expired: Timeout — no response',
+      },
+    ];
+
+    await withMockedService({
+      scheduler: {
+        getAllOptimizations: () => optimizations,
+        getScanHistory: () => [{ scanId: 200, time: '2026-03-14T07:00:00.000Z', optimizations: 2, errors: 0 }],
+      },
+      contracts: {
+        aiOperations: payload => ({ apiVersion: 'v1', ...payload }),
+      },
+      recommendationQualityService: {
+        getRecommendationQualityResponse: () => ({
+          summary: {
+            expiredApprovals: 1,
+            failedApprovalRequests: 1,
+            duplicateApprovalClusters: 0,
+            staleHighPriorityAlerts: 0,
+          },
+        }),
+      },
+    }, async service => {
+      const response = service.getAiOperationsResponse();
+
+      assert.equal(response.summary.actionNowFamilies, 0);
+      assert.equal(response.summary.blockedFamilies, 1);
+      assert.equal(response.summary.resolvedFamilies, 1);
+
+      assert.equal(response.queue.immediate.length, 0);
+      assert.equal(response.queue.backlog.length, 1);
+      assert.equal(response.queue.backlog[0].targetName, 'Failed Delivery Campaign');
+      assert.equal(response.queue.backlog[0].currentStatus, 'blocked');
+
+      const resolvedCluster = response.clusters.find(cluster => cluster.targetName === 'Resolved Campaign');
+      assert.ok(resolvedCluster);
+      assert.equal(resolvedCluster.currentStatus, 'resolved');
+      assert.equal(resolvedCluster.hasOpenApprovals, false);
+      assert.equal(resolvedCluster.actionableNow, false);
     });
   } finally {
     Date.now = originalDateNow;

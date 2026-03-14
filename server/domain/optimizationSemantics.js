@@ -79,12 +79,27 @@ function isExecutableOptimization(action) {
   return false;
 }
 
+function normalizeResult(value) {
+  return String(value || '').trim();
+}
+
+function hasFailurePrefix(result) {
+  return result.startsWith('Failed:');
+}
+
 function getOptimizationStatus(action) {
   if (!action) return 'unknown';
+  const result = normalizeResult(action.executionResult);
   if (action.executed) return 'executed';
   if (action.approvalStatus === 'pending') return 'awaiting_telegram';
   if (action.approvalStatus === 'rejected') return 'rejected';
   if (action.approvalStatus === 'expired') return 'expired';
+  if (result === 'Failed to send Telegram approval request' || result.startsWith('Approval flow failed:')) {
+    return 'delivery_failed';
+  }
+  if (action.approvalStatus === 'approved' && !action.executed && hasFailurePrefix(result)) {
+    return 'execution_failed';
+  }
   if (requiresApproval(action) && isExecutableOptimization(action)) return 'needs_approval';
   return 'advisory';
 }

@@ -11,8 +11,11 @@ const {
 } = require('./optimizationDedupService');
 
 const WINDOW_HOURS = 72;
+const FLOW_WINDOW_HOURS = 24;
 const SYSTEM_WINDOW_HOURS = 24;
-const STALE_BACKLOG_HOURS = 18;
+const ACTION_WINDOW_HOURS = 6;
+const STALE_RECOMMENDATION_HOURS = 18;
+const AWAITING_REPLY_GRACE_MS = 20 * 60 * 1000;
 const MAX_ACTIVITY_ITEMS = 10;
 const MAX_CLUSTER_ITEMS = 60;
 
@@ -24,13 +27,14 @@ const PRIORITY_RANK = Object.freeze({
 });
 
 const ACTIVITY_STATUS_PRIORITY = Object.freeze({
-  executed: 0,
-  awaiting_telegram: 1,
-  needs_approval: 2,
-  expired: 3,
-  rejected: 4,
-  advisory: 5,
-  unknown: 6,
+  action_now: 0,
+  awaiting_reply: 1,
+  blocked: 2,
+  stale: 3,
+  watching: 4,
+  resolved: 5,
+  archived: 6,
+  unknown: 7,
 });
 
 function normalizeText(value) {
@@ -103,6 +107,144 @@ function getLatestScanId(scans, optimizations) {
   }, fromScans);
 }
 
+function isLatestScanCluster(cluster, latestScanId) {
+  return Number(cluster?.latestScanId || 0) === Number(latestScanId || 0);
+}
+
+function ownerStateForCluster(cluster, nowMs, latestScanId) {
+  const ageMs = cluster.latestTimestampMs > 0 ? Math.max(0, nowMs - cluster.latestTimestampMs) : Number.POSITIVE_INFINITY;
+  const ageHours = Number.isFinite(ageMs)
+    ? Math.round((ageMs / (60 * 60 * 1000)) * 10) / 10
+    : null;
+  const latestStatus = cluster.latestStatus;
+  const latestScan = isLatestScanCluster(cluster, latestScanId);
+  const withinFlowWindow = isRecentTimestamp(cluster.latestTimestampMs, nowMs, FLOW_WINDOW_HOURS * 60 * 60 * 1000);
+  const withinActionWindow = isRecentTimestamp(cluster.latestTimestampMs, nowMs, ACTION_WINDOW_HOURS * 60 * 60 * 1000);
+  const withinStaleWindow = isRecentTimestamp(cluster.latestTimestampMs, nowMs, STALE_RECOMMENDATION_HOURS * 60 * 60 * 1000);
+
+  if (latestStatus === 'awaiting_telegram') {
+    if (ageMs <= AWAITING_REPLY_GRACE_MS) {
+      return {
+        state: 'awaiting_reply',
+        actionableNow: true,
+        queueBucket: 'immediate',
+        reason: 'Telegram approval is still within the active reply window',
+        ageHours,
+      };
+    }
+
+    return {
+      state: 'blocked',
+      actionableNow: false,
+      queueBucket: 'backlog',
+      reason: 'Telegram reply window looks stale; resend or rerun instead of treating this as still pending',
+      ageHours,
+    };
+  }
+
+  if (latestStatus === 'delivery_failed') {
+    return {
+      state: 'blocked',
+      actionableNow: false,
+      queueBucket: 'backlog',
+      reason: 'Approval delivery failed; this should not appear as an open approval',
+      ageHours,
+    };
+  }
+
+  if (latestStatus === 'execution_failed') {
+    return {
+      state: 'blocked',
+      actionableNow: false,
+      queueBucket: 'backlog',
+      reason: 'Approval completed but execution failed on the downstream platform',
+      ageHours,
+    };
+  }
+
+  if (latestStatus === 'needs_approval') {
+    if (latestScan && withinActionWindow) {
+      return {
+        state: 'action_now',
+        actionableNow: true,
+        queueBucket: 'immediate',
+        reason: 'Latest-scan executable recommendation is still inside the active review window',
+        ageHours,
+      };
+    }
+
+    if (withinStaleWindow) {
+      return {
+        state: 'stale',
+        actionableNow: false,
+        queueBucket: 'backlog',
+        reason: latestScan
+          ? 'Review window has gone stale; rerun before asking for approval again'
+          : 'Older recommendation was not refreshed in the latest scan',
+        ageHours,
+      };
+    }
+
+    return {
+      state: 'archived',
+      actionableNow: false,
+      queueBucket: 'archive',
+      reason: 'Older unresolved recommendation has been archived until a fresh scan resurfaces it',
+      ageHours,
+    };
+  }
+
+  if (latestStatus === 'advisory') {
+    if (withinFlowWindow && getPriorityRank(cluster.priority) <= PRIORITY_RANK.high) {
+      return {
+        state: 'watching',
+        actionableNow: false,
+        queueBucket: 'watching',
+        reason: 'Fresh advisory signal worth watching, but not an approval decision',
+        ageHours,
+      };
+    }
+
+    return {
+      state: 'archived',
+      actionableNow: false,
+      queueBucket: 'archive',
+      reason: 'Older advisory signal archived out of the owner view',
+      ageHours,
+    };
+  }
+
+  if (['executed', 'expired', 'rejected'].includes(latestStatus)) {
+    if (withinFlowWindow) {
+      return {
+        state: 'resolved',
+        actionableNow: false,
+        queueBucket: 'resolved',
+        reason: 'Recent lifecycle update already resolved this family',
+        ageHours,
+      };
+    }
+
+    return {
+      state: 'archived',
+      actionableNow: false,
+      queueBucket: 'archive',
+      reason: 'Resolved history is archived after the recent review window',
+      ageHours,
+    };
+  }
+
+  return {
+    state: withinFlowWindow ? 'watching' : 'archived',
+    actionableNow: false,
+    queueBucket: withinFlowWindow ? 'watching' : 'archive',
+    reason: withinFlowWindow
+      ? 'Recent signal needs monitoring'
+      : 'Older family archived from the default owner view',
+    ageHours,
+  };
+}
+
 function createCluster(optimization) {
   const timestampMs = getReferenceTimestamp(optimization);
   const status = getOptimizationStatus(optimization);
@@ -118,14 +260,9 @@ function createCluster(optimization) {
     recentStatusCounts: {},
     count: 0,
     recentCount: 0,
-    hasOpenApprovals: false,
-    hasAwaitingTelegram: false,
-    hasLatestScanApproval: false,
-    latestOpenAt: null,
     firstSeenAt: timestampMs > 0 ? new Date(timestampMs).toISOString() : null,
     lastSeenAt: timestampMs > 0 ? new Date(timestampMs).toISOString() : null,
     latestTimestampMs: timestampMs,
-    latestOpenTimestampMs: 0,
     latestRecentTimestampMs: 0,
     latestScanId: optimization?.scanId ?? null,
     latestStatus: status,
@@ -143,6 +280,7 @@ function updateCluster(cluster, optimization, nowMs, windowMs, latestScanId) {
   const timestampMs = getReferenceTimestamp(optimization);
   const status = getOptimizationStatus(optimization);
   const recent = isRecentTimestamp(timestampMs, nowMs, windowMs);
+  void latestScanId;
 
   cluster.count += 1;
   incrementCounter(cluster.statusCounts, status);
@@ -173,29 +311,19 @@ function updateCluster(cluster, optimization, nowMs, windowMs, latestScanId) {
     cluster.highestPriorityOptimization = optimization;
     cluster.priority = optimization?.priority ?? cluster.priority;
   }
-
-  if (isOpenApprovalStatus(status)) {
-    cluster.hasOpenApprovals = true;
-    cluster.hasAwaitingTelegram = cluster.hasAwaitingTelegram || status === 'awaiting_telegram';
-    cluster.hasLatestScanApproval = cluster.hasLatestScanApproval || (
-      status === 'needs_approval'
-      && Number(optimization?.scanId || 0) === Number(latestScanId || 0)
-    );
-    if (timestampMs >= cluster.latestOpenTimestampMs) {
-      cluster.latestOpenTimestampMs = timestampMs;
-      cluster.latestOpenAt = timestampMs > 0 ? new Date(timestampMs).toISOString() : cluster.latestOpenAt;
-    }
-  }
 }
 
-function finalizeCluster(cluster, nowMs) {
+function finalizeCluster(cluster, nowMs, latestScanId) {
   const latestOptimization = cluster.latestOptimization || {};
   const recentLatestOptimization = cluster.recentLatestOptimization || latestOptimization;
-  const openCount = (cluster.statusCounts.needs_approval || 0) + (cluster.statusCounts.awaiting_telegram || 0);
+  const ownerState = ownerStateForCluster(cluster, nowMs, latestScanId);
+  const latestStatus = cluster.latestStatus;
+  const hasOpenApprovals = isOpenApprovalStatus(latestStatus);
+  const hasAwaitingTelegram = latestStatus === 'awaiting_telegram';
+  const hasLatestScanApproval = latestStatus === 'needs_approval' && isLatestScanCluster(cluster, latestScanId);
+  const historicalOpenCount = (cluster.statusCounts.needs_approval || 0) + (cluster.statusCounts.awaiting_telegram || 0);
   const recentOpenCount = (cluster.recentStatusCounts.needs_approval || 0) + (cluster.recentStatusCounts.awaiting_telegram || 0);
-  const backlogAgeHours = cluster.latestOpenTimestampMs > 0
-    ? Math.round(((nowMs - cluster.latestOpenTimestampMs) / (60 * 60 * 1000)) * 10) / 10
-    : null;
+  const openCount = ownerState.actionableNow ? 1 : 0;
 
   return {
     key: cluster.key,
@@ -205,9 +333,7 @@ function finalizeCluster(cluster, nowMs) {
     targetName: cluster.targetName,
     direction: cluster.direction,
     priority: cluster.priority,
-    currentStatus: cluster.hasAwaitingTelegram
-      ? 'awaiting_telegram'
-      : (cluster.hasOpenApprovals ? 'needs_approval' : cluster.latestStatus),
+    currentStatus: ownerState.state,
     action: latestOptimization.action ?? '',
     reason: latestOptimization.reason ?? '',
     impact: latestOptimization.impact ?? '',
@@ -219,28 +345,30 @@ function finalizeCluster(cluster, nowMs) {
     recentStatusCounts: cluster.recentStatusCounts,
     firstSeenAt: cluster.firstSeenAt,
     lastSeenAt: cluster.lastSeenAt,
-    latestOpenAt: cluster.latestOpenAt,
+    latestOpenAt: hasOpenApprovals ? cluster.lastSeenAt : null,
     latestScanId: cluster.latestScanId,
     openCount,
+    historicalOpenCount,
     recentOpenCount,
-    hasOpenApprovals: cluster.hasOpenApprovals,
-    hasAwaitingTelegram: cluster.hasAwaitingTelegram,
-    hasLatestScanApproval: cluster.hasLatestScanApproval,
-    stale: cluster.hasOpenApprovals && backlogAgeHours !== null && backlogAgeHours >= STALE_BACKLOG_HOURS,
-    backlogAgeHours,
-    latestStatus: cluster.latestStatus,
+    hasOpenApprovals,
+    hasAwaitingTelegram,
+    hasLatestScanApproval,
+    actionableNow: ownerState.actionableNow,
+    queueBucket: ownerState.queueBucket,
+    stateReason: ownerState.reason,
+    stale: ownerState.state === 'stale',
+    backlogAgeHours: ownerState.ageHours,
+    latestStatus,
     latestRecentStatus: getOptimizationStatus(recentLatestOptimization),
     latestRecentAt: cluster.latestRecentTimestampMs > 0 ? new Date(cluster.latestRecentTimestampMs).toISOString() : null,
+    latestTimestampMs: cluster.latestTimestampMs,
   };
 }
 
 function sortClusters(left, right) {
-  if (left.hasOpenApprovals !== right.hasOpenApprovals) {
-    return left.hasOpenApprovals ? -1 : 1;
-  }
-
-  if (left.stale !== right.stale) {
-    return left.stale ? -1 : 1;
+  const stateDiff = getActivityStatusRank(left.currentStatus) - getActivityStatusRank(right.currentStatus);
+  if (stateDiff !== 0) {
+    return stateDiff;
   }
 
   const priorityDiff = comparePriority(left.priority, right.priority);
@@ -257,14 +385,24 @@ function sortClusters(left, right) {
 
 function buildActivityTitle(cluster) {
   const counts = cluster.recentStatusCounts || {};
-  const latestStatus = cluster.latestRecentStatus || cluster.currentStatus;
+  const currentStatus = cluster.currentStatus;
 
-  if (counts.executed > 0) return counts.executed > 1 ? 'Multiple executions landed' : 'Optimization executed';
-  if (latestStatus === 'awaiting_telegram') return counts.awaiting_telegram > 1 ? 'Approval requests resurfaced' : 'Approval awaiting reply';
-  if (latestStatus === 'needs_approval') return cluster.recentCount > 1 ? 'Recommendation resurfaced' : 'New recommendation';
-  if (latestStatus === 'expired') return counts.expired > 1 ? 'Approvals expired repeatedly' : 'Approval expired';
-  if (latestStatus === 'rejected') return counts.rejected > 1 ? 'Approvals were rejected' : 'Approval rejected';
-  return cluster.recentCount > 1 ? 'Recommendation repeated' : 'Recommendation logged';
+  if (currentStatus === 'action_now') return cluster.recentCount > 1 ? 'Decision resurfaced in latest scans' : 'Decision needed now';
+  if (currentStatus === 'awaiting_reply') return 'Waiting for Telegram reply';
+  if (currentStatus === 'blocked') {
+    if (cluster.latestStatus === 'delivery_failed') return 'Approval delivery failed';
+    if (cluster.latestStatus === 'execution_failed') return 'Execution failed after approval';
+    return 'Decision path is blocked';
+  }
+  if (currentStatus === 'stale') return 'Recommendation went stale';
+  if (currentStatus === 'resolved') {
+    if (counts.executed > 0) return counts.executed > 1 ? 'Multiple executions landed' : 'Optimization executed';
+    if (cluster.latestStatus === 'expired') return counts.expired > 1 ? 'Approvals expired repeatedly' : 'Approval expired';
+    if (cluster.latestStatus === 'rejected') return counts.rejected > 1 ? 'Approvals were rejected' : 'Approval rejected';
+    return 'Decision resolved';
+  }
+  if (currentStatus === 'watching') return cluster.recentCount > 1 ? 'Advisory signal repeated' : 'Fresh advisory signal';
+  return 'Archived decision';
 }
 
 function buildActivitySummary(cluster) {
@@ -274,56 +412,40 @@ function buildActivitySummary(cluster) {
   if (cluster.recentCount > 1) {
     parts.push(`Seen ${cluster.recentCount} times in ${WINDOW_HOURS}h`);
   }
-  if (counts.needs_approval > 0) {
-    parts.push(`${counts.needs_approval} open`);
-  }
-  if (counts.awaiting_telegram > 0) {
-    parts.push(`${counts.awaiting_telegram} awaiting reply`);
-  }
-  if (counts.expired > 0) {
-    parts.push(`${counts.expired} expired`);
-  }
-  if (counts.rejected > 0) {
-    parts.push(`${counts.rejected} rejected`);
-  }
-  if (counts.executed > 0) {
-    parts.push(`${counts.executed} executed`);
-  }
+  if (cluster.stateReason) parts.push(cluster.stateReason);
+  if (counts.expired > 0) parts.push(`${counts.expired} expired`);
+  if (counts.rejected > 0) parts.push(`${counts.rejected} rejected`);
+  if (counts.executed > 0) parts.push(`${counts.executed} executed`);
+  if (counts.delivery_failed > 0) parts.push(`${counts.delivery_failed} delivery failure`);
+  if (counts.execution_failed > 0) parts.push(`${counts.execution_failed} execution failure`);
 
   return parts.join(' · ');
 }
 
-function shouldIncludeInActivity(cluster) {
-  const counts = cluster.recentStatusCounts || {};
-  const hasNonAdvisory = [
-    counts.needs_approval,
-    counts.awaiting_telegram,
-    counts.executed,
-    counts.expired,
-    counts.rejected,
-  ].some(Boolean);
+function shouldIncludeInActivity(cluster, nowMs) {
+  if (!isRecentTimestamp(cluster.latestTimestampMs, nowMs, FLOW_WINDOW_HOURS * 60 * 60 * 1000)) {
+    return false;
+  }
 
-  if (hasNonAdvisory) {
+  if (['action_now', 'awaiting_reply', 'blocked', 'stale', 'resolved'].includes(cluster.currentStatus)) {
     return true;
   }
 
-  const priorityRank = getPriorityRank(cluster.priority);
-  return priorityRank <= PRIORITY_RANK.high && cluster.recentCount <= 2;
+  return cluster.currentStatus === 'watching' && getPriorityRank(cluster.priority) <= PRIORITY_RANK.high;
 }
 
-function buildActivityEntries(clusters) {
+function buildActivityEntries(clusters, nowMs) {
   return clusters
-    .filter(cluster => cluster.recentCount > 0)
-    .filter(shouldIncludeInActivity)
+    .filter(cluster => shouldIncludeInActivity(cluster, nowMs))
     .map(cluster => ({
       id: `activity:${cluster.key}`,
       clusterKey: cluster.key,
-      kind: cluster.latestRecentStatus || cluster.currentStatus,
+      kind: cluster.currentStatus,
       title: buildActivityTitle(cluster),
       targetName: cluster.targetName,
       action: cluster.action,
       detail: buildActivitySummary(cluster),
-      timestamp: cluster.latestRecentAt || cluster.lastSeenAt,
+      timestamp: cluster.lastSeenAt,
       priority: cluster.priority,
       count: cluster.recentCount,
     }))
@@ -427,8 +549,12 @@ function buildDecisionMarkers(activity) {
 function summarizeQueue(queue) {
   return {
     familyCount: queue.length,
-    itemCount: queue.reduce((sum, cluster) => sum + cluster.openCount, 0),
+    itemCount: queue.reduce((sum, cluster) => sum + (cluster.openCount || 0), 0),
   };
+}
+
+function countByState(clusters, state) {
+  return clusters.filter(cluster => cluster.currentStatus === state).length;
 }
 
 function getAiOperationsResponse() {
@@ -452,18 +578,23 @@ function getAiOperationsResponse() {
     });
 
   const clusters = Array.from(clusterMap.values())
-    .map(cluster => finalizeCluster(cluster, nowMs))
+    .map(cluster => finalizeCluster(cluster, nowMs, latestScanId))
     .sort(sortClusters);
 
-  const immediateQueue = clusters.filter(cluster => cluster.hasAwaitingTelegram || cluster.hasLatestScanApproval);
-  const immediateKeys = new Set(immediateQueue.map(cluster => cluster.key));
-  const backlog = clusters.filter(cluster => cluster.hasOpenApprovals && !immediateKeys.has(cluster.key));
-  const activity = buildActivityEntries(clusters);
+  const immediateQueue = clusters.filter(cluster => ['action_now', 'awaiting_reply'].includes(cluster.currentStatus));
+  const backlog = clusters.filter(cluster => ['blocked', 'stale'].includes(cluster.currentStatus));
+  const visibleClusters = clusters.filter(cluster => cluster.currentStatus !== 'archived');
+  const activity = buildActivityEntries(clusters, nowMs);
   const decisionMarkers = buildDecisionMarkers(activity);
   const systemChatter = buildSystemChatter(scans, nowMs, systemWindowMs);
   const qualityState = buildQualityState(qualityResponse.summary || {}, optimizations.length, clusters.length);
   const queueSummary = summarizeQueue(immediateQueue);
   const backlogSummary = summarizeQueue(backlog);
+  const watchingFamilies = countByState(clusters, 'watching');
+  const resolvedFamilies = countByState(clusters, 'resolved');
+  const archivedFamilies = countByState(clusters, 'archived');
+  const blockedFamilies = countByState(clusters, 'blocked');
+  const staleFamilies = countByState(clusters, 'stale');
 
   return contracts.aiOperations({
     generatedAt: new Date(nowMs).toISOString(),
@@ -475,10 +606,16 @@ function getAiOperationsResponse() {
       compressionRatio: clusters.length > 0 ? Math.round((optimizations.length / clusters.length) * 10) / 10 : 0,
       actionNowFamilies: queueSummary.familyCount,
       actionNowItems: queueSummary.itemCount,
+      blockedFamilies: blockedFamilies + staleFamilies,
+      blockedItems: backlogSummary.familyCount,
+      watchingFamilies,
+      resolvedFamilies,
+      archivedFamilies,
+      awaitingTelegram: countByState(clusters, 'awaiting_reply'),
+      staleBacklogFamilies: staleFamilies,
       openBacklogFamilies: backlogSummary.familyCount,
-      openBacklogItems: backlogSummary.itemCount,
-      awaitingTelegram: immediateQueue.filter(cluster => cluster.hasAwaitingTelegram).length,
-      staleBacklogFamilies: backlog.filter(cluster => cluster.stale).length,
+      openBacklogItems: backlogSummary.familyCount,
+      recentChangeCount: activity.length,
     },
     quality: {
       ...qualityState,
@@ -491,7 +628,7 @@ function getAiOperationsResponse() {
     },
     activity,
     decisionMarkers,
-    clusters: clusters.slice(0, MAX_CLUSTER_ITEMS),
+    clusters: visibleClusters.slice(0, MAX_CLUSTER_ITEMS),
   });
 }
 

@@ -32,12 +32,18 @@
     targeting: 'target',
   };
   const EVENT_ICON_MAP = {
-    needs_approval: 'sparkles',
-    awaiting_telegram: 'send',
+    action_now: 'sparkles',
+    awaiting_reply: 'send',
+    blocked: 'triangle-alert',
+    stale: 'archive',
+    watching: 'radar',
+    resolved: 'check-check',
     executed: 'check-check',
     expired: 'clock-3',
     rejected: 'x-circle',
     advisory: 'radar',
+    delivery_failed: 'triangle-alert',
+    execution_failed: 'octagon-alert',
     challenger: 'beaker',
     promoted: 'rocket',
     warning: 'triangle-alert',
@@ -95,12 +101,24 @@
 
   function statusMeta(status) {
     switch (status) {
-      case 'needs_approval':
-        return { label: tr('Open', '열림'), className: 'badge-warning' };
-      case 'awaiting_telegram':
-        return { label: tr('Awaiting Telegram', '텔레그램 대기'), className: 'badge-info' };
+      case 'action_now':
+        return { label: tr('Decide now', '지금 결정'), className: 'badge-warning' };
+      case 'awaiting_reply':
+        return { label: tr('Awaiting reply', '응답 대기'), className: 'badge-info' };
+      case 'blocked':
+        return { label: tr('Blocked', '막힘'), className: 'badge-danger' };
+      case 'stale':
+        return { label: tr('Stale', '오래됨'), className: 'badge-neutral' };
+      case 'watching':
+        return { label: tr('Watching', '관찰 중'), className: 'badge-info' };
+      case 'resolved':
+        return { label: tr('Resolved', '해결됨'), className: 'badge-success' };
       case 'executed':
         return { label: tr('Executed', '실행됨'), className: 'badge-success' };
+      case 'delivery_failed':
+        return { label: tr('Delivery failed', '전달 실패'), className: 'badge-danger' };
+      case 'execution_failed':
+        return { label: tr('Execution failed', '실행 실패'), className: 'badge-danger' };
       case 'rejected':
         return { label: tr('Rejected', '거절됨'), className: 'badge-danger' };
       case 'expired':
@@ -213,16 +231,14 @@
 
   function matchClusterStatus(cluster, statusFilter) {
     switch (statusFilter) {
-      case 'open':
-        return !!cluster.hasOpenApprovals;
-      case 'awaiting_telegram':
-        return cluster.currentStatus === 'awaiting_telegram' || (cluster.statusCounts?.awaiting_telegram || 0) > 0;
-      case 'advisory':
-        return cluster.currentStatus === 'advisory' && !cluster.hasOpenApprovals;
-      case 'executed':
-        return cluster.currentStatus === 'executed';
+      case 'live':
+        return ['action_now', 'awaiting_reply'].includes(cluster.currentStatus);
+      case 'blocked':
+        return ['blocked', 'stale'].includes(cluster.currentStatus);
+      case 'watching':
+        return cluster.currentStatus === 'watching';
       case 'resolved':
-        return ['expired', 'rejected'].includes(cluster.currentStatus) || (cluster.statusCounts?.expired || 0) > 0 || (cluster.statusCounts?.rejected || 0) > 0;
+        return cluster.currentStatus === 'resolved';
       case 'all':
       default:
         return true;
@@ -248,16 +264,14 @@
       .filter(opt => typeFilter === 'all' || opt.type === typeFilter)
       .filter(opt => {
         switch (statusFilter) {
-          case 'open':
-            return opt.status === 'needs_approval';
-          case 'awaiting_telegram':
-            return opt.status === 'awaiting_telegram';
-          case 'advisory':
+          case 'live':
+            return opt.status === 'needs_approval' || opt.status === 'awaiting_telegram';
+          case 'blocked':
+            return opt.status === 'delivery_failed' || opt.status === 'execution_failed';
+          case 'watching':
             return opt.status === 'advisory';
-          case 'executed':
-            return opt.status === 'executed';
           case 'resolved':
-            return opt.status === 'rejected' || opt.status === 'expired';
+            return opt.status === 'executed' || opt.status === 'rejected' || opt.status === 'expired';
           case 'all':
           default:
             return true;
@@ -277,12 +291,13 @@
     const parts = [];
     const counts = cluster.statusCounts || {};
 
-    if (counts.needs_approval) parts.push(tr(`${formatCount(counts.needs_approval)} open`, `${formatCount(counts.needs_approval)}건 열림`));
-    if (counts.awaiting_telegram) parts.push(tr(`${formatCount(counts.awaiting_telegram)} awaiting`, `${formatCount(counts.awaiting_telegram)}건 대기`));
+    if (cluster.stateReason) parts.push(tr(cluster.stateReason, cluster.stateReason));
+    if (counts.delivery_failed) parts.push(tr(`${formatCount(counts.delivery_failed)} delivery failure`, `${formatCount(counts.delivery_failed)}건 전달 실패`));
+    if (counts.execution_failed) parts.push(tr(`${formatCount(counts.execution_failed)} execution failure`, `${formatCount(counts.execution_failed)}건 실행 실패`));
     if (counts.expired) parts.push(tr(`${formatCount(counts.expired)} expired`, `${formatCount(counts.expired)}건 만료`));
     if (counts.rejected) parts.push(tr(`${formatCount(counts.rejected)} rejected`, `${formatCount(counts.rejected)}건 거절`));
     if (counts.executed) parts.push(tr(`${formatCount(counts.executed)} executed`, `${formatCount(counts.executed)}건 실행`));
-    if (counts.advisory && !cluster.hasOpenApprovals) parts.push(tr(`${formatCount(counts.advisory)} advisory`, `${formatCount(counts.advisory)}건 참고용`));
+    if (counts.advisory && cluster.currentStatus === 'watching') parts.push(tr(`${formatCount(counts.advisory)} advisory`, `${formatCount(counts.advisory)}건 참고용`));
 
     return parts.join(' · ');
   }
@@ -294,11 +309,14 @@
     if (cluster.recentCount > 0) {
       items.push(`<span class="opt-cluster-stat"><strong>${esc(formatCount(cluster.recentCount || 0))}</strong>${esc(tr(`in ${cluster.windowHours || 72}h`, `${cluster.windowHours || 72}시간`))}</span>`);
     }
-    if (cluster.hasOpenApprovals) {
-      items.push(`<span class="opt-cluster-stat"><strong>${esc(formatCount(cluster.openCount || 0))}</strong>${esc(tr('open', '열림'))}</span>`);
+    if (cluster.actionableNow) {
+      items.push(`<span class="opt-cluster-stat"><strong>${esc(formatCount(cluster.openCount || 0))}</strong>${esc(tr('live', '라이브'))}</span>`);
     }
-    if (cluster.stale) {
-      items.push(`<span class="opt-cluster-stat"><strong>${esc(tr('Stale', '정체'))}</strong>${esc(tr(`${cluster.backlogAgeHours || 0}h age`, `${cluster.backlogAgeHours || 0}시간`))}</span>`);
+    if (['blocked', 'stale'].includes(cluster.currentStatus)) {
+      const cleanupLabel = cluster.currentStatus === 'blocked'
+        ? tr('Blocked', '막힘')
+        : tr('Stale', '오래됨');
+      items.push(`<span class="opt-cluster-stat"><strong>${esc(cleanupLabel)}</strong>${esc(tr(`${cluster.backlogAgeHours || 0}h age`, `${cluster.backlogAgeHours || 0}시간`))}</span>`);
     }
 
     return items.join('');
@@ -310,16 +328,22 @@
     const status = statusMeta(cluster.currentStatus);
     const lastSeen = formatRelative(cluster.lastSeenAt);
     const firstSeen = formatRelative(cluster.firstSeenAt);
-    const queueAction = options.showAction && cluster.currentStatus === 'needs_approval'
-      ? `<button class="btn btn-sm btn-primary execute-opt" data-opt-id="${esc(cluster.latestOptimizationId)}">${esc(tr('Send to Telegram', '텔레그램 전송'))}</button>`
+    const queueAction = options.showAction && cluster.currentStatus === 'action_now'
+      ? `<button class="btn btn-sm btn-primary execute-opt" data-opt-id="${esc(cluster.latestOptimizationId)}">${esc(tr('Request approval', '승인 요청'))}</button>`
       : '';
-    const awaitingBadge = options.showAction && cluster.currentStatus === 'awaiting_telegram'
-      ? `<span class="badge badge-info">${esc(tr('Awaiting Telegram', '텔레그램 응답 대기'))}</span>`
+    const awaitingBadge = options.showAction && cluster.currentStatus === 'awaiting_reply'
+      ? `<span class="badge badge-info">${esc(tr('Awaiting reply', '응답 대기'))}</span>`
       : '';
     const callout = cluster.count > 1
       ? tr(
           `${formatCount(cluster.count)} raw rows collapsed into one decision family`,
           `원시 ${formatCount(cluster.count)}행을 하나의 의사결정 패밀리로 압축`
+        )
+      : '';
+    const stateCallout = ['blocked', 'stale'].includes(cluster.currentStatus)
+      ? tr(
+          'This family is shown for cleanup only. It is not asking for approval right now.',
+          '이 패밀리는 정리용으로만 표시됩니다. 지금 승인 요청 중인 항목이 아닙니다.'
         )
       : '';
 
@@ -342,6 +366,7 @@
           <div class="opt-cluster-meta">${buildClusterMeta(cluster)}</div>
           <div class="opt-summary-line">${esc(buildClusterStatusLine(cluster) || tr('No lifecycle updates recorded yet.', '아직 상태 변화가 없습니다.'))}</div>
           ${callout ? `<div class="opt-callout">${esc(callout)}</div>` : ''}
+          ${stateCallout ? `<div class="opt-callout">${esc(stateCallout)}</div>` : ''}
           <div class="opt-time">${esc(tr(`First seen ${firstSeen} · Last seen ${lastSeen}`, `최초 ${firstSeen} · 최근 ${lastSeen}`))}</div>
         </div>
       </div>
@@ -352,14 +377,13 @@
     const summary = aiOps?.summary || {};
     const quality = aiOps?.quality || {};
     const qualitySummary = quality.summary || {};
-    const qualityBadge = qualityMeta(quality.level);
 
     const valueMap = {
       optActionNow: summary.actionNowFamilies ?? 0,
-      optBacklog: summary.openBacklogFamilies ?? 0,
-      optFriction: (qualitySummary.expiredApprovals || 0) + (qualitySummary.failedApprovalRequests || 0),
-      optRepeats: qualitySummary.duplicateApprovalClusters || 0,
-      optQuality: qualityBadge.label,
+      optBacklog: summary.blockedFamilies ?? 0,
+      optFriction: summary.watchingFamilies ?? 0,
+      optRepeats: summary.resolvedFamilies ?? 0,
+      optQuality: summary.recentChangeCount ?? 0,
     };
 
     Object.entries(valueMap).forEach(([id, value]) => {
@@ -370,24 +394,24 @@
 
     const metaMap = {
       optActionNowMeta: tr(
-        `${formatCount(summary.actionNowItems || 0)} open items across the latest queue`,
-        `최신 큐 기준 ${formatCount(summary.actionNowItems || 0)}개 항목`
+        `${formatCount(summary.actionNowItems || 0)} live approvals still inside the review window`,
+        `검토 창 안에 있는 라이브 승인 ${formatCount(summary.actionNowItems || 0)}건`
       ),
       optBacklogMeta: tr(
-        `${formatCount(summary.openBacklogItems || 0)} unresolved items in older families`,
-        `이전 패밀리에 ${formatCount(summary.openBacklogItems || 0)}개 미해결`
+        `${formatCount(summary.staleBacklogFamilies || 0)} stale · ${formatCount(qualitySummary.failedApprovalRequests || 0)} delivery failures`,
+        `${formatCount(summary.staleBacklogFamilies || 0)}개 오래됨 · ${formatCount(qualitySummary.failedApprovalRequests || 0)}개 전달 실패`
       ),
       optFrictionMeta: tr(
-        `${formatCount(qualitySummary.expiredApprovals || 0)} expired · ${formatCount(qualitySummary.failedApprovalRequests || 0)} delivery failures`,
-        `${formatCount(qualitySummary.expiredApprovals || 0)} 만료 · ${formatCount(qualitySummary.failedApprovalRequests || 0)} 전달 실패`
+        `${formatCount(summary.watchingFamilies || 0)} advisory families still worth monitoring`,
+        `계속 관찰할 참고용 패밀리 ${formatCount(summary.watchingFamilies || 0)}개`
       ),
       optRepeatsMeta: tr(
-        `${formatCount(summary.rawRecommendationCount || 0)} rows compressed into ${formatCount(summary.clusterCount || 0)} families`,
-        `${formatCount(summary.rawRecommendationCount || 0)}행을 ${formatCount(summary.clusterCount || 0)}패밀리로 압축`
+        `${formatCount(summary.resolvedFamilies || 0)} families resolved in the recent owner window`,
+        `최근 소유자 창에서 해결된 패밀리 ${formatCount(summary.resolvedFamilies || 0)}개`
       ),
       optQualityMeta: tr(
-        `${formatCount(qualitySummary.staleHighPriorityAlerts || 0)} stale alerts · ${formatCount(summary.staleBacklogFamilies || 0)} stale backlog families`,
-        `${formatCount(qualitySummary.staleHighPriorityAlerts || 0)}개 오래된 경보 · ${formatCount(summary.staleBacklogFamilies || 0)}개 정체 백로그`
+        `${formatCount(summary.recentChangeCount || 0)} material changes in the last ${aiOps?.systemChatter?.windowHours || 24}h`,
+        `최근 ${aiOps?.systemChatter?.windowHours || 24}시간 동안 의미 있는 변화 ${formatCount(summary.recentChangeCount || 0)}개`
       ),
     };
 
@@ -395,6 +419,166 @@
       const el = document.getElementById(id);
       if (el) el.textContent = value;
     });
+  }
+
+  function renderLaneEmpty(title, body) {
+    return `
+      <div class="ai-ops-lane-empty">
+        <strong>${esc(title)}</strong>
+        <p>${esc(body)}</p>
+      </div>
+    `;
+  }
+
+  function renderFocus(aiOps) {
+    const card = document.getElementById('aiOpsFocusCard');
+    const titleEl = document.getElementById('optHeroTitle');
+    const bodyEl = document.getElementById('optHeroBody');
+    const tagsEl = document.getElementById('optHeroTags');
+    const nextEl = document.getElementById('optHeroNext');
+    const nextMetaEl = document.getElementById('optHeroNextMeta');
+    const ignoreEl = document.getElementById('optHeroIgnore');
+    const ignoreMetaEl = document.getElementById('optHeroIgnoreMeta');
+    if (!card || !titleEl || !bodyEl || !tagsEl || !nextEl || !nextMetaEl || !ignoreEl || !ignoreMetaEl) return;
+
+    const summary = aiOps?.summary || {};
+    const immediate = aiOps?.queue?.immediate || [];
+    const backlog = aiOps?.queue?.backlog || [];
+    const clusters = aiOps?.clusters || [];
+    const watchCluster = clusters.find(cluster => cluster.currentStatus === 'watching');
+    const latestChange = aiOps?.activity?.[0];
+    const topImmediate = immediate[0];
+    const topCleanup = backlog[0];
+
+    let tone = 'neutral';
+    let title = tr('Waiting for AI operations data...', 'AI 운영 데이터 대기 중...');
+    let body = tr(
+      'This space will tell you what still needs a decision, what is cleanup only, and what can safely wait.',
+      '이 영역은 아직 결정이 필요한 것, 정리만 필요한 것, 기다려도 되는 것을 구분해 보여줍니다.'
+    );
+    let nextMove = '—';
+    let nextMoveMeta = '—';
+    let ignoreNow = '—';
+    let ignoreNowMeta = '—';
+
+    if (summary.actionNowFamilies > 0 && topImmediate) {
+      tone = 'warning';
+      title = tr('Act on the live queue first', '라이브 큐부터 처리하세요');
+      body = tr(
+        `${formatCount(summary.actionNowFamilies)} decision families are still inside the review window. Start with ${topImmediate.targetName || 'the top item'} before looking at backlog or research detail.`,
+        `검토 창 안에 아직 ${formatCount(summary.actionNowFamilies)}개 결정 패밀리가 있습니다. 백로그나 연구 영역보다 먼저 ${topImmediate.targetName || '최상단 항목'}부터 보세요.`
+      );
+      nextMove = topImmediate.targetName || tr('Open the top live decision', '상단 라이브 결정을 열기');
+      nextMoveMeta = localizeOptimizationText(topImmediate.action || topImmediate.reason || tr('Review the recommendation and decide.', '추천 내용을 검토하고 결정하세요.'));
+      ignoreNow = tr('Archive and Karpathy can wait', '아카이브와 Karpathy는 나중에');
+      ignoreNowMeta = tr(
+        'Do not spend attention on audit history until the live queue is clear.',
+        '라이브 큐가 비기 전까지는 감사용 이력에 주의를 뺏기지 않아도 됩니다.'
+      );
+    } else if (((summary.blockedFamilies || 0) + (summary.staleBacklogFamilies || 0)) > 0 && topCleanup) {
+      tone = 'calm';
+      title = tr('No live approvals, but cleanup still matters', '라이브 승인은 없지만 정리는 필요합니다');
+      body = tr(
+        `${formatCount(summary.blockedFamilies)} family is not asking for approval anymore, but leaving it around will keep the page noisy and untrustworthy.`,
+        `${formatCount(summary.blockedFamilies)}개 패밀리는 더 이상 승인을 묻지 않지만, 그대로 두면 페이지가 계속 시끄럽고 신뢰하기 어려워집니다.`
+      );
+      nextMove = topCleanup.targetName || tr('Clean up the blocked family', '막힌 패밀리 정리');
+      nextMoveMeta = buildClusterStatusLine(topCleanup) || localizeOptimizationText(topCleanup.reason || tr('Resolve the delivery or archive state.', '전달 또는 아카이브 상태를 정리하세요.'));
+      ignoreNow = tr('There is no live queue pressure', '라이브 큐 압박은 없습니다');
+      ignoreNowMeta = tr(
+        'Nothing currently needs approval. Use this pass to clean trust issues instead of rushing into archive detail.',
+        '현재 승인 필요한 항목은 없습니다. 아카이브를 뒤지기보다 신뢰를 해치는 정리 이슈부터 처리하세요.'
+      );
+    } else if ((summary.watchingFamilies || 0) > 0 && watchCluster) {
+      tone = 'calm';
+      title = tr('Nothing to approve right now', '지금 승인할 것은 없습니다');
+      body = tr(
+        `${formatCount(summary.watchingFamilies)} advisory family is worth monitoring, but the account is in watch mode rather than action mode.`,
+        `${formatCount(summary.watchingFamilies)}개 참고용 패밀리는 계속 볼 가치가 있지만, 지금은 액션 모드보다 관찰 모드에 가깝습니다.`
+      );
+      nextMove = watchCluster.targetName || tr('Watch the main advisory signal', '주요 참고 신호 관찰');
+      nextMoveMeta = localizeOptimizationText(watchCluster.reason || tr('Review the latest advisory reasoning.', '최신 참고 사유를 확인하세요.'));
+      ignoreNow = tr('Cleanup and archive can stay closed', '정리와 아카이브는 닫아둬도 됩니다');
+      ignoreNowMeta = tr(
+        'There is no approval pressure. Focus on the watch signal only if it starts to move.',
+        '승인 압박은 없습니다. 관찰 신호가 움직일 때만 집중하면 됩니다.'
+      );
+    } else if ((summary.recentChangeCount || 0) > 0 || (summary.resolvedFamilies || 0) > 0) {
+      tone = 'good';
+      title = tr('Nothing urgent, just recent movement to review', '긴급한 건 없고 최근 변화만 확인하면 됩니다');
+      body = tr(
+        `${formatCount(summary.recentChangeCount || 0)} material change${(summary.recentChangeCount || 0) === 1 ? '' : 's'} landed in the recent window, but there is no open action queue competing for attention.`,
+        `최근 창에 의미 있는 변화 ${formatCount(summary.recentChangeCount || 0)}개가 있었지만, 주의를 경쟁하는 열린 액션 큐는 없습니다.`
+      );
+      nextMove = latestChange?.title || tr('Scan the recent changes list', '최근 변화 목록 확인');
+      nextMoveMeta = latestChange?.detail || tr('Confirm whether the change affects today’s decisions.', '이 변화가 오늘 결정에 영향을 주는지 확인하세요.');
+      ignoreNow = tr('Blocked history can wait', '막힌 이력은 나중에');
+      ignoreNowMeta = tr(
+        'The page is calm enough that you can stay at the top of the workflow and skip deeper audit sections.',
+        '페이지가 충분히 차분하니 워크플로 상단만 보고 깊은 감사 섹션은 건너뛰어도 됩니다.'
+      );
+    } else {
+      tone = 'good';
+      title = tr('Clear runway right now', '지금은 깔끔한 상태입니다');
+      body = tr(
+        'No live approvals, blocked cleanup, or watch signals are competing for attention. You can treat AI Operations as quiet until a fresh state change lands.',
+        '라이브 승인, 막힌 정리, 관찰 신호가 모두 비어 있습니다. 새로운 상태 변화가 생길 때까지 AI Operations는 조용한 상태로 봐도 됩니다.'
+      );
+      nextMove = tr('Stay on the top workflow', '상단 워크플로만 보면 됩니다');
+      nextMoveMeta = tr(
+        'If anything changes, it will show up in the action lane or recent changes before it matters elsewhere.',
+        '무언가 바뀌면 다른 곳보다 먼저 액션 레인이나 최근 변화에 나타납니다.'
+      );
+      ignoreNow = tr('Archive and Karpathy can stay folded', '아카이브와 Karpathy는 접어둬도 됩니다');
+      ignoreNowMeta = tr(
+        'Use the deeper sections only when you need audit detail or policy-lab investigation.',
+        '감사용 세부 내용이나 정책 연구 조사가 필요할 때만 아래 섹션을 열면 됩니다.'
+      );
+    }
+
+    const chips = [
+      { label: tr('Live', '라이브'), rawValue: summary.actionNowFamilies || 0 },
+      { label: tr('Cleanup', '정리'), rawValue: (summary.blockedFamilies || 0) + (summary.staleBacklogFamilies || 0) },
+      { label: tr('Watching', '관찰'), rawValue: summary.watchingFamilies || 0 },
+      { label: tr('Recent changes', '최근 변화'), rawValue: summary.recentChangeCount || 0 },
+    ].filter(chip => chip.rawValue > 0 || chip.label === tr('Live', '라이브'));
+
+    card.dataset.tone = tone;
+    titleEl.textContent = title;
+    bodyEl.textContent = body;
+    nextEl.textContent = nextMove;
+    nextMetaEl.textContent = nextMoveMeta;
+    ignoreEl.textContent = ignoreNow;
+    ignoreMetaEl.textContent = ignoreNowMeta;
+    tagsEl.innerHTML = chips.map(chip => `
+      <span class="ai-ops-focus-chip">
+        <strong>${esc(formatCount(chip.rawValue))}</strong>
+        <span>${esc(chip.label)}</span>
+      </span>
+    `).join('');
+  }
+
+  function renderSectionSummaries(aiOps, policyLab) {
+    const archiveEl = document.getElementById('optArchiveSummary');
+    const karpathyEl = document.getElementById('karpathyFoldMeta');
+    const summary = aiOps?.summary || {};
+
+    if (archiveEl) {
+      archiveEl.textContent = tr(
+        `${formatCount(aiOps?.clusters?.length || 0)} families tucked away · open only when you need audit detail`,
+        `감춰둔 패밀리 ${formatCount(aiOps?.clusters?.length || 0)}개 · 감사용 세부 내용이 필요할 때만 열기`
+      );
+    }
+
+    if (karpathyEl) {
+      const labSummary = policyLab?.summary || {};
+      karpathyEl.textContent = policyLab
+        ? tr(
+            `${formatCount(labSummary.challengerCount || 0)} challengers · ${formatCount(summary.actionNowFamilies || 0)} live decisions · ${labSummary.lastResearchRunAt ? `last run ${formatRelative(labSummary.lastResearchRunAt)}` : 'no recent run'}`,
+            `${formatCount(labSummary.challengerCount || 0)}개 도전자 · 라이브 결정 ${formatCount(summary.actionNowFamilies || 0)}개 · ${labSummary.lastResearchRunAt ? `최근 실행 ${formatRelative(labSummary.lastResearchRunAt)}` : '최근 실행 없음'}`
+          )
+        : tr('No policy-lab data yet', '아직 정책 실험 데이터 없음');
+    }
   }
 
   function renderEventStrip(markers) {
@@ -426,17 +610,23 @@
     const entries = aiOps?.queue?.immediate || [];
 
     if (statsEl) {
-      const openFamilies = entries.filter(cluster => cluster.currentStatus === 'needs_approval').length;
-      const awaitingFamilies = entries.filter(cluster => cluster.currentStatus === 'awaiting_telegram').length;
+      const openFamilies = entries.filter(cluster => cluster.currentStatus === 'action_now').length;
+      const awaitingFamilies = entries.filter(cluster => cluster.currentStatus === 'awaiting_reply').length;
       statsEl.textContent = tr(
-        `${formatCount(openFamilies)} open families · ${formatCount(awaitingFamilies)} awaiting reply`,
-        `${formatCount(openFamilies)}개 열림 · ${formatCount(awaitingFamilies)}개 응답 대기`
+        `${formatCount(openFamilies)} decide now · ${formatCount(awaitingFamilies)} awaiting reply`,
+        `${formatCount(openFamilies)}개 지금 결정 · ${formatCount(awaitingFamilies)}개 응답 대기`
       );
     }
 
     if (!container) return;
     if (entries.length === 0) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('No immediate queue right now. Check the backlog beside this card for older unresolved decision families.', '즉시 처리할 큐가 없습니다. 이전 미해결 패밀리는 옆 백로그에서 확인하세요.'))}</div>`;
+      container.innerHTML = renderLaneEmpty(
+        tr('No live decisions right now', '지금 처리할 라이브 결정이 없습니다'),
+        tr(
+          'Nothing is currently asking for approval. If trust still needs work, use the cleanup lane beside this card instead of digging through archive history.',
+          '현재 승인 요청 중인 항목이 없습니다. 신뢰 정리가 필요하다면 아카이브를 뒤지기보다 옆 정리 레인을 보세요.'
+        )
+      );
       return;
     }
 
@@ -451,16 +641,23 @@
     const entries = aiOps?.queue?.backlog || [];
 
     if (statsEl) {
-      const staleFamilies = entries.filter(cluster => cluster.stale).length;
+      const blockedFamilies = entries.filter(cluster => cluster.currentStatus === 'blocked').length;
+      const staleFamilies = entries.filter(cluster => cluster.currentStatus === 'stale').length;
       statsEl.textContent = tr(
-        `${formatCount(entries.length)} families · ${formatCount(staleFamilies)} stale`,
-        `${formatCount(entries.length)}개 패밀리 · ${formatCount(staleFamilies)}개 정체`
+        `${formatCount(blockedFamilies)} blocked · ${formatCount(staleFamilies)} stale`,
+        `${formatCount(blockedFamilies)}개 막힘 · ${formatCount(staleFamilies)}개 오래됨`
       );
     }
 
     if (!container) return;
     if (entries.length === 0) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('No unresolved backlog families right now.', '현재 미해결 백로그 패밀리가 없습니다.'))}</div>`;
+      container.innerHTML = renderLaneEmpty(
+        tr('Cleanup is clear right now', '지금은 정리할 백로그가 없습니다'),
+        tr(
+          'Blocked or stale families are not accumulating. This lane should stay quiet unless delivery fails or old history needs to be archived.',
+          '막히거나 오래된 패밀리가 쌓이지 않고 있습니다. 전달 실패나 오래된 이력 정리가 생길 때만 이 레인이 시끄러워져야 합니다.'
+        )
+      );
       return;
     }
 
@@ -474,17 +671,24 @@
     const entries = aiOps?.activity || [];
 
     if (statsEl) {
-      const openish = entries.filter(entry => ['needs_approval', 'awaiting_telegram'].includes(entry.kind)).length;
-      const resolved = entries.filter(entry => ['expired', 'rejected', 'executed'].includes(entry.kind)).length;
+      const openish = entries.filter(entry => ['action_now', 'awaiting_reply'].includes(entry.kind)).length;
+      const blocked = entries.filter(entry => ['blocked', 'stale'].includes(entry.kind)).length;
+      const resolved = entries.filter(entry => entry.kind === 'resolved').length;
       statsEl.textContent = tr(
-        `${formatCount(entries.length)} events · ${formatCount(openish)} open flow · ${formatCount(resolved)} resolved/executed`,
-        `${formatCount(entries.length)}개 이벤트 · ${formatCount(openish)}개 진행 중 · ${formatCount(resolved)}개 종료/실행`
+        `${formatCount(entries.length)} events · ${formatCount(openish)} live · ${formatCount(blocked)} blocked/stale · ${formatCount(resolved)} resolved`,
+        `${formatCount(entries.length)}개 이벤트 · ${formatCount(openish)}개 라이브 · ${formatCount(blocked)}개 막힘/오래됨 · ${formatCount(resolved)}개 해결`
       );
     }
 
     if (!container) return;
     if (entries.length === 0) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('No meaningful decision flow events yet in the current window.', '현재 창에서 의미 있는 결정 흐름 이벤트가 없습니다.'))}</div>`;
+      container.innerHTML = renderLaneEmpty(
+        tr('No fresh owner-facing changes', '새로운 소유자용 변화가 없습니다'),
+        tr(
+          'Routine scans may still be running, but nothing material has changed recently enough to deserve space in the main decision flow.',
+          '루틴 스캔은 계속 돌아갈 수 있지만, 메인 결정 흐름에 자리를 줄 만큼 최근에 바뀐 중요한 변화는 없습니다.'
+        )
+      );
       return;
     }
 
@@ -526,32 +730,32 @@
 
     container.innerHTML = `
       <div class="ai-ops-system-card">
-        <h3>${esc(tr('AI quality pulse', 'AI 품질 상태'))}</h3>
+        <h3>${esc(tr('Cleanup queue', '정리 큐'))}</h3>
         <div class="opt-header">
           <span class="badge ${qualityBadge.className}">${esc(qualityBadge.label)}</span>
         </div>
         <div class="ai-ops-system-copy">
           ${esc(tr(
-            `${formatCount(summary.rawRecommendationCount || 0)} raw rows compressed into ${formatCount(summary.clusterCount || 0)} families. Duplicate pressure and expired approvals are now tracked separately from live action.`,
-            `원시 ${formatCount(summary.rawRecommendationCount || 0)}행을 ${formatCount(summary.clusterCount || 0)}개 패밀리로 압축했습니다. 중복 압력과 만료 승인 수는 라이브 액션과 분리해 추적합니다.`
+            `Blocked or stale families live here so the action queue only shows decisions you should still take.`,
+            `막히거나 오래된 패밀리는 여기 모아 즉시 액션 큐에는 아직 결정할 항목만 남깁니다.`
           ))}
         </div>
         <div class="ai-ops-system-metrics">
           <div class="ai-ops-system-metric">
-            <span>${esc(tr('Compression', '압축률'))}</span>
-            <strong>${esc(`${summary.compressionRatio || 0}x`)}</strong>
+            <span>${esc(tr('Blocked families', '막힌 패밀리'))}</span>
+            <strong>${esc(formatCount(summary.blockedFamilies || 0))}</strong>
           </div>
           <div class="ai-ops-system-metric">
-            <span>${esc(tr('Duplicate clusters', '중복 클러스터'))}</span>
-            <strong>${esc(formatCount(qualitySummary.duplicateApprovalClusters || 0))}</strong>
+            <span>${esc(tr('Stale families', '오래된 패밀리'))}</span>
+            <strong>${esc(formatCount(summary.staleBacklogFamilies || 0))}</strong>
           </div>
           <div class="ai-ops-system-metric">
-            <span>${esc(tr('Expired approvals', '만료 승인'))}</span>
-            <strong>${esc(formatCount(qualitySummary.expiredApprovals || 0))}</strong>
-          </div>
-          <div class="ai-ops-system-metric">
-            <span>${esc(tr('Failed delivery', '전달 실패'))}</span>
+            <span>${esc(tr('Delivery failures', '전달 실패'))}</span>
             <strong>${esc(formatCount(qualitySummary.failedApprovalRequests || 0))}</strong>
+          </div>
+          <div class="ai-ops-system-metric">
+            <span>${esc(tr('Resolved recently', '최근 해결'))}</span>
+            <strong>${esc(formatCount(summary.resolvedFamilies || 0))}</strong>
           </div>
         </div>
       </div>
@@ -1160,6 +1364,7 @@
 
     if (!aiOps) return;
 
+    renderFocus(aiOps);
     renderSummary(aiOps);
     renderQueue(aiOps);
     renderBacklog(aiOps);
@@ -1167,6 +1372,7 @@
     renderSystemChatter(aiOps);
     renderClusters(aiOps);
     renderRawHistory(optData || { optimizations: [], total: 0 });
+    renderSectionSummaries(aiOps, policyLab);
     renderKarpathySummary(policyLab);
     renderKarpathyTimeline(policyLab, experimentsData);
     renderKarpathyTraces(tracesData || { traces: [], filters: { policyIds: [], verdicts: [], controlSurfaces: [] } });
