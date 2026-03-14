@@ -457,18 +457,15 @@
 
     if (asOfEl) {
       asOfEl.textContent = tr(
-        `KST · ${intraday.chart?.sampleCount || 0} spend samples today`,
-        `KST · 오늘 지출 샘플 ${Number(intraday.chart?.sampleCount || 0).toLocaleString(getLocale())}개`
+        `KST · ${intraday.chart?.snapshotCount || 0} spend snapshots today`,
+        `KST · 오늘 지출 스냅샷 ${Number(intraday.chart?.snapshotCount || 0).toLocaleString(getLocale())}개`
       );
     }
     if (takeawayEl) takeawayEl.dataset.tone = intraday.takeaway?.tone || 'neutral';
     if (pillEl) {
-      const sampleSource = intraday.chart?.sampleSource || 'fallback';
-      pillEl.textContent = sampleSource === 'live'
-        ? tr('Live spend samples', '라이브 지출 샘플')
-        : sampleSource === 'snapshot'
-          ? tr('Legacy spend snapshots', '기존 지출 스냅샷')
-          : tr('Current-state fallback', '현재 상태 대체값');
+      pillEl.textContent = intraday.chart?.usingSnapshotSpend
+        ? tr('Live scan spend', '라이브 스캔 지출')
+        : tr('Current-state fallback', '현재 상태 대체값');
     }
     if (headlineEl) headlineEl.textContent = intraday.takeaway?.headline || tr('Intraday pace ready', '당일 페이스 준비됨');
     if (detailEl) detailEl.textContent = intraday.takeaway?.detail || tr('Today’s pacing story is ready.', '오늘 페이싱 스토리가 준비되었습니다.');

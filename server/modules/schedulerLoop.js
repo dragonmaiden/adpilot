@@ -2,144 +2,88 @@ const imweb = require('./imwebClient');
 const telegram = require('./telegram');
 const runtimeSettings = require('../runtime/runtimeSettings');
 
-const COMMERCE_INITIAL_DELAY_MS = 5 * 1000;
-const ANALYSIS_INITIAL_DELAY_MS = 90 * 1000;
-
-let commerceTimer = null;
-let analysisTimer = null;
-let initialCommerceTimer = null;
-let initialAnalysisTimer = null;
-let nextCommerceRunAt = null;
-let nextAnalysisRunAt = null;
+let scanTimer = null;
+let initialScanTimer = null;
+let nextRecurringRunAt = null;
+let nextInitialRunAt = null;
 let unsubscribeSettings = null;
-let runAnalysisRef = null;
-let runCommerceRef = null;
+let runScanRef = null;
 
-function clearTimer(timerRef) {
-  if (timerRef.current) {
-    clearTimeout(timerRef.current);
-    clearInterval(timerRef.current);
-    timerRef.current = null;
+function clearRecurringTimer() {
+  if (scanTimer) {
+    clearInterval(scanTimer);
+    scanTimer = null;
   }
+  nextRecurringRunAt = null;
 }
 
-function clearRecurringTimers() {
-  clearTimer({ current: commerceTimer });
-  commerceTimer = null;
-  clearTimer({ current: analysisTimer });
-  analysisTimer = null;
-  nextCommerceRunAt = null;
-  nextAnalysisRunAt = null;
-}
-
-function clearInitialTimers() {
-  clearTimer({ current: initialCommerceTimer });
-  initialCommerceTimer = null;
-  clearTimer({ current: initialAnalysisTimer });
-  initialAnalysisTimer = null;
-}
-
-function scheduleCommerceLoop() {
-  if (commerceTimer) {
-    clearInterval(commerceTimer);
-    commerceTimer = null;
-  }
+function scheduleRecurringLoop() {
+  clearRecurringTimer();
 
   const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
   const intervalMs = intervalMinutes * 60 * 1000;
-  nextCommerceRunAt = new Date(Date.now() + intervalMs);
-  commerceTimer = setInterval(() => {
-    nextCommerceRunAt = new Date(Date.now() + intervalMs);
-    runCommerceRef(false);
+  nextRecurringRunAt = new Date(Date.now() + intervalMs);
+  scanTimer = setInterval(() => {
+    nextRecurringRunAt = new Date(Date.now() + intervalMs);
+    runScanRef(false);
   }, intervalMs);
 }
 
-function scheduleAnalysisLoop() {
-  if (analysisTimer) {
-    clearInterval(analysisTimer);
-    analysisTimer = null;
+function startScheduler(runScan) {
+  if (scanTimer) {
+    return scanTimer;
   }
 
-  const intervalMinutes = runtimeSettings.getSchedulerSettings().analysisIntervalMinutes;
-  const intervalMs = intervalMinutes * 60 * 1000;
-  nextAnalysisRunAt = new Date(Date.now() + intervalMs);
-  analysisTimer = setInterval(() => {
-    nextAnalysisRunAt = new Date(Date.now() + intervalMs);
-    runAnalysisRef(false);
-  }, intervalMs);
-}
-
-function startScheduler(runAnalysis, runCommerceSync) {
-  if (commerceTimer || analysisTimer) {
-    return { commerceTimer, analysisTimer };
-  }
-
-  runAnalysisRef = runAnalysis;
-  runCommerceRef = runCommerceSync;
-  const settings = runtimeSettings.getSchedulerSettings();
-  console.log(
-    `[SCHEDULER] Starting scheduler `
-    + `(commerce every ${settings.scanIntervalMinutes} min, analysis every ${settings.analysisIntervalMinutes} min)`
-  );
+  runScanRef = runScan;
+  const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
+  console.log(`[SCHEDULER] Starting scan scheduler (every ${intervalMinutes} min)`);
 
   imweb.loadTokens();
   telegram.startPolling();
   telegram.maybeSendStartupMessage();
 
-  nextCommerceRunAt = new Date(Date.now() + COMMERCE_INITIAL_DELAY_MS);
-  initialCommerceTimer = setTimeout(() => {
-    initialCommerceTimer = null;
-    nextCommerceRunAt = null;
-    runCommerceSync(false);
-  }, COMMERCE_INITIAL_DELAY_MS);
+  nextInitialRunAt = new Date(Date.now() + 5000);
+  initialScanTimer = setTimeout(() => {
+    initialScanTimer = null;
+    nextInitialRunAt = null;
+    runScan(false);
+  }, 5000);
 
-  nextAnalysisRunAt = new Date(Date.now() + ANALYSIS_INITIAL_DELAY_MS);
-  initialAnalysisTimer = setTimeout(() => {
-    initialAnalysisTimer = null;
-    nextAnalysisRunAt = null;
-    runAnalysis(false);
-  }, ANALYSIS_INITIAL_DELAY_MS);
-
-  scheduleCommerceLoop();
-  scheduleAnalysisLoop();
+  scheduleRecurringLoop();
   unsubscribeSettings = runtimeSettings.onChange(({ changedKeys, current }) => {
-    if (changedKeys.includes('scanIntervalMinutes')) {
-      scheduleCommerceLoop();
-      console.log(`[SCHEDULER] Rescheduled commerce sync loop (every ${current.scheduler.scanIntervalMinutes} min)`);
-    }
-    if (changedKeys.includes('analysisIntervalMinutes')) {
-      scheduleAnalysisLoop();
-      console.log(`[SCHEDULER] Rescheduled analysis loop (every ${current.scheduler.analysisIntervalMinutes} min)`);
-    }
+    if (!changedKeys.includes('scanIntervalMinutes')) return;
+    scheduleRecurringLoop();
+    console.log(`[SCHEDULER] Rescheduled scan loop (every ${current.scheduler.scanIntervalMinutes} min)`);
   });
 
-  return { commerceTimer, analysisTimer };
+  return scanTimer;
 }
 
 function stopScheduler() {
-  clearInitialTimers();
-  clearRecurringTimers();
+  if (initialScanTimer) {
+    clearTimeout(initialScanTimer);
+    initialScanTimer = null;
+    nextInitialRunAt = null;
+  }
+
+  clearRecurringTimer();
 
   if (unsubscribeSettings) {
     unsubscribeSettings();
     unsubscribeSettings = null;
   }
 
-  if (runAnalysisRef || runCommerceRef) {
-    runAnalysisRef = null;
-    runCommerceRef = null;
+  if (runScanRef) {
+    runScanRef = null;
     console.log('[SCHEDULER] Scheduler stopped');
   }
 }
 
 function getNextScheduledRunAt() {
-  const candidates = [
-    nextCommerceRunAt,
-    nextAnalysisRunAt,
-  ].filter(Boolean);
-
-  if (candidates.length === 0) return null;
-  return candidates.reduce((earliest, candidate) => (candidate < earliest ? candidate : earliest));
+  if (nextInitialRunAt && nextRecurringRunAt) {
+    return nextInitialRunAt <= nextRecurringRunAt ? nextInitialRunAt : nextRecurringRunAt;
+  }
+  return nextInitialRunAt || nextRecurringRunAt || null;
 }
 
 module.exports = {

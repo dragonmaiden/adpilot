@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getTodayInTimeZone, getHourInTimeZone } = require('../server/domain/time');
+const { getTodayInTimeZone, getHourInTimeZone, shiftDate } = require('../server/domain/time');
 
 async function withMockedLivePerformanceService(overrides, run) {
   const servicePath = require.resolve('../server/services/livePerformanceService');
@@ -40,7 +40,7 @@ function kstIso(dateKey, hour, minute = 0) {
   return new Date(`${dateKey}T${hh}:${mm}:00+09:00`).toISOString();
 }
 
-test('buildLivePerformanceResponse prefers fast live spend samples and returns confidence-aware intraday summary', async () => {
+test('buildLivePerformanceResponse returns intraday chart, spend snapshots, and confidence-aware summary', async () => {
   const dateKey = getTodayInTimeZone();
   const currentHour = getHourInTimeZone(new Date());
   const firstHour = Math.max(0, currentHour - 1);
@@ -51,10 +51,6 @@ test('buildLivePerformanceResponse prefers fast live spend samples and returns c
     campaigns: [{ id: 'c1', name: 'Main', status: 'ACTIVE', dailyBudget: 10000 }],
     campaignInsights: [
       { campaign_id: 'c1', date_start: dateKey, spend: 20 },
-    ],
-    liveSpendSamples: [
-      { timestamp: kstIso(dateKey, firstHour, 15), dateKey, spendKrw: 7200 },
-      { timestamp: kstIso(dateKey, secondHour, 15), dateKey, spendKrw: 28800 },
     ],
     revenueData: {
       totalRevenue: 150000,
@@ -126,8 +122,8 @@ test('buildLivePerformanceResponse prefers fast live spend samples and returns c
     const response = service.buildLivePerformanceResponse();
 
     assert.equal(response.intraday.date, dateKey);
-    assert.equal(response.intraday.chart.sampleCount, 2);
-    assert.equal(response.intraday.chart.sampleSource, 'live');
+    assert.equal(response.intraday.chart.snapshotCount, 2);
+    assert.equal(response.intraday.chart.usingSnapshotSpend, true);
     assert.equal(response.intraday.summary.ordersSoFar, 2);
     assert.equal(response.intraday.confidence.level, 'medium');
     assert.ok(response.intraday.summary.spendSoFarKrw > 0);
@@ -165,20 +161,22 @@ test('buildLivePerformanceResponse falls back to current spend when no intraday 
   }, async service => {
     const response = service.buildLivePerformanceResponse();
 
-    assert.equal(response.intraday.chart.sampleCount, 0);
-    assert.equal(response.intraday.chart.sampleSource, 'fallback');
+    assert.equal(response.intraday.chart.snapshotCount, 0);
+    assert.equal(response.intraday.chart.usingSnapshotSpend, false);
     assert.ok(response.intraday.summary.spendSoFarKrw > 0);
     assert.equal(response.intraday.summary.ordersSoFar, 0);
     assert.equal(response.intraday.confidence.level, 'neutral');
   });
 });
 
-test('buildLivePerformanceResponse keeps intraday output focused on today even when a window is selected', async () => {
+test('buildLivePerformanceResponse reacts to the selected window with an intraday benchmark', async () => {
   const dateKey = getTodayInTimeZone();
+  const previousDateKey = shiftDate(dateKey, -1);
   const currentHour = getHourInTimeZone(new Date());
+  const compareHour = Math.max(0, currentHour);
 
   const latestData = {
-    timestamp: kstIso(dateKey, currentHour, 30),
+    timestamp: kstIso(dateKey, compareHour, 30),
     campaigns: [{ id: 'c1', name: 'Main', status: 'ACTIVE', dailyBudget: 10000 }],
     campaignInsights: [
       { campaign_id: 'c1', date_start: dateKey, spend: 12 },
@@ -190,22 +188,62 @@ test('buildLivePerformanceResponse keeps intraday output focused on today even w
       totalCOGSWithShipping: 84000,
     },
     economicsLedger: {
-      orderSnapshots: [],
+      orderSnapshots: [
+        {
+          date: previousDateKey,
+          orderedAt: kstIso(previousDateKey, compareHour, 0),
+          recognizedCash: true,
+          netPaidAmount: 120000,
+          approvedAmount: 120000,
+          cogsMatched: true,
+          cogsCost: 36000,
+          cogsShipping: 6000,
+        },
+      ],
+    },
+  };
+
+  const snapshots = [
+    {
+      scanId: 'prev-1',
+      timestamp: kstIso(previousDateKey, compareHour, 5),
+    },
+    {
+      scanId: 'prev-2',
+      timestamp: kstIso(previousDateKey, compareHour, 35),
+    },
+  ];
+
+  const snapshotData = {
+    'prev-1': {
+      data: {
+        meta_insights: {
+          campaignInsights: [{ campaign_id: 'c1', date_start: previousDateKey, spend: 4 }],
+        },
+      },
+    },
+    'prev-2': {
+      data: {
+        meta_insights: {
+          campaignInsights: [{ campaign_id: 'c1', date_start: previousDateKey, spend: 9 }],
+        },
+      },
     },
   };
 
   await withMockedLivePerformanceService({
     scheduler: {
       getLatestData: () => latestData,
-      getSnapshotsList: () => [],
-      getSnapshot: () => null,
+      getSnapshotsList: () => snapshots,
+      getSnapshot: scanId => snapshotData[String(scanId)] || null,
     },
   }, async service => {
     const response = service.buildLivePerformanceResponse({ days: '7d' });
 
-    assert.ok(Array.isArray(response.intraday.chart.points));
-    assert.equal(response.intraday.chart.points.length, 24);
-    assert.equal('benchmark' in response.intraday.chart, false);
-    assert.equal(response.intraday.chart.sampleSource, 'fallback');
+    assert.equal(response.intraday.chart.benchmark.windowKey, '7d');
+    assert.equal(response.intraday.chart.benchmark.sampleCount, 1);
+    assert.equal(response.intraday.chart.benchmark.points.length, 24);
+    assert.ok(response.intraday.chart.benchmark.points[compareHour].cumulativeRevenueKrw > 0);
+    assert.ok(Number.isFinite(response.intraday.chart.benchmark.points[compareHour].cumulativeContributionAfterAdsKrw));
   });
 });

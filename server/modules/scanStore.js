@@ -40,7 +40,6 @@ function createLatestDataState() {
     campaignInsights: [],
     adSetInsights: [],
     adInsights: [],
-    liveSpendSamples: [],
     revenueData: null,
     orders: [],
     cogsData: null,
@@ -71,32 +70,6 @@ function loadData(filename, fallback = null) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
-}
-
-function normalizeLiveSpendSamples(raw) {
-  const samples = asArray(raw)
-    .filter(entry => entry && typeof entry === 'object')
-    .map(entry => {
-      const spendKrw = Number(entry.spendKrw);
-      return {
-        timestamp: typeof entry.timestamp === 'string' ? entry.timestamp : null,
-        dateKey: typeof entry.dateKey === 'string' ? entry.dateKey : null,
-        spendKrw: Number.isFinite(spendKrw) ? spendKrw : 0,
-      };
-    })
-    .filter(entry => entry.timestamp && entry.dateKey)
-    .sort((left, right) => String(left.timestamp).localeCompare(String(right.timestamp)));
-
-  const deduped = [];
-  const seen = new Set();
-  for (const sample of samples) {
-    const key = `${sample.dateKey}|${sample.timestamp}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(sample);
-  }
-
-  return deduped.slice(-1000);
 }
 
 function hasUsableRevenueData(value) {
@@ -195,7 +168,6 @@ function normalizeLatestData(raw) {
     campaignInsights: asArray(raw.campaignInsights),
     adSetInsights: asArray(raw.adSetInsights),
     adInsights: asArray(raw.adInsights),
-    liveSpendSamples: normalizeLiveSpendSamples(raw.liveSpendSamples),
     revenueData: raw.revenueData && typeof raw.revenueData === 'object' ? raw.revenueData : null,
     orders: asArray(raw.orders),
     cogsData: raw.cogsData && typeof raw.cogsData === 'object' ? raw.cogsData : null,
@@ -408,7 +380,6 @@ function createState() {
   );
   return {
     lastScanTime: parseLastScanTime(lastScanResult, latestData),
-    lastCommerceSyncTime: parseLastScanTime(lastScanResult, latestData),
     lastScanResult,
     scanHistory: normalizeScanHistory(loadData(SCAN_HISTORY_FILE, []), lastScanResult),
     allOptimizations: asArray(loadData(ALL_OPTIMIZATIONS_FILE, [])).slice(-MAX_OPTIMIZATIONS),
@@ -425,20 +396,7 @@ function getLatestData() {
 
 function patchLatestData(patch) {
   Object.assign(state.latestData, patch);
-  if (Object.prototype.hasOwnProperty.call(patch || {}, 'liveSpendSamples')) {
-    state.latestData.liveSpendSamples = normalizeLiveSpendSamples(state.latestData.liveSpendSamples);
-  }
   return state.latestData;
-}
-
-function addLiveSpendSample(sample) {
-  const nextSamples = normalizeLiveSpendSamples([
-    ...asArray(state.latestData.liveSpendSamples),
-    sample,
-  ]);
-  state.latestData.liveSpendSamples = nextSamples;
-  saveLatestData();
-  return nextSamples.slice();
 }
 
 function getSourceHealth() {
@@ -484,15 +442,6 @@ function getLastScanTime() {
 function setLastScanTime(scanTime) {
   state.lastScanTime = scanTime;
   return state.lastScanTime;
-}
-
-function getLastCommerceSyncTime() {
-  return state.lastCommerceSyncTime || null;
-}
-
-function setLastCommerceSyncTime(syncTime) {
-  state.lastCommerceSyncTime = syncTime;
-  return state.lastCommerceSyncTime;
 }
 
 function getScanHistory() {
@@ -564,15 +513,12 @@ function saveLatestData() {
 module.exports = {
   getLatestData,
   patchLatestData,
-  addLiveSpendSample,
   getSourceHealth,
   updateSourceHealth,
   getLastScanResult,
   setLastScanResult,
   getLastScanTime,
   setLastScanTime,
-  getLastCommerceSyncTime,
-  setLastCommerceSyncTime,
   getScanHistory,
   addScanHistory,
   getAllOptimizations,

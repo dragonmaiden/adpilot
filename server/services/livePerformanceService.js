@@ -2,7 +2,7 @@ const config = require('../config');
 const contracts = require('../contracts/v1');
 const scheduler = require('../modules/scheduler');
 const { convertUsdToKrw } = require('../domain/metrics');
-const { getTodayInTimeZone, getHourInTimeZone, formatDateInTimeZone, KST_TIME_ZONE } = require('../domain/time');
+const { getTodayInTimeZone, getHourInTimeZone, formatDateInTimeZone, shiftDate, KST_TIME_ZONE } = require('../domain/time');
 
 const LIVE_PERFORMANCE_WINDOWS = Object.freeze({
   '7d': { key: '7d', days: 7, label: '7D' },
@@ -33,18 +33,6 @@ function sumTodaySpendKrw(campaignInsights, dateKey) {
     .filter(row => String(row?.date_start || '') === dateKey)
     .reduce((sum, row) => sum + asNumber(row?.spend), 0);
   return roundMoney(convertUsdToKrw(spendUsd));
-}
-
-function getLiveSpendSamples(latestData, dateKey) {
-  return asArray(latestData?.liveSpendSamples)
-    .filter(sample => String(sample?.dateKey || '') === String(dateKey) && sample?.timestamp)
-    .map(sample => ({
-      scanId: `live-${sample.timestamp}`,
-      timestamp: sample.timestamp,
-      hour: getHourInTimeZone(sample.timestamp, KST_TIME_ZONE),
-      spendKrw: asNumber(sample.spendKrw),
-    }))
-    .sort((left, right) => String(left.timestamp).localeCompare(String(right.timestamp)));
 }
 
 function buildSnapshotSpendSampleIndex(snapshotMetas, allowedDateKeys = null) {
@@ -227,6 +215,86 @@ function buildIntradayPoints({ economics, spendSeries, currentHour }) {
   };
 }
 
+function buildBenchmarkDateKeys({ window, currentDateKey, orderSnapshots, snapshotMetas = [] }) {
+  if (window.days) {
+    const dates = [];
+    for (let index = 1; index <= window.days; index += 1) {
+      const shifted = shiftDate(currentDateKey, -index);
+      if (shifted) dates.push(shifted);
+    }
+    return dates;
+  }
+
+  const dateKeys = new Set();
+  for (const row of asArray(orderSnapshots)) {
+    if (row?.recognizedCash && row?.date && String(row.date) < currentDateKey) {
+      dateKeys.add(String(row.date));
+    }
+  }
+
+  for (const meta of asArray(snapshotMetas)) {
+    if (!meta?.timestamp) continue;
+    const dateKey = formatDateInTimeZone(meta.timestamp, KST_TIME_ZONE);
+    if (dateKey < currentDateKey) {
+      dateKeys.add(dateKey);
+    }
+  }
+
+  return Array.from(dateKeys).sort((left, right) => left.localeCompare(right));
+}
+
+function buildIntradayBenchmark({ latestData, currentDateKey, currentHour, window, snapshotMetas = [], snapshotSampleIndex = null }) {
+  const dateKeys = buildBenchmarkDateKeys({
+    window,
+    currentDateKey,
+    orderSnapshots: latestData?.economicsLedger?.orderSnapshots,
+    snapshotMetas,
+  });
+
+  const spendSums = new Array(24).fill(0);
+  const revenueSums = new Array(24).fill(0);
+  const profitSums = new Array(24).fill(0);
+  let sampleCount = 0;
+
+  for (const dateKey of dateKeys) {
+    const spendSamples = getSnapshotSpendSamples(dateKey, snapshotSampleIndex);
+    if (spendSamples.length === 0) continue;
+
+    const spendSeries = buildHourlySpendSeries(spendSamples, null, currentHour);
+    const economics = buildHourlyEconomics(latestData?.economicsLedger?.orderSnapshots, latestData, dateKey);
+    const { points } = buildIntradayPoints({ economics, spendSeries, currentHour });
+    sampleCount += 1;
+
+    for (let hour = 0; hour < 24; hour += 1) {
+      spendSums[hour] += asNumber(points[hour]?.cumulativeSpendKrw);
+      revenueSums[hour] += asNumber(points[hour]?.cumulativeRevenueKrw);
+      profitSums[hour] += asNumber(points[hour]?.cumulativeContributionAfterAdsKrw);
+    }
+  }
+
+  if (sampleCount === 0) {
+    return {
+      windowKey: window.key,
+      windowLabel: window.label,
+      sampleCount: 0,
+      points: [],
+    };
+  }
+
+  return {
+    windowKey: window.key,
+    windowLabel: window.label,
+    sampleCount,
+    points: new Array(24).fill(null).map((_, hour) => ({
+      hour,
+      label: String(hour).padStart(2, '0'),
+      cumulativeSpendKrw: roundMoney(spendSums[hour] / sampleCount),
+      cumulativeRevenueKrw: roundMoney(revenueSums[hour] / sampleCount),
+      cumulativeContributionAfterAdsKrw: roundMoney(profitSums[hour] / sampleCount),
+    })),
+  };
+}
+
 function buildConfidenceMeta(exactCoverageRatio, orderCount) {
   if (orderCount === 0) {
     return {
@@ -339,25 +407,34 @@ function buildLivePerformanceResponse(query = {}) {
   const latestData = scheduler.getLatestData();
   const campaigns = asArray(latestData?.campaigns);
   const activeCampaigns = campaigns.filter(campaign => String(campaign?.status) === 'ACTIVE');
-  getLivePerformanceWindow(query);
+  const window = getLivePerformanceWindow(query);
   const dateKey = getTodayInTimeZone(KST_TIME_ZONE);
   const now = new Date();
   const currentHour = getHourInTimeZone(now, KST_TIME_ZONE);
-  const liveSpendSamples = getLiveSpendSamples(latestData, dateKey);
-  const snapshotMetas = liveSpendSamples.length === 0
-    ? asArray(scheduler.getSnapshotsList()).slice().reverse()
-    : [];
-  const snapshotSampleIndex = liveSpendSamples.length === 0
-    ? buildSnapshotSpendSampleIndex(snapshotMetas, [dateKey])
-    : null;
-  const snapshotSpendSamples = liveSpendSamples.length === 0
-    ? getSnapshotSpendSamples(dateKey, snapshotSampleIndex)
-    : [];
-  const spendSamples = liveSpendSamples.length > 0 ? liveSpendSamples : snapshotSpendSamples;
+  const snapshotMetas = asArray(scheduler.getSnapshotsList()).slice().reverse();
+
+  const benchmarkDateKeys = buildBenchmarkDateKeys({
+    window,
+    currentDateKey: dateKey,
+    orderSnapshots: latestData?.economicsLedger?.orderSnapshots,
+    snapshotMetas,
+  });
+  const targetSnapshotDates = new Set([dateKey, ...benchmarkDateKeys]);
+  const snapshotSampleIndex = buildSnapshotSpendSampleIndex(snapshotMetas, targetSnapshotDates);
+
+  const spendSamples = getSnapshotSpendSamples(dateKey, snapshotSampleIndex);
   const fallbackSample = getLiveSpendFallback(latestData, dateKey);
   const spendSeries = buildHourlySpendSeries(spendSamples, fallbackSample, currentHour);
 
   const economics = buildHourlyEconomics(latestData?.economicsLedger?.orderSnapshots, latestData, dateKey);
+  const benchmark = buildIntradayBenchmark({
+    latestData,
+    currentDateKey: dateKey,
+    currentHour,
+    window,
+    snapshotMetas,
+    snapshotSampleIndex,
+  });
 
   const totalDailyBudgetUsd = activeCampaigns.reduce((sum, campaign) => {
     const dailyBudgetCents = asNumber(campaign?.dailyBudget ?? campaign?.daily_budget);
@@ -383,12 +460,6 @@ function buildLivePerformanceResponse(query = {}) {
     profitKrw: contributionAfterAdsKrw,
     confidence,
   });
-
-  const sampleSource = liveSpendSamples.length > 0
-    ? 'live'
-    : snapshotSpendSamples.length > 0
-      ? 'snapshot'
-      : 'fallback';
 
   return contracts.livePerformance({
     generatedAt: new Date().toISOString(),
@@ -419,8 +490,9 @@ function buildLivePerformanceResponse(query = {}) {
       }),
       chart: {
         points,
-        sampleCount: spendSamples.length,
-        sampleSource,
+        benchmark,
+        snapshotCount: spendSamples.length,
+        usingSnapshotSpend: spendSamples.length > 0,
       },
     },
   });

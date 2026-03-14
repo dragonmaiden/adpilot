@@ -8,7 +8,7 @@ const snapshotRepository = require('./snapshotRepository');
 const { validateMetaCampaigns, validateMetaInsights, validateImwebOrders, logValidation } = require('../validation/vendorSchemas');
 const cogsClient = require('./cogsClient');
 const transforms = require('../transforms/charts');
-const { calcROAS, convertUsdToKrw } = require('../domain/metrics');
+const { calcROAS } = require('../domain/metrics');
 const { getTodayInTimeZone, shiftDate } = require('../domain/time');
 const runtimeSettings = require('../runtime/runtimeSettings');
 const { filterDuplicateApprovalOptimizations } = require('../services/optimizationDedupService');
@@ -252,41 +252,6 @@ async function fetchCogs(scanResult) {
   }
 }
 
-async function fetchLiveMetaSpend(scanResult) {
-  console.log('[SCHEDULER] Step 3d: Fetching live Meta spend snapshot...');
-  const dateKey = getTodayInTimeZone();
-
-  try {
-    const accountInsights = await meta.getAccountInsights(dateKey, dateKey);
-    const rows = Array.isArray(accountInsights?.data) ? accountInsights.data : [];
-    const spendUsd = rows.reduce((sum, row) => sum + Number(row?.spend || 0), 0);
-    const spendKrw = Math.round(convertUsdToKrw(spendUsd));
-
-    const samples = scanStore.addLiveSpendSample({
-      timestamp: new Date().toISOString(),
-      dateKey,
-      spendKrw,
-    });
-
-    pushStep(scanResult, {
-      step: 'meta_spend_live',
-      status: 'ok',
-      date: dateKey,
-      spendUsd,
-      spendKrw,
-      sampleCountToday: samples.filter(sample => sample.dateKey === dateKey).length,
-    });
-    console.log(`[SCHEDULER]   → ${spendUsd.toFixed(2)} USD (${spendKrw.toLocaleString()} KRW) cumulative spend today`);
-
-    return { ok: true, spendUsd, spendKrw, dateKey };
-  } catch (err) {
-    console.error('[SCHEDULER]   ⚠ Live Meta spend fetch failed:', err.message);
-    pushError(scanResult, 'meta_spend_live', err);
-    pushStep(scanResult, { step: 'meta_spend_live', status: 'failed', date: dateKey });
-    return { ok: false, dateKey };
-  }
-}
-
 async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
   console.log('[SCHEDULER] Step 3a: Reconciling recent paid Imweb orders into the COGS sheet...');
 
@@ -301,7 +266,7 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
   }
 
   try {
-    const previousScanTime = scanStore.getLastCommerceSyncTime() || scanStore.getLastScanTime();
+    const previousScanTime = scanStore.getLastScanTime();
     const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
     const graceMinutes = 10;
     const maxLookbackMinutes = Math.max(intervalMinutes * 2, intervalMinutes + 15);
@@ -349,137 +314,6 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
   }
 }
 
-function rebuildEconomicsLedger(scanResult) {
-  console.log('[SCHEDULER] Step 3c: Building economics ledger...');
-  try {
-    const latestData = scanStore.getLatestData();
-    const economicsLedger = buildEconomicsLedger({
-      orders: latestData.orders,
-      cogsData: latestData.cogsData,
-      campaignInsights: latestData.campaignInsights,
-      campaigns: latestData.campaigns,
-    });
-    scanStore.patchLatestData({ economicsLedger });
-    scanStore.saveLatestData();
-    pushStep(scanResult, {
-      step: 'economics_ledger',
-      status: 'ok',
-      rows: economicsLedger.summary.totalRows,
-      recognizedOrders: economicsLedger.summary.recognizedOrders,
-      matchedOrdersToCogs: economicsLedger.summary.matchedOrdersToCogs,
-      fallbackMatchedOrdersToCogs: economicsLedger.summary.fallbackMatchedOrdersToCogs,
-      unmatchedCogsOrders: economicsLedger.summary.unmatchedCogsOrders,
-    });
-    console.log(
-      `[SCHEDULER]   → ${economicsLedger.summary.totalRows} ledger rows, `
-      + `${economicsLedger.summary.matchedOrdersToCogs}/${economicsLedger.summary.recognizedOrders} orders linked to COGS`
-      + (economicsLedger.summary.fallbackMatchedOrdersToCogs > 0
-        ? ` (${economicsLedger.summary.fallbackMatchedOrdersToCogs} via conservative fallback matching)`
-        : '')
-    );
-    return { ok: true, economicsLedger };
-  } catch (err) {
-    console.warn('[SCHEDULER]   ⚠ Economics ledger build failed:', err.message);
-    pushError(scanResult, 'economics_ledger', err);
-    pushStep(scanResult, { step: 'economics_ledger', status: 'failed' });
-    return { ok: false, economicsLedger: null };
-  }
-}
-
-async function refreshCommerceData(scanResult) {
-  const result = {
-    imweb: await fetchImwebOrders(scanResult),
-    autofill: null,
-    cogs: null,
-    economics: null,
-    spend: null,
-  };
-
-  if (result.imweb.ok) {
-    result.autofill = await reconcileRecentImwebOrdersToCogs(scanResult, result.imweb.orders);
-  }
-
-  result.cogs = await fetchCogs(scanResult);
-  result.economics = rebuildEconomicsLedger(scanResult);
-  result.spend = await fetchLiveMetaSpend(scanResult);
-  return result;
-}
-
-async function runCommerceSync(manual = false) {
-  if (scanStore.getIsScanning()) {
-    console.log('[SCHEDULER] Commerce sync already blocked by an active job, skipping');
-    return { status: 'skipped', reason: 'Scan already in progress' };
-  }
-
-  scanStore.setIsScanning(true);
-  const syncStart = Date.now();
-  const scanId = syncStart;
-  console.log(`\n${'═'.repeat(60)}`);
-  console.log(`[SCHEDULER] ${manual ? 'MANUAL' : 'SCHEDULED'} COMMERCE SYNC #${scanId}`);
-  console.log(`[SCHEDULER] Started at ${new Date().toISOString()}`);
-  console.log(`${'═'.repeat(60)}\n`);
-
-  const scanResult = {
-    scanId,
-    kind: 'commerce_sync',
-    startTime: new Date().toISOString(),
-    endTime: null,
-    manual,
-    steps: [],
-    optimizations: [],
-    errors: [],
-    stats: {},
-    status: 'running',
-  };
-
-  try {
-    await refreshCommerceData(scanResult);
-  } catch (err) {
-    console.error('[SCHEDULER] COMMERCE SYNC FAILED:', err.message);
-    observabilityService.captureException(err, {
-      category: 'commerce-sync.error',
-      title: 'Commerce sync failed',
-      tags: {
-        scan_id: scanId,
-        manual: manual ? 'true' : 'false',
-      },
-    });
-    pushError(scanResult, 'fatal', err);
-  } finally {
-    scanResult.endTime = new Date().toISOString();
-    scanResult.durationMs = Date.now() - syncStart;
-    scanResult.status = scanResult.errors.length === 0
-      ? 'success'
-      : scanResult.steps.some(step => step.status === 'ok')
-      ? 'partial'
-      : 'failed';
-
-    scanStore.setLastCommerceSyncTime(new Date());
-    scanStore.setIsScanning(false);
-  }
-
-  console.log(`\n[SCHEDULER] Commerce sync complete in ${scanResult.durationMs}ms`);
-  console.log(`[SCHEDULER] ${scanResult.errors.length} errors\n`);
-  observabilityService.captureMessage(
-    `Commerce sync ${scanId} completed`,
-    scanResult.errors.length > 0 ? 'warning' : 'info',
-    {
-      category: 'commerce-sync.complete',
-      title: 'Commerce sync completed',
-      tags: {
-        scan_id: scanId,
-        manual: manual ? 'true' : 'false',
-        status: scanResult.status,
-      },
-      data: {
-        errorCount: scanResult.errors.length,
-      },
-    }
-  );
-
-  return scanResult;
-}
-
 async function runScan(manual = false) {
   if (scanStore.getIsScanning()) {
     console.log('[SCHEDULER] Scan already in progress, skipping');
@@ -525,19 +359,48 @@ async function runScan(manual = false) {
     const metaInsightsResult = await fetchMetaInsights(scanResult, since, until);
     sourceStatus.metaInsights = metaInsightsResult.ok;
 
-    const latestCommerceData = scanStore.getLatestData();
-    const commerceSourceHealth = scanStore.getSourceHealth();
-    sourceStatus.imweb = Boolean(commerceSourceHealth.imweb?.hasData || (latestCommerceData.orders || []).length > 0 || latestCommerceData.revenueData);
-    sourceStatus.cogs = Boolean(commerceSourceHealth.cogs?.hasData || latestCommerceData.cogsData);
-    pushStep(scanResult, {
-      step: 'commerce_context',
-      status: sourceStatus.imweb || sourceStatus.cogs ? 'ok' : 'skipped',
-      note: sourceStatus.imweb || sourceStatus.cogs
-        ? 'Using the latest commerce sync data for revenue, COGS, and order reconciliation'
-        : 'No recent commerce sync data available yet',
-      imwebReady: sourceStatus.imweb,
-      cogsReady: sourceStatus.cogs,
-    });
+    const imwebResult = await fetchImwebOrders(scanResult);
+    sourceStatus.imweb = imwebResult.ok;
+
+    if (imwebResult.ok) {
+      await reconcileRecentImwebOrdersToCogs(scanResult, imwebResult.orders);
+    }
+
+    const cogsResult = await fetchCogs(scanResult);
+    sourceStatus.cogs = cogsResult.ok;
+
+    console.log('[SCHEDULER] Step 3c: Building economics ledger...');
+    try {
+      const latestData = scanStore.getLatestData();
+      const economicsLedger = buildEconomicsLedger({
+        orders: latestData.orders,
+        cogsData: latestData.cogsData,
+        campaignInsights: latestData.campaignInsights,
+        campaigns: latestData.campaigns,
+      });
+      scanStore.patchLatestData({ economicsLedger });
+      scanStore.saveLatestData();
+      pushStep(scanResult, {
+        step: 'economics_ledger',
+        status: 'ok',
+        rows: economicsLedger.summary.totalRows,
+        recognizedOrders: economicsLedger.summary.recognizedOrders,
+        matchedOrdersToCogs: economicsLedger.summary.matchedOrdersToCogs,
+        fallbackMatchedOrdersToCogs: economicsLedger.summary.fallbackMatchedOrdersToCogs,
+        unmatchedCogsOrders: economicsLedger.summary.unmatchedCogsOrders,
+      });
+      console.log(
+        `[SCHEDULER]   → ${economicsLedger.summary.totalRows} ledger rows, `
+        + `${economicsLedger.summary.matchedOrdersToCogs}/${economicsLedger.summary.recognizedOrders} orders linked to COGS`
+        + (economicsLedger.summary.fallbackMatchedOrdersToCogs > 0
+          ? ` (${economicsLedger.summary.fallbackMatchedOrdersToCogs} via conservative fallback matching)`
+          : '')
+      );
+    } catch (err) {
+      console.warn('[SCHEDULER]   ⚠ Economics ledger build failed:', err.message);
+      pushError(scanResult, 'economics_ledger', err);
+      pushStep(scanResult, { step: 'economics_ledger', status: 'failed' });
+    }
 
     if (sourceStatus.metaStructure && sourceStatus.metaInsights) {
       console.log('[SCHEDULER] Step 4: Running optimization engine...');
@@ -743,5 +606,4 @@ async function runScan(manual = false) {
 
 module.exports = {
   runScan,
-  runCommerceSync,
 };

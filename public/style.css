@@ -988,20 +988,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   color: var(--color-text-faint);
 }
 
-.setting-runtime {
-  display: inline-flex;
-  align-items: center;
-  min-height: 42px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-2);
-  color: var(--color-text);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  line-height: 1.4;
-}
-
 .api-status {
   display: flex;
   flex-direction: column;

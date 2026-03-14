@@ -111,18 +111,6 @@
     return value.slice(0, 2) + '•••' + value.slice(-2);
   }
 
-  function formatIntervalLabel(minutes) {
-    const value = Number(minutes || 0);
-    if (!value) return '—';
-    if (value % 60 === 0) {
-      const hours = value / 60;
-      return hours === 1
-        ? tr('Every hour', '1시간마다')
-        : tr(`Every ${hours} hours`, `${hours}시간마다`);
-    }
-    return tr(`Every ${value} minutes`, `${value}분마다`);
-  }
-
   async function refreshSettingsPage() {
     try {
       const [overview, analyticsData, settingsData] = await Promise.all([
@@ -135,20 +123,6 @@
       const imwebData = settingsData?.imweb?.data || settingsData?.sources?.imweb || null;
       const cogsData = settingsData?.cogs || null;
       const telegramStatus = settingsData?.telegram || null;
-      const schedulerSettings = settingsData?.scheduler || {};
-
-      const scanFreqEl = document.getElementById('settingsScanFreq');
-      if (scanFreqEl && schedulerSettings.scanIntervalMinutes != null) {
-        scanFreqEl.value = String(Number(schedulerSettings.scanIntervalMinutes));
-      }
-
-      const schedulerRuntimeEl = document.getElementById('settingsSchedulerRuntime');
-      if (schedulerRuntimeEl) {
-        schedulerRuntimeEl.textContent = tr(
-          `Orders and COGS refresh ${formatIntervalLabel(schedulerSettings.scanIntervalMinutes).toLowerCase()} · Meta analysis runs ${formatIntervalLabel(schedulerSettings.analysisIntervalMinutes).toLowerCase()}`,
-          `주문/COGS는 ${formatIntervalLabel(schedulerSettings.scanIntervalMinutes)} · Meta 분석은 ${formatIntervalLabel(schedulerSettings.analysisIntervalMinutes)}`
-        );
-      }
 
       const imwebStatusEl = document.getElementById('settingsImwebStatus');
       if (imwebStatusEl) {

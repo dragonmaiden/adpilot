@@ -4,6 +4,7 @@ const config = require('../config');
 const runtimePaths = require('./paths');
 
 const emitter = new EventEmitter();
+const SETTINGS_SCHEMA_VERSION = 2;
 
 const MUTABLE_RULE_KEYS = [
   'autonomousMode',
@@ -14,7 +15,6 @@ const MUTABLE_RULE_KEYS = [
 
 const MUTABLE_SCHEDULER_KEYS = [
   'scanIntervalMinutes',
-  'analysisIntervalMinutes',
 ];
 
 function pick(source, keys) {
@@ -51,9 +51,6 @@ function validateSettingsPatch(updates) {
   if (updates.scanIntervalMinutes !== undefined && (!Number.isFinite(updates.scanIntervalMinutes) || updates.scanIntervalMinutes < 1 || updates.scanIntervalMinutes > 1440)) {
     errors.push('scanIntervalMinutes must be a number between 1 and 1440');
   }
-  if (updates.analysisIntervalMinutes !== undefined && (!Number.isFinite(updates.analysisIntervalMinutes) || updates.analysisIntervalMinutes < 1 || updates.analysisIntervalMinutes > 1440)) {
-    errors.push('analysisIntervalMinutes must be a number between 1 and 1440');
-  }
   if (updates.budgetReallocationEnabled !== undefined && typeof updates.budgetReallocationEnabled !== 'boolean') {
     errors.push('budgetReallocationEnabled must be a boolean');
   }
@@ -63,6 +60,7 @@ function validateSettingsPatch(updates) {
 
 function persistState(state) {
   fs.writeFileSync(runtimePaths.runtimeSettingsFile, JSON.stringify({
+    schemaVersion: SETTINGS_SCHEMA_VERSION,
     rules: state.rules,
     scheduler: state.scheduler,
     updatedAt: new Date().toISOString(),
@@ -82,18 +80,21 @@ function loadState() {
       cpaPauseThreshold: raw.rules?.cpaPauseThreshold,
       budgetReallocationEnabled: raw.rules?.budgetReallocationEnabled,
       scanIntervalMinutes: raw.scheduler?.scanIntervalMinutes,
-      analysisIntervalMinutes: raw.scheduler?.analysisIntervalMinutes,
     };
 
-    // Migrate any legacy single-loop scheduler into the new split cadence:
-    // commerce sync every 5 minutes, heavy analysis every 30 minutes.
-    if (persisted.analysisIntervalMinutes === undefined) {
-      persisted.scanIntervalMinutes = defaultState.scheduler.scanIntervalMinutes;
-      persisted.analysisIntervalMinutes = defaultState.scheduler.analysisIntervalMinutes;
+    // Migrate legacy single-loop scheduler files to the current default cadence.
+    // Older production disks may still carry 3/30/60 minute defaults from previous
+    // experiments; if the settings file predates this schema, normalize those legacy
+    // values to the new default once on boot.
+    if (
+      raw.schemaVersion !== SETTINGS_SCHEMA_VERSION
+      && defaultState.scheduler.scanIntervalMinutes === 10
+      && [3, 5, 30, 60].includes(persisted.scanIntervalMinutes)
+    ) {
+      persisted.scanIntervalMinutes = 10;
       raw.scheduler = {
         ...(raw.scheduler || {}),
-        scanIntervalMinutes: defaultState.scheduler.scanIntervalMinutes,
-        analysisIntervalMinutes: defaultState.scheduler.analysisIntervalMinutes,
+        scanIntervalMinutes: 10,
       };
     }
 
