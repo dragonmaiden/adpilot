@@ -158,6 +158,10 @@
     return api(`/campaigns${suffix}`);
   }
 
+  function fetchLivePerformance() {
+    return api('/live-performance');
+  }
+
   function fetchPostmortem(windowKey) {
     const search = new URLSearchParams();
     if (windowKey) search.set('days', windowKey);
@@ -207,6 +211,7 @@
     fetchAnalytics,
     fetchCalendarAnalysis,
     fetchCampaigns,
+    fetchLivePerformance,
     fetchPostmortem,
     fetchScans,
     fetchSettings,

@@ -18,7 +18,6 @@
     fetchPolicyLabTraces,
     fetchPolicyLabOutcomes,
     fetchPolicyLabObservability,
-    fetchSpendDaily,
     executeOptimization,
   } = live.api;
 
@@ -50,27 +49,6 @@
     error: 'octagon-alert',
     info: 'radar',
   };
-
-  function renderCandlestickStats(data) {
-    const el = document.getElementById('candlestickStats');
-    if (!el || !data.length) return;
-
-    const totalSpend = data.reduce((sum, row) => sum + row.spend, 0);
-    const peakDay = data.reduce((max, row) => row.spend > max.spend ? row : max, data[0]);
-    const avgDaily = totalSpend / data.length;
-    const avgCac = data.reduce((sum, row) => sum + row.cac, 0) / data.length;
-    const peakDate = new Date(peakDay.date).toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' });
-
-    const values = el.querySelectorAll('strong');
-    if (values.length >= 6) {
-      values[0].textContent = formatKrw(totalSpend);
-      values[1].textContent = formatKrw(peakDay.spend);
-      values[2].textContent = formatKrw(Math.round(avgDaily));
-      values[3].textContent = data.length.toString();
-      values[4].textContent = formatKrw(Math.round(avgCac));
-      values[5].textContent = peakDate;
-    }
-  }
 
   function getTypeFilter() {
     return document.getElementById('optTypeFilter')?.value || 'all';
@@ -219,29 +197,6 @@
       default:
         return { label: tr('Candidate', '후보'), className: 'badge-info' };
     }
-  }
-
-  function buildMergedMarkers(aiOps, policyLab) {
-    const markers = [...(aiOps?.decisionMarkers || []), ...(policyLab?.strategyMarkers || [])];
-    const byDate = new Map();
-
-    markers.forEach(marker => {
-      if (!marker?.date) return;
-      const existing = byDate.get(marker.date);
-      if (!existing) {
-        byDate.set(marker.date, { ...marker });
-        return;
-      }
-
-      existing.count = (existing.count || 1) + (marker.count || 1);
-      existing.title = existing.title === marker.title ? existing.title : `${existing.title} + ${marker.title}`;
-      existing.detail = [existing.detail, marker.detail].filter(Boolean).join(' · ');
-      if (['promoted', 'executed', 'error', 'expired', 'rejected'].includes(marker.kind)) {
-        existing.kind = marker.kind;
-      }
-    });
-
-    return Array.from(byDate.values()).sort((left, right) => String(left.date).localeCompare(String(right.date)));
   }
 
   function compareClusters(left, right) {
@@ -598,29 +553,6 @@
           )
         : tr('No policy-lab data yet', '아직 정책 실험 데이터 없음');
     }
-  }
-
-  function renderEventStrip(markers) {
-    const container = document.getElementById('candlestickEvents');
-    if (!container) return;
-
-    if (!Array.isArray(markers) || markers.length === 0) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('No meaningful decision markers in the current window.', '현재 창에서 의미 있는 결정 마커가 없습니다.'))}</div>`;
-      return;
-    }
-
-    container.innerHTML = markers.map(marker => {
-      const visual = eventVisual(marker.kind);
-      const label = new Date(`${marker.date}T00:00:00Z`).toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' });
-      return `
-        <span class="candlestick-event-chip" title="${esc(marker.detail || marker.title || '')}">
-          <span class="candlestick-event-dot ${esc(visual.dotClass)}"></span>
-          <strong>${esc(label)}</strong>
-          <span>${esc(marker.title || tr('Decision marker', '결정 마커'))}</span>
-          ${marker.count > 1 ? `<span>· ${esc(formatCount(marker.count))}</span>` : ''}
-        </span>
-      `;
-    }).join('');
   }
 
   function renderQueue(aiOps) {
@@ -1324,124 +1256,12 @@
     });
   }
 
-  function buildEventDataset(markersByDate, spendData, minV, pad) {
-    const markerBase = Math.max(0, minV - pad * 1.1);
-    const eventDataset = spendData.map(row => (markersByDate.get(row.date) ? markerBase : null));
-    const pointBackgroundColor = spendData.map(row => {
-      const marker = markersByDate.get(row.date);
-      if (!marker) return 'transparent';
-      switch (marker.kind) {
-        case 'executed':
-          return '#4ade80';
-        case 'promoted':
-          return '#f59e0b';
-        case 'challenger':
-          return '#7c3aed';
-        case 'expired':
-        case 'rejected':
-          return '#ef6461';
-        case 'needs_approval':
-        case 'awaiting_telegram':
-          return '#20808D';
-        default:
-          return '#94a3b8';
-      }
-    });
-    const pointStyle = spendData.map(row => {
-      const marker = markersByDate.get(row.date);
-      if (!marker) return 'circle';
-      switch (marker.kind) {
-        case 'executed':
-          return 'rectRounded';
-        case 'promoted':
-          return 'star';
-        case 'challenger':
-          return 'triangle';
-        case 'expired':
-        case 'rejected':
-          return 'rectRot';
-        case 'needs_approval':
-        case 'awaiting_telegram':
-          return 'triangle';
-        default:
-          return 'circle';
-      }
-    });
-    const pointRadius = spendData.map(row => {
-      const marker = markersByDate.get(row.date);
-      return marker ? Math.min(7, 3 + Number(marker.count || 1)) : 0;
-    });
-
-    return {
-      markerBase,
-      eventDataset,
-      pointBackgroundColor,
-      pointStyle,
-      pointRadius,
-    };
-  }
-
-  function updateCharts(aiOps, policyLab, spendData) {
-    if (!(typeof optTimelineChart !== 'undefined' && optTimelineChart && spendData && spendData.length > 0)) {
-      return;
-    }
-
-    const labels = spendData.map(row => {
-      const dt = new Date(row.date);
-      return dt.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' });
-    });
-    const mergedMarkers = buildMergedMarkers(aiOps, policyLab);
-    const markersByDate = new Map(mergedMarkers.map(marker => [marker.date, marker]));
-
-    if (typeof _candlestickOHLC !== 'undefined') {
-      _candlestickOHLC = spendData.map(row => ({ o: row.o, h: row.h, l: row.l, c: row.c }));
-    }
-    if (typeof _candlestickData !== 'undefined') {
-      _candlestickData = spendData;
-      _candlestickChanges = spendData.map((row, index) => {
-        if (index === 0) return { pct: 0, dir: '' };
-        const prev = spendData[index - 1].spend;
-        const pct = ((row.spend - prev) / Math.max(prev, 1) * 100).toFixed(1);
-        return { pct: Math.abs(pct), dir: row.spend >= prev ? '▲' : '▼' };
-      });
-      _candlestickEventMarkers = spendData.map(row => markersByDate.get(row.date) || null);
-    }
-
-    optTimelineChart.data.labels = labels;
-    optTimelineChart.data.datasets[0].data = spendData.map(row => row.c);
-    optTimelineChart.data.datasets[1].data = spendData.map(row => row.cac);
-    const targetValue = optTimelineChart.data.datasets[2].data[0] || 45000;
-    const budgetValue = optTimelineChart.data.datasets[3].data[0] || 90000;
-    optTimelineChart.data.datasets[2].data = spendData.map(() => targetValue);
-    optTimelineChart.data.datasets[3].data = spendData.map(() => budgetValue);
-
-    const allVals = spendData.flatMap(row => [row.o, row.h, row.l, row.c]);
-    const minV = Math.min(...allVals);
-    const maxV = Math.max(...allVals);
-    const pad = Math.max((maxV - minV) * 0.15, 5000);
-    const markerDataset = buildEventDataset(markersByDate, spendData, minV, pad);
-    optTimelineChart.data.datasets[4].data = markerDataset.eventDataset;
-    optTimelineChart.data.datasets[4].pointBackgroundColor = markerDataset.pointBackgroundColor;
-    optTimelineChart.data.datasets[4].pointBorderColor = markerDataset.pointBackgroundColor;
-    optTimelineChart.data.datasets[4].pointStyle = markerDataset.pointStyle;
-    optTimelineChart.data.datasets[4].pointRadius = markerDataset.pointRadius;
-    optTimelineChart.data.datasets[4].pointHoverRadius = markerDataset.pointRadius.map(radius => radius > 0 ? radius + 2 : 0);
-
-    optTimelineChart.options.scales.y.min = Math.max(0, minV - pad * 2);
-    optTimelineChart.options.scales.y.max = maxV + pad;
-    optTimelineChart.update();
-
-    renderCandlestickStats(spendData);
-    renderEventStrip(mergedMarkers);
-  }
-
   async function refreshOptimizationsPage() {
     bindOptimizationFilters();
 
-    const [aiOps, optData, spendData, policyLab, experimentsData, tracesData, outcomesData, observabilityData] = await Promise.all([
+    const [aiOps, optData, policyLab, experimentsData, tracesData, outcomesData, observabilityData] = await Promise.all([
       fetchAiOperations(),
       fetchOptimizations(500),
-      fetchSpendDaily(),
       fetchPolicyLab(),
       fetchPolicyLabExperiments(),
       fetchPolicyLabTraces(),
@@ -1465,7 +1285,6 @@
     renderKarpathyTraces(tracesData || { traces: [], filters: { policyIds: [], verdicts: [], controlSurfaces: [] } });
     renderKarpathyMetrics(policyLab, outcomesData);
     renderKarpathyObservability(policyLab, observabilityData);
-    updateCharts(aiOps, policyLab, spendData || []);
   }
 
   live.registerPage('optimizations', {

@@ -23,6 +23,7 @@ const recommendationQualityService = require('./services/recommendationQualitySe
 const aiOperationsService = require('./services/aiOperationsService');
 const policyLabService = require('./services/policyLabService');
 const analyticsService = require('./services/analyticsService');
+const livePerformanceService = require('./services/livePerformanceService');
 const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
 const reconciliationService = require('./services/reconciliationService');
@@ -357,6 +358,14 @@ app.get('/api/operator-brief', async (req, res) => {
 // ── Campaigns list with live data ──
 app.get('/api/campaigns', (req, res) => {
   res.json(campaignService.getEnrichedCampaigns(req.query));
+});
+
+app.get('/api/live-performance', (req, res) => {
+  try {
+    res.json(livePerformanceService.buildLivePerformanceResponse());
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
 });
 
 // ── Optimizations log ──

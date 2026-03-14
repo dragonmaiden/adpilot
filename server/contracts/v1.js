@@ -206,6 +206,13 @@ function campaigns({ campaigns: enriched, windowKey, windowDays }) {
   };
 }
 
+function livePerformance(data) {
+  return {
+    apiVersion: API_VERSION,
+    ...data,
+  };
+}
+
 /**
  * Build /api/optimizations response.
  */
@@ -462,6 +469,7 @@ module.exports = {
   analytics,
   calendarAnalysis,
   campaigns,
+  livePerformance,
   optimizations,
   recommendationQuality,
   aiOperations,

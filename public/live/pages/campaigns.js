@@ -1,7 +1,7 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, formatUsd, timeSince, tr, getLocale, localizeOptimizationText, localizeCreativeText } = live.shared;
-  const { fetchCampaigns, fetchPostmortem, fetchOptimizations, fetchAnalytics, fetchOverview, fetchScans, updateCampaignStatus } = live.api;
+  const { esc, formatUsd, formatPercent, formatCompactKrw, formatSignedCompactKrw, timeSince, tr, getLocale, localizeOptimizationText, localizeCreativeText } = live.shared;
+  const { fetchCampaigns, fetchLivePerformance, fetchPostmortem, fetchOptimizations, fetchAnalytics, fetchOverview, fetchScans, fetchSpendDaily, updateCampaignStatus } = live.api;
   const { getSeriesWindowMeta } = live.seriesWindows;
 
   const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -14,6 +14,20 @@
     schedule: 'clock',
     targeting: 'target',
   };
+  let liveIntradayChart = null;
+  let liveDailyContextChart = null;
+
+  function getIntradayChartColors() {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      text: style.getPropertyValue('--color-text-faint').trim() || '#718096',
+      grid: style.getPropertyValue('--color-divider').trim() || 'rgba(148, 163, 184, 0.16)',
+      spend: '#A84B2F',
+      revenue: '#4ade80',
+      contribution: '#20808D',
+      expected: style.getPropertyValue('--color-text-muted').trim() || '#94a3b8',
+    };
+  }
 
   function bindNavShortcuts(scope = document) {
     scope.querySelectorAll('[data-nav-target]').forEach(button => {
@@ -124,6 +138,419 @@
     if (deltaEl) {
       deltaEl.classList.remove('positive', 'negative', 'neutral');
       deltaEl.classList.add(tone || 'neutral');
+    }
+  }
+
+  function ensureIntradayChart() {
+    const canvas = document.getElementById('liveIntradayChart');
+    if (!canvas || typeof Chart === 'undefined') return null;
+    if (liveIntradayChart) return liveIntradayChart;
+
+    const colors = getIntradayChartColors();
+    liveIntradayChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: tr('Spend', '지출'),
+            data: [],
+            borderColor: colors.spend,
+            backgroundColor: colors.spend + '20',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.35,
+            yAxisID: 'y',
+          },
+          {
+            label: tr('Revenue', '매출'),
+            data: [],
+            borderColor: colors.revenue,
+            backgroundColor: colors.revenue + '20',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.35,
+            yAxisID: 'y',
+          },
+          {
+            label: tr('Expected pace', '기대 페이스'),
+            data: [],
+            borderColor: colors.expected,
+            borderDash: [5, 5],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.2,
+            yAxisID: 'y',
+          },
+          {
+            label: tr('Contribution after ads', '광고비 후 기여이익'),
+            data: [],
+            borderColor: colors.contribution,
+            backgroundColor: colors.contribution + '18',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.35,
+            fill: false,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: {
+              color: colors.text,
+              usePointStyle: true,
+              padding: 14,
+              font: { size: 11 },
+            },
+          },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const value = Number(context.raw || 0);
+                const label = context.dataset.label || '';
+                return `${label}: ${value < 0 ? '-' : ''}${formatCompactKrw(Math.abs(value))}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: colors.text },
+          },
+          y: {
+            position: 'left',
+            grid: { color: colors.grid },
+            ticks: {
+              color: colors.text,
+              callback: value => formatCompactKrw(value),
+            },
+          },
+          y1: {
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: {
+              color: colors.text,
+              callback: value => value < 0
+                ? `-${formatCompactKrw(Math.abs(value))}`
+                : formatCompactKrw(value),
+            },
+          },
+        },
+      },
+    });
+
+    return liveIntradayChart;
+  }
+
+  function ensureDailyContextChart() {
+    const canvas = document.getElementById('liveDailyContextChart');
+    if (!canvas || typeof Chart === 'undefined') return null;
+    if (liveDailyContextChart) return liveDailyContextChart;
+
+    const colors = getIntradayChartColors();
+    liveDailyContextChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: tr('Spend', '지출'),
+            data: [],
+            backgroundColor: colors.spend + 'B3',
+            borderRadius: 5,
+            yAxisID: 'y',
+          },
+          {
+            label: 'CAC',
+            data: [],
+            type: 'line',
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.12)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.3,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: {
+              color: colors.text,
+              usePointStyle: true,
+              padding: 14,
+              font: { size: 11 },
+            },
+          },
+          tooltip: {
+            callbacks: {
+              label(context) {
+                const value = Number(context.raw || 0);
+                if (context.datasetIndex === 0) {
+                  return `${context.dataset.label}: ${formatCompactKrw(value)}`;
+                }
+                return `${context.dataset.label}: ${formatCompactKrw(value)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: colors.text },
+          },
+          y: {
+            position: 'left',
+            grid: { color: colors.grid },
+            ticks: {
+              color: colors.text,
+              callback: value => formatCompactKrw(value),
+            },
+          },
+          y1: {
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: {
+              color: colors.text,
+              callback: value => formatCompactKrw(value),
+            },
+          },
+        },
+      },
+    });
+
+    return liveDailyContextChart;
+  }
+
+  function filterDailyWindow(rows, windowMeta) {
+    const list = Array.isArray(rows) ? rows.slice() : [];
+    if (!windowMeta?.days) return list;
+    return list.slice(-windowMeta.days);
+  }
+
+  function renderIntradayMetrics(container, intraday) {
+    if (!container) return;
+    const summary = intraday?.summary || {};
+    const metrics = [
+      {
+        label: tr('Spend so far', '현재까지 지출'),
+        value: formatCompactKrw(summary.spendSoFarKrw || 0),
+        meta: summary.totalDailyBudgetKrw > 0
+          ? tr(
+              `${formatPercent((summary.spendSoFarKrw / Math.max(summary.totalDailyBudgetKrw, 1)) * 100, 0)} of active budget`,
+              `활성 예산의 ${formatPercent((summary.spendSoFarKrw / Math.max(summary.totalDailyBudgetKrw, 1)) * 100, 0)}`
+            )
+          : tr('No active budget pool', '활성 예산 풀 없음'),
+      },
+      {
+        label: tr('Revenue so far', '현재까지 매출'),
+        value: formatCompactKrw(summary.revenueSoFarKrw || 0),
+        meta: tr('Recognized cash only', '인식된 현금 기준'),
+      },
+      {
+        label: tr('Contribution before ads', '광고비 전 기여이익'),
+        value: formatSignedCompactKrw(summary.contributionBeforeAdsKrw || 0),
+        meta: tr('Revenue minus COGS, shipping, and fees', '매출에서 원가, 배송, 결제 수수료 차감'),
+      },
+      {
+        label: tr('Contribution after ads', '광고비 후 기여이익'),
+        value: formatSignedCompactKrw(summary.contributionAfterAdsKrw || 0),
+        meta: tr('Best intraday payback read', '오늘 payback을 가장 잘 보여주는 값'),
+      },
+      {
+        label: 'ROAS',
+        value: `${Number(summary.roas || 0).toFixed(2)}x`,
+        meta: tr('Revenue / ad spend', '매출 / 광고비'),
+      },
+      {
+        label: 'POAS',
+        value: `${Number(summary.poas || 0).toFixed(2)}x`,
+        meta: tr('Contribution before ads / ad spend', '광고비 전 기여이익 / 광고비'),
+      },
+      {
+        label: tr('Orders so far', '현재까지 주문'),
+        value: Number(summary.ordersSoFar || 0).toLocaleString(getLocale()),
+        meta: tr('Recognized paid orders only', '인식된 결제 주문 기준'),
+      },
+      {
+        label: 'AOV',
+        value: formatCompactKrw(summary.aovKrw || 0),
+        meta: tr('Revenue / orders', '매출 / 주문수'),
+      },
+    ];
+
+    container.innerHTML = metrics.map(metric => `
+      <div class="live-intraday-metric">
+        <span>${esc(metric.label)}</span>
+        <strong>${esc(metric.value)}</strong>
+        <small>${esc(metric.meta)}</small>
+      </div>
+    `).join('');
+  }
+
+  function renderIntradayHighlights(container, intraday) {
+    if (!container) return;
+    const highlights = Array.isArray(intraday?.highlights) ? intraday.highlights : [];
+    if (highlights.length === 0) {
+      container.innerHTML = `<div class="empty-state">${esc(tr('No intraday highlights yet.', '아직 당일 하이라이트가 없습니다.'))}</div>`;
+      return;
+    }
+
+    container.innerHTML = highlights.map(item => `
+      <div class="live-intraday-highlight">${esc(item)}</div>
+    `).join('');
+  }
+
+  function renderIntradayChart(intraday) {
+    const chart = ensureIntradayChart();
+    if (!chart) return;
+    const points = intraday?.chart?.points || [];
+    const colors = getIntradayChartColors();
+    chart.data.labels = points.map(point => point.label);
+    chart.data.datasets[0].data = points.map(point => point.cumulativeSpendKrw);
+    chart.data.datasets[1].data = points.map(point => point.cumulativeRevenueKrw);
+    chart.data.datasets[2].data = points.map(point => point.expectedSpendKrw);
+    chart.data.datasets[3].data = points.map(point => point.cumulativeContributionAfterAdsKrw);
+    chart.data.datasets[0].borderColor = colors.spend;
+    chart.data.datasets[0].backgroundColor = colors.spend + '20';
+    chart.data.datasets[1].borderColor = colors.revenue;
+    chart.data.datasets[1].backgroundColor = colors.revenue + '20';
+    chart.data.datasets[2].borderColor = colors.expected;
+    chart.data.datasets[3].borderColor = colors.contribution;
+    chart.data.datasets[3].backgroundColor = colors.contribution + '18';
+    chart.options.plugins.legend.labels.color = colors.text;
+    chart.options.scales.y.grid.color = colors.grid;
+    chart.options.scales.y.ticks.color = colors.text;
+    chart.options.scales.x.ticks.color = colors.text;
+    chart.options.scales.y1.ticks.color = colors.text;
+    chart.update();
+  }
+
+  function renderIntradaySection(livePerformance) {
+    const asOfEl = document.getElementById('liveIntradayAsOf');
+    const takeawayEl = document.getElementById('liveIntradayTakeaway');
+    const pillEl = document.getElementById('liveIntradayTakeawayPill');
+    const headlineEl = document.getElementById('liveIntradayTakeawayHeadline');
+    const detailEl = document.getElementById('liveIntradayTakeawayDetail');
+    const confidenceEl = document.getElementById('liveIntradayConfidence');
+    const confidenceDetailEl = document.getElementById('liveIntradayConfidenceDetail');
+    const metricsEl = document.getElementById('liveIntradayMetrics');
+    const highlightsEl = document.getElementById('liveIntradayHighlights');
+
+    const intraday = livePerformance?.intraday;
+    if (!intraday) {
+      if (asOfEl) asOfEl.textContent = tr('Waiting for intraday data', '당일 데이터 대기 중');
+      if (takeawayEl) takeawayEl.dataset.tone = 'neutral';
+      if (pillEl) pillEl.textContent = tr('No data yet', '데이터 없음');
+      if (headlineEl) headlineEl.textContent = tr('Intraday pace is not ready yet', '당일 페이스가 아직 준비되지 않았습니다');
+      if (detailEl) detailEl.textContent = tr('Once scans and order data are available, this card will show whether today is pacing cleanly or burning early.', '스캔과 주문 데이터가 잡히면 오늘이 건강하게 가는지, 초반 소진이 빠른지 이 카드가 보여줍니다.');
+      if (confidenceEl) confidenceEl.textContent = '—';
+      if (confidenceDetailEl) confidenceDetailEl.textContent = '—';
+      if (metricsEl) metricsEl.innerHTML = `<div class="empty-state">${esc(tr('Intraday pace is not ready yet.', '당일 페이스가 아직 준비되지 않았습니다.'))}</div>`;
+      if (highlightsEl) highlightsEl.innerHTML = `<div class="empty-state">${esc(tr('Intraday highlights will appear after the next live refresh.', '다음 라이브 갱신 후 당일 하이라이트가 표시됩니다.'))}</div>`;
+      return;
+    }
+
+    if (asOfEl) {
+      asOfEl.textContent = tr(
+        `KST · ${intraday.chart?.snapshotCount || 0} spend snapshots today`,
+        `KST · 오늘 지출 스냅샷 ${Number(intraday.chart?.snapshotCount || 0).toLocaleString(getLocale())}개`
+      );
+    }
+    if (takeawayEl) takeawayEl.dataset.tone = intraday.takeaway?.tone || 'neutral';
+    if (pillEl) {
+      pillEl.textContent = intraday.chart?.usingSnapshotSpend
+        ? tr('Live scan spend', '라이브 스캔 지출')
+        : tr('Current-state fallback', '현재 상태 대체값');
+    }
+    if (headlineEl) headlineEl.textContent = intraday.takeaway?.headline || tr('Intraday pace ready', '당일 페이스 준비됨');
+    if (detailEl) detailEl.textContent = intraday.takeaway?.detail || tr('Today’s pacing story is ready.', '오늘 페이싱 스토리가 준비되었습니다.');
+    if (confidenceEl) confidenceEl.textContent = intraday.confidence?.label || '—';
+    if (confidenceDetailEl) confidenceDetailEl.textContent = intraday.confidence?.detail || '—';
+
+    renderIntradayMetrics(metricsEl, intraday);
+    renderIntradayHighlights(highlightsEl, intraday);
+    renderIntradayChart(intraday);
+  }
+
+  function renderDailyContextSection(spendData, windowMeta) {
+    const chart = ensureDailyContextChart();
+    const statsEl = document.getElementById('liveDailyContextStats');
+    const rows = filterDailyWindow(spendData || [], windowMeta);
+
+    if (statsEl && rows.length === 0) {
+      statsEl.innerHTML = `<div class="empty-state">${esc(tr('Daily context is not ready yet.', '일별 맥락이 아직 준비되지 않았습니다.'))}</div>`;
+    }
+
+    if (!chart || rows.length === 0) {
+      return;
+    }
+
+    const labels = rows.map(row => {
+      const dt = new Date(`${row.date}T00:00:00`);
+      return dt.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' });
+    });
+    const spendValues = rows.map(row => Number(row.spend || 0));
+    const cacValues = rows.map(row => Number(row.cac || 0));
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = spendValues;
+    chart.data.datasets[1].data = cacValues;
+    chart.update();
+
+    if (statsEl) {
+      const totalSpend = spendValues.reduce((sum, value) => sum + value, 0);
+      const peakRow = rows.reduce((best, row) => (Number(row.spend || 0) > Number(best.spend || 0) ? row : best), rows[0]);
+      const avgCac = cacValues.length > 0
+        ? cacValues.reduce((sum, value) => sum + value, 0) / cacValues.length
+        : 0;
+      const orderTotal = rows.reduce((sum, row) => sum + Number(row.orders || 0), 0);
+      statsEl.innerHTML = [
+        {
+          label: tr('Total spend', '총 지출'),
+          value: formatCompactKrw(totalSpend),
+          meta: tr(`${rows.length} days in view`, `표시 구간 ${rows.length}일`),
+        },
+        {
+          label: tr('Average CAC', '평균 CAC'),
+          value: formatCompactKrw(avgCac),
+          meta: tr('Actual daily purchase counts when available', '가능할 때 실제 일별 구매 수 사용'),
+        },
+        {
+          label: tr('Peak spend day', '최대 지출일'),
+          value: new Date(`${peakRow.date}T00:00:00`).toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' }),
+          meta: formatCompactKrw(Number(peakRow.spend || 0)),
+        },
+        {
+          label: tr('Orders in view', '기간 주문수'),
+          value: Number(orderTotal).toLocaleString(getLocale()),
+          meta: tr('Use this as backdrop, not the live pacing read', '이건 배경 맥락이지 라이브 페이스 판단은 아닙니다'),
+        },
+      ].map(item => `
+        <div class="live-daily-context-stat">
+          <span>${esc(item.label)}</span>
+          <strong>${esc(item.value)}</strong>
+          <small>${esc(item.meta)}</small>
+        </div>
+      `).join('');
     }
   }
 
@@ -429,13 +856,15 @@
 
   async function refreshCampaignsPage() {
     const windowMeta = getSeriesWindowMeta('campaigns');
-    const [campaignData, postmortem, optData, analyticsData, overviewData, scansData] = await Promise.all([
+    const [campaignData, livePerformance, postmortem, optData, analyticsData, overviewData, scansData, spendDaily] = await Promise.all([
       fetchCampaigns(windowMeta.key),
+      fetchLivePerformance(),
       fetchPostmortem(windowMeta.key),
       fetchOptimizations(12),
       fetchAnalytics(),
       fetchOverview(),
       fetchScans(),
+      fetchSpendDaily(),
     ]);
 
     if (!campaignData || !postmortem) return;
@@ -452,6 +881,8 @@
     }
 
     renderLiveKpis(campaignData, postmortem, optData, analyticsData, scansData);
+    renderIntradaySection(livePerformance);
+    renderDailyContextSection(spendDaily || [], windowMeta);
     renderActionQueue(document.getElementById('liveActionQueue'), optData, scansData);
     renderOperatorSignals(document.getElementById('operatorSignalGrid'), campaignData, postmortem, overviewData, analyticsData);
     renderActiveAds(document.getElementById('activeAdsContainer'), document.getElementById('activeCount'), postmortem, windowLabel);
