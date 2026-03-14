@@ -598,8 +598,8 @@
       const labSummary = policyLab?.summary || {};
       karpathyEl.textContent = policyLab
         ? tr(
-            `${formatCount(labSummary.challengerCount || 0)} live candidates · ${formatCount(summary.actionNowFamilies || 0)} live decisions · ${labSummary.lastResearchRunAt ? `last run ${formatRelative(labSummary.lastResearchRunAt)}` : 'no recent run'}`,
-            `라이브 후보 ${formatCount(labSummary.challengerCount || 0)}개 · 라이브 결정 ${formatCount(summary.actionNowFamilies || 0)}개 · ${labSummary.lastResearchRunAt ? `최근 실행 ${formatRelative(labSummary.lastResearchRunAt)}` : '최근 실행 없음'}`
+            `${formatCount(labSummary.harnessStatus?.candidatePool || labSummary.challengerCount || 0)} policy variants · ${formatCount(summary.actionNowFamilies || 0)} live decisions · ${labSummary.lastResearchRunAt ? `last run ${formatRelative(labSummary.lastResearchRunAt)}` : 'no recent run'}`,
+            `정책 변형 ${formatCount(labSummary.harnessStatus?.candidatePool || labSummary.challengerCount || 0)}개 · 라이브 결정 ${formatCount(summary.actionNowFamilies || 0)}개 · ${labSummary.lastResearchRunAt ? `최근 실행 ${formatRelative(labSummary.lastResearchRunAt)}` : '최근 실행 없음'}`
           )
         : tr('No policy-lab data yet', '아직 정책 실험 데이터 없음');
     }
@@ -907,6 +907,7 @@
     const sentryLabel = sentryStatus.enabled
       ? tr('Sentry live', '센트리 연결')
       : tr('Local only', '로컬만');
+    const harness = summary.harnessStatus || {};
 
     if (metaEl) {
       metaEl.textContent = summary.lastResearchRunAt
@@ -919,7 +920,7 @@
 
     const cards = [
       { label: tr('Champion', '챔피언'), value: summary.championPolicyLabel || '—', meta: summary.championPolicyId || '—' },
-      { label: tr('Live candidates', '라이브 후보'), value: formatCount(summary.challengerCount || 0), meta: tr(`${formatCount(summary.promotionReadyCount || 0)} promotion-ready`, `${formatCount(summary.promotionReadyCount || 0)}개 승격 준비`) },
+      { label: tr('Policy pool', '정책 풀'), value: formatCount(harness.candidatePool || summary.challengerCount || 0), meta: tr(`${formatCount(harness.activeCandidates || summary.activeCandidateCount || 0)} active · ${formatCount(harness.promotionReady || summary.promotionReadyCount || 0)} ready`, `${formatCount(harness.activeCandidates || summary.activeCandidateCount || 0)}개 활성 · ${formatCount(harness.promotionReady || summary.promotionReadyCount || 0)}개 준비`) },
       { label: tr('Live divergence', '라이브 분기'), value: `${Math.round((summary.liveDivergenceRate || summary.shadowDivergenceRate || 0) * 100)}%`, meta: summary.activeLearningPolicyLabel || summary.activeShadowPolicyLabel || tr('No active learning policy', '활성 학습 정책 없음') },
       { label: tr('Completed outcomes', '완료된 결과'), value: formatCount(summary.completedOutcomeCount || 0), meta: tr(`${formatCount(summary.decisionTraceCount || 0)} total traces`, `총 ${formatCount(summary.decisionTraceCount || 0)}개 트레이스`) },
       { label: tr('Observability', '관측 상태'), value: sentryLabel, meta: sentryStatus.lastEventAt ? tr(`Last event ${formatRelative(sentryStatus.lastEventAt)}`, `최근 이벤트 ${formatRelative(sentryStatus.lastEventAt)}`) : tr('No events yet', '아직 이벤트 없음') },
@@ -944,8 +945,8 @@
 
     if (metaEl) {
       metaEl.textContent = tr(
-        `${formatCount(markers.length)} chart markers · ${formatCount(experiments.length)} logged iterations`,
-        `${formatCount(markers.length)}개 차트 마커 · ${formatCount(experiments.length)}개 학습 반복`
+        `${formatCount(markers.length)} chart markers · ${formatCount(experiments.length)} logged iterations · ${formatCount(policyLab?.experimentFunnel?.promotionReady || 0)} ready`,
+        `${formatCount(markers.length)}개 차트 마커 · ${formatCount(experiments.length)}개 학습 반복 · ${formatCount(policyLab?.experimentFunnel?.promotionReady || 0)}개 준비`
       );
     }
 
@@ -1013,11 +1014,14 @@
     const metrics = policyLab?.metrics || {};
     const summary = metrics.summary || {};
     const outcomes = outcomesData?.outcomes || policyLab?.outcomesPreview || [];
+    const experimentFunnel = policyLab?.experimentFunnel || {};
+    const specialistScoreboard = policyLab?.specialistScoreboard || [];
+    const regimePerformance = policyLab?.regimePerformance || [];
 
     if (metaEl) {
       metaEl.textContent = tr(
-        `${formatCount(outcomes.length)} recent outcomes · ${formatCount(policyLab?.experimentsPreview?.length || 0)} previewed challengers`,
-        `${formatCount(outcomes.length)}개 최근 결과 · ${formatCount(policyLab?.experimentsPreview?.length || 0)}개 도전자`
+        `${formatCount(outcomes.length)} recent outcomes · ${formatCount(experimentFunnel.totalIterations || policyLab?.experimentsPreview?.length || 0)} logged iterations`,
+        `${formatCount(outcomes.length)}개 최근 결과 · ${formatCount(experimentFunnel.totalIterations || policyLab?.experimentsPreview?.length || 0)}개 학습 반복`
       );
     }
 
@@ -1047,28 +1051,77 @@
           <span>${esc(tr('Live divergence', '라이브 분기'))}</span>
           <strong>${esc(`${Math.round((summary.shadowDivergenceRate || 0) * 100)}%`)}</strong>
         </div>
+        <div class="karpathy-metric-card">
+          <span>${esc(tr('Active candidates', '활성 후보'))}</span>
+          <strong>${esc(formatCount(experimentFunnel.activeCandidates || 0))}</strong>
+        </div>
+        <div class="karpathy-metric-card">
+          <span>${esc(tr('Promotion ready', '승격 준비'))}</span>
+          <strong>${esc(formatCount(experimentFunnel.promotionReady || 0))}</strong>
+        </div>
+      </div>
+      <div class="karpathy-mini-columns">
+        <div class="karpathy-mini-card">
+          <h3>${esc(tr('Experiment funnel', '실험 퍼널'))}</h3>
+          <div class="karpathy-row">
+            <strong>${esc(tr('Iterations', '반복'))}</strong>
+            <span>${esc(formatCount(experimentFunnel.totalIterations || 0))}</span>
+          </div>
+          <div class="karpathy-row">
+            <strong>${esc(tr('Candidate pool', '후보 풀'))}</strong>
+            <span>${esc(formatCount(experimentFunnel.candidatePool || 0))}</span>
+          </div>
+          <div class="karpathy-row">
+            <strong>${esc(tr('Active candidates', '활성 후보'))}</strong>
+            <span>${esc(formatCount(experimentFunnel.activeCandidates || 0))}</span>
+          </div>
+          <div class="karpathy-row">
+            <strong>${esc(tr('Promotion ready', '승격 준비'))}</strong>
+            <span>${esc(formatCount(experimentFunnel.promotionReady || 0))}</span>
+          </div>
+        </div>
+        <div class="karpathy-mini-card">
+          <h3>${esc(tr('Specialist scoreboard', '전문가 스코어보드'))}</h3>
+          ${(specialistScoreboard.length === 0 ? `<div class="empty-state compact">${esc(tr('No specialist traces yet.', '아직 전문가 트레이스가 없습니다.'))}</div>` : specialistScoreboard.slice(0, 6).map(entry => `
+            <div class="karpathy-row">
+              <strong>${esc(entry.label || entry.key)}</strong>
+              <span>${esc(`${Math.round((entry.avgWeightedScore || 0) * 100) / 100}`)}</span>
+              <span>${esc(`${entry.blockCount}/${entry.cautionCount}/${entry.passCount}`)}</span>
+            </div>
+          `).join(''))}
+        </div>
       </div>
       <div class="karpathy-mini-columns">
         <div class="karpathy-mini-card">
           <h3>${esc(tr('Reward trend', '보상 추세'))}</h3>
-          ${(rewardTrend.length === 0 ? [`<div class="empty-state compact">${esc(tr('No completed 72h outcomes yet.', '아직 완료된 72시간 결과가 없습니다.'))}</div>`] : rewardTrend.slice(-6).reverse().map(row => `
+          ${(rewardTrend.length === 0 ? `<div class="empty-state compact">${esc(tr('No completed 72h outcomes yet.', '아직 완료된 72시간 결과가 없습니다.'))}</div>` : rewardTrend.slice(-6).reverse().map(row => `
             <div class="karpathy-row">
               <strong>${esc(row.date)}</strong>
               <span>${esc(formatKrw(row.reward || 0))}</span>
               <span>${esc(formatKrw(row.realizedProfitDelta || 0))}</span>
             </div>
-          `)).join('')}
+          `).join(''))}
         </div>
         <div class="karpathy-mini-card">
           <h3>${esc(tr('Candidate trend', '도전자 추세'))}</h3>
-          ${(candidateTrend.length === 0 ? [`<div class="empty-state compact">${esc(tr('No challenger scoring yet.', '아직 도전자 점수가 없습니다.'))}</div>`] : candidateTrend.slice(-6).reverse().map(row => `
+          ${(candidateTrend.length === 0 ? `<div class="empty-state compact">${esc(tr('No challenger scoring yet.', '아직 도전자 점수가 없습니다.'))}</div>` : candidateTrend.slice(-6).reverse().map(row => `
             <div class="karpathy-row">
               <strong>${esc(row.date)}</strong>
               <span>${esc(`${Math.round((row.improvementRatio || 0) * 100)}%`)}</span>
               <span>${esc(`${Math.round((row.approvalLoadRatio || 0) * 100)}%`)}</span>
             </div>
-          `)).join('')}
+          `).join(''))}
         </div>
+      </div>
+      <div class="karpathy-mini-card">
+        <h3>${esc(tr('Regime performance', '레짐 성과'))}</h3>
+        ${(regimePerformance.length === 0 ? `<div class="empty-state compact">${esc(tr('No completed regime outcomes yet.', '아직 완료된 레짐 결과가 없습니다.'))}</div>` : regimePerformance.slice(0, 6).map(entry => `
+          <div class="karpathy-row">
+            <strong>${esc(entry.tag)}</strong>
+            <span>${esc(`${Math.round((entry.winRate || 0) * 100)}%`)}</span>
+            <span>${esc(formatKrw(entry.totalReward || 0))}</span>
+          </div>
+        `).join(''))}
       </div>
       <div class="karpathy-mini-card">
         <h3>${esc(tr('Latest scored outcomes', '최근 점수화 결과'))}</h3>
@@ -1185,6 +1238,9 @@
       const penalties = trace.penalties || [];
       const blockers = trace.blockers || [];
       const cautions = trace.cautions || [];
+      const specialists = trace.specialists || [];
+      const regimeTags = trace.regimeTags || [];
+      const synthesis = trace.synthesis || {};
       return `
         <details class="karpathy-trace-item">
           <summary>
@@ -1208,6 +1264,7 @@
               <span class="opt-cluster-stat"><strong>${esc(`${trace.actionPercent || 0}%`)}</strong>${esc(tr('step', '변경폭'))}</span>
               <span class="opt-cluster-stat"><strong>${esc(trace.confidence || 'low')}</strong>${esc(tr('confidence', '신뢰도'))}</span>
             </div>
+            ${regimeTags.length > 0 ? `<div class="karpathy-tag-list">${regimeTags.slice(0, 8).map(tag => `<span class="karpathy-tag">${esc(tag)}</span>`).join('')}</div>` : ''}
             <div class="karpathy-trace-columns">
               <div class="karpathy-trace-panel">
                 <h4>${esc(tr('Gates', '게이트'))}</h4>
@@ -1219,6 +1276,13 @@
                 ${blockers.map(blocker => `<div class="karpathy-trace-line failed"><strong>${esc(tr('blocker', '차단'))}</strong><span>${esc(blocker)}</span></div>`).join('')}
                 ${cautions.map(caution => `<div class="karpathy-trace-line"><strong>${esc(tr('caution', '주의'))}</strong><span>${esc(caution)}</span></div>`).join('')}
                 ${(penalties.length || blockers.length || cautions.length) ? '' : `<div class="empty-state compact">${esc(tr('No penalties or blockers recorded.', '패널티/차단 없음'))}</div>`}
+              </div>
+              <div class="karpathy-trace-panel">
+                <h4>${esc(tr('Specialists and synthesis', '전문가와 합성'))}</h4>
+                ${specialists.slice(0, 8).map(entry => `<div class="karpathy-trace-line ${entry.status === 'block' ? 'failed' : entry.status === 'pass' ? 'passed' : ''}"><strong>${esc(entry.label || entry.key)}</strong><span>${esc(`${entry.summary || ''} (${entry.status}, w=${entry.weight ?? 0}, s=${entry.weightedScore ?? entry.score ?? 0})`)}</span></div>`).join('')}
+                <div class="karpathy-trace-line"><strong>${esc(tr('friction', '마찰'))}</strong><span>${esc(String(synthesis.frictionScore ?? 0))}</span></div>
+                <div class="karpathy-trace-line"><strong>${esc(tr('penalty weight', '패널티 가중치'))}</strong><span>${esc(String(synthesis.penaltyWeight ?? 0))}</span></div>
+                ${(specialists.length || synthesis.frictionScore != null) ? '' : `<div class="empty-state compact">${esc(tr('No specialist detail recorded.', '전문가 세부 정보 없음'))}</div>`}
               </div>
             </div>
           </div>

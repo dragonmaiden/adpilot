@@ -133,6 +133,48 @@ test('createDecisionTrace captures the structured policy evaluation context', ()
   assert.equal(trace.verdict, 'scale');
   assert.ok(Array.isArray(trace.gates));
   assert.ok(Array.isArray(trace.penalties));
+  assert.ok(Array.isArray(trace.specialists));
+  assert.ok(Array.isArray(trace.regimeTags));
+  assert.ok(trace.synthesis);
+});
+
+test('evaluateBudgetSnapshot emits specialist summaries, regime tags, and synthesis metadata', () => {
+  const policy = buildDefaultChampionPolicy({ maxBudgetChangePercent: 20 });
+  const evaluation = evaluateBudgetSnapshot(createScaleSnapshot({
+    risk: {
+      activeCampaignCount: 1,
+      activeAdCount: 2,
+      severeFatigueBlock: false,
+      hasConcentrationRisk: true,
+      hasCreativeDepthRisk: true,
+      fatiguedAds: [{ id: 'ad1', name: 'Fatigued Ad' }],
+    },
+    economics: {
+      targetCpa: 18,
+      breakEvenCpa: 24,
+      estimatedRevenue: 800000,
+      estimatedTrueNetProfit: 180000,
+      estimatedMargin: 0.22,
+      coverageRatio: 0.82,
+      confidence: 'medium',
+      confidenceLabel: 'Medium confidence',
+      hasReliableEstimate: true,
+    },
+  }), policy, {
+    maxBudgetChangePercent: 20,
+    cpaWarningThreshold: 30,
+    cpaPauseThreshold: 50,
+    minSpendForDecision: 20,
+  });
+
+  assert.ok(Array.isArray(evaluation.specialists));
+  assert.ok(evaluation.specialists.some(entry => entry.key === 'economics'));
+  assert.ok(evaluation.specialists.some(entry => entry.key === 'structure'));
+  assert.ok(Array.isArray(evaluation.regimeTags));
+  assert.ok(evaluation.regimeTags.includes('concentrated_account'));
+  assert.ok(evaluation.regimeTags.includes('thin_creative_depth'));
+  assert.ok(evaluation.synthesis);
+  assert.ok(typeof evaluation.synthesis.frictionScore === 'number');
 });
 
 test('computeReward applies CPA, volatility, confidence, reversal, and churn penalties', () => {

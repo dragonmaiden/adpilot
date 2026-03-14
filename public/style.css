@@ -2300,9 +2300,28 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .karpathy-trace-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--space-3);
   margin-top: var(--space-3);
+}
+
+.karpathy-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: var(--space-3);
+}
+
+.karpathy-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, var(--color-divider));
+  background: color-mix(in srgb, var(--color-primary-subtle) 72%, transparent);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
 }
 
 .karpathy-trace-line strong {

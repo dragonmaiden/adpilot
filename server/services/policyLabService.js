@@ -383,11 +383,125 @@ function buildMetricsProgression(experiments, outcomes, shadowLogs, optimization
   };
 }
 
+function buildExperimentFunnel(policies, experiments) {
+  const statuses = {
+    champion: 0,
+    active_candidate: 0,
+    challenger: 0,
+    promotion_ready: 0,
+  };
+
+  for (const policy of Array.isArray(policies) ? policies : []) {
+    const key = String(policy?.status || '');
+    if (statuses[key] != null) {
+      statuses[key] += 1;
+    }
+  }
+
+  const totalIterations = (Array.isArray(experiments) ? experiments : []).length;
+  const promotionReady = statuses.promotion_ready;
+  const activeCandidates = statuses.active_candidate;
+  const candidatePool = statuses.challenger + statuses.active_candidate + statuses.promotion_ready;
+
+  return {
+    totalIterations,
+    candidatePool,
+    activeCandidates,
+    promotionReady,
+    statuses,
+  };
+}
+
+function buildSpecialistScoreboard(traces) {
+  const scoreboard = new Map();
+
+  for (const trace of Array.isArray(traces) ? traces : []) {
+    for (const specialist of Array.isArray(trace.specialists) ? trace.specialists : []) {
+      const key = specialist.key || 'unknown';
+      if (!scoreboard.has(key)) {
+        scoreboard.set(key, {
+          key,
+          label: specialist.label || key,
+          appearances: 0,
+          passCount: 0,
+          cautionCount: 0,
+          blockCount: 0,
+          totalScore: 0,
+          totalWeightedScore: 0,
+          latestSummary: specialist.summary || '',
+        });
+      }
+
+      const entry = scoreboard.get(key);
+      entry.appearances += 1;
+      entry.totalScore += asNumber(specialist.score, 0);
+      entry.totalWeightedScore += asNumber(specialist.weightedScore, 0);
+      entry.latestSummary = specialist.summary || entry.latestSummary;
+      if (specialist.status === 'pass') entry.passCount += 1;
+      if (specialist.status === 'caution') entry.cautionCount += 1;
+      if (specialist.status === 'block') entry.blockCount += 1;
+    }
+  }
+
+  return Array.from(scoreboard.values())
+    .map(entry => ({
+      ...entry,
+      avgScore: entry.appearances > 0 ? Number((entry.totalScore / entry.appearances).toFixed(3)) : 0,
+      avgWeightedScore: entry.appearances > 0 ? Number((entry.totalWeightedScore / entry.appearances).toFixed(3)) : 0,
+    }))
+    .sort((left, right) => left.avgWeightedScore - right.avgWeightedScore);
+}
+
+function buildRegimePerformance(outcomes, traces) {
+  const tracesById = new Map((Array.isArray(traces) ? traces : []).map(trace => [trace.traceId, trace]));
+  const regimes = new Map();
+
+  for (const outcome of Array.isArray(outcomes) ? outcomes : []) {
+    if (outcome?.status !== 'complete' || !outcome.finalReward) continue;
+    const trace = tracesById.get(outcome.traceId);
+    const tags = Array.isArray(trace?.regimeTags) && trace.regimeTags.length > 0
+      ? trace.regimeTags
+      : ['unclassified'];
+
+    for (const tag of tags) {
+      if (!regimes.has(tag)) {
+        regimes.set(tag, {
+          tag,
+          outcomes: 0,
+          wins: 0,
+          totalReward: 0,
+          totalProfitDelta: 0,
+        });
+      }
+
+      const entry = regimes.get(tag);
+      entry.outcomes += 1;
+      entry.totalReward += asNumber(outcome.finalReward?.total, 0);
+      entry.totalProfitDelta += asNumber(outcome.finalReward?.realizedProfitDelta, 0);
+      if (asNumber(outcome.finalReward?.total, 0) > 0) {
+        entry.wins += 1;
+      }
+    }
+  }
+
+  return Array.from(regimes.values())
+    .map(entry => ({
+      ...entry,
+      winRate: entry.outcomes > 0 ? Number((entry.wins / entry.outcomes).toFixed(3)) : 0,
+    }))
+    .sort((left, right) => {
+      if (right.outcomes !== left.outcomes) return right.outcomes - left.outcomes;
+      return right.totalReward - left.totalReward;
+    })
+    .slice(0, 10);
+}
+
 function buildTraceFilters(traces) {
   return {
     policyIds: Array.from(new Set(traces.map(trace => trace.policyVersionId).filter(Boolean))).sort(),
     verdicts: Array.from(new Set(traces.map(trace => trace.verdict).filter(Boolean))).sort(),
     controlSurfaces: Array.from(new Set(traces.map(trace => trace.controlSurface).filter(Boolean))).sort(),
+    regimeTags: Array.from(new Set(traces.flatMap(trace => trace.regimeTags || []).filter(Boolean))).sort(),
     targets: Array.from(new Set(traces.map(trace => trace.entity?.targetName).filter(Boolean))).sort().slice(0, 50),
   };
 }
@@ -417,6 +531,9 @@ function getPolicyLabResponse() {
   const championPolicy = policies.find(policy => policy.id === meta.championPolicyId) || getChampionPolicy(runtimeSettings.getRules());
   const activeShadow = getActiveShadowPolicy();
   const metrics = buildMetricsProgression(experiments, outcomes, shadowLogs, scanStore.getAllOptimizations());
+  const experimentFunnel = buildExperimentFunnel(policies, experiments);
+  const specialistScoreboard = buildSpecialistScoreboard(traces);
+  const regimePerformance = buildRegimePerformance(outcomes, traces);
 
   return {
     generatedAt: nowIso(),
@@ -438,18 +555,30 @@ function getPolicyLabResponse() {
       activeLearningPolicyLabel: activeShadow?.label || null,
       evaluationMode: meta.lastResearchSummary?.scoreMode || null,
       replaySampleSize: asNumber(meta.lastResearchSummary?.replaySampleSize, 0),
+      harnessStatus: {
+        totalIterations: experimentFunnel.totalIterations,
+        candidatePool: experimentFunnel.candidatePool,
+        activeCandidates: experimentFunnel.activeCandidates,
+        promotionReady: experimentFunnel.promotionReady,
+      },
     },
     learningLoop: {
       championPolicy,
       activeShadowPolicy: activeShadow,
       activeLearningPolicy: activeShadow,
       lastResearchSummary: meta.lastResearchSummary || null,
+      experimentFunnel,
+      specialistScoreboard,
+      regimePerformance,
     },
     strategyMarkers: createExperimentMarkers(experiments).slice(-20),
     tracesPreview: traces.slice(0, 20),
     experimentsPreview: experiments.slice(0, 12),
     outcomesPreview: outcomes.slice(0, 12),
     metrics,
+    experimentFunnel,
+    specialistScoreboard,
+    regimePerformance,
     qualitySummary,
     observability: {
       status: observabilityService.getStatus(),
@@ -562,6 +691,7 @@ function runResearchIteration(rules = {}) {
       bestPolicyId: bestPolicy?.id || null,
       bestImprovementRatio: asNumber(bestPolicy?.scoreSummary?.improvementRatio, 0),
       scoreMode: research.scoreMode,
+      candidatePool: policiesToUpsert.length,
     },
     activeShadowPolicyId: bestPolicy?.id || null,
   });
