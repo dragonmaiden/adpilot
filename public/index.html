@@ -715,12 +715,13 @@
 
     <!-- Campaigns Page -->
     <section class="page" data-page="campaigns">
-      <div class="section-head section-head-compact">
-        <div>
+      <div class="section-head section-head-with-toolbar section-head-compact live-performance-head">
+        <div class="section-head-copy">
           <div class="section-kicker" data-i18n="campaigns.sectionKicker">Live Performance</div>
           <h2 data-i18n="campaigns.sectionTitle">Act on what needs attention now</h2>
+          <p class="section-note" id="campaignWindowNote">Last 7 days · active delivery, pacing, fatigue, and approvals in one place.</p>
         </div>
-        <div class="range-toolbar">
+        <div class="range-toolbar section-head-toolbar">
           <span class="range-toolbar-label" data-i18n="campaigns.window">Time frame</span>
           <div class="range-switch" data-series-window-group="campaigns" role="group" aria-label="Campaign performance time frame" data-i18n-aria-label="campaigns.windowAria">
             <button type="button" class="range-switch-btn is-active" data-series-window-value="7d">7D</button>
@@ -730,7 +731,6 @@
           </div>
         </div>
       </div>
-      <p class="section-note" id="campaignWindowNote">Last 7 days · active delivery, pacing, fatigue, and approvals in one place.</p>
 
       <div class="kpi-grid small">
         <div class="kpi-card" data-live-kpi="activeCampaigns">
@@ -766,9 +766,9 @@
             <div class="section-kicker" data-i18n="campaigns.topAdsKicker">Top Active Ads</div>
             <h2><span data-i18n="campaigns.liveAds">Top Active Ads</span></h2>
           </div>
-          <span id="activeCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
+          <span class="card-header-meta" id="activeCount"></span>
         </div>
-        <div id="activeAdsContainer" style="padding:0 20px 20px">
+        <div class="live-active-priority-body" id="activeAdsContainer">
           <div class="empty-state" data-i18n="misc.loading">Loading live ad data...</div>
         </div>
       </div>
