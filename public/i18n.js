@@ -305,6 +305,8 @@ const I18N = {
   'settings.agentConfig':       { en: 'Agent Configuration',         kr: '에이전트 설정' },
   'settings.scanFreq':          { en: 'Commerce Sync Frequency',     kr: '커머스 동기화 주기' },
   'settings.scanFreqDesc':      { en: 'How often orders and COGS sync refresh. Heavy Meta analysis and optimizer runs every 30 minutes.', kr: '주문과 COGS 동기화가 갱신되는 주기입니다. 무거운 Meta 분석과 옵티마이저는 30분마다 실행됩니다.' },
+  'settings.liveScheduler':     { en: 'Live Scheduler',              kr: '실시간 스케줄러' },
+  'settings.schedulerNote':     { en: 'This reads the live runtime state from the server. Persisted runtime settings override deploy defaults until changed.', kr: '이 값은 서버의 실제 런타임 상태를 읽습니다. 저장된 런타임 설정은 변경되기 전까지 배포 기본값보다 우선합니다.' },
   'settings.maxBudgetChange':   { en: 'Max Daily Budget Change',     kr: '최대 일일 예산 변경폭' },
   'settings.maxBudgetDesc':     { en: "Maximum percentage the agent can adjust a campaign's daily budget per scan", kr: '에이전트가 스캔당 조정할 수 있는 최대 예산 비율' },
   'settings.autoPause':         { en: 'Auto-pause Threshold (CPA)',  kr: '자동 중지 임계값 (CPA)' },

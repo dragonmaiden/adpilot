@@ -85,18 +85,16 @@ function loadState() {
       analysisIntervalMinutes: raw.scheduler?.analysisIntervalMinutes,
     };
 
-    // Migrate the old single-loop scheduler into the new split cadence:
+    // Migrate any legacy single-loop scheduler into the new split cadence:
     // commerce sync every 5 minutes, heavy analysis every 30 minutes.
     if (persisted.analysisIntervalMinutes === undefined) {
-      const currentInterval = persisted.scanIntervalMinutes;
-      if (currentInterval === 30 || currentInterval === 3) {
-        persisted.scanIntervalMinutes = defaultState.scheduler.scanIntervalMinutes;
-        raw.scheduler = {
-          ...(raw.scheduler || {}),
-          scanIntervalMinutes: defaultState.scheduler.scanIntervalMinutes,
-          analysisIntervalMinutes: defaultState.scheduler.analysisIntervalMinutes,
-        };
-      }
+      persisted.scanIntervalMinutes = defaultState.scheduler.scanIntervalMinutes;
+      persisted.analysisIntervalMinutes = defaultState.scheduler.analysisIntervalMinutes;
+      raw.scheduler = {
+        ...(raw.scheduler || {}),
+        scanIntervalMinutes: defaultState.scheduler.scanIntervalMinutes,
+        analysisIntervalMinutes: defaultState.scheduler.analysisIntervalMinutes,
+      };
     }
 
     const errors = validateSettingsPatch(Object.fromEntries(
