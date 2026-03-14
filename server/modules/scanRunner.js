@@ -462,7 +462,9 @@ async function runScan(manual = false) {
       );
 
       scanResult.stats = buildScanStats(latestData, until);
-      await telegram.sendScanSummary(scanResult, latestData);
+      // Operator alert messages are now handled by MetaAdsPro (OpenClaw heartbeat).
+      // The engine only sends approval requests with buttons (requestApproval).
+      // await telegram.sendScanSummary(scanResult, latestData);
 
       const byType = {};
       const byPriority = {};
