@@ -16,6 +16,7 @@ const {
   formatDateInTimeZone,
   getTodayInTimeZone,
 } = require('../domain/time');
+const { maskName, maskOrderNumber } = require('./privacyService');
 
 const COUNTED_CANCEL_SECTION_STATUSES = new Set([
   'CANCEL_DONE',
@@ -336,8 +337,8 @@ function buildOrderLedgerRows(orders) {
       return {
         date,
         orderedAt: order?.wtime ?? null,
-        orderNo: String(order?.orderNo ?? ''),
-        customerName: String(order?.ordererName || order?.memberName || '').trim(),
+        orderNo: maskOrderNumber(order?.orderNo),
+        customerName: maskName(order?.ordererName || order?.memberName),
         orderStatus: String(order?.orderStatus || '').trim(),
         paymentMethod: String(payment?.method || order?.paymentMethod || '').trim(),
         pgName: String(payment?.pgName || '').trim(),

@@ -4,6 +4,7 @@ const { getOrderCashTotals } = require('../domain/imwebPayments');
 const { convertUsdToKrw } = require('../domain/metrics');
 const { formatDateInTimeZone } = require('../domain/time');
 const { matchOrdersToCogs } = require('./orderCostMatchingService');
+const { maskName } = require('./privacyService');
 
 function asString(value) {
   if (value === undefined || value === null) return '';
@@ -155,7 +156,7 @@ function buildEconomicsLedger({ orders, cogsData, campaignInsights, campaigns, p
       orderNo: orderNo || null,
       orderedAt,
       date,
-      customerName: asString(order?.ordererName),
+      customerName: maskName(order?.ordererName || order?.memberName),
       orderStatus: asString(order?.orderStatus),
       approvedAmount: roundMoney(approvedAmount),
       netPaidAmount: roundMoney(netPaidAmount),

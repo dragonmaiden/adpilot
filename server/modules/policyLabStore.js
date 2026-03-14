@@ -37,7 +37,9 @@ function loadJson(filename, fallback) {
 }
 
 function saveJson(filename, value) {
-  fs.writeFileSync(path.join(DATA_DIR, filename), JSON.stringify(value, null, 2));
+  const filepath = path.join(DATA_DIR, filename);
+  fs.writeFileSync(filepath, JSON.stringify(value, null, 2), { mode: 0o600 });
+  fs.chmodSync(filepath, 0o600);
 }
 
 function asArray(value) {

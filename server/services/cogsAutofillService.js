@@ -8,6 +8,11 @@ const imweb = require('../modules/imwebClient');
 const { getOrderItems } = require('../domain/imwebAttribution');
 const { formatDateInTimeZone } = require('../domain/time');
 const { getOrderCashTotals, normalizeImwebPayments } = require('../domain/imwebPayments');
+const {
+  asString,
+  getOrderContactSnapshot,
+  maskName,
+} = require('./privacyService');
 
 const STATE_FILE = path.join(runtimePaths.dataDir, 'cogs_autofill_state.json');
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -15,6 +20,14 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const BIG_FISH_THRESHOLD_KRW = 200000;
+const OPTIONAL_HEADER_LABELS = new Map([
+  [11, '배송메모'],
+  [12, '주문자 연락처'],
+  [13, '수령인 이름'],
+  [14, '수령인 연락처'],
+  [15, '우편번호'],
+  [16, '주소'],
+]);
 const SUPPORTED_EVENTS = new Set([
   'ORDER_DEPOSIT_COMPLETE',
   'ORDER_PRODUCT_PREPARATION',
@@ -22,11 +35,6 @@ const SUPPORTED_EVENTS = new Set([
 
 let googleAccessToken = null;
 let googleAccessTokenExpiry = 0;
-
-function asString(value) {
-  if (value === undefined || value === null) return '';
-  return String(value).trim();
-}
 
 function normalizePrivateKey(value) {
   return asString(value).replace(/\\n/g, '\n');
@@ -66,7 +74,8 @@ function loadState() {
 }
 
 function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
+  fs.chmodSync(STATE_FILE, 0o600);
 }
 
 function markOrderImported(orderNo, metadata = {}) {
@@ -211,6 +220,17 @@ function getSheetCacheKey(target) {
   return `sheet:${asString(target?.sheetName || target?.label)}`;
 }
 
+function toColumnLabel(columnNumber) {
+  let remaining = Number(columnNumber || 0);
+  let label = '';
+  while (remaining > 0) {
+    const offset = (remaining - 1) % 26;
+    label = String.fromCharCode(65 + offset) + label;
+    remaining = Math.floor((remaining - 1) / 26);
+  }
+  return label;
+}
+
 async function getRowsForTarget(target, sheetCache) {
   if (!(sheetCache instanceof Map)) {
     return fetchExistingRows(target);
@@ -233,6 +253,70 @@ function getNextSequenceNumber(rows) {
     const candidate = Number.parseInt(asString(row?.[0]), 10);
     return Number.isFinite(candidate) ? Math.max(max, candidate) : max;
   }, 0) + 1;
+}
+
+async function updateSheetValues(ranges) {
+  if (!Array.isArray(ranges) || ranges.length === 0) {
+    return null;
+  }
+
+  const token = await getGoogleAccessToken();
+  const url = `${SHEETS_API_BASE}/${encodeURIComponent(config.cogs.spreadsheetId)}/values:batchUpdate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      valueInputOption: 'USER_ENTERED',
+      data: ranges,
+    }),
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Google Sheets batch update failed: ${payload?.error?.message || response.status}`);
+  }
+
+  return payload;
+}
+
+async function ensureOptionalHeaders(target, rows) {
+  const headerRow = Array.isArray(rows?.[0]) ? [...rows[0]] : [];
+  const updates = [];
+
+  for (const [columnIndex, label] of OPTIONAL_HEADER_LABELS.entries()) {
+    if (asString(headerRow[columnIndex])) {
+      continue;
+    }
+
+    updates.push({
+      range: `'${String(target.sheetName || target.label || '').replace(/'/g, "''")}'!${toColumnLabel(columnIndex + 1)}1`,
+      majorDimension: 'ROWS',
+      values: [[label]],
+    });
+    headerRow[columnIndex] = label;
+  }
+
+  if (updates.length === 0) {
+    return { updated: false, count: 0 };
+  }
+
+  await updateSheetValues(updates);
+
+  if (Array.isArray(rows)) {
+    if (!Array.isArray(rows[0])) {
+      rows[0] = [];
+    }
+    for (const [columnIndex, label] of OPTIONAL_HEADER_LABELS.entries()) {
+      if (!rows[0][columnIndex]) {
+        rows[0][columnIndex] = label;
+      }
+    }
+  }
+
+  return { updated: true, count: updates.length };
 }
 
 function hasOrderNumber(rows, orderNo) {
@@ -279,23 +363,101 @@ function getOrderSizeLabel(amount) {
 }
 
 function buildAutofillNotification(result) {
-  const products = Array.isArray(result?.productNames) && result.productNames.length > 0
-    ? result.productNames.map(name => `• ${escapeHtml(name)}`).join('\n')
+  const revenue = Number(result?.netRevenue || result?.approvedAmount || 0);
+  const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
+    ? result.productNames.map(line => `• ${escapeHtml(line)}`).join('\n')
     : '• Product name unavailable';
-  const revenue = Number(result?.netRevenue ?? result?.approvedAmount ?? 0);
-  const sizeLabel = getOrderSizeLabel(revenue);
 
-  return `🧾 <b>New Imweb Order Logged</b>
+  const sections = [
+    '🧾 <b>New Imweb Order Logged</b>',
+    '',
+    `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
+    `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,
+    `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
+    `Revenue: ${escapeHtml(formatStoreMoney(revenue))} · ${escapeHtml(getOrderSizeLabel(revenue))}`,
+    `Sheet: ${escapeHtml(result?.sheetName || 'Unavailable')}`,
+    `Rows appended: ${escapeHtml(String(result?.rowCount || 0))}`,
+    '',
+    'Products:',
+    productLines,
+  ];
 
-<b>Order:</b> ${escapeHtml(result?.orderNo)}
-<b>Date:</b> ${escapeHtml(result?.orderDate)}
-<b>Customer:</b> ${escapeHtml(result?.customerName)}
-<b>Revenue:</b> ${escapeHtml(formatStoreMoney(revenue))} · ${escapeHtml(sizeLabel)}
-<b>Sheet:</b> ${escapeHtml(result?.sheetName)}
-<b>Rows appended:</b> ${escapeHtml(result?.rowCount)}
+  return sections.join('\n');
+}
 
-<b>Products:</b>
-${products}`;
+function buildAutofillPrivateNotification(result) {
+  const productLines = Array.isArray(result?.productLines) && result.productLines.length > 0
+    ? result.productLines.map(line => `• ${escapeHtml(line)}`).join('\n')
+    : '• Product name unavailable';
+
+  const spoiler = value => (
+    value
+      ? `<tg-spoiler>${escapeHtml(value)}</tg-spoiler>`
+      : `<tg-spoiler>${escapeHtml('Unavailable')}</tg-spoiler>`
+  );
+
+  const sections = [
+    '🔒 <b>Customer Details</b>',
+    '',
+    '<i>Tap the hidden fields to reveal customer details.</i>',
+    '',
+    '<b>Name</b>',
+    spoiler(result?.customerName),
+    '',
+    '<b>Phone number</b>',
+    spoiler(result?.customerPhone),
+    '',
+    '<b>Address</b>',
+    spoiler(result?.deliveryAddress),
+  ];
+
+  if (result?.deliveryNote) {
+    sections.push('', '<b>Delivery note</b>', spoiler(result.deliveryNote));
+  }
+
+  sections.push('', '<b>Products</b>', productLines);
+
+  return sections.join('\n');
+}
+
+function sanitizeAutofillResultForResponse(result) {
+  if (!result || typeof result !== 'object') {
+    return result;
+  }
+
+  return {
+    ...result,
+    customerName: result.customerName ? maskName(result.customerName) : result.customerName,
+    customerPhone: undefined,
+    deliveryAddress: undefined,
+    deliveryNote: undefined,
+  };
+}
+
+function getItemOptionDetails(item) {
+  const productInfo = item?.productInfo || {};
+  const rawDetails = [
+    asString(productInfo.optionName),
+    asString(productInfo.optionValue),
+    asString(productInfo.optionDetailName),
+    asString(productInfo.optionDetailCode),
+    asString(productInfo.customProdCode),
+  ].filter(Boolean);
+
+  const uniqueDetails = [...new Set(rawDetails)];
+  return uniqueDetails.length > 0 ? uniqueDetails.join(' / ') : '';
+}
+
+function buildNotificationProductLines(order) {
+  return getOrderItems(order).map(item => {
+    const productName = asString(item?.productInfo?.prodName || item?.productName || item?.name) || 'Product name unavailable';
+    const optionDetails = getItemOptionDetails(item);
+    const qty = Math.max(1, Number(item?.qty || 1));
+    const qtyLabel = qty > 1 ? ` x${qty}` : '';
+    return optionDetails
+      ? `${productName}${qtyLabel} (${optionDetails})`
+      : `${productName}${qtyLabel}`;
+  });
 }
 
 function getOrderAutofillTimestamp(order) {
@@ -383,6 +545,14 @@ function buildRowsForOrder(order, nextSequenceNo) {
   const customerName = asString(order?.ordererName || order?.memberName);
   const orderNo = asString(order?.orderNo);
   const productNames = getOrderProductNames(order);
+  const contact = getOrderContactSnapshot(order);
+  const firstSection = getOrderSections(order)[0] || null;
+  const deliveryNote = asString(firstSection?.delivery?.memo || firstSection?.pickupMemo);
+  const customerPhone = contact.ordererPhone;
+  const receiverName = contact.receiverName || customerName;
+  const receiverPhone = contact.receiverPhone || customerPhone;
+  const zipcode = contact.zipcode;
+  const address = contact.address;
 
   return productNames.map((productName, index) => ([
     index === 0 ? String(nextSequenceNo) : '',
@@ -396,7 +566,12 @@ function buildRowsForOrder(order, nextSequenceNo) {
     '',
     'FALSE',
     'FALSE',
-    '',
+    index === 0 ? deliveryNote : '',
+    index === 0 ? customerPhone : '',
+    index === 0 ? receiverName : '',
+    index === 0 ? receiverPhone : '',
+    index === 0 ? zipcode : '',
+    index === 0 ? address : '',
   ]));
 }
 
@@ -407,7 +582,7 @@ async function appendRowsToSheet(target, rows) {
 
   const token = await getGoogleAccessToken();
   const escapedSheetName = String(target.sheetName || target.label || '').replace(/'/g, "''");
-  const range = encodeURIComponent(`'${escapedSheetName}'!A:L`);
+  const range = encodeURIComponent(`'${escapedSheetName}'!A:Q`);
   const url = `${SHEETS_API_BASE}/${encodeURIComponent(config.cogs.spreadsheetId)}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   const response = await fetch(url, {
     method: 'POST',
@@ -500,11 +675,16 @@ async function syncOrderToCogsSheet(order, options = {}) {
   }
   const customerName = asString(order?.ordererName || order?.memberName);
   const productNames = getOrderProductNames(order).filter(Boolean);
+  const contact = getOrderContactSnapshot(order);
+  const deliveryAddress = contact.address || '';
+  const firstSection = getOrderSections(order)[0] || null;
+  const deliveryNote = asString(firstSection?.delivery?.memo || firstSection?.pickupMemo);
   const cashTotals = getOrderCashTotals(order);
 
   const importedMetadata = getImportedOrderMetadata(normalizedOrderNo);
   const target = options.target || await resolveTargetSheet(orderDate);
   const existingRows = options.existingRows || await getRowsForTarget(target, options.sheetCache);
+  await ensureOptionalHeaders(target, existingRows);
   if (hasOrderNumber(existingRows, normalizedOrderNo)) {
     markOrderImported(normalizedOrderNo, {
       source: importedMetadata ? (importedMetadata.source || 'sheet_duplicate') : 'sheet_duplicate',
@@ -519,6 +699,10 @@ async function syncOrderToCogsSheet(order, options = {}) {
       orderDate,
       customerName,
       productNames,
+      productLines: buildNotificationProductLines(order),
+      customerPhone: contact.receiverPhone || contact.ordererPhone,
+      deliveryAddress,
+      deliveryNote,
       sheetName: target.sheetName,
       approvedAmount: cashTotals.approvedAmount,
       netRevenue: cashTotals.netPaidAmount,
@@ -544,6 +728,10 @@ async function syncOrderToCogsSheet(order, options = {}) {
     orderDate,
     customerName,
     productNames,
+    productLines: buildNotificationProductLines(order),
+    customerPhone: contact.receiverPhone || contact.ordererPhone,
+    deliveryAddress,
+    deliveryNote,
     sheetName: target.sheetName,
     rowCount: rows.length,
     sequenceNo: nextSequenceNo,
@@ -665,6 +853,8 @@ module.exports = {
   findTargetForMonth,
   resolveTargetSheet,
   buildAutofillNotification,
+  buildAutofillPrivateNotification,
+  sanitizeAutofillResultForResponse,
   getImportedOrderMetadata,
   syncOrderToCogsSheet,
   syncImwebOrderToCogs,

@@ -7,6 +7,7 @@ const config = require('../config');
 const { formatDateInTimeZone, getHourInTimeZone } = require('../domain/time');
 const { summarizeOrderAttribution } = require('../domain/imwebAttribution');
 const { getOrderCashTotals } = require('../domain/imwebPayments');
+const { sanitizeImwebOrder, sanitizeImwebOrders } = require('../services/privacyService');
 const runtimePaths = require('../runtime/paths');
 
 let accessToken = null;
@@ -196,7 +197,8 @@ function saveTokens(data, { fallbackRefreshToken = null, source = 'disk' } = {})
     expires_in: expiresIn,
     expires_at: tokenExpiry,
     saved_at: now,
-  }, null, 2));
+  }, null, 2), { mode: 0o600 });
+  fs.chmodSync(runtimePaths.imwebTokenFile, 0o600);
   console.log(`[IMWEB] Tokens saved (expires_at: ${new Date(tokenExpiry).toISOString()})`);
   syncAuthState({
     tokenSource: source,
@@ -505,7 +507,7 @@ async function getAllOrders() {
   }
 
   console.log(`[IMWEB] Total orders fetched: ${allOrders.length}`);
-  return allOrders;
+  return sanitizeImwebOrders(allOrders);
 }
 
 async function getOrder(orderNo) {
@@ -520,7 +522,7 @@ async function getOrder(orderNo) {
     if (!order || typeof order !== 'object') {
       throw new Error('unexpected payload shape');
     }
-    return order;
+    return sanitizeImwebOrder(order);
   } catch (err) {
     console.warn(`[IMWEB] Direct getOrder failed for ${normalizedOrderNo}, falling back to paginated search: ${err.message}`);
     const orders = await getAllOrders();

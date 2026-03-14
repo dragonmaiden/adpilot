@@ -41,7 +41,8 @@ function loadState() {
 }
 
 function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
+  fs.chmodSync(STATE_FILE, 0o600);
 }
 
 function getState() {

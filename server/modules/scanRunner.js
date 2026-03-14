@@ -302,6 +302,7 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
 
     for (const appended of result.appended) {
       await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(appended));
+      await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(appended), 'HTML', { protectContent: true });
     }
 
     return { ok: true, result };

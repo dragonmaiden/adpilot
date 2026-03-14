@@ -120,7 +120,7 @@ async function probeConnection() {
 }
 
 // ── Send a plain text message ──
-async function sendMessage(text, parseMode = 'HTML') {
+async function sendMessage(text, parseMode = 'HTML', options = {}) {
   const configError = getConfigurationError();
   if (configError) {
     syncStatus({ status: 'misconfigured', lastCheckedAt: nowIso(), lastError: configError });
@@ -136,6 +136,7 @@ async function sendMessage(text, parseMode = 'HTML') {
         chat_id: CHAT_ID,
         text,
         parse_mode: parseMode,
+        protect_content: options.protectContent === true,
       }),
     });
     const data = await res.json();

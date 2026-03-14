@@ -11,7 +11,9 @@ function ensureSnapshotDir() {
 }
 
 function saveSnapshotFile(filename, data) {
-  fs.writeFileSync(path.join(SNAP_DIR, filename), JSON.stringify(data, null, 2));
+  const filepath = path.join(SNAP_DIR, filename);
+  fs.writeFileSync(filepath, JSON.stringify(data, null, 2), { mode: 0o600 });
+  fs.chmodSync(filepath, 0o600);
 }
 
 function cleanupSnapshots(maxScanSets = 240) {

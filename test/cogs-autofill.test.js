@@ -67,10 +67,19 @@ function createOrder(overrides = {}) {
     orderNo: '20260313225187',
     wtime: '2026-03-13T02:36:00.000Z',
     ordererName: '홍신희',
+    ordererCall: '01012341234',
     totalPaymentPrice: 111000,
     totalRefundedPrice: 0,
     sections: [
       {
+        delivery: {
+          receiverName: '홍신희',
+          receiverCall: '01012341234',
+          zipcode: '06236',
+          addr1: '서울 강남구 테헤란로 123',
+          addr2: '5층',
+          memo: '문 앞에 놓아주세요',
+        },
         sectionItems: [
           { productInfo: { prodName: '실크 모노그램 방도' } },
           { productInfo: { prodName: '에르 스카프' } },
@@ -98,6 +107,7 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
   const appendRequests = [];
+  const batchUpdateRequests = [];
   const originalFetch = global.fetch;
 
   global.fetch = async (url, options = {}) => {
@@ -106,6 +116,18 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
       return {
         ok: true,
         json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      batchUpdateRequests.push({
+        url: textUrl,
+        options,
+        body: JSON.parse(options.body),
+      });
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 5 }),
       };
     }
 
@@ -133,7 +155,7 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
           { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
         ],
         fetchSheetCSV: async () => [
-          ['번호', '날짜', '이름', '주문번호'],
+          ['번호', '날짜', '이름', '주문번호', '', '', '', '', '', '', '', '', '주문자 연락처'],
           [],
           ['101', '2026-03-12', '기존 고객', '20260312001'],
         ],
@@ -156,14 +178,28 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
       assert.equal(result.netRevenue, 111000);
       assert.equal(result.approvedAmount, 111000);
       assert.equal(appendRequests.length, 1);
+      assert.equal(batchUpdateRequests.length, 1);
 
       const appendRequest = appendRequests[0];
       assert.match(appendRequest.url, /insertDataOption=INSERT_ROWS/);
-      assert.match(appendRequest.url, /'3%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AL:append/);
+      assert.match(appendRequest.url, /'3%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AQ:append/);
+
+      const headerUpdate = batchUpdateRequests[0];
+      const updatedRanges = headerUpdate.body.data.map(entry => entry.range);
+      assert.deepEqual(updatedRanges, [
+        "'3월 주문'!L1",
+        "'3월 주문'!N1",
+        "'3월 주문'!O1",
+        "'3월 주문'!P1",
+        "'3월 주문'!Q1",
+      ]);
 
       const [firstRow, secondRow] = appendRequest.body.values;
       assert.deepEqual(firstRow.slice(0, 7), ['102', '2026-03-13', '홍신희', '20260313225187', '', '', '실크 모노그램 방도']);
       assert.deepEqual(secondRow.slice(0, 7), ['', '', '', '', '', '', '에르 스카프']);
+      assert.equal(firstRow[11], '문 앞에 놓아주세요');
+      assert.deepEqual(firstRow.slice(12, 17), ['01012341234', '홍신희', '01012341234', '06236', '서울 강남구 테헤란로 123 5층']);
+      assert.deepEqual(secondRow.slice(12, 17), ['', '', '', '', '']);
       assert.equal(firstRow[9], 'FALSE');
       assert.equal(firstRow[10], 'FALSE');
       assert.equal(secondRow[9], 'FALSE');
@@ -179,7 +215,7 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
   }
 });
 
-test('buildAutofillNotification includes revenue and size labeling', async () => {
+test('buildAutofillNotification formats the public Shue order summary', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
 
@@ -197,29 +233,65 @@ test('buildAutofillNotification includes revenue and size labeling', async () =>
       },
     },
   }, async service => {
-    const small = service.buildAutofillNotification({
-      orderNo: '1',
+    const message = service.buildAutofillNotification({
+      orderNo: '202603145648900',
       orderDate: '2026-03-13',
       customerName: '홍신희',
-      netRevenue: 111000,
+      customerPhone: '01012341234',
+      deliveryAddress: '서울 강남구 테헤란로 123 5층',
+      deliveryNote: '문 앞에 놓아주세요',
+      netRevenue: 97707,
+      approvedAmount: 97707,
       sheetName: '3월 주문',
       rowCount: 1,
       productNames: ['실크 모노그램 방도'],
+      productLines: ['실크 모노그램 방도', '에르 스카프 (od202601302d5ef0d5fc48b)'],
     });
 
-    assert.match(small, /Revenue:<\/b> ₩111,000 · 🐟 small fish ₩₩/);
+    assert.match(message, /🧾 <b>New Imweb Order Logged<\/b>/);
+    assert.match(message, /Order: 202603145648900/);
+    assert.match(message, /Date: 2026-03-13/);
+    assert.match(message, /Customer: 홍신희/);
+    assert.match(message, /Revenue: ₩97,707 · 🐟 small fish ₩₩/);
+    assert.match(message, /Sheet: 3월 주문/);
+    assert.match(message, /Rows appended: 1/);
+    assert.match(message, /Products:\n• 실크 모노그램 방도/);
+  });
+});
 
-    const big = service.buildAutofillNotification({
-      orderNo: '2',
-      orderDate: '2026-03-13',
+test('buildAutofillPrivateNotification formats spoiler-wrapped customer fields and detailed products', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const message = service.buildAutofillPrivateNotification({
       customerName: '홍신희',
-      netRevenue: 300000,
-      sheetName: '3월 주문',
-      rowCount: 1,
-      productNames: ['실크 모노그램 방도'],
+      customerPhone: '01012341234',
+      deliveryAddress: '서울 강남구 테헤란로 123 5층',
+      deliveryNote: '문 앞에 놓아주세요',
+      productLines: ['실크 모노그램 방도', '에르 스카프 (od202601302d5ef0d5fc48b)'],
     });
 
-    assert.match(big, /Revenue:<\/b> ₩300,000 · 🐋 BIG FISH ₩₩!/);
+    assert.match(message, /🔒 <b>Customer Details<\/b>/);
+    assert.match(message, /<b>Name<\/b>\n<tg-spoiler>홍신희<\/tg-spoiler>/);
+    assert.match(message, /<b>Phone number<\/b>\n<tg-spoiler>01012341234<\/tg-spoiler>/);
+    assert.match(message, /<b>Address<\/b>\n<tg-spoiler>서울 강남구 테헤란로 123 5층<\/tg-spoiler>/);
+    assert.match(message, /<b>Delivery note<\/b>\n<tg-spoiler>문 앞에 놓아주세요<\/tg-spoiler>/);
+    assert.match(message, /• 실크 모노그램 방도/);
+    assert.match(message, /• 에르 스카프 \(od202601302d5ef0d5fc48b\)/);
   });
 });
 
@@ -228,6 +300,7 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
   const privateKey = createPrivateKeyPem();
   const originalFetch = global.fetch;
   let appendCount = 0;
+  let headerUpdateCount = 0;
 
   global.fetch = async (url) => {
     const textUrl = String(url);
@@ -235,6 +308,14 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
       return {
         ok: true,
         json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateCount += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6 }),
       };
     }
 
@@ -275,6 +356,7 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
       assert.equal(result.customerName, '홍신희');
       assert.deepEqual(result.productNames, ['실크 모노그램 방도', '에르 스카프']);
       assert.equal(appendCount, 0);
+      assert.equal(headerUpdateCount, 1);
     });
   } finally {
     global.fetch = originalFetch;
@@ -286,6 +368,7 @@ test('syncOrderToCogsSheet recovers when imported state exists but the sheet row
   const privateKey = createPrivateKeyPem();
   const originalFetch = global.fetch;
   let appendCount = 0;
+  let headerUpdateCount = 0;
 
   fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
     importedOrders: {
@@ -305,6 +388,14 @@ test('syncOrderToCogsSheet recovers when imported state exists but the sheet row
       return {
         ok: true,
         json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateCount += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6 }),
       };
     }
 
@@ -342,6 +433,7 @@ test('syncOrderToCogsSheet recovers when imported state exists but the sheet row
       assert.equal(result.status, 'appended');
       assert.equal(result.orderNo, '20260313225187');
       assert.equal(appendCount, 1);
+      assert.equal(headerUpdateCount, 1);
 
       const state = JSON.parse(fs.readFileSync(path.join(dataDir, 'cogs_autofill_state.json'), 'utf8'));
       assert.equal(state.importedOrders['20260313225187'].source, 'recovered_append');
@@ -357,6 +449,7 @@ test('handleWebhookPayload processes deposit-complete and product-preparation or
   const originalFetch = global.fetch;
   let getOrderCalls = 0;
   let appendCount = 0;
+  let headerUpdateCount = 0;
 
   global.fetch = async (url) => {
     const textUrl = String(url);
@@ -364,6 +457,14 @@ test('handleWebhookPayload processes deposit-complete and product-preparation or
       return {
         ok: true,
         json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateCount += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6 }),
       };
     }
 
@@ -385,18 +486,22 @@ test('handleWebhookPayload processes deposit-complete and product-preparation or
         buildSheetTargets: () => [
           { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
         ],
-        fetchSheetCSV: async () => (
-          appendCount > 0
+        fetchSheetCSV: async () => {
+          const headerRow = headerUpdateCount > 0
+            ? ['번호', '날짜', '이름', '주문번호', '', '', '', '', '', '', '', '배송메모', '주문자 연락처', '수령인 이름', '수령인 연락처', '우편번호', '주소']
+            : ['번호', '날짜', '이름', '주문번호'];
+
+          return appendCount > 0
             ? [
-              ['번호', '날짜', '이름', '주문번호'],
+              headerRow,
               [],
               ['101', '2026-03-13', '홍신희', '20260313225187'],
             ]
             : [
-              ['번호', '날짜', '이름', '주문번호'],
+              headerRow,
               [],
-            ]
-        ),
+            ];
+        },
       },
       imwebClient: {
         getOrder: async () => {
@@ -418,6 +523,7 @@ test('handleWebhookPayload processes deposit-complete and product-preparation or
       assert.equal(appended.status, 'duplicate');
       assert.equal(getOrderCalls, 1);
       assert.equal(appendCount, 1);
+      assert.equal(headerUpdateCount, 1);
 
       const ignored = await service.handleWebhookPayload({ eventName: 'ORDER_CANCEL_REQUEST', orderNo: '20260313225187' });
       assert.equal(ignored.status, 'ignored');
@@ -433,6 +539,7 @@ test('handleWebhookPayload accepts eventType payloads from Imweb order webhooks'
   const originalFetch = global.fetch;
   let getOrderCalls = 0;
   let appendCount = 0;
+  let headerUpdateCount = 0;
 
   global.fetch = async (url) => {
     const textUrl = String(url);
@@ -440,6 +547,14 @@ test('handleWebhookPayload accepts eventType payloads from Imweb order webhooks'
       return {
         ok: true,
         json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateCount += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6 }),
       };
     }
 
@@ -483,6 +598,7 @@ test('handleWebhookPayload accepts eventType payloads from Imweb order webhooks'
       assert.equal(appended.customerName, '박유림');
       assert.equal(getOrderCalls, 1);
       assert.equal(appendCount, 1);
+      assert.equal(headerUpdateCount, 1);
     });
   } finally {
     global.fetch = originalFetch;
@@ -495,6 +611,7 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
   const originalFetch = global.fetch;
   const now = Date.now();
   let appendCount = 0;
+  let headerUpdateCount = 0;
 
   global.fetch = async (url, options = {}) => {
     const textUrl = String(url);
@@ -502,6 +619,14 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       return {
         ok: true,
         json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateCount += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6, echoedBody: JSON.parse(options.body) }),
       };
     }
 
@@ -621,6 +746,7 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       assert.equal(result.appended[0].orderNo, '20260313001');
       assert.equal(result.duplicates[0].orderNo, '20260313002');
       assert.equal(appendCount, 1);
+      assert.equal(headerUpdateCount, 1);
     });
   } finally {
     global.fetch = originalFetch;
@@ -633,6 +759,7 @@ test('syncRecentOrdersToCogs respects an explicit scan window start and skips ol
   const originalFetch = global.fetch;
   const now = Date.now();
   let appendCount = 0;
+  let headerUpdateCount = 0;
 
   global.fetch = async (url, options = {}) => {
     const textUrl = String(url);
@@ -640,6 +767,14 @@ test('syncRecentOrdersToCogs respects an explicit scan window start and skips ol
       return {
         ok: true,
         json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateCount += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6, echoedBody: JSON.parse(options.body) }),
       };
     }
 
@@ -713,6 +848,7 @@ test('syncRecentOrdersToCogs respects an explicit scan window start and skips ol
       assert.equal(result.appended.length, 1);
       assert.equal(result.appended[0].orderNo, '20260313022');
       assert.equal(appendCount, 1);
+      assert.equal(headerUpdateCount, 1);
     });
   } finally {
     global.fetch = originalFetch;
@@ -726,6 +862,7 @@ test('syncRecentOrdersToCogs keeps processing after one eligible order fails to 
   const now = Date.now();
   let tokenRequests = 0;
   let appendRequests = 0;
+  let headerUpdateRequests = 0;
 
   global.fetch = async (url, options = {}) => {
     const textUrl = String(url);
@@ -734,6 +871,14 @@ test('syncRecentOrdersToCogs keeps processing after one eligible order fails to 
       return {
         ok: true,
         json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateRequests += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6 }),
       };
     }
 
@@ -814,6 +959,7 @@ test('syncRecentOrdersToCogs keeps processing after one eligible order fails to 
       assert.equal(result.appended.length, 1);
       assert.equal(result.appended[0].orderNo, '20260313012');
       assert.equal(appendRequests, 2);
+      assert.equal(headerUpdateRequests, 1);
       assert.equal(tokenRequests, 1);
     });
   } finally {

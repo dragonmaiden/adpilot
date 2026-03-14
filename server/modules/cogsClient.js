@@ -8,6 +8,7 @@
 const AdmZip = require('adm-zip');
 const { XMLParser } = require('fast-xml-parser');
 const config = require('../config');
+const googleSheetsAuthService = require('../services/googleSheetsAuthService');
 
 const SPREADSHEET_ID = config.cogs.spreadsheetId;
 const SHEET_GIDS = config.cogs.sheetGids;
@@ -36,6 +37,20 @@ function asArray(value) {
 async function fetchSheetCSV(ref) {
   const gid = ref && typeof ref === 'object' ? String(ref.gid || '').trim() : String(ref || '').trim();
   const sheetName = ref && typeof ref === 'object' ? String(ref.sheetName || '').trim() : '';
+
+  if (googleSheetsAuthService.isConfigured()) {
+    let resolvedSheetName = sheetName;
+    if (!resolvedSheetName && gid) {
+      const metadata = await googleSheetsAuthService.fetchSpreadsheetMetadata(SPREADSHEET_ID);
+      const matchedSheet = asArray(metadata?.sheets).find(sheet => String(sheet?.properties?.sheetId ?? '') === gid);
+      resolvedSheetName = String(matchedSheet?.properties?.title || '').trim();
+    }
+    if (!resolvedSheetName) {
+      throw new Error('Google Sheets API read requires a sheet title');
+    }
+    return googleSheetsAuthService.fetchSheetValues(SPREADSHEET_ID, resolvedSheetName);
+  }
+
   const url = gid
     ? `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${encodeURIComponent(gid)}`
     : `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
@@ -119,7 +134,7 @@ function buildSheetTargets(workbookSheets = []) {
       || workbookSheets.find(sheet => normalizeSheetLabel(sheet.name).includes(normalizedLabel));
     targets.set(identity, {
       label: normalizedLabel,
-      gid: String(gid || '').trim() || null,
+      gid: String(gid || workbookSheet?.gid || '').trim() || null,
       sheetName: workbookSheet?.name || normalizedLabel,
       path: workbookSheet?.path || null,
       discovered: false,
@@ -140,7 +155,7 @@ function buildSheetTargets(workbookSheets = []) {
 
     targets.set(identity, {
       label,
-      gid: null,
+      gid: String(workbookSheet.gid || '').trim() || null,
       sheetName: workbookSheet.name,
       path: workbookSheet.path,
       discovered: true,
@@ -218,6 +233,21 @@ function readWorksheetRefundRows(zip, sheetPath, styles) {
 }
 
 async function fetchWorkbookMetadata() {
+  if (googleSheetsAuthService.isConfigured()) {
+    const metadata = await googleSheetsAuthService.fetchSpreadsheetMetadata(SPREADSHEET_ID);
+    return {
+      zip: null,
+      styles: null,
+      sharedStrings: [],
+      privateAccess: true,
+      workbookSheets: asArray(metadata?.sheets).map(sheet => ({
+        name: String(sheet?.properties?.title || '').trim(),
+        gid: String(sheet?.properties?.sheetId || '').trim(),
+        path: null,
+      })),
+    };
+  }
+
   const zip = await fetchWorkbookZip();
   const workbookSheets = parseWorkbookSheets(zip);
   const styles = parseWorkbookStyles(zip);
@@ -436,6 +466,11 @@ function parseOrderItems(rows, options = {}) {
     const payment = String(row[9] || '').toUpperCase() === 'TRUE';
     const delivery = String(row[10] || '').toUpperCase() === 'TRUE';
     const note = String(row[11] || '').trim();
+    const ordererPhone = String(row[12] || '').trim();
+    const receiverName = String(row[13] || '').trim();
+    const receiverPhone = String(row[14] || '').trim();
+    const zipcode = String(row[15] || '').trim();
+    const address = String(row[16] || '').trim();
 
     if (sequenceNo && date) {
       currentOrder = {
@@ -443,6 +478,11 @@ function parseOrderItems(rows, options = {}) {
         date,
         name,
         orderNumber: orderNumber || sequenceNo,
+        ordererPhone,
+        receiverName,
+        receiverPhone,
+        zipcode,
+        address,
       };
     }
 
@@ -481,6 +521,11 @@ function parseOrderItems(rows, options = {}) {
       orderKey: currentOrder.orderNumber || `${sheetLabel}:${currentOrder.sequenceNo}`,
       date: currentOrder.date,
       name: currentOrder.name,
+      ordererPhone: currentOrder.ordererPhone,
+      receiverName: currentOrder.receiverName,
+      receiverPhone: currentOrder.receiverPhone,
+      zipcode: currentOrder.zipcode,
+      address: currentOrder.address,
       productUrl,
       sellerNo,
       productName,
@@ -508,6 +553,11 @@ function createOrderSummary(item) {
     sequenceNo: item.sequenceNo,
     date: item.date,
     name: item.name,
+    ordererPhone: item.ordererPhone || '',
+    receiverName: item.receiverName || '',
+    receiverPhone: item.receiverPhone || '',
+    zipcode: item.zipcode || '',
+    address: item.address || '',
     sheetLabel: item.sheetLabel,
     purchaseItemCount: 0,
     costedItemCount: 0,
@@ -519,6 +569,7 @@ function createOrderSummary(item) {
     refundCost: 0,
     refundShipping: 0,
     items: [],
+    productNames: new Set(),
   };
 }
 
@@ -603,6 +654,9 @@ function aggregateCOGSItems(items) {
     const order = orderMap.get(orderKey) || createOrderSummary(item);
 
     order.items.push(item);
+    if (item.productName) {
+      order.productNames.add(item.productName);
+    }
     if (item.isRefund) {
       order.refundItemCount++;
       order.refundCost += item.cost;
@@ -658,6 +712,12 @@ function aggregateCOGSItems(items) {
       sequenceNo: order.sequenceNo,
       date: order.date,
       name: order.name,
+      ordererPhone: order.ordererPhone,
+      receiverName: order.receiverName,
+      receiverPhone: order.receiverPhone,
+      zipcode: order.zipcode,
+      address: order.address,
+      productNames: [...order.productNames],
       sheetLabel: order.sheetLabel,
       itemCount: order.purchaseItemCount,
       costedItemCount: order.costedItemCount,
@@ -807,6 +867,10 @@ async function fetchAllCOGS() {
     console.warn('[COGS]   ⚠ Workbook style parse failed, falling back to note-only refund detection:', err.message);
   }
 
+  if (!googleSheetsAuthService.isConfigured()) {
+    console.warn('[COGS]   ⚠ Using public Google Sheets export path. Customer PII should only live in a private sheet.');
+  }
+
   const sheetTargets = buildSheetTargets(workbookMeta?.workbookSheets || []);
   const fallbackTargets = sheetTargets.length > 0
     ? sheetTargets
@@ -823,8 +887,8 @@ async function fetchAllCOGS() {
 
   for (const target of fallbackTargets) {
     try {
-      const rows = target.gid
-        ? await fetchSheetCSV({ gid: target.gid })
+      const rows = (workbookMeta?.privateAccess || target.gid || !target.path)
+        ? await fetchSheetCSV({ gid: target.gid, sheetName: target.sheetName || target.label })
         : readWorksheetRows(workbookMeta.zip, target.path, workbookMeta.sharedStrings);
       const items = parseOrderItems(rows, {
         sheetLabel: target.label,

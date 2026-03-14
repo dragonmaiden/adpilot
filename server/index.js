@@ -257,8 +257,9 @@ app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
     const result = await cogsAutofillService.handleWebhookPayload(req.body || {});
     if (result?.status === 'appended') {
       await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
+      await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(result), 'HTML', { protectContent: true });
     }
-    res.json(result);
+    res.json(cogsAutofillService.sanitizeAutofillResultForResponse(result));
   } catch (err) {
     handleInternalError(req, res, err);
   }
@@ -302,6 +303,8 @@ app.get('/imweb/oauth/callback', async (req, res) => {
 
 app.use('/api', apiLimiter);
 app.use('/api', (req, res, next) => {
+  res.header('Cache-Control', 'private, no-store, max-age=0');
+  res.header('Pragma', 'no-cache');
   if (req.path === '/health') return next();
   requireAuth(req, res, next);
 });
@@ -395,8 +398,9 @@ app.post('/api/cogs/autofill-order', writeLimiter, async (req, res) => {
     const result = await cogsAutofillService.syncImwebOrderToCogs(orderNo);
     if (result?.status === 'appended') {
       await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
+      await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(result), 'HTML', { protectContent: true });
     }
-    res.json(result);
+    res.json(cogsAutofillService.sanitizeAutofillResultForResponse(result));
   } catch (err) {
     handleInternalError(req, res, err);
   }

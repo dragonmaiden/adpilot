@@ -19,6 +19,14 @@ function normalizeChannelGroup(method, pgName) {
   return 'other';
 }
 
+function maskName(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (text.length === 1) return '*';
+  if (text.length === 2) return `${text[0]}*`;
+  return `${text[0]}${'*'.repeat(Math.max(1, text.length - 2))}${text[text.length - 1]}`;
+}
+
 function getPaymentTimestamp(order, payment) {
   const candidates = [
     payment?.paymentCompleteTime,
@@ -116,12 +124,12 @@ function normalizeImwebPayments(orders, options = {}) {
         channelGroup: normalizeChannelGroup(method, pgName),
         paymentStatus: status,
         isCancel: String(payment?.isCancel || '').trim(),
-        payerName: String(
+        payerName: maskName(String(
           payment?.bankTransfer?.depositorName ||
           order?.ordererName ||
           order?.memberName ||
           ''
-        ).trim(),
+        ).trim()),
       });
     }
   }
