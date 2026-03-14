@@ -406,7 +406,6 @@
       optActionNow: summary.actionNowFamilies ?? 0,
       optBacklog: summary.blockedFamilies ?? 0,
       optFriction: summary.watchingFamilies ?? 0,
-      optRepeats: summary.resolvedFamilies ?? 0,
       optQuality: summary.recentChangeCount ?? 0,
     };
 
@@ -422,16 +421,12 @@
         `검토 창 안에 있는 라이브 승인 ${formatCount(summary.actionNowItems || 0)}건`
       ),
       optBacklogMeta: tr(
-        `${formatCount(summary.staleBacklogFamilies || 0)} stale · ${formatCount(qualitySummary.failedApprovalRequests || 0)} delivery failures`,
-        `${formatCount(summary.staleBacklogFamilies || 0)}개 오래됨 · ${formatCount(qualitySummary.failedApprovalRequests || 0)}개 전달 실패`
+        `${formatCount(summary.blockedFamilies || 0)} cleanup families · ${formatCount(qualitySummary.failedApprovalRequests || 0)} delivery failures`,
+        `정리 패밀리 ${formatCount(summary.blockedFamilies || 0)}개 · 전달 실패 ${formatCount(qualitySummary.failedApprovalRequests || 0)}개`
       ),
       optFrictionMeta: tr(
         `${formatCount(summary.watchingFamilies || 0)} advisory families still worth monitoring`,
         `계속 관찰할 참고용 패밀리 ${formatCount(summary.watchingFamilies || 0)}개`
-      ),
-      optRepeatsMeta: tr(
-        `${formatCount(summary.resolvedFamilies || 0)} families resolved in the recent owner window`,
-        `최근 소유자 창에서 해결된 패밀리 ${formatCount(summary.resolvedFamilies || 0)}개`
       ),
       optQualityMeta: tr(
         `${formatCount(summary.recentChangeCount || 0)} material changes in the last ${aiOps?.systemChatter?.windowHours || 24}h`,
@@ -585,21 +580,21 @@
   function renderSectionSummaries(aiOps, policyLab) {
     const archiveEl = document.getElementById('optArchiveSummary');
     const karpathyEl = document.getElementById('karpathyFoldMeta');
-    const summary = aiOps?.summary || {};
 
     if (archiveEl) {
       archiveEl.textContent = tr(
-        `${formatCount(aiOps?.clusters?.length || 0)} families tucked away · open only when you need audit detail`,
-        `감춰둔 패밀리 ${formatCount(aiOps?.clusters?.length || 0)}개 · 감사용 세부 내용이 필요할 때만 열기`
+        `${formatCount(aiOps?.clusters?.length || 0)} families hidden · open only for audit detail`,
+        `숨겨진 패밀리 ${formatCount(aiOps?.clusters?.length || 0)}개 · 감사 세부 내용이 필요할 때만 열기`
       );
     }
 
     if (karpathyEl) {
       const labSummary = policyLab?.summary || {};
+      const harness = labSummary.harnessStatus || {};
       karpathyEl.textContent = policyLab
         ? tr(
-            `${formatCount(labSummary.harnessStatus?.candidatePool || labSummary.challengerCount || 0)} policy variants · ${formatCount(summary.actionNowFamilies || 0)} live decisions · ${labSummary.lastResearchRunAt ? `last run ${formatRelative(labSummary.lastResearchRunAt)}` : 'no recent run'}`,
-            `정책 변형 ${formatCount(labSummary.harnessStatus?.candidatePool || labSummary.challengerCount || 0)}개 · 라이브 결정 ${formatCount(summary.actionNowFamilies || 0)}개 · ${labSummary.lastResearchRunAt ? `최근 실행 ${formatRelative(labSummary.lastResearchRunAt)}` : '최근 실행 없음'}`
+            `${labSummary.maturityLabel || 'Research idle'} · ${formatCount(labSummary.completedOutcomeCount || 0)} real outcomes · ${formatCount(harness.candidatePool || labSummary.challengerCount || 0)} variants`,
+            `${labSummary.maturityLabel || '연구 대기'} · 실제 결과 ${formatCount(labSummary.completedOutcomeCount || 0)}개 · 정책 변형 ${formatCount(harness.candidatePool || labSummary.challengerCount || 0)}개`
           )
         : tr('No policy-lab data yet', '아직 정책 실험 데이터 없음');
     }
@@ -754,67 +749,40 @@
 
     container.innerHTML = `
       <div class="ai-ops-system-card">
-        <h3>${esc(tr('Cleanup queue', '정리 큐'))}</h3>
+        <h3>${esc(tr('Diagnostics rail', '진단 레일'))}</h3>
         <div class="opt-header">
           <span class="badge ${qualityBadge.className}">${esc(qualityBadge.label)}</span>
         </div>
         <div class="ai-ops-system-copy">
           ${esc(tr(
-            `Blocked or stale families live here so the action queue only shows decisions you should still take.`,
-            `막히거나 오래된 패밀리는 여기 모아 즉시 액션 큐에는 아직 결정할 항목만 남깁니다.`
+            `This is background hygiene, not a decision queue. Use it to spot delivery issues, stale clutter, and scan health.`,
+            `여기는 결정 큐가 아니라 배경 위생 정보입니다. 전달 이슈, 오래된 잡음, 스캔 상태를 볼 때만 사용하세요.`
           ))}
         </div>
         <div class="ai-ops-system-metrics">
           <div class="ai-ops-system-metric">
-            <span>${esc(tr('Blocked families', '막힌 패밀리'))}</span>
+            <span>${esc(tr('Cleanup families', '정리 패밀리'))}</span>
             <strong>${esc(formatCount(summary.blockedFamilies || 0))}</strong>
-          </div>
-          <div class="ai-ops-system-metric">
-            <span>${esc(tr('Stale families', '오래된 패밀리'))}</span>
-            <strong>${esc(formatCount(summary.staleBacklogFamilies || 0))}</strong>
           </div>
           <div class="ai-ops-system-metric">
             <span>${esc(tr('Delivery failures', '전달 실패'))}</span>
             <strong>${esc(formatCount(qualitySummary.failedApprovalRequests || 0))}</strong>
           </div>
           <div class="ai-ops-system-metric">
-            <span>${esc(tr('Resolved recently', '최근 해결'))}</span>
-            <strong>${esc(formatCount(summary.resolvedFamilies || 0))}</strong>
-          </div>
-        </div>
-      </div>
-      <div class="ai-ops-system-card">
-        <h3>${esc(tr('System chatter', '시스템 채터'))}</h3>
-        <div class="ai-ops-system-copy">
-          ${esc(tr(
-            `Routine scan noise is summarized here so the main flow only shows meaningful decision state changes.`,
-            `루틴 스캔 잡음은 이 레일에서 요약해 메인 플로우에는 의미 있는 결정 상태 변화만 남깁니다.`
-          ))}
-        </div>
-        <div class="ai-ops-system-metrics">
-          <div class="ai-ops-system-metric">
             <span>${esc(tr('Scans (24h)', '스캔 (24시간)'))}</span>
             <strong>${esc(formatCount(system.scanCount || 0))}</strong>
-          </div>
-          <div class="ai-ops-system-metric">
-            <span>${esc(tr('With suggestions', '제안 포함'))}</span>
-            <strong>${esc(formatCount(system.scansWithSuggestions || 0))}</strong>
           </div>
           <div class="ai-ops-system-metric">
             <span>${esc(tr('Quiet scans', '조용한 스캔'))}</span>
             <strong>${esc(formatCount(system.quietScans || 0))}</strong>
           </div>
-          <div class="ai-ops-system-metric">
-            <span>${esc(tr('Avg ideas/scan', '평균 아이디어/스캔'))}</span>
-            <strong>${esc(String(system.avgOptimizationsPerScan || 0))}</strong>
-          </div>
         </div>
         <div class="opt-time">${esc(tr(
           system.lastScanAt
-            ? `Last scan ${formatRelative(system.lastScanAt)} · ${formatCount(system.lastScanOptimizations || 0)} suggestions · ${formatCount(system.lastScanErrors || 0)} errors`
+            ? `Last scan ${formatRelative(system.lastScanAt)} · ${formatCount(system.scansWithSuggestions || 0)} scans with suggestions · ${formatCount(system.lastScanErrors || 0)} errors on the latest run`
             : 'No recent scan data yet.',
           system.lastScanAt
-            ? `최근 스캔 ${formatRelative(system.lastScanAt)} · 제안 ${formatCount(system.lastScanOptimizations || 0)}건 · 오류 ${formatCount(system.lastScanErrors || 0)}건`
+            ? `최근 스캔 ${formatRelative(system.lastScanAt)} · 제안 포함 스캔 ${formatCount(system.scansWithSuggestions || 0)}개 · 최근 실행 오류 ${formatCount(system.lastScanErrors || 0)}건`
             : '최근 스캔 데이터가 없습니다.'
         ))}</div>
       </div>
@@ -894,11 +862,19 @@
   function renderKarpathySummary(policyLab) {
     const container = document.getElementById('karpathySummary');
     const metaEl = document.getElementById('karpathySummaryMeta');
+    const calloutEl = document.getElementById('karpathyStatusCallout');
+    const deepMetaEl = document.getElementById('karpathyDeepMeta');
     if (!container) return;
 
     if (!policyLab) {
       container.innerHTML = `<div class="empty-state">${esc(tr('Policy-lab data is not available yet.', '정책 실험 데이터가 아직 없습니다.'))}</div>`;
       if (metaEl) metaEl.textContent = tr('No data', '데이터 없음');
+      if (calloutEl) {
+        calloutEl.innerHTML = `<div class="empty-state">${esc(tr('Policy-lab data is not available yet.', '정책 실험 데이터가 아직 없습니다.'))}</div>`;
+      }
+      if (deepMetaEl) {
+        deepMetaEl.textContent = tr('Open only when you need to inspect the learning loop', '학습 루프를 점검할 때만 여세요');
+      }
       return;
     }
 
@@ -908,21 +884,39 @@
       ? tr('Sentry live', '센트리 연결')
       : tr('Local only', '로컬만');
     const harness = summary.harnessStatus || {};
+    const maturityLabel = summary.maturityLabel || tr('Unknown', '알 수 없음');
+    const realOutcomeMeta = summary.usesRealOutcomes
+      ? tr('Used in replay scoring', '리플레이 점수화에 사용 중')
+      : tr('No real outcome proof yet', '아직 실제 결과 증거 없음');
 
     if (metaEl) {
       metaEl.textContent = summary.lastResearchRunAt
         ? tr(
-            `Last run ${formatRelative(summary.lastResearchRunAt)} · ${formatCount(summary.replaySampleSize || 0)} ${summary.evaluationMode === 'bootstrap_proxy' ? 'bootstrap' : 'replay'} samples`,
-            `최근 실행 ${formatRelative(summary.lastResearchRunAt)} · ${formatCount(summary.replaySampleSize || 0)}개 ${summary.evaluationMode === 'bootstrap_proxy' ? '부트스트랩' : '리플레이'} 샘플`
+            `${maturityLabel} · last run ${formatRelative(summary.lastResearchRunAt)}`,
+            `${maturityLabel} · 최근 실행 ${formatRelative(summary.lastResearchRunAt)}`
           )
         : tr('No research runs yet', '아직 연구 실행 없음');
     }
 
+    if (calloutEl) {
+      calloutEl.dataset.state = summary.maturityState || 'inactive';
+      calloutEl.innerHTML = `
+        <span class="karpathy-status-pill">${esc(maturityLabel)}</span>
+        <strong>${esc(summary.maturityHeadline || tr('No learning summary yet.', '아직 학습 요약이 없습니다.'))}</strong>
+        <p>${esc(summary.maturityGuidance || tr('Use this as research context, not a live operator queue.', '이 영역은 라이브 운영 큐가 아니라 연구 맥락으로 보세요.'))}</p>
+        <small>${esc(summary.maturityDetail || tr('No detail captured yet.', '아직 세부 내용이 없습니다.'))}</small>
+      `;
+    }
+
+    if (deepMetaEl) {
+      deepMetaEl.textContent = summary.maturityGuidance || tr('Open only when you need to inspect the learning loop', '학습 루프를 점검할 때만 여세요');
+    }
+
     const cards = [
+      { label: tr('Stage', '단계'), value: maturityLabel, meta: summary.maturityDetail || '—' },
       { label: tr('Champion', '챔피언'), value: summary.championPolicyLabel || '—', meta: summary.championPolicyId || '—' },
       { label: tr('Policy pool', '정책 풀'), value: formatCount(harness.candidatePool || summary.challengerCount || 0), meta: tr(`${formatCount(harness.activeCandidates || summary.activeCandidateCount || 0)} active · ${formatCount(harness.promotionReady || summary.promotionReadyCount || 0)} ready`, `${formatCount(harness.activeCandidates || summary.activeCandidateCount || 0)}개 활성 · ${formatCount(harness.promotionReady || summary.promotionReadyCount || 0)}개 준비`) },
-      { label: tr('Live divergence', '라이브 분기'), value: `${Math.round((summary.liveDivergenceRate || summary.shadowDivergenceRate || 0) * 100)}%`, meta: summary.activeLearningPolicyLabel || summary.activeShadowPolicyLabel || tr('No active learning policy', '활성 학습 정책 없음') },
-      { label: tr('Completed outcomes', '완료된 결과'), value: formatCount(summary.completedOutcomeCount || 0), meta: tr(`${formatCount(summary.decisionTraceCount || 0)} total traces`, `총 ${formatCount(summary.decisionTraceCount || 0)}개 트레이스`) },
+      { label: tr('Real outcomes', '실제 결과'), value: formatCount(summary.completedOutcomeCount || 0), meta: realOutcomeMeta },
       { label: tr('Observability', '관측 상태'), value: sentryLabel, meta: sentryStatus.lastEventAt ? tr(`Last event ${formatRelative(sentryStatus.lastEventAt)}`, `최근 이벤트 ${formatRelative(sentryStatus.lastEventAt)}`) : tr('No events yet', '아직 이벤트 없음') },
     ];
 
@@ -945,8 +939,8 @@
 
     if (metaEl) {
       metaEl.textContent = tr(
-        `${formatCount(markers.length)} chart markers · ${formatCount(experiments.length)} logged iterations · ${formatCount(policyLab?.experimentFunnel?.promotionReady || 0)} ready`,
-        `${formatCount(markers.length)}개 차트 마커 · ${formatCount(experiments.length)}개 학습 반복 · ${formatCount(policyLab?.experimentFunnel?.promotionReady || 0)}개 준비`
+        `${formatCount(experiments.length)} variants tried · ${formatCount(policyLab?.summary?.completedOutcomeCount || 0)} real outcomes · ${formatCount(policyLab?.experimentFunnel?.promotionReady || 0)} ready`,
+        `시도한 변형 ${formatCount(experiments.length)}개 · 실제 결과 ${formatCount(policyLab?.summary?.completedOutcomeCount || 0)}개 · 준비됨 ${formatCount(policyLab?.experimentFunnel?.promotionReady || 0)}개`
       );
     }
 

@@ -2142,6 +2142,60 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   padding: 0 var(--space-3) var(--space-3);
 }
 
+.karpathy-status-callout,
+.karpathy-deep-shell {
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-surface-2) 84%, white 16%);
+}
+
+.karpathy-status-callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.karpathy-status-callout[data-state='proxy_only'] {
+  background: linear-gradient(135deg, color-mix(in srgb, rgba(251, 191, 36, 0.16) 80%, var(--color-surface-2)), var(--color-surface-2));
+}
+
+.karpathy-status-callout[data-state='early_real_data'] {
+  background: linear-gradient(135deg, color-mix(in srgb, rgba(56, 189, 248, 0.14) 80%, var(--color-surface-2)), var(--color-surface-2));
+}
+
+.karpathy-status-callout[data-state='real_outcome_learning'] {
+  background: linear-gradient(135deg, color-mix(in srgb, rgba(74, 222, 128, 0.14) 80%, var(--color-surface-2)), var(--color-surface-2));
+}
+
+.karpathy-status-callout strong {
+  font-size: var(--text-base);
+  color: var(--color-text);
+}
+
+.karpathy-status-callout p,
+.karpathy-status-callout small {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.karpathy-status-pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-divider) 88%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 70%, white 30%);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+
 .karpathy-top-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2166,6 +2220,47 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--space-3);
+}
+
+.karpathy-deep-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+}
+
+.karpathy-deep-summary::-webkit-details-marker {
+  display: none;
+}
+
+.karpathy-deep-summary h2 {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-base);
+}
+
+.karpathy-deep-summary > span {
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  text-align: right;
+}
+
+.karpathy-deep-shell summary::after {
+  content: '▸';
+  margin-left: auto;
+  color: var(--color-text-faint);
+  transition: transform var(--transition-interactive);
+}
+
+.karpathy-deep-shell[open] summary::after {
+  transform: rotate(90deg);
+}
+
+.karpathy-deep-shell > .karpathy-layout {
+  padding: 0 var(--space-3) var(--space-3);
 }
 
 .karpathy-summary-card,

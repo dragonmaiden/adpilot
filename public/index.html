@@ -831,7 +831,7 @@
           <div class="section-kicker" data-i18n="optimizations.sectionKicker">AI Operations</div>
           <h2 data-i18n="optimizations.sectionTitle">AI decisions, approvals, and execution history</h2>
         </div>
-        <p class="section-note" data-i18n="optimizations.sectionNote">Use this page to separate current AI actions from advisory backlog and historical outcomes. Live Performance only surfaces the most urgent latest-scan items.</p>
+        <p class="section-note" data-i18n="optimizations.sectionNote">Start at the top. If there is nothing to decide now, everything else here is cleanup, context, or research.</p>
       </div>
       <div class="card ai-ops-focus-card" id="aiOpsFocusCard" data-tone="neutral">
         <div class="ai-ops-focus-grid">
@@ -862,22 +862,17 @@
           <div class="kpi-delta neutral"><span id="optActionNowMeta">—</span></div>
         </div>
         <div class="kpi-card ai-ops-kpi ai-ops-kpi-backlog">
-          <div class="kpi-label" data-i18n="optimizations.kpiBacklog">Open Backlog</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiBacklog">Cleanup</div>
           <div class="kpi-value" id="optBacklog" data-target="0" data-prefix="">—</div>
           <div class="kpi-delta neutral"><span id="optBacklogMeta">—</span></div>
         </div>
         <div class="kpi-card ai-ops-kpi ai-ops-kpi-watch">
-          <div class="kpi-label" data-i18n="optimizations.kpiFriction">Decision Friction</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiFriction">Watching</div>
           <div class="kpi-value" id="optFriction" data-target="0" data-prefix="">—</div>
           <div class="kpi-delta neutral"><span id="optFrictionMeta">—</span></div>
         </div>
-        <div class="kpi-card ai-ops-kpi ai-ops-kpi-resolved">
-          <div class="kpi-label" data-i18n="optimizations.kpiRepeatPressure">Repeat Pressure</div>
-          <div class="kpi-value" id="optRepeats" data-target="0" data-prefix="">—</div>
-          <div class="kpi-delta neutral"><span id="optRepeatsMeta">—</span></div>
-        </div>
         <div class="kpi-card ai-ops-kpi ai-ops-kpi-changes">
-          <div class="kpi-label" data-i18n="optimizations.kpiQuality">AI Quality</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiQuality">Recent Changes</div>
           <div class="kpi-value" id="optQuality" data-target="0" data-prefix="">—</div>
           <div class="kpi-delta neutral"><span id="optQualityMeta">—</span></div>
         </div>
@@ -934,11 +929,11 @@
           <div class="card-header">
             <div>
               <div class="section-kicker" data-i18n="optimizations.backlogKicker">Backlog</div>
-              <h2 data-i18n="optimizations.backlogTitle">Open unresolved families</h2>
+              <h2 data-i18n="optimizations.backlogTitle">Blocked or stale families</h2>
             </div>
             <span id="optBacklogStats"></span>
           </div>
-          <p class="card-desc" data-i18n="optimizations.backlogDesc">Older unresolved approvals are grouped into decision families so stale backlog is obvious.</p>
+          <p class="card-desc" data-i18n="optimizations.backlogDesc">These are cleanup items only. They should not steal attention from live decisions.</p>
           <div class="optimization-log optimization-log-grouped" id="optimizationBacklog">
             <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
           </div>
@@ -946,14 +941,14 @@
       </div>
 
       <div class="card ai-ops-lane ai-ops-lane-flow">
-        <div class="card-header">
-          <div>
-            <div class="section-kicker" data-i18n="opt.activityHubKicker">Decision Flow</div>
-            <h2 data-i18n="opt.activityHub">Meaningful AI state changes</h2>
+          <div class="card-header">
+            <div>
+            <div class="section-kicker" data-i18n="opt.activityHubKicker">Recent Changes</div>
+            <h2 data-i18n="opt.activityHub">What changed recently</h2>
+            </div>
+            <span id="optActivityStats"></span>
           </div>
-          <span id="optActivityStats"></span>
-        </div>
-        <p class="card-desc" data-i18n="opt.activityHubDesc">Approvals, expiries, executions, and new recommendation families stay here. Routine scan noise is pushed into the system rail.</p>
+        <p class="card-desc" data-i18n="opt.activityHubDesc">Only fresh state changes stay here. Audit history and research detail belong further down the page.</p>
         <div class="ai-ops-flow-grid">
           <div class="optimization-log optimization-log-grouped" id="optActivityLog">
             <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
@@ -968,7 +963,7 @@
         <summary class="ai-ops-secondary-summary">
           <div>
             <div class="section-kicker" data-i18n="optimizations.archiveKicker">Archive & Diagnostics</div>
-            <h2 data-i18n="optimizations.archiveTitle">Deduped decision families and raw history</h2>
+            <h2 data-i18n="optimizations.archiveTitle">Audit history and grouped families</h2>
           </div>
           <span id="optArchiveSummary">—</span>
         </summary>
@@ -1022,7 +1017,7 @@
         <summary class="karpathy-shell-summary">
           <div>
             <div class="section-kicker">Karpathy</div>
-            <h2>Research, traces, and observability</h2>
+            <h2>Experimental policy lab</h2>
           </div>
           <span id="karpathyFoldMeta">—</span>
         </summary>
@@ -1032,11 +1027,14 @@
               <div class="card-header">
                 <div>
                   <div class="section-kicker">Learning Loop</div>
-                  <h2>Summary</h2>
+                  <h2>Plain-language status</h2>
                 </div>
                 <span id="karpathySummaryMeta"></span>
               </div>
-              <p class="card-desc">Champion and active learning policy status, live comparison divergence, completed outcomes, and observability health.</p>
+              <p class="card-desc">Karpathy should first tell you whether it has real outcome proof or is still proxy-scored. Only then do the research metrics matter.</p>
+              <div class="karpathy-status-callout" id="karpathyStatusCallout">
+                <div class="empty-state">Waiting for policy-lab data...</div>
+              </div>
               <div class="karpathy-summary-grid" id="karpathySummary">
                 <div class="empty-state">Waiting for policy-lab data...</div>
               </div>
@@ -1046,76 +1044,85 @@
               <div class="card-header">
                 <div>
                   <div class="section-kicker">Strategy Progression</div>
-                  <h2>Research timeline</h2>
+                  <h2>What it has tried</h2>
                 </div>
                 <span id="karpathyTimelineMeta"></span>
               </div>
-              <p class="card-desc">Candidate creation, replay outcomes, and promotion readiness are summarized here and echoed onto the spend chart above.</p>
+              <p class="card-desc">This is the short research log: candidate policies, replay results, and whether anything is close to becoming worth deeper review.</p>
               <div class="karpathy-timeline" id="karpathyTimeline">
                 <div class="empty-state">Waiting for policy-lab data...</div>
               </div>
             </div>
           </div>
 
-          <div class="karpathy-layout">
-            <div class="card karpathy-trace-card">
-              <div class="card-header">
-                <div>
-                  <div class="section-kicker">Decision Trace Explorer</div>
-                  <h2>Structured budget traces</h2>
-                </div>
-                <span id="karpathyTraceStats"></span>
+          <details class="karpathy-deep-shell">
+            <summary class="karpathy-deep-summary">
+              <div>
+                <div class="section-kicker">Deep Research View</div>
+                <h2>Traces, metrics, and observability</h2>
               </div>
-              <p class="card-desc">Filter by policy, verdict, control surface, or target to inspect what the budget engine saw, which gates fired, and why it chose scale, reduce, hold, or suppress.</p>
-              <div class="history-toolbar">
-                <div class="filter-group">
-                  <select class="select-input" id="karpathyTracePolicyFilter">
-                    <option value="all">All policies</option>
-                  </select>
-                  <select class="select-input" id="karpathyTraceVerdictFilter">
-                    <option value="all">All verdicts</option>
-                  </select>
-                  <select class="select-input" id="karpathyTraceSurfaceFilter">
-                    <option value="all">All control surfaces</option>
-                  </select>
-                  <input class="search-input" id="karpathyTraceTargetFilter" type="search" placeholder="Filter target name" />
-                </div>
-              </div>
-              <div class="optimization-log optimization-log-grouped karpathy-trace-list" id="karpathyTraceExplorer">
-                <div class="empty-state">Waiting for policy-lab data...</div>
-              </div>
-            </div>
-
-            <div class="karpathy-side-rail">
-              <div class="card">
+              <span id="karpathyDeepMeta">Open only when you need to inspect the learning loop</span>
+            </summary>
+            <div class="karpathy-layout">
+              <div class="card karpathy-trace-card">
                 <div class="card-header">
                   <div>
-                    <div class="section-kicker">Metrics Progression</div>
-                    <h2>Champion vs challenger</h2>
+                    <div class="section-kicker">Decision Trace Explorer</div>
+                    <h2>Structured budget traces</h2>
                   </div>
-                  <span id="karpathyMetricsMeta"></span>
+                  <span id="karpathyTraceStats"></span>
                 </div>
-                <p class="card-desc">Replay score deltas, realized rewards, approval friction, duplicate pressure, and the latest scored outcomes.</p>
-                <div class="karpathy-metrics" id="karpathyMetrics">
+                <p class="card-desc">Filter by policy, verdict, control surface, or target to inspect what the budget engine saw, which gates fired, and why it chose scale, reduce, hold, or suppress.</p>
+                <div class="history-toolbar">
+                  <div class="filter-group">
+                    <select class="select-input" id="karpathyTracePolicyFilter">
+                      <option value="all">All policies</option>
+                    </select>
+                    <select class="select-input" id="karpathyTraceVerdictFilter">
+                      <option value="all">All verdicts</option>
+                    </select>
+                    <select class="select-input" id="karpathyTraceSurfaceFilter">
+                      <option value="all">All control surfaces</option>
+                    </select>
+                    <input class="search-input" id="karpathyTraceTargetFilter" type="search" placeholder="Filter target name" />
+                  </div>
+                </div>
+                <div class="optimization-log optimization-log-grouped karpathy-trace-list" id="karpathyTraceExplorer">
                   <div class="empty-state">Waiting for policy-lab data...</div>
                 </div>
               </div>
 
-              <div class="card">
-                <div class="card-header">
-                  <div>
-                    <div class="section-kicker">Observability Rail</div>
-                    <h2>Warnings and failures</h2>
+              <div class="karpathy-side-rail">
+                <div class="card">
+                  <div class="card-header">
+                    <div>
+                      <div class="section-kicker">Metrics Progression</div>
+                      <h2>Champion vs challenger</h2>
+                    </div>
+                    <span id="karpathyMetricsMeta"></span>
                   </div>
-                  <span id="karpathyObservabilityMeta"></span>
+                  <p class="card-desc">Replay score deltas, realized rewards, approval friction, duplicate pressure, and the latest scored outcomes.</p>
+                  <div class="karpathy-metrics" id="karpathyMetrics">
+                    <div class="empty-state">Waiting for policy-lab data...</div>
+                  </div>
                 </div>
-                <p class="card-desc">Recent Sentry-backed or locally captured warnings from the optimizer, research worker, replay loop, and execution path.</p>
-                <div class="optimization-log optimization-log-grouped karpathy-observability-list" id="karpathyObservability">
-                  <div class="empty-state">Waiting for policy-lab data...</div>
+
+                <div class="card">
+                  <div class="card-header">
+                    <div>
+                      <div class="section-kicker">Observability Rail</div>
+                      <h2>Warnings and failures</h2>
+                    </div>
+                    <span id="karpathyObservabilityMeta"></span>
+                  </div>
+                  <p class="card-desc">Recent Sentry-backed or locally captured warnings from the optimizer, research worker, replay loop, and execution path.</p>
+                  <div class="optimization-log optimization-log-grouped karpathy-observability-list" id="karpathyObservability">
+                    <div class="empty-state">Waiting for policy-lab data...</div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </details>
         </div>
       </details>
     </section>

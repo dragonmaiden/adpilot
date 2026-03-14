@@ -205,10 +205,84 @@ test('getPolicyLabResponse exposes experiment funnel, specialist scoreboard, and
 
     assert.equal(response.summary.harnessStatus.activeCandidates, 1);
     assert.equal(response.summary.harnessStatus.candidatePool, 1);
+    assert.equal(response.summary.maturityState, 'early_real_data');
+    assert.equal(response.summary.usesRealOutcomes, true);
     assert.ok(Array.isArray(response.specialistScoreboard));
     assert.ok(response.specialistScoreboard.some(entry => entry.key === 'structure'));
     assert.ok(Array.isArray(response.regimePerformance));
     assert.ok(response.regimePerformance.some(entry => entry.tag === 'concentrated_account'));
     assert.equal(response.experimentFunnel.activeCandidates, 1);
+  });
+});
+
+test('getPolicyLabResponse labels proxy-only learning honestly when no completed outcomes exist', async () => {
+  const policy = buildDefaultChampionPolicy({ maxBudgetChangePercent: 20 });
+  const evaluation = evaluateBudgetSnapshot(createSnapshot(), policy, {
+    maxBudgetChangePercent: 20,
+    cpaWarningThreshold: 30,
+    cpaPauseThreshold: 50,
+    minSpendForDecision: 20,
+  });
+  const trace = createDecisionTrace({
+    scanId: 778,
+    mode: 'champion',
+    policy,
+    snapshot: createSnapshot(),
+    evaluation,
+  });
+
+  await withMockedPolicyLabService({
+    scanStore: {
+      getAllOptimizations: () => [],
+    },
+    snapshotRepository: {
+      getSnapshotsList: () => [],
+      getSnapshot: () => null,
+    },
+    policyLabStore: {
+      getPolicies: () => [policy],
+      getMetaState: () => ({
+        championPolicyId: policy.id,
+        activeShadowPolicyId: null,
+        lastResearchRunAt: '2026-03-14T06:00:00.000Z',
+        lastResearchSummary: {
+          replaySampleSize: 8,
+          experimentCount: 3,
+          bestPolicyId: null,
+          bestImprovementRatio: 0,
+          scoreMode: 'bootstrap_proxy',
+        },
+      }),
+      getDecisionTraces: () => [trace],
+      getExperiments: () => [],
+      getBudgetOutcomes: () => [],
+      getShadowDecisionLog: () => [],
+      getObservabilityEvents: () => [],
+      upsertPolicy: () => null,
+      updateMetaState: () => null,
+    },
+    runtimeSettings: {
+      getRules: () => ({
+        maxBudgetChangePercent: 20,
+        cpaWarningThreshold: 30,
+        cpaPauseThreshold: 50,
+        minSpendForDecision: 20,
+      }),
+    },
+    recommendationQualityService: {
+      getRecommendationQualityResponse: () => ({ summary: {} }),
+    },
+    observabilityService: {
+      getStatus: () => ({ enabled: false, lastEventAt: null }),
+      captureMessage: () => null,
+      captureException: () => null,
+    },
+  }, async service => {
+    const response = service.getPolicyLabResponse();
+
+    assert.equal(response.summary.maturityState, 'proxy_only');
+    assert.equal(response.summary.maturityLabel, 'Proxy-scored only');
+    assert.equal(response.summary.usesRealOutcomes, false);
+    assert.match(response.summary.maturityHeadline, /live traces/i);
   });
 });
