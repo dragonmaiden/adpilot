@@ -274,6 +274,11 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   50% { opacity: 0.3; }
 }
 
+@keyframes live-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .scan-info {
   font-size: var(--text-xs);
   color: var(--color-text-faint);
@@ -1188,8 +1193,60 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .live-daily-context-card {
+  position: relative;
   background: linear-gradient(180deg, color-mix(in srgb, var(--color-surface-offset) 88%, transparent), var(--color-surface));
   border-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-border));
+}
+
+.live-daily-context-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.live-daily-context-chart-shell,
+.live-daily-context-stats {
+  transition: filter 180ms ease, opacity 180ms ease;
+}
+
+.live-daily-context-card[data-loading="true"] .live-daily-context-chart-shell,
+.live-daily-context-card[data-loading="true"] .live-daily-context-stats {
+  filter: blur(4px);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.live-daily-context-loader {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface) 68%, transparent);
+  backdrop-filter: blur(6px);
+  z-index: 2;
+}
+
+.live-daily-context-card[data-loading="true"] .live-daily-context-loader {
+  display: flex;
+}
+
+.live-daily-context-loader span {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.live-daily-context-spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
+  border-top-color: var(--color-primary);
+  animation: live-spin 0.9s linear infinite;
 }
 
 .live-daily-context-stats {

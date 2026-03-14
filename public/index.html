@@ -809,19 +809,25 @@
         </div>
       </div>
 
-      <div class="card chart-card live-daily-context-card">
+      <div class="card chart-card live-daily-context-card" id="liveDailyContextCard" data-loading="false">
         <div class="card-header">
           <div>
-            <div class="section-kicker" data-i18n="campaigns.dailyContextKicker">Daily Context</div>
-            <h2 data-i18n="campaigns.dailyContextTitle">Recent spend and CAC context</h2>
-            <p class="card-desc" data-i18n="campaigns.dailyContextDesc">Use this as the recent-days backdrop for today’s pacing, not as the main decision story.</p>
+            <div class="section-kicker" data-i18n="campaigns.dailyContextKicker">Recent Days</div>
+            <h2 data-i18n="campaigns.dailyContextTitle">Recent spend and CAC trend</h2>
+            <p class="card-desc" data-i18n="campaigns.dailyContextDesc">Use recent days as the backdrop for whether today’s pace looks normal, strong, or off-shape.</p>
           </div>
         </div>
-        <div class="chart-container" style="height:320px">
-          <canvas id="liveDailyContextChart"></canvas>
-        </div>
-        <div class="live-daily-context-stats" id="liveDailyContextStats">
-          <div class="empty-state" data-i18n="campaigns.dailyContextLoading">Loading daily context...</div>
+        <div class="live-daily-context-body" id="liveDailyContextBody">
+          <div class="chart-container live-daily-context-chart-shell" style="height:320px">
+            <canvas id="liveDailyContextChart"></canvas>
+          </div>
+          <div class="live-daily-context-stats" id="liveDailyContextStats">
+            <div class="empty-state" data-i18n="campaigns.dailyContextLoading">Loading daily context...</div>
+          </div>
+          <div class="live-daily-context-loader" id="liveDailyContextLoader" aria-hidden="true">
+            <div class="live-daily-context-spinner"></div>
+            <span data-i18n="campaigns.dailyContextRefreshing">Refreshing recent trend...</span>
+          </div>
         </div>
       </div>
 
