@@ -25,7 +25,7 @@
 
 ## Ops behavior
 
-- AdPilot scans every 30 minutes.
+- AdPilot scans every 3 minutes.
 - Order-to-COGS autofill is append-only and primarily maintained by scan reconciliation.
 - Monthly COGS tabs follow Korean month naming like `2월 주문`, `3월 주문`, `4월 주문`.
 - If a number comes from a local snapshot rather than live API, say so explicitly.

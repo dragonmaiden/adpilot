@@ -47,8 +47,8 @@ function validateSettingsPatch(updates) {
   if (updates.cpaPauseThreshold !== undefined && (!Number.isFinite(updates.cpaPauseThreshold) || updates.cpaPauseThreshold < 1 || updates.cpaPauseThreshold > 500)) {
     errors.push('cpaPauseThreshold must be a number between 1 and 500');
   }
-  if (updates.scanIntervalMinutes !== undefined && (!Number.isFinite(updates.scanIntervalMinutes) || updates.scanIntervalMinutes < 5 || updates.scanIntervalMinutes > 1440)) {
-    errors.push('scanIntervalMinutes must be a number between 5 and 1440');
+  if (updates.scanIntervalMinutes !== undefined && (!Number.isFinite(updates.scanIntervalMinutes) || updates.scanIntervalMinutes < 1 || updates.scanIntervalMinutes > 1440)) {
+    errors.push('scanIntervalMinutes must be a number between 1 and 1440');
   }
   if (updates.budgetReallocationEnabled !== undefined && typeof updates.budgetReallocationEnabled !== 'boolean') {
     errors.push('budgetReallocationEnabled must be a boolean');
@@ -79,6 +79,16 @@ function loadState() {
       budgetReallocationEnabled: raw.rules?.budgetReallocationEnabled,
       scanIntervalMinutes: raw.scheduler?.scanIntervalMinutes,
     };
+
+    // Migrate the old default scan interval to the new faster default when no custom
+    // scheduler choice was made beyond the legacy 30-minute baseline.
+    if (persisted.scanIntervalMinutes === 30 && defaultState.scheduler.scanIntervalMinutes === 3) {
+      persisted.scanIntervalMinutes = 3;
+      raw.scheduler = {
+        ...(raw.scheduler || {}),
+        scanIntervalMinutes: 3,
+      };
+    }
 
     const errors = validateSettingsPatch(Object.fromEntries(
       Object.entries(persisted).filter(([, value]) => value !== undefined)

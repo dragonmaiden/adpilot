@@ -322,6 +322,7 @@ const I18N = {
   'settings.high':              { en: 'High',   kr: '높음' },
 
   // Scan frequency options
+  'settings.every3':    { en: 'Every 3 minutes',  kr: '3분마다' },
   'settings.every15':   { en: 'Every 15 minutes', kr: '15분마다' },
   'settings.every30':   { en: 'Every 30 minutes', kr: '30분마다' },
   'settings.everyHour': { en: 'Every hour',       kr: '1시간마다' },
