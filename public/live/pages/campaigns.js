@@ -1,19 +1,11 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, formatUsd, formatPercent, formatCompactKrw, formatSignedCompactKrw, timeSince, tr, getLocale, localizeOptimizationText, localizeCreativeText } = live.shared;
+  const { esc, formatUsd, formatPercent, formatCompactKrw, formatSignedCompactKrw, timeSince, tr, getLocale, localizeCreativeText } = live.shared;
   const { fetchCampaigns, fetchLivePerformance, fetchPostmortem, fetchOptimizations, fetchAnalytics, fetchOverview, fetchScans, fetchSpendDaily, updateCampaignStatus } = live.api;
   const { getSeriesWindowMeta } = live.seriesWindows;
 
   const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
   const EXECUTABLE_TYPES = new Set(['budget', 'bid', 'status']);
-  const ACTION_ICON = {
-    budget: 'wallet',
-    bid: 'gavel',
-    creative: 'image',
-    status: 'power',
-    schedule: 'clock',
-    targeting: 'target',
-  };
   let liveIntradayChart = null;
   let liveDailyContextChart = null;
 
@@ -602,53 +594,6 @@
     );
   }
 
-  function renderActionQueue(container, optData, scansData) {
-    if (!container) return;
-    const latestScanId = scansData?.lastScan?.scanId ?? null;
-    const optimizations = getPendingExecutableGroups(optData, latestScanId);
-    const historicalPending = Number(optData?.stats?.pending || 0);
-    const olderPending = Math.max(historicalPending - optimizations.length, 0);
-
-    if (optimizations.length === 0) {
-      container.innerHTML = `<div class="empty-state">${
-        olderPending > 0
-          ? tr(
-              `No approval-required actions were produced in the most recent scan. ${olderPending} older pending suggestion${olderPending === 1 ? '' : 's'} remain in AI Operations.`,
-              `최신 스캔에서 승인 필요한 조치가 생성되지 않았습니다. AI 운영에 이전 대기 제안 ${olderPending.toLocaleString(getLocale())}건이 남아 있습니다.`
-            )
-          : tr('No approval-required actions were produced in the most recent scan.', '최신 스캔에서 승인 필요한 조치가 생성되지 않았습니다.')
-      }</div>`;
-      return;
-    }
-
-    container.innerHTML = optimizations.slice(0, 6).map(opt => {
-      const priority = priorityBadge(opt.priority);
-      const repeatNote = opt.repeats > 1
-        ? tr(`Repeated across ${opt.repeats} scans`, `${opt.repeats.toLocaleString(getLocale())}번 스캔에서 반복됨`)
-        : tr('Single open recommendation', '현재 열린 단일 제안');
-
-      return `
-        <div class="live-queue-item">
-          <div class="live-queue-icon ${esc(opt.type || 'budget')}">
-            <i data-lucide="${ACTION_ICON[opt.type] || 'zap'}"></i>
-          </div>
-          <div class="live-queue-content">
-            <div class="live-queue-top">
-            <div class="live-queue-title">${esc(localizeOptimizationText(opt.action || '—'))}</div>
-              <div class="live-queue-badges">
-                <span class="badge badge-warning">${esc(tr('Awaiting review', '검토 대기'))}</span>
-                <span class="badge ${priority.klass}">${esc(priority.label)}</span>
-              </div>
-            </div>
-            <div class="live-queue-target">${esc(opt.targetName || tr('Account-wide', '계정 전체'))}</div>
-            <div class="live-queue-detail">${esc(localizeOptimizationText(opt.reason || opt.impact || tr('No reason provided.', '사유가 제공되지 않았습니다.')))}</div>
-            <div class="live-queue-meta">${esc(localizeOptimizationText(opt.impact || tr('No impact note provided.', '영향 메모가 없습니다.')))} · ${esc(repeatNote)} · ${opt.timestamp ? tr('Last seen ', '최근 확인 ') + timeSince(new Date(opt.timestamp)) : tr('Just now', '방금 전')}</div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
   function buildSignalCards(campaignData, postmortem, overviewData, analyticsData) {
     const campaigns = campaignData?.campaigns || [];
     const activeCampaigns = campaigns.filter(campaign => campaign.status === 'ACTIVE');
@@ -688,8 +633,8 @@
       },
       {
         tone: bestScaleCandidate ? 'positive' : 'neutral',
-        label: tr('Best scale candidate', '확장 후보'),
-        title: bestScaleCandidate ? bestScaleCandidate.name : tr('No scale candidate right now', '현재 확장 후보 없음'),
+        label: tr('Strongest campaign', '가장 강한 캠페인'),
+        title: bestScaleCandidate ? bestScaleCandidate.name : tr('No clear leader right now', '지금 뚜렷한 선두 캠페인 없음'),
         detail: bestScaleCandidate
           ? tr(`${getAttributedPurchases(bestScaleCandidate.metricsWindow)} Meta-attributed purchases · ${formatUsd(bestScaleCandidate.metricsWindow.cpa || 0, 2)} CPA`, `메타 귀속 구매 ${getAttributedPurchases(bestScaleCandidate.metricsWindow).toLocaleString(getLocale())}건 · CPA ${formatUsd(bestScaleCandidate.metricsWindow.cpa || 0, 2)}`)
           : tr('No active campaign has recent attributed purchase volume in this time frame.', '이 기간에 최근 귀속 구매가 있는 활성 캠페인이 없습니다.')
@@ -868,7 +813,6 @@
       renderLiveKpis(campaignData, postmortem, optData, analyticsData, scansData);
       renderIntradaySection(livePerformance);
       renderDailyContextSection(spendDaily || [], windowMeta);
-      renderActionQueue(document.getElementById('liveActionQueue'), optData, scansData);
       renderOperatorSignals(document.getElementById('operatorSignalGrid'), campaignData, postmortem, overviewData, analyticsData);
       renderActiveAds(document.getElementById('activeAdsContainer'), document.getElementById('activeCount'), postmortem, windowLabel);
       renderCampaignTable(document.getElementById('campaignBody'), campaignData.campaigns || []);
