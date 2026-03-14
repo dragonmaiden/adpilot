@@ -313,6 +313,15 @@
     return liveDailyContextChart;
   }
 
+  function clearChart(chart) {
+    if (!chart) return;
+    chart.data.labels = [];
+    chart.data.datasets.forEach(dataset => {
+      dataset.data = [];
+    });
+    chart.update();
+  }
+
   function setDailyContextLoading(isLoading) {
     const card = document.getElementById('liveDailyContextCard');
     if (!card) return;
@@ -433,6 +442,7 @@
 
     const intraday = livePerformance?.intraday;
     if (!intraday) {
+      clearChart(ensureIntradayChart());
       if (asOfEl) asOfEl.textContent = tr('Waiting for intraday data', '당일 데이터 대기 중');
       if (takeawayEl) takeawayEl.dataset.tone = 'neutral';
       if (pillEl) pillEl.textContent = tr('No data yet', '데이터 없음');
@@ -477,6 +487,7 @@
     }
 
     if (!chart || rows.length === 0) {
+      clearChart(chart);
       return;
     }
 
@@ -782,6 +793,37 @@
     `;
   }
 
+  function renderCampaignPageUnavailable(windowLabel, windowMeta) {
+    updateLiveKpi('activeCampaigns', '—', tr('Live campaign data is unavailable right now', '라이브 캠페인 데이터를 지금 불러올 수 없습니다'), 'neutral');
+    updateLiveKpi('pendingApprovals', '—', tr('Approval state is temporarily unavailable', '승인 상태를 일시적으로 불러올 수 없습니다'), 'neutral');
+    updateLiveKpi('fatigueAlerts', '—', tr('Creative pressure will return after the next refresh', '다음 새로고침 후 크리에이티브 상태가 돌아옵니다'), 'neutral');
+    updateLiveKpi('spendPace', '—', tr('Spend pacing is temporarily unavailable', '지출 페이싱을 일시적으로 불러올 수 없습니다'), 'neutral');
+    updateLiveKpi('burnRisk', '—', tr('Burn-risk checks will return after the next refresh', '다음 새로고침 후 소진 위험 점검이 돌아옵니다'), 'neutral');
+
+    renderIntradaySection(null);
+    renderDailyContextSection([], windowMeta);
+
+    const operatorSignals = document.getElementById('operatorSignalGrid');
+    if (operatorSignals) {
+      operatorSignals.innerHTML = `<div class="empty-state">${esc(tr('Live read is temporarily unavailable while the backend refreshes.', '백엔드가 새로고침되는 동안 라이브 읽기를 일시적으로 불러올 수 없습니다.'))}</div>`;
+    }
+
+    const activeAdsContainer = document.getElementById('activeAdsContainer');
+    if (activeAdsContainer) {
+      activeAdsContainer.innerHTML = `<div class="empty-state">${esc(tr('Top active ads will return after the next successful refresh.', '다음 정상 새로고침 후 상위 활성 광고가 돌아옵니다.'))}</div>`;
+    }
+
+    const activeCount = document.getElementById('activeCount');
+    if (activeCount) {
+      activeCount.textContent = tr(`Unavailable · ${windowLabel}`, `불러오기 실패 · ${windowLabel}`);
+    }
+
+    const campaignBody = document.getElementById('campaignBody');
+    if (campaignBody) {
+      campaignBody.innerHTML = `<tr><td colspan="8" class="empty-state">${esc(tr('Campaign control data is temporarily unavailable.', '캠페인 제어 데이터를 일시적으로 불러올 수 없습니다.'))}</td></tr>`;
+    }
+  }
+
   async function refreshCampaignsPage() {
     const windowMeta = getSeriesWindowMeta('campaigns');
     setDailyContextLoading(true);
@@ -797,10 +839,9 @@
         fetchSpendDaily(),
       ]);
 
-      if (!campaignData || !postmortem) return;
-
-      const windowLabel = (campaignData?.windowDays || postmortem?.windowDays)
-        ? tr(`Last ${campaignData?.windowDays || postmortem?.windowDays} days`, `최근 ${campaignData?.windowDays || postmortem?.windowDays}일`)
+      const resolvedWindowDays = Number(campaignData?.windowDays || postmortem?.windowDays || windowMeta?.days || 0);
+      const windowLabel = resolvedWindowDays > 0
+        ? tr(`Last ${resolvedWindowDays} days`, `최근 ${resolvedWindowDays}일`)
         : tr('All available data', '사용 가능한 전체 데이터');
       const windowNoteEl = document.getElementById('campaignWindowNote');
       if (windowNoteEl) {
@@ -808,6 +849,11 @@
           `${windowLabel} · active delivery, pacing, fatigue, and approvals in one place.`,
           `${windowLabel} · 집행, 페이싱, 피로도, 승인 현황을 한 곳에서 확인`
         );
+      }
+
+      if (!campaignData || !postmortem) {
+        renderCampaignPageUnavailable(windowLabel, windowMeta);
+        return;
       }
 
       renderLiveKpis(campaignData, postmortem, optData, analyticsData, scansData);

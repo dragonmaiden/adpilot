@@ -173,7 +173,7 @@ test('buildLivePerformanceResponse reacts to the selected window with an intrada
   const dateKey = getTodayInTimeZone();
   const previousDateKey = shiftDate(dateKey, -1);
   const currentHour = getHourInTimeZone(new Date());
-  const compareHour = Math.max(1, currentHour);
+  const compareHour = Math.max(0, currentHour);
 
   const latestData = {
     timestamp: kstIso(dateKey, compareHour, 30),
