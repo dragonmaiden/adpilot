@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   normalizeSheetDate,
   buildSheetTargets,
+  parseOrderItems,
   aggregateCOGSItems,
 } = require('../server/modules/cogsClient');
 const { buildDataCoverage, buildProfitWaterfall } = require('../server/transforms/charts');
@@ -53,6 +54,48 @@ test('buildSheetTargets merges configured month labels with workbook-discovered 
       { label: '4월 주문', sheetName: '4월 주문', discovered: true },
     ]
   );
+});
+
+test('parseOrderItems supports the compact delivery-details cell in column M', () => {
+  const items = parseOrderItems([
+    ['번호', '날짜', '이름', '주문번호', '', '', '', '', '', '', '', '', 'delivery note'],
+    [],
+    [
+      '101',
+      '2026-03-13',
+      '홍신희',
+      '20260313225187',
+      '',
+      '',
+      '실크 모노그램 방도',
+      '',
+      '',
+      'FALSE',
+      'FALSE',
+      '',
+      [
+        'delivery note: 문 앞에 놓아주세요',
+        'customer name: 홍신희',
+        'phone: 01012341234',
+        'receiver: 홍신희',
+        'receiver phone: 01012341234',
+        'zipcode: 06236',
+        'address: 서울 강남구 테헤란로 123 5층',
+      ].join('\n'),
+      '',
+      '',
+      '',
+      '',
+    ],
+  ], { sheetLabel: '3월 주문' });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].note, '문 앞에 놓아주세요');
+  assert.equal(items[0].ordererPhone, '01012341234');
+  assert.equal(items[0].receiverName, '홍신희');
+  assert.equal(items[0].receiverPhone, '01012341234');
+  assert.equal(items[0].zipcode, '06236');
+  assert.equal(items[0].address, '서울 강남구 테헤란로 123 5층');
 });
 
 test('aggregateCOGSItems counts zero-cost purchase rows and applies refund-valued rows as adjustments', () => {

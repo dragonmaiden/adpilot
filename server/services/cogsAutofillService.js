@@ -20,13 +20,15 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const BIG_FISH_THRESHOLD_KRW = 200000;
-const OPTIONAL_HEADER_LABELS = new Map([
-  [11, '배송메모'],
-  [12, '주문자 연락처'],
-  [13, '수령인 이름'],
-  [14, '수령인 연락처'],
-  [15, '우편번호'],
-  [16, '주소'],
+const COMPACT_DETAIL_COLUMN_INDEX = 12;
+const COMPACT_DETAIL_HEADER_LABEL = 'delivery note';
+const LEGACY_OPTIONAL_HEADER_LABELS = new Set([
+  '배송메모',
+  '주문자 연락처',
+  '수령인 이름',
+  '수령인 연락처',
+  '우편번호',
+  '주소',
 ]);
 const SUPPORTED_EVENTS = new Set([
   'ORDER_DEPOSIT_COMPLETE',
@@ -285,18 +287,18 @@ async function updateSheetValues(ranges) {
 async function ensureOptionalHeaders(target, rows) {
   const headerRow = Array.isArray(rows?.[0]) ? [...rows[0]] : [];
   const updates = [];
+  const currentHeader = asString(headerRow[COMPACT_DETAIL_COLUMN_INDEX]);
+  const shouldSetCompactHeader = !currentHeader
+    || LEGACY_OPTIONAL_HEADER_LABELS.has(currentHeader)
+    || currentHeader.toLowerCase() === COMPACT_DETAIL_HEADER_LABEL;
 
-  for (const [columnIndex, label] of OPTIONAL_HEADER_LABELS.entries()) {
-    if (asString(headerRow[columnIndex])) {
-      continue;
-    }
-
+  if (shouldSetCompactHeader && currentHeader !== COMPACT_DETAIL_HEADER_LABEL) {
     updates.push({
-      range: `'${String(target.sheetName || target.label || '').replace(/'/g, "''")}'!${toColumnLabel(columnIndex + 1)}1`,
+      range: `'${String(target.sheetName || target.label || '').replace(/'/g, "''")}'!${toColumnLabel(COMPACT_DETAIL_COLUMN_INDEX + 1)}1`,
       majorDimension: 'ROWS',
-      values: [[label]],
+      values: [[COMPACT_DETAIL_HEADER_LABEL]],
     });
-    headerRow[columnIndex] = label;
+    headerRow[COMPACT_DETAIL_COLUMN_INDEX] = COMPACT_DETAIL_HEADER_LABEL;
   }
 
   if (updates.length === 0) {
@@ -309,11 +311,7 @@ async function ensureOptionalHeaders(target, rows) {
     if (!Array.isArray(rows[0])) {
       rows[0] = [];
     }
-    for (const [columnIndex, label] of OPTIONAL_HEADER_LABELS.entries()) {
-      if (!rows[0][columnIndex]) {
-        rows[0][columnIndex] = label;
-      }
-    }
+    rows[0][COMPACT_DETAIL_COLUMN_INDEX] = COMPACT_DETAIL_HEADER_LABEL;
   }
 
   return { updated: true, count: updates.length };
@@ -460,6 +458,20 @@ function buildNotificationProductLines(order) {
   });
 }
 
+function buildCompactDeliveryDetails(details = {}) {
+  const fields = [
+    ['delivery note', details.deliveryNote],
+    ['customer name', details.customerName],
+    ['phone', details.customerPhone],
+    ['receiver', details.receiverName],
+    ['receiver phone', details.receiverPhone],
+    ['zipcode', details.zipcode],
+    ['address', details.address],
+  ].filter(([, value]) => asString(value));
+
+  return fields.map(([label, value]) => `${label}: ${asString(value)}`).join('\n');
+}
+
 function getOrderAutofillTimestamp(order) {
   const approvals = normalizeImwebPayments([order])
     .filter(payment => payment.type === 'approval')
@@ -553,6 +565,15 @@ function buildRowsForOrder(order, nextSequenceNo) {
   const receiverPhone = contact.receiverPhone || customerPhone;
   const zipcode = contact.zipcode;
   const address = contact.address;
+  const compactDeliveryDetails = buildCompactDeliveryDetails({
+    deliveryNote,
+    customerName,
+    customerPhone,
+    receiverName,
+    receiverPhone,
+    zipcode,
+    address,
+  });
 
   return productNames.map((productName, index) => ([
     index === 0 ? String(nextSequenceNo) : '',
@@ -566,12 +587,12 @@ function buildRowsForOrder(order, nextSequenceNo) {
     '',
     'FALSE',
     'FALSE',
-    index === 0 ? deliveryNote : '',
-    index === 0 ? customerPhone : '',
-    index === 0 ? receiverName : '',
-    index === 0 ? receiverPhone : '',
-    index === 0 ? zipcode : '',
-    index === 0 ? address : '',
+    '',
+    index === 0 ? compactDeliveryDetails : '',
+    '',
+    '',
+    '',
+    '',
   ]));
 }
 

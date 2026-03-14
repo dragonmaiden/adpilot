@@ -435,6 +435,34 @@ function looksLikeUrl(value) {
   return /^https?:\/\//i.test(String(value || '').trim());
 }
 
+function parseCompactDeliveryCell(value) {
+  const text = String(value || '').trim();
+  if (!text || !text.includes(':')) {
+    return null;
+  }
+
+  const parsed = {};
+  const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
+  for (const line of lines) {
+    const separatorIndex = line.indexOf(':');
+    if (separatorIndex <= 0) continue;
+
+    const label = line.slice(0, separatorIndex).trim().toLowerCase();
+    const fieldValue = line.slice(separatorIndex + 1).trim();
+    if (!fieldValue) continue;
+
+    if (label === 'delivery note') parsed.note = fieldValue;
+    if (label === 'customer name') parsed.customerName = fieldValue;
+    if (label === 'phone') parsed.ordererPhone = fieldValue;
+    if (label === 'receiver') parsed.receiverName = fieldValue;
+    if (label === 'receiver phone') parsed.receiverPhone = fieldValue;
+    if (label === 'zipcode') parsed.zipcode = fieldValue;
+    if (label === 'address') parsed.address = fieldValue;
+  }
+
+  return Object.keys(parsed).length > 0 ? parsed : null;
+}
+
 /**
  * Parse rows from a sheet tab into structured order items.
  * Handles multi-row orders (continuation rows with no order number).
@@ -465,18 +493,20 @@ function parseOrderItems(rows, options = {}) {
     const shipping = parseKRW(row[8]);
     const payment = String(row[9] || '').toUpperCase() === 'TRUE';
     const delivery = String(row[10] || '').toUpperCase() === 'TRUE';
-    const note = String(row[11] || '').trim();
-    const ordererPhone = String(row[12] || '').trim();
-    const receiverName = String(row[13] || '').trim();
-    const receiverPhone = String(row[14] || '').trim();
-    const zipcode = String(row[15] || '').trim();
-    const address = String(row[16] || '').trim();
+    const noteCell = String(row[11] || '').trim();
+    const compactDetails = parseCompactDeliveryCell(row[12]);
+    const note = noteCell || compactDetails?.note || '';
+    const ordererPhone = compactDetails?.ordererPhone || String(row[12] || '').trim();
+    const receiverName = compactDetails?.receiverName || String(row[13] || '').trim();
+    const receiverPhone = compactDetails?.receiverPhone || String(row[14] || '').trim();
+    const zipcode = compactDetails?.zipcode || String(row[15] || '').trim();
+    const address = compactDetails?.address || String(row[16] || '').trim();
 
     if (sequenceNo && date) {
       currentOrder = {
         sequenceNo,
         date,
-        name,
+        name: compactDetails?.customerName || name,
         orderNumber: orderNumber || sequenceNo,
         ordererPhone,
         receiverName,
@@ -927,6 +957,7 @@ module.exports = {
   buildSheetTargets,
   buildRefundMarkerMap,
   parseOrderItems,
+  parseCompactDeliveryCell,
   parseCSV,
   parseKRW,
   normalizeSheetDate,
