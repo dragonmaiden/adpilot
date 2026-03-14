@@ -89,6 +89,14 @@ function getOptimizationStatus(action) {
   return 'advisory';
 }
 
+function isOpenApprovalStatus(status) {
+  return status === 'needs_approval' || status === 'awaiting_telegram';
+}
+
+function isOpenApproval(action) {
+  return isOpenApprovalStatus(getOptimizationStatus(action));
+}
+
 module.exports = {
   OPTIMIZATION_TYPES,
   APPROVAL_REQUIRED_TYPES,
@@ -101,4 +109,6 @@ module.exports = {
   requiresApproval,
   isExecutableOptimization,
   getOptimizationStatus,
+  isOpenApprovalStatus,
+  isOpenApproval,
 };

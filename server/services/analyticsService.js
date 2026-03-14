@@ -2,8 +2,8 @@ const config = require('../config');
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const transforms = require('../transforms/charts');
-const { calcAOV } = require('../domain/metrics');
 const { getTodayInTimeZone } = require('../domain/time');
+const { buildCampaignEconomics } = require('./campaignEconomicsService');
 
 function buildFeaturedProfitSummary(profitWaterfall, coverage, todayStr) {
   const rows = Array.isArray(profitWaterfall) ? profitWaterfall : [];
@@ -56,6 +56,33 @@ function buildProfitRunRate(profitWaterfall, windowDays = 14) {
   };
 }
 
+function toCampaignProfitRows(campaignEconomicsContext) {
+  return (campaignEconomicsContext?.campaigns || []).map(campaign => ({
+    campaignId: campaign.campaignId,
+    campaignName: campaign.campaignName,
+    status: campaign.status,
+    spend: campaign.spend,
+    spendKRW: campaign.spendKrw,
+    metaPurchases: campaign.metaPurchases,
+    estimatedRevenue: campaign.estimatedRevenue,
+    allocatedCOGS: campaign.allocatedCogs + campaign.allocatedShipping,
+    allocatedShipping: campaign.allocatedShipping,
+    allocatedFees: campaign.allocatedFees,
+    grossProfit: campaign.estimatedTrueNetProfit,
+    margin: Number((campaign.estimatedMargin * 100).toFixed(1)),
+    estimatedRoas: campaign.estimatedRoas,
+    estimatedAov: campaign.estimatedAov,
+    breakEvenCpa: campaign.breakEvenCpa,
+    targetCpa: campaign.targetCpa,
+    confidence: campaign.confidence,
+    confidenceLabel: campaign.confidenceLabel,
+    confidenceReasons: campaign.confidenceReasons,
+    coverageRatio: campaign.coverageRatio,
+    hasReliableEstimate: campaign.hasReliableEstimate,
+    basis: campaign.basis,
+  }));
+}
+
 /**
  * Build the /api/analytics response — charts, refund rates, profit analysis.
  */
@@ -85,13 +112,25 @@ function getAnalyticsResponse() {
   const profitWaterfall = transforms.buildProfitWaterfall(dailyMerged, dailyCOGS, config.fees.paymentFeeRate);
   const dailyProfit = transforms.buildDailyProfit(dailyMerged, profitWaterfall);
   const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged, profitWaterfall);
-  const avgAOV = calcAOV(revenue.netRevenue || 0, revenue.totalOrders || 0);
-  const campaignProfit = transforms.buildCampaignProfit(data.campaignInsights, data.campaigns, avgAOV, cogs, revenue.netRevenue || 0);
   const dataCoverage = transforms.buildDataCoverage(dailyMerged, dailyCOGS);
   const profitRunRate = buildProfitRunRate(profitWaterfall, 14);
 
   // Featured summary prefers a fully-covered current day, otherwise the latest completed covered day.
   const todayStr = getTodayInTimeZone();
+  const campaignEconomicsContext = buildCampaignEconomics(
+    data.campaigns || [],
+    data.campaignInsights || [],
+    revenue,
+    cogs,
+    dataSources.imweb,
+    {
+      days: Math.max(dailyMerged.length, 1),
+      referenceDate: todayStr,
+      includeCurrentDay: true,
+      paymentFeeRate: config.fees.paymentFeeRate,
+    }
+  );
+  const campaignProfit = toCampaignProfitRows(campaignEconomicsContext);
   const todaySummary = buildFeaturedProfitSummary(profitWaterfall, dataCoverage, todayStr);
 
   return contracts.analytics({

@@ -141,3 +141,84 @@ test('operator brief is a compact digest of the canonical operator summary', asy
     assert.match(brief.notes[0], /thin digest/i);
   });
 });
+
+test('operator brief renders profit confidence text cleanly from normalized coverage fields', async () => {
+  const summary = {
+    ready: true,
+    generatedAt: '2026-03-13T10:40:17.004Z',
+    objective: 'Maximize profitable growth while keeping execution approval-gated.',
+    scan: {
+      lastScan: '2026-03-13T10:40:17.004Z',
+      intervalMinutes: 30,
+      activeCampaigns: 1,
+    },
+    kpis: {
+      revenue: 1000000,
+      netRevenue: 900000,
+      adSpend: 100,
+      grossProfit: 120000,
+      grossMargin: 12,
+      roas: 2.1,
+      purchases: 8,
+      cpa: 12.5,
+    },
+    campaigns: {
+      activeCount: 1,
+      topSpenders: [],
+    },
+    optimizations: {
+      pendingApprovals: [],
+      activeAlerts: [
+        {
+          id: 'opt2',
+          type: 'creative',
+          priority: 'high',
+          targetName: 'Creative fatigue',
+          action: 'Refresh 2 warning creatives',
+          reason: 'CTR decay has persisted for 2 days.',
+        },
+      ],
+    },
+    operations: {
+      missingCostItemCount: 0,
+      incompletePurchaseCount: 0,
+      validation: {
+        rowsWithWarnings: 0,
+        samples: [],
+      },
+    },
+    profit: {
+      coverage: {
+        hasReliableCoverage: false,
+        confidence: 'medium',
+        confidenceLabel: 'Medium confidence',
+        coverageRatio: 0.787,
+        totalDays: 40,
+      },
+    },
+    sources: {
+      metaStructure: { status: 'connected', stale: false },
+      metaInsights: { status: 'connected', stale: false },
+      imweb: { status: 'connected', stale: false },
+      cogs: { status: 'connected', stale: false },
+    },
+    links: {},
+  };
+
+  await withMockedService({
+    contracts: {
+      operatorBrief: payload => ({ apiVersion: 'v1', ...payload }),
+    },
+    operatorSummaryService: {
+      getOperatorSummaryResponse: async () => summary,
+    },
+  }, async service => {
+    const brief = await service.getOperatorBriefResponse();
+
+    const confidenceSignal = brief.signals.find(signal => signal.type === 'profit_confidence');
+    assert.ok(confidenceSignal);
+    assert.match(confidenceSignal.summary, /78\.7%/);
+    assert.match(confidenceSignal.summary, /Medium confidence/);
+    assert.doesNotMatch(confidenceSignal.summary, /\[object Object\]/);
+  });
+});

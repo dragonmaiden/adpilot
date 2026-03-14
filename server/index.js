@@ -19,6 +19,8 @@ const transforms = require('./transforms/charts');
 const overviewService = require('./services/overviewService');
 const campaignService = require('./services/campaignService');
 const postmortemService = require('./services/postmortemService');
+const recommendationQualityService = require('./services/recommendationQualityService');
+const aiOperationsService = require('./services/aiOperationsService');
 const analyticsService = require('./services/analyticsService');
 const calendarService = require('./services/calendarService');
 const optimizationService = require('./services/optimizationService');
@@ -726,6 +728,14 @@ app.put('/api/settings', writeLimiter, (req, res) => {
 // ── Post-mortem analysis for paused ads ──
 app.get('/api/postmortem', (req, res) => {
   res.json(postmortemService.getPostmortemResponse(req.query));
+});
+
+app.get('/api/recommendation-quality', (req, res) => {
+  res.json(recommendationQualityService.getRecommendationQualityResponse());
+});
+
+app.get('/api/ai-operations', (req, res) => {
+  res.json(aiOperationsService.getAiOperationsResponse());
 });
 
 // ── Optimization Timeline (for micro-adjustment chart) ──

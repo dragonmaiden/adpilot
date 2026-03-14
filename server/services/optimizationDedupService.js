@@ -1,5 +1,9 @@
 const {
+  getOptimizationDirection,
   isExecutableOptimization,
+  isBudgetIncreaseAction,
+  isBudgetDecreaseAction,
+  isReallocationAction,
   requiresApproval,
 } = require('../domain/optimizationSemantics');
 
@@ -14,6 +18,34 @@ function normalizeText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
+function extractBudgetPercent(actionText) {
+  const match = String(actionText || '').match(/\((\d+(?:\.\d+)?)%\)/);
+  return match ? Number(match[1]) : null;
+}
+
+function getApprovalActionSignature(optimization) {
+  const actionText = normalizeText(optimization?.action);
+  if (!actionText) return '';
+
+  if (optimization?.type === 'budget') {
+    if (isReallocationAction(actionText)) {
+      return actionText;
+    }
+
+    const percent = extractBudgetPercent(actionText);
+    const direction = getOptimizationDirection(actionText);
+    if (percent !== null) {
+      return `${direction}:${percent}%`;
+    }
+
+    if (isBudgetIncreaseAction(actionText) || isBudgetDecreaseAction(actionText)) {
+      return `${direction}:budget-change`;
+    }
+  }
+
+  return actionText;
+}
+
 function getApprovalDedupKey(optimization) {
   if (!requiresApproval(optimization) || !isExecutableOptimization(optimization)) {
     return null;
@@ -23,7 +55,7 @@ function getApprovalDedupKey(optimization) {
     normalizeText(optimization.type),
     normalizeText(optimization.level),
     normalizeText(optimization.targetId || optimization.targetName),
-    normalizeText(optimization.action),
+    getApprovalActionSignature(optimization),
   ].join('|');
 }
 

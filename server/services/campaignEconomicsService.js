@@ -34,11 +34,18 @@ function createEmptyCampaignEconomics(campaign = {}) {
     allocatedCogs: 0,
     allocatedShipping: 0,
     allocatedFees: 0,
+    estimatedAov: 0,
+    variableCostPerPurchase: 0,
+    contributionBeforeAdSpend: 0,
+    breakEvenCpa: 0,
+    targetCpa: 0,
     estimatedTrueNetProfit: 0,
     estimatedMargin: 0,
     estimatedRoas: 0,
     contributionPerSpend: 0,
     confidence: 'low',
+    confidenceLabel: 'Low confidence',
+    confidenceReasons: [],
     hasReliableEstimate: false,
     basis: ESTIMATE_BASIS,
   };
@@ -68,6 +75,77 @@ function classifyConfidence({
   }
 
   return 'low';
+}
+
+function getConfidenceLabel(level) {
+  if (level === 'high') return 'High confidence';
+  if (level === 'medium') return 'Medium confidence';
+  if (level === 'low') return 'Low confidence';
+  return 'Unknown confidence';
+}
+
+function buildConfidenceReasons({
+  hasFreshRevenue,
+  coverageRatio,
+  metaPurchases,
+  estimatedRevenue,
+  level,
+}) {
+  const reasons = [];
+
+  if (!hasFreshRevenue) {
+    reasons.push('Fresh Imweb revenue is unavailable');
+  }
+
+  if (estimatedRevenue <= 0) {
+    reasons.push('No attributable revenue estimate is available in the current window');
+  }
+
+  if (metaPurchases <= 0) {
+    reasons.push('No Meta-attributed purchases were recorded in the current window');
+  }
+
+  if (metaPurchases > 0 && estimatedRevenue > 0) {
+    if (coverageRatio < HIGH_CONFIDENCE_COVERAGE_RATIO) {
+      reasons.push(`COGS coverage is ${(coverageRatio * 100).toFixed(1)}%, so profit is directional`);
+    }
+
+    if (metaPurchases < HIGH_CONFIDENCE_PURCHASES) {
+      reasons.push(`${metaPurchases} Meta-attributed purchase${metaPurchases === 1 ? '' : 's'} in the window`);
+    }
+  }
+
+  if (reasons.length === 0) {
+    reasons.push(level === 'high'
+      ? 'Fresh revenue, solid COGS coverage, and strong Meta purchase volume support the estimate'
+      : 'Evidence is directionally useful but still estimate-based');
+  }
+
+  return reasons;
+}
+
+function buildEconomicsThresholds({
+  estimatedRevenue,
+  allocatedCogs,
+  allocatedShipping,
+  allocatedFees,
+  metaPurchases,
+}) {
+  const totalVariableCosts = allocatedCogs + allocatedShipping + allocatedFees;
+  const contributionBeforeAdSpend = estimatedRevenue - totalVariableCosts;
+  const estimatedAov = metaPurchases > 0 ? estimatedRevenue / metaPurchases : 0;
+  const variableCostPerPurchase = metaPurchases > 0 ? totalVariableCosts / metaPurchases : 0;
+  const breakEvenCpaKrw = metaPurchases > 0 ? contributionBeforeAdSpend / metaPurchases : 0;
+  const breakEvenCpa = breakEvenCpaKrw > 0 ? breakEvenCpaKrw / config.currency.usdToKrw : 0;
+  const targetCpa = breakEvenCpa > 0 ? breakEvenCpa * 0.8 : 0;
+
+  return {
+    estimatedAov: Math.round(estimatedAov),
+    variableCostPerPurchase: Math.round(variableCostPerPurchase),
+    contributionBeforeAdSpend: Math.round(contributionBeforeAdSpend),
+    breakEvenCpa: Number(breakEvenCpa.toFixed(2)),
+    targetCpa: Number(targetCpa.toFixed(2)),
+  };
 }
 
 function filterDateDict(dictionary, windowStart, windowEnd) {
@@ -141,6 +219,12 @@ function buildWindowSummary(dailyMerged, profitWaterfall, hasFreshRevenue, minCo
     0
   );
   const coverageRatio = profitWaterfall.length > 0 ? totals.coverageWeight / profitWaterfall.length : 0;
+  const confidence = classifyConfidence({
+    hasFreshRevenue,
+    coverageRatio,
+    metaPurchases: (Array.isArray(dailyMerged) ? dailyMerged : []).reduce((sum, row) => sum + Number(row?.purchases || 0), 0),
+    estimatedRevenue: totals.netRevenue,
+  });
 
   return {
     netRevenue: Math.round(totals.netRevenue),
@@ -151,7 +235,15 @@ function buildWindowSummary(dailyMerged, profitWaterfall, hasFreshRevenue, minCo
     coverageWeight: Number(totals.coverageWeight.toFixed(3)),
     coverageRatio,
     hasReliableCoverage: hasFreshRevenue && coverageRatio >= minCoverageRatio,
-    confidence: 'low',
+    confidence,
+    confidenceLabel: getConfidenceLabel(confidence),
+    confidenceReasons: buildConfidenceReasons({
+      hasFreshRevenue,
+      coverageRatio,
+      metaPurchases: orders,
+      estimatedRevenue: totals.netRevenue,
+      level: confidence,
+    }),
   };
 }
 
@@ -259,6 +351,20 @@ function buildCampaignEconomics(campaigns, campaignInsights, revenueData, cogsDa
         metaPurchases: state.metaPurchases,
         estimatedRevenue: state.estimatedRevenue,
       });
+      const thresholds = buildEconomicsThresholds({
+        estimatedRevenue: state.estimatedRevenue,
+        allocatedCogs: state.allocatedCogs,
+        allocatedShipping: state.allocatedShipping,
+        allocatedFees: state.allocatedFees,
+        metaPurchases: state.metaPurchases,
+      });
+      const confidenceReasons = buildConfidenceReasons({
+        hasFreshRevenue,
+        coverageRatio,
+        metaPurchases: state.metaPurchases,
+        estimatedRevenue: state.estimatedRevenue,
+        level: confidence,
+      });
 
       return {
         ...state,
@@ -270,11 +376,18 @@ function buildCampaignEconomics(campaigns, campaignInsights, revenueData, cogsDa
         allocatedCogs: Math.round(state.allocatedCogs),
         allocatedShipping: Math.round(state.allocatedShipping),
         allocatedFees: Math.round(state.allocatedFees),
+        estimatedAov: thresholds.estimatedAov,
+        variableCostPerPurchase: thresholds.variableCostPerPurchase,
+        contributionBeforeAdSpend: thresholds.contributionBeforeAdSpend,
+        breakEvenCpa: thresholds.breakEvenCpa,
+        targetCpa: thresholds.targetCpa,
         estimatedTrueNetProfit,
         estimatedMargin,
         estimatedRoas: spendKrw > 0 ? Number((state.estimatedRevenue / spendKrw).toFixed(2)) : 0,
         contributionPerSpend: spendKrw > 0 ? estimatedTrueNetProfit / spendKrw : 0,
         confidence,
+        confidenceLabel: getConfidenceLabel(confidence),
+        confidenceReasons,
         hasReliableEstimate: hasFreshRevenue
           && coverageRatio >= MEDIUM_CONFIDENCE_COVERAGE_RATIO
           && state.metaPurchases >= MEDIUM_CONFIDENCE_PURCHASES
@@ -303,6 +416,24 @@ function buildCampaignEconomics(campaigns, campaignInsights, revenueData, cogsDa
         coverageRatio: summary.coverageRatio,
         metaPurchases: totalMetaPurchases,
         estimatedRevenue: estimatedMetaRevenue,
+      }),
+      confidenceLabel: getConfidenceLabel(classifyConfidence({
+        hasFreshRevenue,
+        coverageRatio: summary.coverageRatio,
+        metaPurchases: totalMetaPurchases,
+        estimatedRevenue: estimatedMetaRevenue,
+      })),
+      confidenceReasons: buildConfidenceReasons({
+        hasFreshRevenue,
+        coverageRatio: summary.coverageRatio,
+        metaPurchases: totalMetaPurchases,
+        estimatedRevenue: estimatedMetaRevenue,
+        level: classifyConfidence({
+          hasFreshRevenue,
+          coverageRatio: summary.coverageRatio,
+          metaPurchases: totalMetaPurchases,
+          estimatedRevenue: estimatedMetaRevenue,
+        }),
       }),
       basis: ESTIMATE_BASIS,
     },

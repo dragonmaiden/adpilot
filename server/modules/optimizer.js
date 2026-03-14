@@ -44,6 +44,8 @@ const MIN_SCALE_PURCHASES = 8;
 const MIN_SCALE_PURCHASE_DAYS = 3;
 const MIN_REALLOCATION_PURCHASES = 5;
 const MIN_REALLOCATION_PURCHASE_DAYS = 3;
+const SCALE_TREND_CAUTION_RATIO = 1.2;
+const SCALE_TREND_SUPPRESS_RATIO = 1.45;
 
 class OptimizationEngine {
   constructor(scanId = Date.now()) {
@@ -80,6 +82,242 @@ class OptimizationEngine {
       && evidence.spend >= rules.minSpendForDecision
       && evidence.purchases >= MIN_REALLOCATION_PURCHASES
       && evidence.purchaseDays >= MIN_REALLOCATION_PURCHASE_DAYS;
+  }
+
+  buildCampaignRiskContext(campaigns, ads, adInsights, referenceDate = getTodayInTimeZone()) {
+    const rules = this.getRules();
+    const activeCampaignCount = (Array.isArray(campaigns) ? campaigns : []).filter(campaign => campaign.status === 'ACTIVE').length;
+    const riskByCampaignId = new Map();
+
+    for (const campaign of Array.isArray(campaigns) ? campaigns : []) {
+      const activeAds = (Array.isArray(ads) ? ads : []).filter(ad =>
+        ad?.campaign_id === campaign.id
+        && ad?.effective_status === 'ACTIVE'
+      );
+      const fatiguedAds = [];
+
+      for (const ad of activeAds) {
+        const recentAdInsights = filterRecentInsights(adInsights, 'ad_id', ad.id, PERFORMANCE_LOOKBACK_DAYS, referenceDate, OPTIMIZER_WINDOW_OPTIONS);
+        if (recentAdInsights.length < rules.minDataDays) continue;
+
+        const fatigueSnapshot = buildFatigueSnapshot(recentAdInsights);
+        const fatigue = classifyFatigue(fatigueSnapshot, {
+          frequencyThreshold: rules.fatigueFrequencyThreshold,
+          ctrDecayPercent: rules.fatigueCtrDecayPercent,
+          minDataDays: rules.minDataDays,
+        });
+
+        if (fatigue.status === 'danger') {
+          fatiguedAds.push({
+            id: ad.id,
+            name: ad.name,
+            frequency: fatigueSnapshot.lastFrequency,
+            ctrDecayPercent: fatigueSnapshot.ctrDecayPercent,
+          });
+        }
+      }
+
+      const activeAdCount = activeAds.length;
+      const severeFatigueBlock = activeAdCount > 0
+        && fatiguedAds.length >= Math.max(2, Math.ceil(activeAdCount * 0.5));
+
+      riskByCampaignId.set(String(campaign.id), {
+        activeCampaignCount,
+        activeAdCount,
+        fatiguedAds,
+        severeFatigueBlock,
+        hasConcentrationRisk: activeCampaignCount <= 1,
+        hasCreativeDepthRisk: activeAdCount > 0 && activeAdCount < 3,
+      });
+    }
+
+    return riskByCampaignId;
+  }
+
+  buildScaleTrendContext(insights, rules) {
+    const rows = Array.isArray(insights) ? insights : [];
+    if (rows.length < Math.max(rules.minDataDays, 5)) {
+      return { status: 'neutral' };
+    }
+
+    const recent = rows.slice(-3);
+    const baseline = rows.slice(0, -3);
+    if (recent.length < 3 || baseline.length < 2) {
+      return { status: 'neutral' };
+    }
+
+    const recentTotals = summarizeInsights(recent);
+    const baselineTotals = summarizeInsights(baseline);
+
+    if ((recentTotals.purchases || 0) === 0 && (recentTotals.spend || 0) >= rules.minSpendForDecision) {
+      return {
+        status: 'suppress',
+        reason: `Recent 3d delivery spent $${recentTotals.spend.toFixed(2)} with 0 Meta-attributed purchases`,
+      };
+    }
+
+    if (!recentTotals.cpa || !baselineTotals.cpa || baselineTotals.cpa <= 0) {
+      return { status: 'neutral' };
+    }
+
+    const weaknessRatio = recentTotals.cpa / baselineTotals.cpa;
+    if (weaknessRatio >= SCALE_TREND_SUPPRESS_RATIO) {
+      return {
+        status: 'suppress',
+        weaknessRatio,
+        recentCpa: recentTotals.cpa,
+        baselineCpa: baselineTotals.cpa,
+        reason: `Recent 3d CPA is $${recentTotals.cpa.toFixed(2)} versus a $${baselineTotals.cpa.toFixed(2)} prior-window CPA`,
+      };
+    }
+
+    if (weaknessRatio >= SCALE_TREND_CAUTION_RATIO) {
+      return {
+        status: 'caution',
+        weaknessRatio,
+        recentCpa: recentTotals.cpa,
+        baselineCpa: baselineTotals.cpa,
+        reason: `Recent 3d CPA is softening at $${recentTotals.cpa.toFixed(2)} versus $${baselineTotals.cpa.toFixed(2)} previously`,
+      };
+    }
+
+    return {
+      status: 'stable',
+      weaknessRatio,
+      recentCpa: recentTotals.cpa,
+      baselineCpa: baselineTotals.cpa,
+    };
+  }
+
+  buildScaleImpactRange(increaseUsd, avgCPA, cautionCount = 0, confidence = 'low') {
+    const baseLift = avgCPA > 0 ? increaseUsd / avgCPA : 0;
+    if (!Number.isFinite(baseLift) || baseLift <= 0) {
+      return { min: 0, max: 0 };
+    }
+
+    let lowFactor = confidence === 'high' ? 0.6 : confidence === 'medium' ? 0.45 : 0.3;
+    let highFactor = confidence === 'high' ? 1.15 : confidence === 'medium' ? 0.95 : 0.8;
+
+    if (cautionCount >= 2) {
+      lowFactor *= 0.8;
+      highFactor *= 0.85;
+    }
+
+    const min = Math.max(0, Math.floor(baseLift * lowFactor));
+    const max = Math.max(min + 1, Math.ceil(baseLift * highFactor));
+
+    return { min, max };
+  }
+
+  buildScaleDecision({
+    campaign,
+    totals,
+    evidence,
+    rules,
+    campaignEconomics,
+    weekdayScaleContext,
+    trendContext,
+    riskSnapshot,
+  }) {
+    const blockers = [];
+    const cautions = [];
+    const avgCPA = totals.cpa;
+    const dynamicTargetCpa = campaignEconomics?.targetCpa > 0
+      ? campaignEconomics.targetCpa
+      : Number((rules.cpaWarningThreshold * 0.5).toFixed(2));
+    const breakEvenCpa = campaignEconomics?.breakEvenCpa > 0 ? campaignEconomics.breakEvenCpa : null;
+
+    if (!this.hasScaleConfidence(evidence, rules)) {
+      blockers.push('Recent delivery evidence is still too thin to scale confidently');
+    }
+
+    if (!avgCPA) {
+      blockers.push('Recent CPA is unavailable');
+    }
+
+    if (!campaignEconomics) {
+      blockers.push('Campaign economics are unavailable');
+    } else {
+      if (!campaignEconomics.hasReliableEstimate) {
+        blockers.push('Campaign contribution estimate is not reliable enough yet');
+      }
+
+      if (campaignEconomics.estimatedTrueNetProfit <= 0 || campaignEconomics.estimatedMargin < PROFIT_SCALE_MARGIN_THRESHOLD) {
+        blockers.push('Estimated contribution is not yet strong enough to justify scaling');
+      }
+
+      if (avgCPA && breakEvenCpa && avgCPA > breakEvenCpa) {
+        blockers.push(`7d CPA is above the estimated break-even CPA of $${breakEvenCpa.toFixed(2)}`);
+      } else if (avgCPA && dynamicTargetCpa && avgCPA > dynamicTargetCpa) {
+        blockers.push(`7d CPA is above the estimated target CPA of $${dynamicTargetCpa.toFixed(2)}`);
+      }
+
+      if (campaignEconomics.confidence !== 'high') {
+        cautions.push(`${campaignEconomics.confidenceLabel} contribution estimate`);
+      }
+
+      if (campaignEconomics.coverageRatio < MIN_PROFIT_COVERAGE_RATIO) {
+        cautions.push(`COGS coverage on active spend is ${(campaignEconomics.coverageRatio * 100).toFixed(1)}%`);
+      }
+    }
+
+    if (weekdayScaleContext?.status === 'suppress') {
+      blockers.push(weekdayScaleContext.reason);
+    } else if (weekdayScaleContext?.status === 'caution') {
+      cautions.push(weekdayScaleContext.reason);
+    }
+
+    if (trendContext?.status === 'suppress') {
+      blockers.push(trendContext.reason);
+    } else if (trendContext?.status === 'caution') {
+      cautions.push(trendContext.reason);
+    }
+
+    if (riskSnapshot?.severeFatigueBlock) {
+      blockers.push(`${riskSnapshot.fatiguedAds.length}/${riskSnapshot.activeAdCount} active ads already show fatigue`);
+    } else if ((riskSnapshot?.fatiguedAds || []).length > 0) {
+      const names = riskSnapshot.fatiguedAds.slice(0, 2).map(ad => ad.name).join(', ');
+      cautions.push(`${riskSnapshot.fatiguedAds.length}/${riskSnapshot.activeAdCount} active ads show fatigue${names ? ` (${names})` : ''}`);
+    }
+
+    if (riskSnapshot?.hasConcentrationRisk) {
+      cautions.push(`${riskSnapshot.activeCampaignCount} active campaign is carrying spend`);
+    }
+
+    if (riskSnapshot?.hasCreativeDepthRisk) {
+      cautions.push(`Only ${riskSnapshot.activeAdCount} active ads are available to absorb extra budget`);
+    }
+
+    if (blockers.length > 0) {
+      return {
+        shouldScale: false,
+        blockers,
+        cautions,
+        dynamicTargetCpa,
+        breakEvenCpa,
+      };
+    }
+
+    const cautionCount = cautions.length;
+    const increasePercent = cautionCount >= 3
+      ? Math.min(rules.maxBudgetChangePercent, 10)
+      : rules.maxBudgetChangePercent;
+    const currentBudget = parseInt(campaign.daily_budget || campaign.dailyBudget || 0, 10);
+    const increase = Math.round(currentBudget * increasePercent / 100);
+    const priority = cautionCount > 0 ? 'low' : 'medium';
+    const impactRange = this.buildScaleImpactRange(increase / 100, avgCPA, cautionCount, campaignEconomics?.confidence || 'low');
+
+    return {
+      shouldScale: increase > 0,
+      blockers,
+      cautions,
+      dynamicTargetCpa,
+      breakEvenCpa,
+      increase,
+      increasePercent,
+      priority,
+      impactRange,
+    };
   }
 
   // ── Log an optimization action ──
@@ -125,11 +363,17 @@ class OptimizationEngine {
         minCoverageRatio: MIN_PROFIT_COVERAGE_RATIO,
       }
     );
+    const campaignRiskContext = this.buildCampaignRiskContext(
+      campaignData,
+      adData,
+      adInsights,
+      referenceDate
+    );
 
     console.log(`[OPTIMIZER] Starting scan ${this.scanId}...`);
 
     // 1. Campaign-level optimizations
-    this.analyzeCampaigns(campaignData, campaignInsights, campaignEconomics, referenceDate);
+    this.analyzeCampaigns(campaignData, campaignInsights, campaignEconomics, referenceDate, campaignRiskContext);
 
     // 2. Ad set-level optimizations
     this.analyzeAdSets(adSetData, adSetInsights, campaignData);
@@ -153,7 +397,7 @@ class OptimizationEngine {
   }
 
   // ── 1. Campaign-Level Analysis ──
-  analyzeCampaigns(campaigns, insights, campaignEconomicsContext = null, referenceDate = getTodayInTimeZone()) {
+  analyzeCampaigns(campaigns, insights, campaignEconomicsContext = null, referenceDate = getTodayInTimeZone(), campaignRiskContext = null) {
     const rules = this.getRules();
     const campaignEconomicsById = new Map(
       (campaignEconomicsContext?.campaigns || []).map(campaign => [String(campaign.campaignId), campaign])
@@ -174,6 +418,8 @@ class OptimizationEngine {
       const avgFrequency = averagePositiveField(cInsights, 'frequency');
       const evidence = this.buildDecisionEvidence(cInsights, totals);
       const hasDecisionData = evidence.observationDays >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
+      const riskSnapshot = campaignRiskContext?.get(String(campaign.id)) || null;
+      const trendContext = this.buildScaleTrendContext(cInsights, rules);
 
       // Rule: High CPA warning
       if (hasDecisionData && avgCPA && avgCPA > rules.cpaWarningThreshold) {
@@ -197,12 +443,6 @@ class OptimizationEngine {
 
       // Rule: Campaign performing well — increase budget
       const campaignEconomics = campaignEconomicsById.get(String(campaign.id)) || null;
-      const profitSupportsScaling = Boolean(
-        campaignEconomics
-        && campaignEconomics.hasReliableEstimate
-        && campaignEconomics.estimatedTrueNetProfit > 0
-        && campaignEconomics.estimatedMargin >= PROFIT_SCALE_MARGIN_THRESHOLD
-      );
       const weekdayScaleContext = buildWeekdayScaleContext(campaignHistory, rules, referenceDate, {
         lookbackDays: SCHEDULE_LOOKBACK_DAYS,
         cautionRatio: WEEKDAY_SCALE_CAUTION_RATIO,
@@ -210,30 +450,37 @@ class OptimizationEngine {
         includeCurrentDay: false,
       });
 
-      if (hasDecisionData
-        && this.hasScaleConfidence(evidence, rules)
-        && avgCPA
-        && avgCPA < rules.cpaWarningThreshold * 0.5
-        && totalPurchases >= 5
-        && profitSupportsScaling) {
-        if (weekdayScaleContext.status === 'suppress') {
-          continue;
-        }
+      const scaleDecision = this.buildScaleDecision({
+        campaign,
+        totals,
+        evidence,
+        rules,
+        campaignEconomics,
+        weekdayScaleContext,
+        trendContext,
+        riskSnapshot,
+      });
 
-        const currentBudget = parseInt(campaign.daily_budget || campaign.dailyBudget || 0, 10);
-        const increase = Math.round(currentBudget * rules.maxBudgetChangePercent / 100);
-        const weekdaySuffix = weekdayScaleContext.status === 'caution'
-          ? ` ${weekdayScaleContext.reason}.`
+      if (hasDecisionData && scaleDecision.shouldScale) {
+        const confidenceLabel = campaignEconomics?.confidenceLabel || `${campaignEconomics?.confidence || 'low'} confidence`;
+        const confidencePrefix = campaignEconomics?.confidence === 'high'
+          ? 'Campaign contribution estimate is'
+          : 'Directional campaign contribution estimate is';
+        const caveatSuffix = scaleDecision.cautions.length > 0
+          ? ` Scale caveats: ${scaleDecision.cautions.join('; ')}.`
           : '';
-        const confidencePrefix = campaignEconomics.confidence === 'medium'
-          ? 'Estimated campaign contribution is'
-          : 'Campaign estimated contribution is';
-        const scaleReason = `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)} with ${totalPurchases} Meta-attributed purchases. ${confidencePrefix} ₩${campaignEconomics.estimatedTrueNetProfit.toLocaleString()} on ₩${campaignEconomics.estimatedRevenue.toLocaleString()} estimated attributable revenue at ${(campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin (${campaignEconomics.confidence}-confidence daily AOV proxy).${weekdaySuffix}`;
+        const targetCpaSuffix = scaleDecision.dynamicTargetCpa > 0
+          ? ` versus estimated target CPA $${scaleDecision.dynamicTargetCpa.toFixed(2)}`
+          : '';
+        const breakEvenSuffix = scaleDecision.breakEvenCpa
+          ? ` and break-even CPA $${scaleDecision.breakEvenCpa.toFixed(2)}`
+          : '';
+        const scaleReason = `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)}${targetCpaSuffix}${breakEvenSuffix}, with ${totalPurchases} Meta-attributed purchases. ${confidencePrefix} ₩${campaignEconomics.estimatedTrueNetProfit.toLocaleString()} on ₩${campaignEconomics.estimatedRevenue.toLocaleString()} estimated attributable revenue at ${(campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin (${confidenceLabel.toLowerCase()} daily AOV proxy).${caveatSuffix}`;
         this.addAction(OPTIMIZATION_TYPES.BUDGET, 'campaign', campaign.id, campaign.name,
-          `Increase daily budget by $${(increase / 100).toFixed(2)} (${rules.maxBudgetChangePercent}%)`,
+          `Increase daily budget by $${(scaleDecision.increase / 100).toFixed(2)} (${scaleDecision.increasePercent}%)`,
           scaleReason,
-          `Potential ${Math.round(increase / 100 / avgCPA)} additional Meta-attributed purchases/day`,
-          weekdayScaleContext.status === 'caution' || campaignEconomics.confidence === 'medium' ? 'low' : 'medium'
+          `Estimated +${scaleDecision.impactRange.min} to +${scaleDecision.impactRange.max} Meta-attributed purchases/day if CPA holds. Review after 48-72 hours.`,
+          scaleDecision.priority
         );
       }
 

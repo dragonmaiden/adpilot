@@ -176,6 +176,57 @@ test('analyzeCampaigns blocks scale-up when the campaign estimated contribution 
   assert.equal(engine.actions.length, 0);
 });
 
+test('analyzeCampaigns downgrades scale-up when concentration and fatigue caveats exist', () => {
+  const engine = new OptimizationEngine(9);
+  const insights = buildInsights({
+    baselineSpend: 60,
+    baselinePurchases: 5,
+    wednesdaySpend: 55,
+    wednesdayPurchases: 5,
+  });
+  const campaignRiskContext = new Map([
+    ['c1', {
+      activeCampaignCount: 1,
+      activeAdCount: 4,
+      fatiguedAds: [{ id: 'ad1', name: 'Fatigued Ad' }],
+      severeFatigueBlock: false,
+      hasConcentrationRisk: true,
+      hasCreativeDepthRisk: false,
+    }],
+  ]);
+
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE, campaignRiskContext);
+
+  assert.equal(engine.actions.length, 1);
+  assert.equal(engine.actions[0].priority, 'low');
+  assert.match(engine.actions[0].reason, /Scale caveats:/);
+  assert.match(engine.actions[0].impact, /\+\d+ to \+\d+/);
+});
+
+test('analyzeCampaigns blocks scale-up when fatigue is widespread across active ads', () => {
+  const engine = new OptimizationEngine(10);
+  const insights = buildInsights({
+    baselineSpend: 60,
+    baselinePurchases: 5,
+    wednesdaySpend: 55,
+    wednesdayPurchases: 5,
+  });
+  const campaignRiskContext = new Map([
+    ['c1', {
+      activeCampaignCount: 1,
+      activeAdCount: 4,
+      fatiguedAds: [{ id: 'ad1', name: 'Ad 1' }, { id: 'ad2', name: 'Ad 2' }],
+      severeFatigueBlock: true,
+      hasConcentrationRisk: true,
+      hasCreativeDepthRisk: false,
+    }],
+  ]);
+
+  engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE, campaignRiskContext);
+
+  assert.equal(engine.actions.length, 0);
+});
+
 test('analyzeBudgetReallocation follows contribution estimates instead of issuing a CPA-only move', () => {
   const engine = new OptimizationEngine(8);
   const campaigns = [

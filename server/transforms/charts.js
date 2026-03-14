@@ -514,6 +514,7 @@ function buildDataCoverage(dailyMerged, dailyCOGS) {
     daysWithCOGS,
     daysWithPartialCOGS,
     daysWithPendingRecovery,
+    coverageScore: parseFloat(coverageScore.toFixed(3)),
     coverageRatio: parseFloat(coverageRatio.toFixed(3)),
     confidence: { level, label, color },
     cogsCoveredRange,

@@ -7,6 +7,7 @@ const {
   isBudgetIncreaseAction,
   isBudgetDecreaseAction,
   isExecutableOptimization,
+  isOpenApprovalStatus,
   requiresApproval,
 } = require('../domain/optimizationSemantics');
 
@@ -25,7 +26,7 @@ function enrichOptimization(opt) {
   return {
     ...opt,
     status,
-    actionable: requiresApproval(opt) && isExecutableOptimization(opt),
+    actionable: isOpenApprovalStatus(status),
   };
 }
 

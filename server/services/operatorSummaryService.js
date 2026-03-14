@@ -5,6 +5,9 @@ const overviewService = require('./overviewService');
 const analyticsService = require('./analyticsService');
 const campaignService = require('./campaignService');
 const optimizationService = require('./optimizationService');
+const { isOpenApprovalStatus } = require('../domain/optimizationSemantics');
+
+const ACTIVE_ALERT_MAX_AGE_MS = 36 * 60 * 60 * 1000;
 
 function compactSource(source = {}) {
   return {
@@ -65,6 +68,37 @@ function summarizeOptimization(opt) {
   };
 }
 
+function normalizeCoverageConfidence(rawConfidence) {
+  if (rawConfidence && typeof rawConfidence === 'object') {
+    return {
+      level: rawConfidence.level ?? 'unknown',
+      label: rawConfidence.label ?? 'Unknown confidence',
+      color: rawConfidence.color ?? null,
+    };
+  }
+
+  const level = typeof rawConfidence === 'string' ? rawConfidence : 'unknown';
+  const label = level === 'high'
+    ? 'High confidence'
+    : level === 'medium'
+    ? 'Medium confidence'
+    : level === 'low'
+    ? 'Low confidence'
+    : 'Unknown confidence';
+
+  return {
+    level,
+    label,
+    color: null,
+  };
+}
+
+function isFreshAlert(opt, now = Date.now()) {
+  const timestampMs = new Date(opt?.timestamp || 0).getTime();
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return false;
+  return (now - timestampMs) <= ACTIVE_ALERT_MAX_AGE_MS;
+}
+
 function buildScanSection(overview, settings) {
   return {
     lastScan: overview.lastScan ?? null,
@@ -116,12 +150,17 @@ async function getOperatorSummaryResponse() {
   const optimizationsResponse = optimizationService.getOptimizationsResponse({ limit: '200' });
 
   const campaignSnapshots = (campaignsResponse.campaigns || []).map(toCampaignSnapshot);
+  const nowMs = Date.now();
   const pendingApprovals = (optimizationsResponse.optimizations || [])
-    .filter(opt => opt.actionable || opt.status === 'needs_approval' || opt.status === 'awaiting_telegram')
+    .filter(opt => isOpenApprovalStatus(opt.status))
     .slice(0, 5)
     .map(summarizeOptimization);
   const activeAlerts = (optimizationsResponse.optimizations || [])
-    .filter(opt => opt.status === 'advisory' && ['high', 'critical'].includes(String(opt.priority || '').toLowerCase()))
+    .filter(opt =>
+      opt.status === 'advisory'
+      && ['high', 'critical'].includes(String(opt.priority || '').toLowerCase())
+      && isFreshAlert(opt, nowMs)
+    )
     .slice(0, 5)
     .map(summarizeOptimization);
 
@@ -130,6 +169,7 @@ async function getOperatorSummaryResponse() {
   const todaySummary = analytics.profitAnalysis?.todaySummary || null;
   const runRate = analytics.profitAnalysis?.runRate || null;
   const coverage = analytics.profitAnalysis?.coverage || {};
+  const normalizedCoverageConfidence = normalizeCoverageConfidence(coverage.confidence);
 
   return contracts.operatorSummary({
     ready: true,
@@ -165,9 +205,12 @@ async function getOperatorSummaryResponse() {
       runRate,
       coverage: {
         coverageRatio: Number(coverage.coverageRatio ?? 0),
-        coverageWeight: Number(coverage.coverageWeight ?? 0),
+        coverageScore: Number(coverage.coverageScore ?? coverage.coverageWeight ?? 0),
+        totalDays: Number(coverage.totalDays ?? 0),
         hasReliableCoverage: coverage.hasReliableCoverage ?? false,
-        confidence: coverage.confidence ?? 'unknown',
+        confidence: normalizedCoverageConfidence.level,
+        confidenceLabel: normalizedCoverageConfidence.label,
+        confidenceColor: normalizedCoverageConfidence.color,
       },
     },
     campaigns: {

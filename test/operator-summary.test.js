@@ -48,7 +48,11 @@ async function withMockedService(overrides, run) {
 }
 
 test('operator summary composes live business context into one read-only brief', async () => {
-  await withMockedService({
+  const originalDateNow = Date.now;
+  Date.now = () => new Date('2026-03-13T08:00:00.000Z').getTime();
+
+  try {
+    await withMockedService({
     scheduler: {
       getLatestData: () => ({
         cogsData: {
@@ -144,27 +148,33 @@ test('operator summary composes live business context into one read-only brief',
     optimizationService: {
       getOptimizationsResponse: () => ({
         optimizations: [
-          { id: 'o1', status: 'needs_approval', actionable: true, priority: 'medium', targetName: 'Scaler', action: 'Increase daily budget by $20', reason: 'Strong CPA' },
-          { id: 'o2', status: 'advisory', actionable: false, priority: 'high', targetName: 'Weak', action: 'Refresh creative', reason: 'CTR decayed', impact: 'Likely to recover click-through rate' },
-          { id: 'o3', status: 'advisory', actionable: false, priority: 'low', targetName: 'Winner', action: 'Monitor', reason: 'Stable' },
+          { id: 'o1', status: 'needs_approval', actionable: true, priority: 'medium', targetName: 'Scaler', action: 'Increase daily budget by $20', reason: 'Strong CPA', timestamp: '2026-03-13T07:25:00.000Z' },
+          { id: 'o2', status: 'advisory', actionable: false, priority: 'high', targetName: 'Weak', action: 'Refresh creative', reason: 'CTR decayed', impact: 'Likely to recover click-through rate', timestamp: '2026-03-13T07:24:00.000Z' },
+          { id: 'o3', status: 'expired', actionable: false, priority: 'medium', targetName: 'Old Budget Request', action: 'Increase daily budget by $15', reason: 'Old approval', timestamp: '2026-03-12T02:00:00.000Z' },
+          { id: 'o4', status: 'advisory', actionable: false, priority: 'low', targetName: 'Winner', action: 'Monitor', reason: 'Stable', timestamp: '2026-03-13T07:23:00.000Z' },
+          { id: 'o5', status: 'advisory', actionable: false, priority: 'critical', targetName: 'Old Alert', action: 'Stale alert', reason: 'Old state', timestamp: '2026-03-10T07:23:00.000Z' },
         ],
-        stats: { actionable: 1, advisory: 2 },
+        stats: { actionable: 1, advisory: 3, expired: 1 },
       }),
     },
-  }, async service => {
-    const summary = await service.getOperatorSummaryResponse();
+    }, async service => {
+      const summary = await service.getOperatorSummaryResponse();
 
-    assert.equal(summary.ready, true);
-    assert.equal(summary.scan.intervalMinutes, 30);
-    assert.equal(summary.scan.activeCampaigns, 2);
-    assert.equal(summary.kpis.netRevenue, 10500000);
-    assert.equal(summary.profit.coverage.confidence, 'high');
-    assert.equal(summary.campaigns.topSpenders[0].name, 'Winner');
-    assert.equal(summary.campaigns.strongest[0].name, 'Scaler');
-    assert.equal(summary.campaigns.weakest[0].name, 'Weak');
-    assert.equal(summary.optimizations.pendingApprovals.length, 1);
-    assert.equal(summary.optimizations.activeAlerts.length, 1);
-    assert.equal(summary.operations.sheets[0].sheetName, '3월 주문');
-    assert.match(summary.notes[0], /primary read-only operator brief/i);
-  });
+      assert.equal(summary.ready, true);
+      assert.equal(summary.scan.intervalMinutes, 30);
+      assert.equal(summary.scan.activeCampaigns, 2);
+      assert.equal(summary.kpis.netRevenue, 10500000);
+      assert.equal(summary.profit.coverage.confidence, 'high');
+      assert.equal(summary.profit.coverage.confidenceLabel, 'High confidence');
+      assert.equal(summary.campaigns.topSpenders[0].name, 'Winner');
+      assert.equal(summary.campaigns.strongest[0].name, 'Scaler');
+      assert.equal(summary.campaigns.weakest[0].name, 'Weak');
+      assert.equal(summary.optimizations.pendingApprovals.length, 1);
+      assert.equal(summary.optimizations.activeAlerts.length, 1);
+      assert.equal(summary.operations.sheets[0].sheetName, '3월 주문');
+      assert.match(summary.notes[0], /primary read-only operator brief/i);
+    });
+  } finally {
+    Date.now = originalDateNow;
+  }
 });

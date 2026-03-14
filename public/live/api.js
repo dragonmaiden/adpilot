@@ -78,6 +78,10 @@
     return api(`/optimizations?limit=${limit}`);
   }
 
+  function fetchAiOperations() {
+    return api('/ai-operations');
+  }
+
   function fetchAnalytics() {
     return api('/analytics');
   }
@@ -134,6 +138,7 @@
     checkBackendAvailable,
     fetchOverview,
     fetchOptimizations,
+    fetchAiOperations,
     fetchAnalytics,
     fetchCalendarAnalysis,
     fetchCampaigns,

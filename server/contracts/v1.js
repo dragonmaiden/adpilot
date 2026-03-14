@@ -246,6 +246,42 @@ function optimizations({ total, showing, optimizations: opts, stats }) {
 }
 
 /**
+ * Build /api/recommendation-quality response.
+ */
+function recommendationQuality({ generatedAt, windowHours, summary, duplicateApprovalTargets, recentScaleRecommendations }) {
+  return {
+    apiVersion: API_VERSION,
+    generatedAt: generatedAt ?? null,
+    windowHours: windowHours ?? 72,
+    summary: summary ?? {},
+    duplicateApprovalTargets: duplicateApprovalTargets ?? [],
+    recentScaleRecommendations: recentScaleRecommendations ?? [],
+  };
+}
+
+/**
+ * Build /api/ai-operations response.
+ */
+function aiOperations({ generatedAt, windowHours, latestScanId, summary, quality, systemChatter, queue, activity, decisionMarkers, clusters }) {
+  return {
+    apiVersion: API_VERSION,
+    generatedAt: generatedAt ?? null,
+    windowHours: windowHours ?? 72,
+    latestScanId: latestScanId ?? null,
+    summary: summary ?? {},
+    quality: quality ?? {},
+    systemChatter: systemChatter ?? {},
+    queue: {
+      immediate: queue?.immediate ?? [],
+      backlog: queue?.backlog ?? [],
+    },
+    activity: activity ?? [],
+    decisionMarkers: decisionMarkers ?? [],
+    clusters: clusters ?? [],
+  };
+}
+
+/**
  * Build /api/scans response.
  */
 function scans({ history, lastScan, isScanning, nextScan }) {
@@ -389,6 +425,8 @@ module.exports = {
   calendarAnalysis,
   campaigns,
   optimizations,
+  recommendationQuality,
+  aiOperations,
   scans,
   spendDaily,
   reconciliation,

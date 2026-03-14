@@ -17,6 +17,20 @@ function compactOptimization(opt = {}) {
   };
 }
 
+const PRIORITY_RANK = Object.freeze({
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+});
+
+function sortSignals(left, right) {
+  const leftRank = PRIORITY_RANK[String(left?.priority || '').toLowerCase()] || 0;
+  const rightRank = PRIORITY_RANK[String(right?.priority || '').toLowerCase()] || 0;
+  if (leftRank !== rightRank) return rightRank - leftRank;
+  return String(left?.title || '').localeCompare(String(right?.title || ''));
+}
+
 function buildHeadline(summary) {
   const grossProfit = Number(summary?.kpis?.grossProfit || 0);
   const grossMargin = Number(summary?.kpis?.grossMargin || 0);
@@ -128,18 +142,21 @@ function buildSignals(summary) {
   }
 
   if (profit?.coverage?.hasReliableCoverage === false) {
+    const coverageRatio = Number(profit?.coverage?.coverageRatio || 0);
+    const confidenceLabel = profit?.coverage?.confidenceLabel || 'Unknown confidence';
+    const totalDays = Number(profit?.coverage?.totalDays || 0);
     signals.push({
       type: 'profit_confidence',
       priority: 'medium',
       title: 'Profit confidence is limited',
-      summary: `Coverage confidence is ${profit?.coverage?.confidence || 'unknown'} with weight ${Number(profit?.coverage?.coverageWeight || 0).toFixed(2)}.`,
+      summary: `Coverage ratio is ${(coverageRatio * 100).toFixed(1)}% (${confidenceLabel})${totalDays > 0 ? ` across ${totalDays} observed days` : ''}.`,
       nextMove: 'Use profit estimates as directional, not definitive, until coverage improves.',
       confidence: 'medium',
       details: profit?.coverage || {},
     });
   }
 
-  return signals.slice(0, 5);
+  return signals.sort(sortSignals).slice(0, 5);
 }
 
 function buildNotes(summary) {

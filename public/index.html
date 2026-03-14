@@ -833,26 +833,31 @@
         </div>
         <p class="section-note" data-i18n="optimizations.sectionNote">Use this page to separate current AI actions from advisory backlog and historical outcomes. Live Performance only surfaces the most urgent latest-scan items.</p>
       </div>
-      <div class="kpi-grid small">
+      <div class="kpi-grid small ai-ops-summary-grid">
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.pending">Needs Approval Now</div>
-          <div class="kpi-value" id="optPending" data-target="0" data-prefix="">—</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiActionNow">Action Now</div>
+          <div class="kpi-value" id="optActionNow" data-target="0" data-prefix="">—</div>
+          <div class="kpi-delta neutral"><span id="optActionNowMeta">—</span></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.awaitingTelegram">Awaiting Telegram</div>
-          <div class="kpi-value" id="optAwaiting" data-target="0" data-prefix="">—</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiBacklog">Open Backlog</div>
+          <div class="kpi-value" id="optBacklog" data-target="0" data-prefix="">—</div>
+          <div class="kpi-delta neutral"><span id="optBacklogMeta">—</span></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.advisory">Advisory Suggestions</div>
-          <div class="kpi-value" id="optAdvisory" data-target="0" data-prefix="">—</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiFriction">Decision Friction</div>
+          <div class="kpi-value" id="optFriction" data-target="0" data-prefix="">—</div>
+          <div class="kpi-delta neutral"><span id="optFrictionMeta">—</span></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.autoExec">Executed</div>
-          <div class="kpi-value" id="optExecuted" data-target="0" data-prefix="">—</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiRepeatPressure">Repeat Pressure</div>
+          <div class="kpi-value" id="optRepeats" data-target="0" data-prefix="">—</div>
+          <div class="kpi-delta neutral"><span id="optRepeatsMeta">—</span></div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label" data-i18n="kpi.totalOpt">AI Suggestions Logged</div>
-          <div class="kpi-value" id="optTotal" data-target="0" data-prefix="">—</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiQuality">AI Quality</div>
+          <div class="kpi-value" id="optQuality" data-target="0" data-prefix="">—</div>
+          <div class="kpi-delta neutral"><span id="optQualityMeta">—</span></div>
         </div>
       </div>
 
@@ -869,10 +874,14 @@
               <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:2px;background:#38bdf8;display:inline-block;"></span> <span data-i18n="optimizations.legendCac">CAC (R)</span></span>
               <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:0;border-top:2px dashed #ef6461;display:inline-block;"></span> <span data-i18n="optimizations.legendTarget">Target CPA</span></span>
               <span style="display:flex;align-items:center;gap:4px;"><span style="width:16px;height:0;border-top:2px dashed #d4a44a;display:inline-block;"></span> <span data-i18n="optimizations.legendBudget">Budget</span></span>
+              <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:999px;background:#20808D;display:inline-block;"></span> <span data-i18n="optimizations.legendEvents">Decision markers</span></span>
             </div>
           </div>
           <div class="chart-container candlestick-chart-shell" style="height:380px; padding:0 4px 0 0; position:relative;">
             <canvas id="optTimelineChart"></canvas>
+          </div>
+          <div class="candlestick-events" id="candlestickEvents">
+            <div class="empty-state" data-i18n="optimizations.eventsWaiting">Decision markers will appear after the next clustered refresh.</div>
           </div>
           <div id="candlestickStats" class="candlestick-stats">
             <div style="padding-right:20px;"><span style="text-transform:uppercase;letter-spacing:0.05em;" data-i18n="stat.totalSpend">TOTAL SPEND</span> <strong style="color:var(--color-text);margin-left:4px;">—</strong></div>
@@ -885,22 +894,31 @@
         </div>
       </div>
 
-      <!-- Action Breakdown by Type -->
-      <div class="charts-grid">
-        <div class="card chart-card">
+      <div class="ai-ops-queue-grid">
+        <div class="card">
           <div class="card-header">
-            <h2 data-i18n="chart.actionType">Actions by Type</h2>
+            <div>
+              <div class="section-kicker" data-i18n="optimizations.queueKicker">Action Center</div>
+              <h2 data-i18n="optimizations.queueTitle">Immediate queue</h2>
+            </div>
+            <span id="optQueueStats"></span>
           </div>
-          <div class="chart-container" style="height:260px">
-            <canvas id="optTypeChart"></canvas>
+          <p class="card-desc" data-i18n="optimizations.queueDesc">Latest scan approvals and anything already awaiting a Telegram reply live here.</p>
+          <div class="optimization-log optimization-log-grouped" id="optimizationQueue">
+            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
           </div>
         </div>
-        <div class="card chart-card">
+        <div class="card">
           <div class="card-header">
-            <h2 data-i18n="chart.actionPriority">Actions by Priority</h2>
+            <div>
+              <div class="section-kicker" data-i18n="optimizations.backlogKicker">Backlog</div>
+              <h2 data-i18n="optimizations.backlogTitle">Open unresolved families</h2>
+            </div>
+            <span id="optBacklogStats"></span>
           </div>
-          <div class="chart-container" style="height:260px">
-            <canvas id="optPriorityChart"></canvas>
+          <p class="card-desc" data-i18n="optimizations.backlogDesc">Older unresolved approvals are grouped into decision families so stale backlog is obvious.</p>
+          <div class="optimization-log optimization-log-grouped" id="optimizationBacklog">
+            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
           </div>
         </div>
       </div>
@@ -908,61 +926,66 @@
       <div class="card">
         <div class="card-header">
           <div>
-            <div class="section-kicker" data-i18n="optimizations.queueKicker">Current AI Queue</div>
-            <h2 data-i18n="optimizations.queueTitle">Ready for approval</h2>
+            <div class="section-kicker" data-i18n="opt.activityHubKicker">Decision Flow</div>
+            <h2 data-i18n="opt.activityHub">Meaningful AI state changes</h2>
           </div>
-          <span id="optQueueStats"></span>
+          <span id="optActivityStats"></span>
         </div>
-        <p class="card-desc" data-i18n="optimizations.queueDesc">Only executable items from the latest scan and anything already awaiting a Telegram reply appear here.</p>
-        <div class="optimization-log optimization-log-grouped" id="optimizationQueue">
-          <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+        <p class="card-desc" data-i18n="opt.activityHubDesc">Approvals, expiries, executions, and new recommendation families stay here. Routine scan noise is pushed into the system rail.</p>
+        <div class="ai-ops-flow-grid">
+          <div class="optimization-log optimization-log-grouped" id="optActivityLog">
+            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+          </div>
+          <div class="ai-ops-system-panel" id="optSystemChatter">
+            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+          </div>
         </div>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2 data-i18n="opt.activityHub">AI Activity &amp; Outcomes</h2>
-        </div>
-        <p class="card-desc" data-i18n="opt.activityHubDesc">Recent scan runs and execution updates live here, while the suggestion archive stays below for deeper review.</p>
-        <div class="ai-ops-section">
-          <div class="ai-ops-section-head">
-            <h3 data-i18n="opt.recentActivity">Recent Agent Activity</h3>
-            <span id="optActivityStats"></span>
+          <div>
+            <div class="section-kicker" data-i18n="opt.clusterKicker">Recommendation Clusters</div>
+            <h2 data-i18n="opt.archiveTitle">Deduped decision families</h2>
           </div>
-          <div class="optimization-log optimization-log-grouped" id="optActivityLog">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
-        </div>
-        <div class="ai-ops-section">
-          <div class="ai-ops-section-head">
-            <h3 data-i18n="opt.archiveTitle">Historical AI Suggestions &amp; Outcomes</h3>
-            <div class="history-toolbar">
-              <span id="optStats"></span>
-              <div class="filter-group">
-                <select class="select-input" id="optTypeFilter">
-                  <option value="all" data-i18n="opt.allTypes">All Types</option>
-                  <option value="budget" data-i18n="opt.budget">Budget</option>
-                  <option value="bid" data-i18n="opt.bid">Bid</option>
-                  <option value="creative" data-i18n="opt.creative">Creative</option>
-                  <option value="status" data-i18n="opt.status">Status</option>
-                  <option value="schedule" data-i18n="opt.schedule">Schedule</option>
-                  <option value="targeting" data-i18n="opt.targeting">Targeting</option>
-                </select>
-                <select class="select-input" id="optStatusFilter">
-                  <option value="all" data-i18n="opt.allStatuses">All Statuses</option>
-                  <option value="open" data-i18n="opt.openBacklog">Open Backlog</option>
-                  <option value="awaiting_telegram" data-i18n="opt.awaitingTelegram">Awaiting Telegram</option>
-                  <option value="advisory" data-i18n="opt.advisoryOnly">Advisory Only</option>
-                  <option value="executed" data-i18n="kpi.autoExec">Executed</option>
-                  <option value="resolved" data-i18n="opt.resolved">Rejected / Expired</option>
-                </select>
-              </div>
+          <div class="history-toolbar">
+            <span id="optStats"></span>
+            <div class="filter-group">
+              <select class="select-input" id="optTypeFilter">
+                <option value="all" data-i18n="opt.allTypes">All Types</option>
+                <option value="budget" data-i18n="opt.budget">Budget</option>
+                <option value="bid" data-i18n="opt.bid">Bid</option>
+                <option value="creative" data-i18n="opt.creative">Creative</option>
+                <option value="status" data-i18n="opt.status">Status</option>
+                <option value="schedule" data-i18n="opt.schedule">Schedule</option>
+                <option value="targeting" data-i18n="opt.targeting">Targeting</option>
+              </select>
+              <select class="select-input" id="optStatusFilter">
+                <option value="all" data-i18n="opt.allStatuses">All States</option>
+                <option value="open" data-i18n="opt.openBacklog">Open</option>
+                <option value="awaiting_telegram" data-i18n="opt.awaitingTelegram">Awaiting Telegram</option>
+                <option value="advisory" data-i18n="opt.advisoryOnly">Advisory Only</option>
+                <option value="executed" data-i18n="kpi.autoExec">Executed</option>
+                <option value="resolved" data-i18n="opt.resolved">Rejected / Expired</option>
+              </select>
             </div>
           </div>
-          <div class="optimization-log" id="optimizationLog">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
         </div>
+        <p class="card-desc" data-i18n="opt.clusterDesc">Grouped by decision family so repeat pressure, stale backlog, and the latest reasoning are easy to read.</p>
+        <div class="optimization-log optimization-log-grouped" id="optimizationClusters">
+          <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+        </div>
+        <details class="ai-ops-raw-history">
+          <summary data-i18n="opt.rawHistorySummary">Raw per-scan history</summary>
+          <div class="ai-ops-section ai-ops-raw-history-body">
+            <div class="history-toolbar">
+              <span id="optRawStats"></span>
+            </div>
+            <div class="optimization-log" id="optimizationLog">
+              <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+            </div>
+          </div>
+        </details>
       </div>
     </section>
 

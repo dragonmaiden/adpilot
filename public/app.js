@@ -735,6 +735,7 @@ Chart.register(candlestickPlugin);
 // Shared ref for tooltip data so closures can access updated data
 let _candlestickData = [];
 let _candlestickChanges = [];
+let _candlestickEventMarkers = [];
 
 async function initOptTimeline() {
   optTimelineInitialized = true;
@@ -749,6 +750,7 @@ async function initOptTimeline() {
   _candlestickData = data;
   _candlestickOHLC = [];
   _candlestickChanges = [];
+  _candlestickEventMarkers = [];
 
   const tlCtx = document.getElementById('optTimelineChart');
   if (tlCtx) {
@@ -804,6 +806,19 @@ async function initOptTimeline() {
             fill: false,
             yAxisID: 'y',
           },
+          {
+            label: 'Decision markers',
+            data: data.map(() => null),
+            borderColor: '#20808D',
+            backgroundColor: '#20808D',
+            pointBackgroundColor: [],
+            pointBorderColor: [],
+            pointRadius: [],
+            pointHoverRadius: [],
+            pointStyle: [],
+            showLine: false,
+            yAxisID: 'y',
+          },
         ],
       },
       options: {
@@ -849,6 +864,18 @@ async function initOptTimeline() {
                 if (ctx.datasetIndex === 1) return 'CAC: ' + formatKRW(d.cac);
                 if (ctx.datasetIndex === 2) return 'Target CPA: ' + formatKRW(targetCPA);
                 if (ctx.datasetIndex === 3) return 'Budget: ' + formatKRW(budgetLine);
+                if (ctx.datasetIndex === 4) {
+                  const event = _candlestickEventMarkers[idx];
+                  if (!event) return '';
+                  const lines = [event.title || 'Decision marker'];
+                  if (event.count > 1) {
+                    lines.push('Events: ' + event.count);
+                  }
+                  if (event.detail) {
+                    lines.push(event.detail);
+                  }
+                  return lines;
+                }
                 return '';
               },
               labelColor: function(ctx) {
@@ -856,6 +883,7 @@ async function initOptTimeline() {
                 if (ctx.datasetIndex === 1) return { borderColor: '#38bdf8', backgroundColor: '#38bdf8' };
                 if (ctx.datasetIndex === 2) return { borderColor: '#ef6461', backgroundColor: '#ef6461' };
                 if (ctx.datasetIndex === 3) return { borderColor: '#d4a44a', backgroundColor: '#d4a44a' };
+                if (ctx.datasetIndex === 4) return { borderColor: '#20808D', backgroundColor: '#20808D' };
                 return { borderColor: '#fff', backgroundColor: '#fff' };
               },
             },

@@ -1,7 +1,8 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const { summarizeInsights } = require('../domain/metrics');
-const { getTodayInTimeZone, shiftDate } = require('../domain/time');
+const { getTodayInTimeZone } = require('../domain/time');
+const { resolveWindowBounds } = require('../domain/performanceContext');
 
 const WINDOW_DAYS = Object.freeze({
   '7d': 7,
@@ -27,10 +28,16 @@ function getEnrichedCampaigns(query = {}) {
   const campaigns = data.campaigns || [];
   const insights = data.campaignInsights || [];
   const windowMeta = resolveWindow(query);
-  const windowStart = windowMeta.days ? shiftDate(getTodayInTimeZone(), -(windowMeta.days - 1)) : null;
+  const { windowStart, windowEnd } = windowMeta.days
+    ? resolveWindowBounds(windowMeta.days, getTodayInTimeZone(), { includeCurrentDay: false })
+    : { windowStart: null, windowEnd: null };
 
   const enriched = campaigns.map(c => {
-    const cInsights = insights.filter(i => i.campaign_id === c.id && (!windowStart || i.date_start >= windowStart));
+    const cInsights = insights.filter(i =>
+      i.campaign_id === c.id
+      && (!windowStart || i.date_start >= windowStart)
+      && (!windowEnd || i.date_start <= windowEnd)
+    );
     const metrics = summarizeInsights(cInsights);
 
     return {
