@@ -83,6 +83,58 @@ async function completeExistingOrderNotification(result) {
   return { ok: false, updated: false, reason: 'edit_failed' };
 }
 
+async function closeExistingOrderNotification(result) {
+  if (!result?.orderNo) {
+    return { ok: false, updated: false, reason: 'missing_order_no' };
+  }
+
+  const metadata = cogsAutofillService.getNotifiedOrderMetadata(result.orderNo);
+  if (!metadata) {
+    return { ok: false, updated: false, reason: 'missing_notification' };
+  }
+
+  if (metadata?.notificationStage === 'order_closed') {
+    return { ok: true, updated: false, reason: 'already_closed' };
+  }
+
+  if (metadata?.notificationStage === 'payment_confirmed') {
+    return { ok: true, updated: false, reason: 'already_completed' };
+  }
+
+  if (!metadata?.messageId) {
+    cogsAutofillService.markOrderNotificationClosed(result.orderNo, {
+      paymentState: result.paymentState || metadata.paymentState || 'closed',
+      orderDate: result.orderDate || metadata.orderDate,
+      source: metadata.source,
+    });
+    return { ok: true, updated: false, reason: 'marked_closed_without_message' };
+  }
+
+  const editResult = await telegram.editMessageText(
+    metadata.messageId,
+    cogsAutofillService.buildNewOrderNotification({
+      ...result,
+      notificationStage: 'order_closed',
+    })
+  );
+
+  if (editResult?.ok) {
+    cogsAutofillService.markOrderNotificationClosed(result.orderNo, {
+      messageId: metadata.messageId,
+      paymentState: result.paymentState || metadata.paymentState || 'closed',
+      orderDate: result.orderDate || metadata.orderDate,
+      source: metadata.source,
+    });
+    return {
+      ok: true,
+      updated: true,
+      messageId: metadata.messageId,
+    };
+  }
+
+  return { ok: false, updated: false, reason: 'edit_failed' };
+}
+
 async function deliverPaidOrderNotification(result) {
   const completed = await completeExistingOrderNotification(result);
   if (completed.updated) {
@@ -132,8 +184,18 @@ async function deliverPaidOrderNotification(result) {
   };
 }
 
+async function deliverClosedOrderNotification(result) {
+  const closed = await closeExistingOrderNotification(result);
+  return {
+    kind: closed.updated ? 'updated_existing' : closed.reason,
+    ...closed,
+  };
+}
+
 module.exports = {
   deliverNewOrderNotification,
   completeExistingOrderNotification,
   deliverPaidOrderNotification,
+  closeExistingOrderNotification,
+  deliverClosedOrderNotification,
 };

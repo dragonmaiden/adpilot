@@ -849,6 +849,68 @@ test('handleWebhookPayload treats an unknown unpaid order event as the first-ord
   });
 });
 
+test('handleWebhookPayload treats a terminal webhook event as an in-place closure update when the order alert is still pending', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {},
+    notifiedOrders: {
+      '20260313225187': {
+        orderNo: '20260313225187',
+        notifiedAt: '2026-03-15T13:28:15.075Z',
+        source: 'scan_backstop',
+        notificationStage: 'payment_pending',
+        messageId: 229,
+      },
+    },
+  }, null, 2));
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => [],
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => createOrder({
+        orderStatus: 'CLOSED',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+        sections: [
+          {
+            orderSectionStatus: 'CANCEL_COMPLETE',
+            delivery: {
+              receiverName: '홍신희',
+              receiverCall: '01012341234',
+              zipcode: '06236',
+              addr1: '서울 강남구 테헤란로 123',
+              addr2: '5층',
+              memo: '문 앞에 놓아주세요',
+            },
+            sectionItems: [
+              { productInfo: { prodName: '[Pre-Order]스카이 스카프' } },
+            ],
+          },
+        ],
+      }),
+    },
+  }, async service => {
+    const result = await service.handleWebhookPayload({
+      eventName: 'ORDER_CANCEL_COMPLETE',
+      orderNo: '20260313225187',
+    });
+
+    assert.equal(result.status, 'closed');
+    assert.equal(result.notificationKind, 'order_closed');
+    assert.equal(result.paymentState, 'cancelled');
+    assert.match(service.buildNewOrderNotification(result), /Imweb Order Cancelled/);
+  });
+});
+
 test('handleWebhookPayload suppresses the later paid-order ping when a new-order alert already went out', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
@@ -1068,11 +1130,132 @@ test('collectRecentNewOrderNotifications backfills only bounded-recent unpaid or
     });
 
     assert.equal(result.status, 'ok');
-    assert.equal(result.eligibleOrders, 3);
-    assert.deepEqual(result.pending.map(order => order.orderNo), ['20260313005', '20260313002', '20260313001']);
+    assert.equal(result.eligibleOrders, 2);
+    assert.deepEqual(result.pending.map(order => order.orderNo), ['20260313002', '20260313001']);
     assert.equal(result.pending.some(order => order.orderNo === '20260313008'), false);
+    assert.equal(result.pending.some(order => order.orderNo === '20260313005'), false);
     assert.equal(result.pending[0].notificationSource, 'scan_backstop');
-    assert.equal(result.pending[2].notificationKind, 'new_order');
+    assert.equal(result.pending[1].notificationKind, 'new_order');
+  });
+});
+
+test('collectRecentClosedOrderNotifications finds pending alerts that later became cancelled', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {},
+    notifiedOrders: {
+      '20260313020': {
+        orderNo: '20260313020',
+        notifiedAt: '2026-03-15T13:28:15.075Z',
+        source: 'scan_backstop',
+        notificationStage: 'payment_pending',
+        messageId: 229,
+      },
+      '20260313021': {
+        orderNo: '20260313021',
+        notifiedAt: '2026-03-15T13:40:17.321Z',
+        source: 'scan_backstop',
+        notificationStage: 'payment_confirmed',
+        messageId: 231,
+      },
+      '20260313022': {
+        orderNo: '20260313022',
+        notifiedAt: '2026-03-15T13:41:17.321Z',
+        source: 'scan_backstop',
+        notificationStage: 'order_closed',
+        messageId: 232,
+      },
+    },
+  }, null, 2));
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const result = service.collectRecentClosedOrderNotifications([
+      createOrder({
+        orderNo: '20260313020',
+        orderStatus: 'CLOSED',
+        totalPaymentPrice: 0,
+        sections: [
+          {
+            orderSectionStatus: 'CANCEL_COMPLETE',
+            delivery: {
+              receiverName: '홍신희',
+              receiverCall: '01012341234',
+              zipcode: '06236',
+              addr1: '서울 강남구 테헤란로 123',
+              addr2: '5층',
+              memo: '문 앞에 놓아주세요',
+            },
+            sectionItems: [
+              { productInfo: { prodName: '[Pre-Order]스카이 스카프' } },
+            ],
+          },
+        ],
+      }),
+      createOrder({
+        orderNo: '20260313021',
+        orderStatus: 'CLOSED',
+        totalPaymentPrice: 0,
+        sections: [
+          {
+            orderSectionStatus: 'CANCEL_COMPLETE',
+            delivery: {
+              receiverName: '홍신희',
+              receiverCall: '01012341234',
+              zipcode: '06236',
+              addr1: '서울 강남구 테헤란로 123',
+              addr2: '5층',
+              memo: '문 앞에 놓아주세요',
+            },
+            sectionItems: [
+              { productInfo: { prodName: '[Pre-Order]스카이 스카프' } },
+            ],
+          },
+        ],
+      }),
+      createOrder({
+        orderNo: '20260313022',
+        orderStatus: 'CLOSED',
+        totalPaymentPrice: 0,
+        sections: [
+          {
+            orderSectionStatus: 'CANCEL_COMPLETE',
+            delivery: {
+              receiverName: '홍신희',
+              receiverCall: '01012341234',
+              zipcode: '06236',
+              addr1: '서울 강남구 테헤란로 123',
+              addr2: '5층',
+              memo: '문 앞에 놓아주세요',
+            },
+            sectionItems: [
+              { productInfo: { prodName: '[Pre-Order]스카이 스카프' } },
+            ],
+          },
+        ],
+      }),
+    ]);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.eligibleOrders, 1);
+    assert.deepEqual(result.pending.map(order => order.orderNo), ['20260313020']);
+    assert.equal(result.pending[0].notificationKind, 'order_closed');
+    assert.equal(result.pending[0].paymentState, 'cancelled');
+    assert.match(service.buildNewOrderNotification(result.pending[0]), /Checklist: Order cancelled in Imweb ❌/);
   });
 });
 
@@ -1128,6 +1311,50 @@ test('getOrderNotificationDiagnostics reports when an initial bell card was sent
     assert.equal(diagnostics.inference.completedCardLikelyEditedInPlace, true);
     assert.equal(diagnostics.inference.completedFallbackLikelyUsed, false);
     assert.equal(diagnostics.inference.customerDetailsLikelyResentOnCompletion, false);
+  });
+});
+
+test('getOrderNotificationDiagnostics reports when an initial bell card was later marked cancelled in place', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {},
+    notifiedOrders: {
+      '20260313013': {
+        orderNo: '20260313013',
+        notifiedAt: '2026-03-15T07:58:00.000Z',
+        source: 'scan_backstop',
+        notificationStage: 'order_closed',
+        closedAt: '2026-03-15T08:10:00.000Z',
+        paymentState: 'cancelled',
+        messageId: 4329,
+      },
+    },
+  }, null, 2));
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const diagnostics = service.getOrderNotificationDiagnostics('20260313013');
+
+    assert.equal(diagnostics.notificationRecorded, true);
+    assert.equal(diagnostics.notification.notificationStage, 'order_closed');
+    assert.equal(diagnostics.notification.closedAt, '2026-03-15T08:10:00.000Z');
+    assert.equal(diagnostics.inference.initialBellCardLikelySent, true);
+    assert.equal(diagnostics.inference.closedCardLikelyEditedInPlace, true);
+    assert.equal(diagnostics.inference.completedCardLikelyEditedInPlace, false);
   });
 });
 

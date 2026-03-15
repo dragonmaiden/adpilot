@@ -323,8 +323,52 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
   }
 }
 
+async function reconcileClosedOrderNotifications(scanResult, orders) {
+  console.log('[SCHEDULER] Step 3b: Reconciling closed Imweb order alerts...');
+
+  try {
+    const result = await cogsAutofillService.collectRecentClosedOrderNotifications(orders);
+    let updatedAlerts = 0;
+    let skippedWithoutEdit = 0;
+    let failedAlerts = 0;
+
+    for (const pending of result.pending) {
+      const delivery = await orderNotificationService.deliverClosedOrderNotification(pending);
+      if (delivery?.updated) {
+        updatedAlerts += 1;
+      } else if (delivery?.reason === 'marked_closed_without_message' || delivery?.reason === 'already_closed' || delivery?.reason === 'already_completed') {
+        skippedWithoutEdit += 1;
+      } else if (delivery?.reason) {
+        failedAlerts += 1;
+        pushError(scanResult, 'closed_order_notification_reconcile', new Error(`Failed to reconcile closed-order alert for ${pending.orderNo || 'unknown order'} (${delivery.reason})`));
+      }
+    }
+
+    pushStep(scanResult, {
+      step: 'closed_order_notification_reconcile',
+      status: failedAlerts > 0 && updatedAlerts === 0 && result.pending.length > 0 ? 'failed' : 'ok',
+      eligibleOrders: result.eligibleOrders,
+      updatedAlerts,
+      skippedWithoutEdit,
+      failedAlerts,
+    });
+    console.log(
+      `[SCHEDULER]   → ${updatedAlerts} closed alert${updatedAlerts === 1 ? '' : 's'} updated, `
+      + `${skippedWithoutEdit} skipped without edit${skippedWithoutEdit === 1 ? '' : 's'}, `
+      + `${failedAlerts} failed`
+    );
+
+    return { ok: failedAlerts === 0, result };
+  } catch (err) {
+    console.error('[SCHEDULER]   ⚠ Closed-order alert reconcile failed:', err.message);
+    pushError(scanResult, 'closed_order_notification_reconcile', err);
+    pushStep(scanResult, { step: 'closed_order_notification_reconcile', status: 'failed' });
+    return { ok: false, result: null };
+  }
+}
+
 async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
-  console.log('[SCHEDULER] Step 3b: Reconciling recent paid Imweb orders into the COGS sheet...');
+  console.log('[SCHEDULER] Step 3c: Reconciling recent paid Imweb orders into the COGS sheet...');
 
   if (!cogsAutofillService.isConfigured()) {
     pushStep(scanResult, {
@@ -432,6 +476,7 @@ async function runScan(manual = false) {
 
     if (imwebResult.ok) {
       await backfillRecentNewOrderNotifications(scanResult, imwebResult.orders);
+      await reconcileClosedOrderNotifications(scanResult, imwebResult.orders);
       await reconcileRecentImwebOrdersToCogs(scanResult, imwebResult.orders);
     }
 

@@ -261,6 +261,8 @@ app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
     const result = await cogsAutofillService.handleWebhookPayload(req.body || {});
     if (result?.notificationKind === 'new_order') {
       await orderNotificationService.deliverNewOrderNotification(result);
+    } else if (result?.notificationKind === 'order_closed') {
+      await orderNotificationService.deliverClosedOrderNotification(result);
     } else if (result?.notificationKind === 'cogs_autofill') {
       await orderNotificationService.deliverPaidOrderNotification(result);
     } else if (shouldDeliverPaidOrderNotification(result)) {

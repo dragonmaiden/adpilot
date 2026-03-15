@@ -19,7 +19,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
-const MAX_NEW_ORDER_BACKFILL_HOURS = 12;
+const MAX_NEW_ORDER_BACKFILL_HOURS = 1;
 const BIG_FISH_THRESHOLD_KRW = 200000;
 const COMPACT_DETAIL_COLUMN_INDEX = 12;
 const COMPACT_DETAIL_HEADER_LABEL = 'delivery note';
@@ -148,6 +148,15 @@ function markOrderNotificationCompleted(orderNo, metadata = {}) {
   return getNotifiedOrderMetadata(orderNo);
 }
 
+function markOrderNotificationClosed(orderNo, metadata = {}) {
+  markOrderNotified(orderNo, {
+    notificationStage: 'order_closed',
+    closedAt: new Date().toISOString(),
+    ...metadata,
+  });
+  return getNotifiedOrderMetadata(orderNo);
+}
+
 function getNotifiedOrderMetadata(orderNo) {
   const normalizedOrderNo = asString(orderNo);
   if (!normalizedOrderNo) return null;
@@ -161,6 +170,7 @@ function buildNotificationBehaviorInference(metadata) {
       initialAlertStatus: 'not_recorded',
       initialBellCardLikelySent: null,
       completedCardLikelyEditedInPlace: null,
+      closedCardLikelyEditedInPlace: null,
       completedFallbackLikelyUsed: null,
       customerDetailsLikelyResentOnCompletion: null,
       summary: 'No notification record exists for this order.',
@@ -178,6 +188,7 @@ function buildNotificationBehaviorInference(metadata) {
       initialAlertStatus: 'delivery_pending',
       initialBellCardLikelySent: false,
       completedCardLikelyEditedInPlace: false,
+      closedCardLikelyEditedInPlace: false,
       completedFallbackLikelyUsed: false,
       customerDetailsLikelyResentOnCompletion: false,
       summary: 'The order was seen, but Telegram delivery of the initial bell card was not confirmed.',
@@ -189,6 +200,7 @@ function buildNotificationBehaviorInference(metadata) {
       initialAlertStatus: 'sent_pending_payment',
       initialBellCardLikelySent: true,
       completedCardLikelyEditedInPlace: false,
+      closedCardLikelyEditedInPlace: false,
       completedFallbackLikelyUsed: false,
       customerDetailsLikelyResentOnCompletion: false,
       summary: 'The initial bell card was delivered and is still waiting for payment recognition.',
@@ -200,9 +212,24 @@ function buildNotificationBehaviorInference(metadata) {
       initialAlertStatus: 'sent_then_completed',
       initialBellCardLikelySent: true,
       completedCardLikelyEditedInPlace: true,
+      closedCardLikelyEditedInPlace: false,
       completedFallbackLikelyUsed: false,
       customerDetailsLikelyResentOnCompletion: false,
       summary: 'The initial bell card was delivered and later completed in place.',
+    };
+  }
+
+  if (isInitialAlertSource && stage === 'order_closed') {
+    return {
+      initialAlertStatus: hasMessageId ? 'sent_then_closed' : 'closed_before_delivery_confirmation',
+      initialBellCardLikelySent: hasMessageId,
+      completedCardLikelyEditedInPlace: false,
+      closedCardLikelyEditedInPlace: hasMessageId,
+      completedFallbackLikelyUsed: false,
+      customerDetailsLikelyResentOnCompletion: false,
+      summary: hasMessageId
+        ? 'The initial bell card was delivered and later marked closed in place.'
+        : 'The order was later closed before Telegram delivery of the initial bell card was confirmed.',
     };
   }
 
@@ -211,6 +238,7 @@ function buildNotificationBehaviorInference(metadata) {
       initialAlertStatus: 'completed_fallback_only',
       initialBellCardLikelySent: false,
       completedCardLikelyEditedInPlace: false,
+      closedCardLikelyEditedInPlace: false,
       completedFallbackLikelyUsed: true,
       customerDetailsLikelyResentOnCompletion: true,
       summary: 'There is only a completed notification record, so this likely skipped the initial bell card and used the completed fallback.',
@@ -221,6 +249,7 @@ function buildNotificationBehaviorInference(metadata) {
     initialAlertStatus: 'unknown',
     initialBellCardLikelySent: null,
     completedCardLikelyEditedInPlace: null,
+    closedCardLikelyEditedInPlace: null,
     completedFallbackLikelyUsed: null,
     customerDetailsLikelyResentOnCompletion: null,
     summary: 'Notification state exists, but the delivery path cannot be inferred confidently.',
@@ -239,6 +268,7 @@ function sanitizeNotificationMetadata(metadata) {
     notificationStage: asString(metadata.notificationStage) || null,
     notifiedAt: asString(metadata.notifiedAt) || null,
     paymentConfirmedAt: asString(metadata.paymentConfirmedAt) || null,
+    closedAt: asString(metadata.closedAt) || null,
     orderDate: asString(metadata.orderDate) || null,
     paymentState: asString(metadata.paymentState) || null,
     sheetName: asString(metadata.sheetName) || null,
@@ -588,6 +618,28 @@ function summarizeOrderPayment(order) {
   };
 }
 
+function summarizeTerminalOrderState(order, eventName = '') {
+  const statuses = [
+    eventName,
+    order?.orderStatus,
+    ...getOrderSections(order).map(section => section?.orderSectionStatus || section?.status),
+  ].map(value => asString(value).toUpperCase()).filter(Boolean);
+
+  if (statuses.some(status => status.includes('REFUND'))) {
+    return { paymentState: 'refunded', paymentLabel: 'Refunded in Imweb' };
+  }
+  if (statuses.some(status => status.includes('RETURN'))) {
+    return { paymentState: 'returned', paymentLabel: 'Returned in Imweb' };
+  }
+  if (statuses.some(status => status.includes('EXCHANGE'))) {
+    return { paymentState: 'exchanged', paymentLabel: 'Exchanged in Imweb' };
+  }
+  if (statuses.some(status => status.includes('CANCEL'))) {
+    return { paymentState: 'cancelled', paymentLabel: 'Cancelled in Imweb' };
+  }
+  return { paymentState: 'closed', paymentLabel: 'Closed in Imweb' };
+}
+
 function hasRecognizedPayment(order) {
   return normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
 }
@@ -648,7 +700,17 @@ function buildOrderNotificationResult(order, overrides = {}) {
   };
 }
 
+function buildClosedOrderNotificationResult(order, overrides = {}) {
+  return buildOrderNotificationResult(order, {
+    ...summarizeTerminalOrderState(order, overrides.webhookEvent),
+    notificationStage: 'order_closed',
+    ...overrides,
+  });
+}
+
 function buildNewOrderNotification(result) {
+  const isClosed = result?.notificationStage === 'order_closed'
+    || ['cancelled', 'returned', 'exchanged', 'refunded', 'closed'].includes(asString(result?.paymentState).toLowerCase());
   const isCompleted = result?.paymentState === 'paid' || result?.notificationStage === 'payment_confirmed';
   const orderValue = Number(result?.orderValue || result?.netRevenue || result?.approvedAmount || 0);
   const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
@@ -658,18 +720,24 @@ function buildNewOrderNotification(result) {
     result?.paymentLabel,
     result?.paymentMethod,
   ].filter(Boolean).map(value => escapeHtml(value)).join(' · ');
-  const checklistLine = isCompleted
-    ? 'Checklist: Payment recognized in Imweb ✅'
-    : 'Checklist: Check payment in Imweb ☐';
+  const checklistLine = isClosed
+    ? `Checklist: ${escapeHtml(getClosedChecklistLabel(result))}`
+    : isCompleted
+      ? 'Checklist: Payment recognized in Imweb ✅'
+      : 'Checklist: Check payment in Imweb ☐';
 
   const sections = [
-    isCompleted ? '✅ <b>New Imweb Order</b>' : '🛎️ <b>New Imweb Order</b> 🎉🎉',
+    isClosed
+      ? `❌ <b>${escapeHtml(getClosedCardTitle(result))}</b>`
+      : isCompleted
+        ? '✅ <b>New Imweb Order</b>'
+        : '🛎️ <b>New Imweb Order</b> 🎉🎉',
     '',
     `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
     `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,
     `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
     `Revenue: ${escapeHtml(formatStoreMoney(orderValue))} · ${escapeHtml(getOrderSizeLabel(orderValue))}`,
-    `Payment: ${paymentLabel || (isCompleted ? 'Paid confirmed' : 'Check payment now')}`,
+    `Payment: ${paymentLabel || (isClosed ? getClosedPaymentFallback(result) : (isCompleted ? 'Paid confirmed' : 'Check payment now'))}`,
     checklistLine,
   ];
 
@@ -856,6 +924,54 @@ function resolveNewOrderBackfillWindowStart(options = {}) {
   // Rescue missed new-order alerts across a bounded recent window so stale unpaid orders
   // do not suddenly appear as new.
   return new Date(Math.min(broadLookbackStart.getTime(), sinceTime.getTime()));
+}
+
+function getClosedCardTitle(result) {
+  switch (asString(result?.paymentState).toLowerCase()) {
+    case 'refunded':
+      return 'Imweb Order Refunded';
+    case 'returned':
+      return 'Imweb Order Returned';
+    case 'exchanged':
+      return 'Imweb Order Exchanged';
+    case 'closed':
+      return 'Imweb Order Closed';
+    case 'cancelled':
+    default:
+      return 'Imweb Order Cancelled';
+  }
+}
+
+function getClosedChecklistLabel(result) {
+  switch (asString(result?.paymentState).toLowerCase()) {
+    case 'refunded':
+      return 'Order refunded in Imweb ❌';
+    case 'returned':
+      return 'Order returned in Imweb ❌';
+    case 'exchanged':
+      return 'Order exchanged in Imweb ❌';
+    case 'closed':
+      return 'Order closed in Imweb ❌';
+    case 'cancelled':
+    default:
+      return 'Order cancelled in Imweb ❌';
+  }
+}
+
+function getClosedPaymentFallback(result) {
+  switch (asString(result?.paymentState).toLowerCase()) {
+    case 'refunded':
+      return 'Refunded in Imweb';
+    case 'returned':
+      return 'Returned in Imweb';
+    case 'exchanged':
+      return 'Exchanged in Imweb';
+    case 'closed':
+      return 'Closed in Imweb';
+    case 'cancelled':
+    default:
+      return 'Cancelled in Imweb';
+  }
 }
 
 function isRecentEnough(date, windowStart) {
@@ -1060,7 +1176,7 @@ function shouldBackfillNewOrderNotification(order) {
   }
 
   const notification = getNotifiedOrderMetadata(normalizedOrderNo);
-  if (notification?.notificationStage === 'payment_confirmed') {
+  if (notification?.notificationStage === 'payment_confirmed' || notification?.notificationStage === 'order_closed') {
     return false;
   }
 
@@ -1069,6 +1185,25 @@ function shouldBackfillNewOrderNotification(order) {
   }
 
   return shouldSendNewOrderNotification(order, '');
+}
+
+function shouldCloseExistingOrderNotification(order) {
+  const normalizedOrderNo = asString(order?.orderNo);
+  if (!normalizedOrderNo || !isTerminalOrderState(order)) {
+    return false;
+  }
+
+  const notification = getNotifiedOrderMetadata(normalizedOrderNo);
+  if (!notification) {
+    return false;
+  }
+
+  const stage = asString(notification.notificationStage);
+  if (stage === 'payment_confirmed' || stage === 'order_closed') {
+    return false;
+  }
+
+  return true;
 }
 
 function collectRecentNewOrderNotifications(orders, options = {}) {
@@ -1110,6 +1245,31 @@ function collectRecentNewOrderNotifications(orders, options = {}) {
     status: 'ok',
     windowStartAt: windowStart ? windowStart.toISOString() : null,
     eligibleOrders: eligibleOrders.length,
+    pending,
+  };
+}
+
+function collectRecentClosedOrderNotifications(orders) {
+  const seenOrderNos = new Set();
+  const pending = [];
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const orderNo = asString(order?.orderNo);
+    if (!orderNo || seenOrderNos.has(orderNo) || !shouldCloseExistingOrderNotification(order)) {
+      continue;
+    }
+
+    seenOrderNos.add(orderNo);
+    pending.push(buildClosedOrderNotificationResult(order, {
+      notificationKind: 'order_closed',
+      notificationSource: 'scan_backstop_terminal',
+    }));
+  }
+
+  return {
+    ok: true,
+    status: 'ok',
+    eligibleOrders: pending.length,
     pending,
   };
 }
@@ -1255,6 +1415,32 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
 
 async function handleWebhookPayload(payload) {
   const eventName = extractWebhookEventName(payload);
+  if (isTerminalOrderWebhookEvent(eventName)) {
+    const orderNo = extractOrderNoFromWebhookPayload(payload);
+    if (!orderNo) {
+      throw new Error('Webhook payload did not include orderNo');
+    }
+
+    const order = await getWebhookOrder(payload, orderNo);
+    if (!shouldCloseExistingOrderNotification(order)) {
+      return {
+        ok: true,
+        status: 'ignored',
+        reason: 'order notification is not pending closure',
+      };
+    }
+
+    return {
+      ...buildClosedOrderNotificationResult(order, {
+        webhookEvent: eventName,
+        notificationSource: 'webhook_terminal_order',
+      }),
+      ok: true,
+      status: 'closed',
+      notificationKind: 'order_closed',
+    };
+  }
+
   if (isNewOrderWebhookEvent(eventName)) {
     const orderNo = extractOrderNoFromWebhookPayload(payload);
     if (!orderNo) {
@@ -1348,7 +1534,9 @@ module.exports = {
   getOrderNotificationDiagnostics,
   recordOrderNotificationDelivery,
   markOrderNotificationCompleted,
+  markOrderNotificationClosed,
   collectRecentNewOrderNotifications,
+  collectRecentClosedOrderNotifications,
   syncOrderToCogsSheet,
   syncImwebOrderToCogs,
   syncRecentOrdersToCogs,

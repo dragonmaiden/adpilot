@@ -254,3 +254,101 @@ test('deliverPaidOrderNotification still falls back to a completed card when no 
     assert.equal(sentMessages[1].options.protectContent, true);
   });
 });
+
+test('closeExistingOrderNotification edits the original alert when an order is later cancelled', async () => {
+  const editedMessages = [];
+  const closedMarks = [];
+
+  await withMockedOrderNotificationService({
+    telegram: {
+      editMessageText: async (messageId, text) => {
+        editedMessages.push({ messageId, text });
+        return { ok: true, result: { message_id: messageId } };
+      },
+    },
+    cogsAutofillService: {
+      getNotifiedOrderMetadata: () => ({
+        orderNo: '202603150009',
+        messageId: 229,
+        notificationStage: 'payment_pending',
+        source: 'scan_backstop',
+        orderDate: '2026-03-15',
+      }),
+      buildNewOrderNotification: result => `closed:${result.orderNo}:${result.notificationStage}:${result.paymentState}`,
+      markOrderNotificationClosed: (orderNo, metadata) => {
+        closedMarks.push({ orderNo, metadata });
+        return { orderNo, ...metadata };
+      },
+    },
+  }, async service => {
+    const result = await service.closeExistingOrderNotification({
+      orderNo: '202603150009',
+      paymentState: 'cancelled',
+      orderDate: '2026-03-15',
+    });
+
+    assert.equal(result.updated, true);
+    assert.deepEqual(editedMessages, [
+      {
+        messageId: 229,
+        text: 'closed:202603150009:order_closed:cancelled',
+      },
+    ]);
+    assert.deepEqual(closedMarks, [
+      {
+        orderNo: '202603150009',
+        metadata: {
+          messageId: 229,
+          paymentState: 'cancelled',
+          orderDate: '2026-03-15',
+          source: 'scan_backstop',
+        },
+      },
+    ]);
+  });
+});
+
+test('deliverClosedOrderNotification stays silent but marks the order closed when no message id was stored', async () => {
+  const sentMessages = [];
+  const closedMarks = [];
+
+  await withMockedOrderNotificationService({
+    telegram: {
+      sendMessage: async (...args) => {
+        sentMessages.push(args);
+        return { ok: true, result: { message_id: 1 } };
+      },
+    },
+    cogsAutofillService: {
+      getNotifiedOrderMetadata: () => ({
+        orderNo: '202603150010',
+        notificationStage: 'delivery_pending',
+        source: 'webhook_new_order',
+        orderDate: '2026-03-15',
+      }),
+      markOrderNotificationClosed: (orderNo, metadata) => {
+        closedMarks.push({ orderNo, metadata });
+        return { orderNo, ...metadata };
+      },
+    },
+  }, async service => {
+    const result = await service.deliverClosedOrderNotification({
+      orderNo: '202603150010',
+      paymentState: 'cancelled',
+      orderDate: '2026-03-15',
+    });
+
+    assert.equal(result.kind, 'marked_closed_without_message');
+    assert.equal(sentMessages.length, 0);
+    assert.deepEqual(closedMarks, [
+      {
+        orderNo: '202603150010',
+        metadata: {
+          paymentState: 'cancelled',
+          orderDate: '2026-03-15',
+          source: 'webhook_new_order',
+        },
+      },
+    ]);
+  });
+});
