@@ -709,14 +709,14 @@
 
       return `
         <tr>
-          <td style="font-weight:600">${esc(campaign.name)}</td>
-          <td><span class="badge ${statusClass}">${esc(statusLabel)}</span></td>
-          <td>${budget}${tr('/day', '/일')}</td>
-          <td>${formatUsd(metrics.spend || 0, 2)}</td>
-          <td>${getAttributedPurchases(metrics).toLocaleString(getLocale())}</td>
-          <td>${metrics.cpa ? formatUsd(metrics.cpa, 2) : '-'}</td>
-          <td>${metrics.ctr ? metrics.ctr.toFixed(2) + '%' : '-'}</td>
-          <td>${actionButton}</td>
+          <td class="cell-primary cell-wrap" style="font-weight:600">${esc(campaign.name)}</td>
+          <td class="cell-fit cell-nowrap"><span class="badge ${statusClass}">${esc(statusLabel)}</span></td>
+          <td class="cell-fit cell-nowrap">${budget}${tr('/day', '/일')}</td>
+          <td class="cell-fit cell-nowrap">${formatUsd(metrics.spend || 0, 2)}</td>
+          <td class="cell-fit cell-nowrap">${getAttributedPurchases(metrics).toLocaleString(getLocale())}</td>
+          <td class="cell-fit cell-nowrap">${metrics.cpa ? formatUsd(metrics.cpa, 2) : '-'}</td>
+          <td class="cell-fit cell-nowrap">${metrics.ctr ? metrics.ctr.toFixed(2) + '%' : '-'}</td>
+          <td class="cell-actions cell-nowrap">${actionButton}</td>
         </tr>
       `;
     }).join('');

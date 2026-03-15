@@ -276,14 +276,14 @@
         const statusClass = campaign.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral';
         const profitColor = campaign.grossProfit >= 0 ? 'var(--color-success)' : 'var(--color-error)';
         return `<tr>
-          <td title="${esc(campaign.campaignId)}">${esc(campaign.campaignName)}</td>
-          <td><span class="badge ${statusClass}">${esc(campaign.status === 'ACTIVE' ? tr('ACTIVE', '집행중') : campaign.status === 'PAUSED' ? tr('PAUSED', '중지') : (campaign.status || '—'))}</span></td>
-          <td>$${campaign.spend.toFixed(2)}<br><span style="font-size:0.7rem;color:var(--color-text-faint)">₩${campaign.spendKRW.toLocaleString()}</span></td>
-          <td>${Number(campaign.metaPurchases || 0).toLocaleString(getLocale())}</td>
-          <td>₩${campaign.estimatedRevenue.toLocaleString()}</td>
-          <td>₩${campaign.allocatedCOGS.toLocaleString()}</td>
-          <td style="color:${profitColor};font-weight:600">₩${campaign.grossProfit.toLocaleString()}</td>
-          <td style="color:${profitColor}">${campaign.margin.toFixed(1)}%</td>
+          <td class="cell-primary cell-wrap" title="${esc(campaign.campaignId)}">${esc(campaign.campaignName)}</td>
+          <td class="cell-fit cell-nowrap"><span class="badge ${statusClass}">${esc(campaign.status === 'ACTIVE' ? tr('ACTIVE', '집행중') : campaign.status === 'PAUSED' ? tr('PAUSED', '중지') : (campaign.status || '—'))}</span></td>
+          <td class="cell-fit cell-nowrap">$${campaign.spend.toFixed(2)}<br><span style="font-size:0.7rem;color:var(--color-text-faint)">₩${campaign.spendKRW.toLocaleString()}</span></td>
+          <td class="cell-fit cell-nowrap">${Number(campaign.metaPurchases || 0).toLocaleString(getLocale())}</td>
+          <td class="cell-fit cell-nowrap">₩${campaign.estimatedRevenue.toLocaleString()}</td>
+          <td class="cell-fit cell-nowrap">₩${campaign.allocatedCOGS.toLocaleString()}</td>
+          <td class="cell-fit cell-nowrap" style="color:${profitColor};font-weight:600">₩${campaign.grossProfit.toLocaleString()}</td>
+          <td class="cell-fit cell-nowrap" style="color:${profitColor}">${campaign.margin.toFixed(1)}%</td>
         </tr>`;
       }).join('');
     }

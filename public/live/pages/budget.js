@@ -125,11 +125,11 @@
         } else {
           budgetHistoryEl.innerHTML = budgetOpts.map(opt => `
             <tr>
-              <td>${timeSince(new Date(opt.timestamp))}</td>
-              <td>${esc(opt.targetName || '—')}</td>
-              <td>${esc(formatOptimizationScope(opt.level))}</td>
-              <td style="font-weight:600">${esc(localizeOptimizationText(opt.action || '—'))}</td>
-              <td style="color:var(--color-text-muted)">${esc(localizeOptimizationText(opt.reason || '—'))}</td>
+              <td class="cell-fit cell-nowrap">${timeSince(new Date(opt.timestamp))}</td>
+              <td class="cell-primary cell-wrap">${esc(opt.targetName || '—')}</td>
+              <td class="cell-fit cell-nowrap">${esc(formatOptimizationScope(opt.level))}</td>
+              <td class="cell-wrap">${esc(localizeOptimizationText(opt.action || '—'))}</td>
+              <td class="cell-reason cell-wrap" style="color:var(--color-text-muted)">${esc(localizeOptimizationText(opt.reason || '—'))}</td>
             </tr>
           `).join('');
         }
