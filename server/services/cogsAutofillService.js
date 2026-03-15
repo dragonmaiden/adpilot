@@ -19,6 +19,7 @@ const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
+const MAX_NEW_ORDER_BACKFILL_HOURS = 12;
 const BIG_FISH_THRESHOLD_KRW = 200000;
 const COMPACT_DETAIL_COLUMN_INDEX = 12;
 const COMPACT_DETAIL_HEADER_LABEL = 'delivery note';
@@ -724,11 +725,7 @@ function resolveWindowStart(options = {}) {
 }
 
 function resolveNewOrderBackfillWindowStart(options = {}) {
-  const broadLookbackStart = resolveWindowStart({
-    lookbackDays: Number.isFinite(options.lookbackDays)
-      ? Number(options.lookbackDays)
-      : DEFAULT_POLL_LOOKBACK_DAYS,
-  });
+  const broadLookbackStart = new Date(Date.now() - (MAX_NEW_ORDER_BACKFILL_HOURS * 60 * 60 * 1000));
   const sinceTime = parseTimestamp(options.sinceTime);
 
   if (!(broadLookbackStart instanceof Date) || Number.isNaN(broadLookbackStart.getTime())) {
@@ -739,7 +736,8 @@ function resolveNewOrderBackfillWindowStart(options = {}) {
     return broadLookbackStart;
   }
 
-  // Rescue missed new-order alerts across a broader window than paid reconciliation.
+  // Rescue missed new-order alerts across a bounded recent window so stale unpaid orders
+  // do not suddenly appear as new.
   return new Date(Math.min(broadLookbackStart.getTime(), sinceTime.getTime()));
 }
 
