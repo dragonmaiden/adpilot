@@ -945,7 +945,7 @@ test('handleWebhookPayload suppresses the later paid-order ping when a new-order
   }
 });
 
-test('collectRecentNewOrderNotifications backfills recent unpaid orders that were missed or left delivery-pending', async () => {
+test('collectRecentNewOrderNotifications backfills unpaid orders across the broader rescue window when webhook delivery was missed', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
   const now = Date.now();
@@ -1045,15 +1045,23 @@ test('collectRecentNewOrderNotifications backfills recent unpaid orders that wer
           },
         ],
       }),
+      createOrder({
+        orderNo: '20260313007',
+        wtime: new Date(now - (8 * 24 * 60 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
     ], {
       sinceTime: new Date(now - (30 * 60 * 1000)),
     });
 
     assert.equal(result.status, 'ok');
-    assert.equal(result.eligibleOrders, 2);
-    assert.deepEqual(result.pending.map(order => order.orderNo), ['20260313002', '20260313001']);
+    assert.equal(result.eligibleOrders, 3);
+    assert.deepEqual(result.pending.map(order => order.orderNo), ['20260313005', '20260313002', '20260313001']);
     assert.equal(result.pending[0].notificationSource, 'scan_backstop');
-    assert.equal(result.pending[1].notificationKind, 'new_order');
+    assert.equal(result.pending[2].notificationKind, 'new_order');
   });
 });
 

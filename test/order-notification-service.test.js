@@ -142,7 +142,7 @@ test('completeExistingOrderNotification edits the original alert and marks the c
   });
 });
 
-test('deliverPaidOrderNotification falls back to the paid-order alert when there is no editable original message', async () => {
+test('deliverPaidOrderNotification falls back to the completed new-order card when there is no editable original message', async () => {
   const sentMessages = [];
   const completionMarks = [];
 
@@ -161,7 +161,7 @@ test('deliverPaidOrderNotification falls back to the paid-order alert when there
         orderNo: '202603150001',
         notificationStage: 'payment_pending',
       }),
-      buildAutofillNotification: result => `paid:${result.orderNo}`,
+      buildNewOrderNotification: result => `completed:${result.orderNo}:${result.notificationStage}`,
       buildAutofillPrivateNotification: result => `private:${result.orderNo}`,
       markOrderNotificationCompleted: (orderNo, metadata) => {
         completionMarks.push({ orderNo, metadata });
@@ -178,6 +178,7 @@ test('deliverPaidOrderNotification falls back to the paid-order alert when there
 
     assert.equal(result.kind, 'sent_paid_fallback');
     assert.equal(sentMessages.length, 2);
+    assert.equal(sentMessages[0].text, 'completed:202603150001:payment_confirmed');
     assert.deepEqual(completionMarks, [
       {
         orderNo: '202603150001',

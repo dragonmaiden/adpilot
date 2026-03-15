@@ -95,7 +95,10 @@ async function deliverPaidOrderNotification(result) {
     };
   }
 
-  const publicMessage = await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
+  const publicMessage = await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification({
+    ...result,
+    notificationStage: 'payment_confirmed',
+  }));
   let privateMessage = null;
   if (publicMessage?.ok) {
     privateMessage = await sendPrivateOrderDetails(result);

@@ -718,6 +718,26 @@ function resolveWindowStart(options = {}) {
   return new Date(Date.now() - (lookbackDays * 24 * 60 * 60 * 1000));
 }
 
+function resolveNewOrderBackfillWindowStart(options = {}) {
+  const broadLookbackStart = resolveWindowStart({
+    lookbackDays: Number.isFinite(options.lookbackDays)
+      ? Number(options.lookbackDays)
+      : DEFAULT_POLL_LOOKBACK_DAYS,
+  });
+  const sinceTime = parseTimestamp(options.sinceTime);
+
+  if (!(broadLookbackStart instanceof Date) || Number.isNaN(broadLookbackStart.getTime())) {
+    return sinceTime;
+  }
+
+  if (!(sinceTime instanceof Date) || Number.isNaN(sinceTime.getTime())) {
+    return broadLookbackStart;
+  }
+
+  // Rescue missed new-order alerts across a broader window than paid reconciliation.
+  return new Date(Math.min(broadLookbackStart.getTime(), sinceTime.getTime()));
+}
+
 function isRecentEnough(date, windowStart) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return false;
@@ -932,7 +952,7 @@ function shouldBackfillNewOrderNotification(order) {
 }
 
 function collectRecentNewOrderNotifications(orders, options = {}) {
-  const windowStart = resolveWindowStart(options);
+  const windowStart = resolveNewOrderBackfillWindowStart(options);
   const seenOrderNos = new Set();
 
   const eligibleOrders = (Array.isArray(orders) ? orders : [])
