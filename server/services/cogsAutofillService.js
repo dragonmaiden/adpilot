@@ -23,16 +23,6 @@ const MAX_NEW_ORDER_BACKFILL_HOURS = 1;
 const BIG_FISH_THRESHOLD_KRW = 200000;
 const COMPACT_DETAIL_COLUMN_INDEX = 12;
 const COMPACT_DETAIL_HEADER_LABEL = 'delivery note';
-const COGS_WEBHOOK_EVENTS = new Set([
-  'ORDER_DEPOSIT_COMPLETE',
-  'ORDER_PRODUCT_PREPARATION',
-]);
-const TERMINAL_EVENT_TOKENS = [
-  'CANCEL',
-  'RETURN',
-  'EXCHANGE',
-  'REFUND',
-];
 const TERMINAL_ORDER_STATUS_TOKENS = [
   'CANCEL',
   'RETURN',
@@ -62,10 +52,6 @@ function isConfigured() {
     && asString(config.cogs.autofill.googleClientEmail)
     && normalizePrivateKey(config.cogs.autofill.googlePrivateKey)
   );
-}
-
-function getWebhookToken() {
-  return asString(config.cogs.autofill.webhookToken);
 }
 
 function createEmptyState() {
@@ -618,9 +604,8 @@ function summarizeOrderPayment(order) {
   };
 }
 
-function summarizeTerminalOrderState(order, eventName = '') {
+function summarizeTerminalOrderState(order) {
   const statuses = [
-    eventName,
     order?.orderStatus,
     ...getOrderSections(order).map(section => section?.orderSectionStatus || section?.status),
   ].map(value => asString(value).toUpperCase()).filter(Boolean);
@@ -642,12 +627,6 @@ function summarizeTerminalOrderState(order, eventName = '') {
 
 function hasRecognizedPayment(order) {
   return normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
-}
-
-function isTerminalOrderWebhookEvent(eventName) {
-  const normalized = asString(eventName).toUpperCase();
-  if (!normalized) return false;
-  return TERMINAL_EVENT_TOKENS.some(token => normalized.includes(token));
 }
 
 function isTerminalOrderState(order) {
@@ -702,7 +681,7 @@ function buildOrderNotificationResult(order, overrides = {}) {
 
 function buildClosedOrderNotificationResult(order, overrides = {}) {
   return buildOrderNotificationResult(order, {
-    ...summarizeTerminalOrderState(order, overrides.webhookEvent),
+    ...summarizeTerminalOrderState(order),
     notificationStage: 'order_closed',
     ...overrides,
   });
@@ -1084,82 +1063,9 @@ async function appendRowsToSheet(target, rows) {
   return payload;
 }
 
-function extractWebhookEventName(payload) {
-  const candidates = [
-    payload?.eventName,
-    payload?.event,
-    payload?.eventType,
-    payload?.type,
-    payload?.topic,
-    payload?.code,
-    payload?.webhookEvent,
-    payload?.data?.eventName,
-    payload?.data?.event,
-    payload?.data?.eventType,
-    payload?.payload?.eventName,
-    payload?.payload?.event,
-    payload?.payload?.eventType,
-  ];
-
-  for (const candidate of candidates) {
-    const value = asString(candidate);
-    if (value) return value.toUpperCase();
-  }
-
-  return '';
-}
-
-function extractOrderNoFromWebhookPayload(payload) {
-  const candidates = [
-    payload?.orderNo,
-    payload?.order_no,
-    payload?.data?.orderNo,
-    payload?.data?.order_no,
-    payload?.order?.orderNo,
-    payload?.order?.order_no,
-    payload?.data?.order?.orderNo,
-    payload?.payload?.orderNo,
-  ];
-
-  for (const candidate of candidates) {
-    const value = asString(candidate);
-    if (value) return value;
-  }
-
-  return '';
-}
-
-function extractInlineOrder(payload) {
-  const candidates = [
-    payload?.order,
-    payload?.data?.order,
-    payload?.data,
-  ];
-
-  return candidates.find(candidate => candidate && typeof candidate === 'object' && candidate.orderNo) || null;
-}
-
-async function getWebhookOrder(payload, orderNo) {
-  const inlineOrder = extractInlineOrder(payload);
-  if (inlineOrder && asString(inlineOrder.orderNo) === asString(orderNo)) {
-    return inlineOrder;
-  }
-
-  return imweb.getOrder(orderNo);
-}
-
-function isNewOrderWebhookEvent(eventName) {
-  const normalized = asString(eventName).toUpperCase();
-  if (!normalized) return false;
-  if (!normalized.startsWith('ORDER_') || COGS_WEBHOOK_EVENTS.has(normalized)) return false;
-  if (isTerminalOrderWebhookEvent(normalized)) return false;
-  return true;
-}
-
-function shouldSendNewOrderNotification(order, eventName) {
+function shouldSendNewOrderNotification(order) {
   const normalizedOrderNo = asString(order?.orderNo);
   if (!normalizedOrderNo) return false;
-  if (isTerminalOrderWebhookEvent(eventName)) return false;
   if (isTerminalOrderState(order)) return false;
   if (hasRecognizedPayment(order)) return false;
   return true;
@@ -1184,7 +1090,7 @@ function shouldBackfillNewOrderNotification(order) {
     return false;
   }
 
-  return shouldSendNewOrderNotification(order, '');
+  return shouldSendNewOrderNotification(order);
 }
 
 function shouldCloseExistingOrderNotification(order) {
@@ -1413,113 +1319,9 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
   };
 }
 
-async function handleWebhookPayload(payload) {
-  const eventName = extractWebhookEventName(payload);
-  if (isTerminalOrderWebhookEvent(eventName)) {
-    const orderNo = extractOrderNoFromWebhookPayload(payload);
-    if (!orderNo) {
-      throw new Error('Webhook payload did not include orderNo');
-    }
-
-    const order = await getWebhookOrder(payload, orderNo);
-    if (!shouldCloseExistingOrderNotification(order)) {
-      return {
-        ok: true,
-        status: 'ignored',
-        reason: 'order notification is not pending closure',
-      };
-    }
-
-    return {
-      ...buildClosedOrderNotificationResult(order, {
-        webhookEvent: eventName,
-        notificationSource: 'webhook_terminal_order',
-      }),
-      ok: true,
-      status: 'closed',
-      notificationKind: 'order_closed',
-    };
-  }
-
-  if (isNewOrderWebhookEvent(eventName)) {
-    const orderNo = extractOrderNoFromWebhookPayload(payload);
-    if (!orderNo) {
-      throw new Error('Webhook payload did not include orderNo');
-    }
-
-    const order = await getWebhookOrder(payload, orderNo);
-    if (!shouldSendNewOrderNotification(order, eventName)) {
-      return {
-        ok: true,
-        status: 'ignored',
-        reason: 'order event is already paid or terminal',
-      };
-    }
-    const summary = buildOrderNotificationResult(order, {
-      webhookEvent: eventName,
-    });
-    const existingNotification = getNotifiedOrderMetadata(orderNo);
-    if (existingNotification) {
-      return {
-        ...summary,
-        ok: true,
-        status: 'already_notified',
-        reason: 'order notification already sent',
-        notificationKind: null,
-      };
-    }
-
-    markOrderNotified(orderNo, {
-      source: 'webhook_new_order',
-      eventName,
-      orderDate: summary.orderDate,
-      paymentState: summary.paymentState,
-      notificationStage: 'delivery_pending',
-    });
-    return {
-      ...summary,
-      ok: true,
-      status: 'notified',
-      notificationKind: 'new_order',
-    };
-  }
-
-  if (!COGS_WEBHOOK_EVENTS.has(eventName)) {
-    return { ok: true, status: 'ignored', reason: `unsupported event: ${eventName || 'unknown'}` };
-  }
-
-  const orderNo = extractOrderNoFromWebhookPayload(payload);
-  if (!orderNo) {
-    throw new Error('Webhook payload did not include orderNo');
-  }
-
-  const result = await syncOrderToCogsSheet(await getWebhookOrder(payload, orderNo));
-  if (result?.status === 'appended' && !wasOrderNotified(orderNo)) {
-    markOrderNotified(orderNo, {
-      source: 'cogs_autofill_fallback',
-      eventName,
-      orderDate: result.orderDate,
-      paymentState: result.paymentState,
-    });
-    return {
-      ...result,
-      notificationKind: 'cogs_autofill',
-    };
-  }
-
-  return {
-    ...result,
-    notificationKind: null,
-    notificationSuppressed: result?.status === 'appended',
-  };
-}
-
 module.exports = {
   isConfigured,
-  getWebhookToken,
   extractMonthNumber,
-  extractWebhookEventName,
-  extractOrderNoFromWebhookPayload,
   buildRowsForOrder,
   getNextSequenceNumber,
   hasOrderNumber,
@@ -1540,5 +1342,4 @@ module.exports = {
   syncOrderToCogsSheet,
   syncImwebOrderToCogs,
   syncRecentOrdersToCogs,
-  handleWebhookPayload,
 };

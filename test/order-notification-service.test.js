@@ -323,7 +323,7 @@ test('deliverClosedOrderNotification stays silent but marks the order closed whe
       getNotifiedOrderMetadata: () => ({
         orderNo: '202603150010',
         notificationStage: 'delivery_pending',
-        source: 'webhook_new_order',
+        source: 'scan_backstop',
         orderDate: '2026-03-15',
       }),
       markOrderNotificationClosed: (orderNo, metadata) => {
@@ -346,7 +346,7 @@ test('deliverClosedOrderNotification stays silent but marks the order closed whe
         metadata: {
           paymentState: 'cancelled',
           orderDate: '2026-03-15',
-          source: 'webhook_new_order',
+          source: 'scan_backstop',
         },
       },
     ]);

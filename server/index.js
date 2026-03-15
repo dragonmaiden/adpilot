@@ -30,7 +30,6 @@ const operatorSummaryService = require('./services/operatorSummaryService');
 const briefService = require('./services/briefService');
 const cogsAutofillService = require('./services/cogsAutofillService');
 const orderNotificationService = require('./services/orderNotificationService');
-const imwebAppInstallService = require('./services/imwebAppInstallService');
 const observabilityService = require('./services/observabilityService');
 const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
 
@@ -65,22 +64,6 @@ function validateMetaIdParam(req, res, next) {
 
 function isFiniteNumberInRange(value, min, max) {
   return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
-}
-
-function isValidWebhookToken(req) {
-  const expectedToken = cogsAutofillService.getWebhookToken();
-  if (!expectedToken) return true;
-
-  const candidates = [
-    req.get('x-imweb-webhook-token'),
-    req.get('x-webhook-token'),
-    req.query?.token,
-    req.body?.token,
-    req.body?.webhookToken,
-    req.body?.secret,
-  ];
-
-  return candidates.some(candidate => String(candidate || '').trim() === expectedToken);
 }
 
 function escapeHtml(value) {
@@ -119,40 +102,17 @@ function renderImwebInstallPage({ title, body, statusCode = 200 }) {
   };
 }
 
-function buildImwebInstallSuccessPage(result) {
-  const configuredSite = config.imweb.siteCode
-    ? `<p><strong>Configured Site</strong> <code>${escapeHtml(config.imweb.siteCode)}</code></p>`
-    : '';
-  const nextStep = result.integrationStatus === 'already_complete'
-    ? 'The site was already marked complete in Imweb. You can now verify the site status in Imweb Developers.'
-    : 'Imweb install finished and the site integration completion call succeeded. You can now verify that the site moves to 연동완료 in Imweb Developers.';
-
+function buildImwebPollingModePage() {
   return renderImwebInstallPage({
-    title: 'Imweb Install Complete',
+    title: 'Imweb Webhooks Disabled',
+    statusCode: 410,
     body: `
-      <h1>Imweb Install Complete</h1>
-      <p>${escapeHtml(nextStep)}</p>
+      <h1>Imweb Webhooks Disabled</h1>
+      <p>AdPilot now relies on the scheduled Imweb order scan instead of the deprecated app-install and webhook flow.</p>
       <div class="meta">
-        <p><strong>Site Code</strong> <code>${escapeHtml(result.siteCode)}</code></p>
-        <p><strong>Redirect URI</strong> <code>${escapeHtml(result.redirectUri)}</code></p>
-        <p><strong>Service URL</strong> <code>${escapeHtml(result.serviceUrl)}</code></p>
-        <p><strong>Scope</strong> <code>${escapeHtml(result.scope)}</code></p>
-        <p><strong>Status</strong> <code>${escapeHtml(result.integrationStatus)}</code></p>
-        ${configuredSite}
+        <p><strong>Mode</strong> <code>scan_polling_primary</code></p>
+        <p><strong>Order sync</strong> <code>10-minute Imweb pull + Telegram reconciliation</code></p>
       </div>
-      <a class="cta" href="/">Open AdPilot</a>
-    `,
-  });
-}
-
-function buildImwebInstallErrorPage(err, statusCode = 500) {
-  return renderImwebInstallPage({
-    title: 'Imweb Install Failed',
-    statusCode,
-    body: `
-      <h1>Imweb Install Failed</h1>
-      <p>${escapeHtml(err?.message || 'Unknown install error')}</p>
-      <p>Please confirm the Imweb app uses the correct Service URL and Redirect URI, then try the install again.</p>
       <a class="cta" href="/">Open AdPilot</a>
     `,
   });
@@ -253,61 +213,21 @@ app.use((req, res, next) => {
 });
 
 app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
-  try {
-    if (!isValidWebhookToken(req)) {
-      return res.status(401).json({ ok: false, error: 'Invalid webhook token' });
-    }
-
-    const result = await cogsAutofillService.handleWebhookPayload(req.body || {});
-    if (result?.notificationKind === 'new_order') {
-      await orderNotificationService.deliverNewOrderNotification(result);
-    } else if (result?.notificationKind === 'order_closed') {
-      await orderNotificationService.deliverClosedOrderNotification(result);
-    } else if (result?.notificationKind === 'cogs_autofill') {
-      await orderNotificationService.deliverPaidOrderNotification(result);
-    } else if (shouldDeliverPaidOrderNotification(result)) {
-      await orderNotificationService.deliverPaidOrderNotification(result);
-    }
-    res.json(cogsAutofillService.sanitizeAutofillResultForResponse(result));
-  } catch (err) {
-    handleInternalError(req, res, err);
-  }
+  res.status(202).json({
+    ok: true,
+    status: 'ignored',
+    reason: 'imweb_webhooks_sunset_scan_polling_primary',
+  });
 });
 
 app.get('/imweb/install', async (req, res) => {
-  try {
-    const install = imwebAppInstallService.beginInstall({
-      req,
-      siteCode: req.query?.siteCode,
-    });
-    res.redirect(302, install.authorizeUrl);
-  } catch (err) {
-    const page = buildImwebInstallErrorPage(err, 400);
-    res.status(page.statusCode).type('html').send(page.html);
-  }
+  const page = buildImwebPollingModePage();
+  res.status(page.statusCode).type('html').send(page.html);
 });
 
 app.get('/imweb/oauth/callback', async (req, res) => {
-  try {
-    if (req.query?.error) {
-      const page = buildImwebInstallErrorPage(new Error(`${req.query.error}: ${req.query.error_description || 'OAuth callback returned an error'}`), 400);
-      return res.status(page.statusCode).type('html').send(page.html);
-    }
-
-    const code = String(req.query?.code || '').trim();
-    const state = String(req.query?.state || '').trim();
-    if (!code || !state) {
-      const page = buildImwebInstallErrorPage(new Error('Missing OAuth code or state'), 400);
-      return res.status(page.statusCode).type('html').send(page.html);
-    }
-
-    const result = await imwebAppInstallService.finalizeInstall({ req, code, state });
-    const page = buildImwebInstallSuccessPage(result);
-    res.status(page.statusCode).type('html').send(page.html);
-  } catch (err) {
-    const page = buildImwebInstallErrorPage(err, 500);
-    res.status(page.statusCode).type('html').send(page.html);
-  }
+  const page = buildImwebPollingModePage();
+  res.status(page.statusCode).type('html').send(page.html);
 });
 
 app.use('/api', apiLimiter);
@@ -647,10 +567,11 @@ app.get('/api/settings', (req, res) => {
       siteCode: config.imweb.siteCode,
       unitCode: config.imweb.unitCode,
       app: {
-        serviceUrl: imwebAppInstallService.getServiceUrl(req),
-        redirectUri: imwebAppInstallService.getRedirectUri(req),
-        installScope: imwebAppInstallService.getInstallScope(),
-        installedSite: imwebAppInstallService.getInstalledSite(),
+        mode: 'disabled',
+        serviceUrl: null,
+        redirectUri: null,
+        installScope: null,
+        installedSite: null,
       },
       auth: imweb.getAuthState(),
       data: sourceHealth.imweb || {},

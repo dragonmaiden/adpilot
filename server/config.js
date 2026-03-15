@@ -27,17 +27,6 @@ function deepFreeze(obj) {
   return obj;
 }
 
-function parseJsonEnv(value, fallback = null) {
-  if (typeof value !== 'string' || !value.trim()) return fallback;
-
-  try {
-    return JSON.parse(value);
-  } catch (err) {
-    console.warn(`[CONFIG] Failed to parse JSON env value: ${err.message}`);
-    return fallback;
-  }
-}
-
 const config = {
   // Meta Ads API
   meta: {
@@ -55,11 +44,6 @@ const config = {
     siteCode: process.env.IMWEB_SITE_CODE || 'S20260108741f7ad4afc71',
     unitCode: process.env.IMWEB_UNIT_CODE || 'u20260108695f4cab3dea1',
     baseUrl: 'https://openapi.imweb.me',
-    appBaseUrl: process.env.IMWEB_APP_BASE_URL || '',
-    serviceUrl: process.env.IMWEB_APP_SERVICE_URL || '',
-    redirectUri: process.env.IMWEB_APP_REDIRECT_URI || '',
-    installScope: process.env.IMWEB_APP_SCOPE || 'site-info:read site-info:write order:read',
-    integrationConfig: parseJsonEnv(process.env.IMWEB_APP_CONFIG_JSON, null),
   },
 
   // Optimization Rules
@@ -97,7 +81,6 @@ const config = {
     autofill: {
       googleClientEmail: process.env.COGS_GOOGLE_CLIENT_EMAIL || '',
       googlePrivateKey: process.env.COGS_GOOGLE_PRIVATE_KEY || '',
-      webhookToken: process.env.IMWEB_WEBHOOK_TOKEN || '',
     },
   },
 

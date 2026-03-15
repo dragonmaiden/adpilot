@@ -249,7 +249,7 @@ async function getOperatorSummaryResponse() {
       stats: optimizationsResponse.stats ?? {},
     },
     operations: {
-      orderSyncMode: 'scan_polling_primary_with_webhook_support',
+      orderSyncMode: 'scan_polling_primary',
       sheets: Array.isArray(cogs.sheets) ? cogs.sheets : [],
       purchaseCount: cogs.purchaseCount ?? 0,
       itemCount: cogs.itemCount ?? 0,

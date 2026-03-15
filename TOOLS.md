@@ -89,7 +89,7 @@ When using local snapshots, say clearly that the answer is from a local snapshot
 - Campaign contribution is still an estimate, not exact order-to-campaign attribution.
 - Some zero-cost COGS rows are not “missing cost”; they can be pending recovery or supplier-hold rows after customer cancellation.
 - COGS sheet autofill is append-only and routes to monthly tabs like `3월 주문`, `4월 주문`.
-- Order logging currently relies primarily on the 3-minute scan reconciliation path, with webhook support when available.
+- Order logging relies on the scan reconciliation path; the webhook/app-install path has been sunset.
 
 ## Response style
 

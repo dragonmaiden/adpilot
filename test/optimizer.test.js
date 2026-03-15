@@ -236,17 +236,18 @@ test('analyzeCampaigns blocks scale-up when fatigue is widespread across active 
 
 test('analyzeBudgetReallocation follows contribution estimates instead of issuing a CPA-only move', () => {
   const engine = new OptimizationEngine(8);
+  const recentDates = [recentDate(3), recentDate(2), recentDate(1)];
   const campaigns = [
     { id: 'c1', name: 'Scale Winner', status: 'ACTIVE', daily_budget: '11000' },
     { id: 'c2', name: 'Drag Campaign', status: 'ACTIVE', daily_budget: '9000' },
   ];
   const insights = [
-    { campaign_id: 'c1', date_start: '2026-03-08', spend: '55', actions: createActions(5) },
-    { campaign_id: 'c1', date_start: '2026-03-09', spend: '55', actions: createActions(5) },
-    { campaign_id: 'c1', date_start: '2026-03-10', spend: '55', actions: createActions(5) },
-    { campaign_id: 'c2', date_start: '2026-03-08', spend: '60', actions: createActions(5) },
-    { campaign_id: 'c2', date_start: '2026-03-09', spend: '60', actions: createActions(5) },
-    { campaign_id: 'c2', date_start: '2026-03-10', spend: '60', actions: createActions(5) },
+    { campaign_id: 'c1', date_start: recentDates[0], spend: '55', actions: createActions(5) },
+    { campaign_id: 'c1', date_start: recentDates[1], spend: '55', actions: createActions(5) },
+    { campaign_id: 'c1', date_start: recentDates[2], spend: '55', actions: createActions(5) },
+    { campaign_id: 'c2', date_start: recentDates[0], spend: '60', actions: createActions(5) },
+    { campaign_id: 'c2', date_start: recentDates[1], spend: '60', actions: createActions(5) },
+    { campaign_id: 'c2', date_start: recentDates[2], spend: '60', actions: createActions(5) },
   ];
 
   engine.analyzeBudgetReallocation(campaigns, insights, {
