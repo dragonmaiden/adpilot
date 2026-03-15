@@ -256,7 +256,10 @@ app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
     }
 
     const result = await cogsAutofillService.handleWebhookPayload(req.body || {});
-    if (result?.status === 'appended') {
+    if (result?.notificationKind === 'new_order') {
+      await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification(result));
+      await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(result), 'HTML', { protectContent: true });
+    } else if (result?.notificationKind === 'cogs_autofill') {
       await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
       await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(result), 'HTML', { protectContent: true });
     }
@@ -405,7 +408,7 @@ app.post('/api/cogs/autofill-order', writeLimiter, async (req, res) => {
     }
 
     const result = await cogsAutofillService.syncImwebOrderToCogs(orderNo);
-    if (result?.status === 'appended') {
+    if (result?.status === 'appended' && !result?.alreadyNotified) {
       await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
       await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(result), 'HTML', { protectContent: true });
     }

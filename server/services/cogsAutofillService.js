@@ -22,6 +22,23 @@ const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const BIG_FISH_THRESHOLD_KRW = 200000;
 const COMPACT_DETAIL_COLUMN_INDEX = 12;
 const COMPACT_DETAIL_HEADER_LABEL = 'delivery note';
+const COGS_WEBHOOK_EVENTS = new Set([
+  'ORDER_DEPOSIT_COMPLETE',
+  'ORDER_PRODUCT_PREPARATION',
+]);
+const TERMINAL_EVENT_TOKENS = [
+  'CANCEL',
+  'RETURN',
+  'EXCHANGE',
+  'REFUND',
+];
+const TERMINAL_ORDER_STATUS_TOKENS = [
+  'CANCEL',
+  'RETURN',
+  'EXCHANGE',
+  'REFUND',
+  'CLOSED',
+];
 const LEGACY_OPTIONAL_HEADER_LABELS = new Set([
   '배송메모',
   '주문자 연락처',
@@ -29,10 +46,6 @@ const LEGACY_OPTIONAL_HEADER_LABELS = new Set([
   '수령인 연락처',
   '우편번호',
   '주소',
-]);
-const SUPPORTED_EVENTS = new Set([
-  'ORDER_DEPOSIT_COMPLETE',
-  'ORDER_PRODUCT_PREPARATION',
 ]);
 
 let googleAccessToken = null;
@@ -55,7 +68,10 @@ function getWebhookToken() {
 }
 
 function createEmptyState() {
-  return { importedOrders: {} };
+  return {
+    importedOrders: {},
+    notifiedOrders: {},
+  };
 }
 
 function loadState() {
@@ -68,6 +84,9 @@ function loadState() {
     return {
       importedOrders: raw?.importedOrders && typeof raw.importedOrders === 'object'
         ? raw.importedOrders
+        : {},
+      notifiedOrders: raw?.notifiedOrders && typeof raw.notifiedOrders === 'object'
+        ? raw.notifiedOrders
         : {},
     };
   } catch (_) {
@@ -98,6 +117,30 @@ function getImportedOrderMetadata(orderNo) {
   if (!normalizedOrderNo) return null;
   const state = loadState();
   return state.importedOrders[normalizedOrderNo] || null;
+}
+
+function markOrderNotified(orderNo, metadata = {}) {
+  const normalizedOrderNo = asString(orderNo);
+  if (!normalizedOrderNo) return;
+
+  const state = loadState();
+  state.notifiedOrders[normalizedOrderNo] = {
+    orderNo: normalizedOrderNo,
+    notifiedAt: new Date().toISOString(),
+    ...metadata,
+  };
+  saveState(state);
+}
+
+function getNotifiedOrderMetadata(orderNo) {
+  const normalizedOrderNo = asString(orderNo);
+  if (!normalizedOrderNo) return null;
+  const state = loadState();
+  return state.notifiedOrders[normalizedOrderNo] || null;
+}
+
+function wasOrderNotified(orderNo) {
+  return Boolean(getNotifiedOrderMetadata(orderNo));
 }
 
 function wasOrderImported(orderNo) {
@@ -360,6 +403,146 @@ function getOrderSizeLabel(amount) {
     : '🐟 small fish ₩₩';
 }
 
+function getPaymentMethodLabel(order) {
+  const payments = Array.isArray(order?.payments) ? order.payments : [];
+  const candidates = [
+    payments[0]?.method,
+    order?.paymentMethod,
+    payments[0]?.pgName,
+  ];
+
+  for (const candidate of candidates) {
+    const value = asString(candidate);
+    if (value) return value;
+  }
+
+  return '';
+}
+
+function summarizeOrderPayment(order) {
+  const hasCompletedPayment = normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
+  const paymentStatuses = [...new Set(
+    (Array.isArray(order?.payments) ? order.payments : [])
+      .map(payment => asString(payment?.paymentStatus).toUpperCase())
+      .filter(Boolean)
+  )];
+  const paymentMethod = getPaymentMethodLabel(order);
+  const rawStatus = paymentStatuses.join(', ');
+
+  if (hasCompletedPayment) {
+    return {
+      paymentState: 'paid',
+      paymentLabel: 'Paid confirmed',
+      paymentMethod,
+      paymentStatusDetail: rawStatus,
+    };
+  }
+
+  const hasAwaitingStatus = paymentStatuses.some(status => (
+    status.includes('WAIT')
+      || status.includes('PENDING')
+      || status.includes('READY')
+      || status.includes('REQUEST')
+      || status.includes('PREPARATION')
+      || status.includes('OVERDUE')
+  ));
+
+  return {
+    paymentState: hasAwaitingStatus ? 'awaiting_check' : 'check_now',
+    paymentLabel: hasAwaitingStatus ? 'Awaiting payment check' : 'Check payment now',
+    paymentMethod,
+    paymentStatusDetail: rawStatus,
+  };
+}
+
+function hasRecognizedPayment(order) {
+  return normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
+}
+
+function isTerminalOrderWebhookEvent(eventName) {
+  const normalized = asString(eventName).toUpperCase();
+  if (!normalized) return false;
+  return TERMINAL_EVENT_TOKENS.some(token => normalized.includes(token));
+}
+
+function isTerminalOrderState(order) {
+  const orderStatus = asString(order?.orderStatus).toUpperCase();
+  if (TERMINAL_ORDER_STATUS_TOKENS.some(token => orderStatus.includes(token))) {
+    return true;
+  }
+
+  const sectionStatuses = getOrderSections(order)
+    .map(section => asString(section?.orderSectionStatus || section?.status).toUpperCase())
+    .filter(Boolean);
+
+  return sectionStatuses.some(status => (
+    TERMINAL_ORDER_STATUS_TOKENS.some(token => status.includes(token))
+  ));
+}
+
+function buildOrderNotificationResult(order, overrides = {}) {
+  const orderDate = order?.wtime ? formatDateInTimeZone(order.wtime) : '';
+  const customerName = asString(order?.ordererName || order?.memberName);
+  const productNames = getOrderProductNames(order).filter(Boolean);
+  const contact = getOrderContactSnapshot(order);
+  const deliveryAddress = contact.address || '';
+  const firstSection = getOrderSections(order)[0] || null;
+  const deliveryNote = asString(firstSection?.delivery?.memo || firstSection?.pickupMemo);
+  const cashTotals = getOrderCashTotals(order);
+  const paymentSummary = summarizeOrderPayment(order);
+  const orderValue = Number(
+    order?.totalPrice
+      || cashTotals.netPaidAmount
+      || cashTotals.approvedAmount
+      || 0
+  );
+
+  return {
+    orderNo: asString(order?.orderNo),
+    orderDate,
+    customerName,
+    productNames,
+    productLines: buildNotificationProductLines(order),
+    customerPhone: contact.receiverPhone || contact.ordererPhone,
+    deliveryAddress,
+    deliveryNote,
+    approvedAmount: cashTotals.approvedAmount,
+    netRevenue: cashTotals.netPaidAmount,
+    refundedAmount: cashTotals.refundedAmount,
+    orderValue,
+    ...paymentSummary,
+    ...overrides,
+  };
+}
+
+function buildNewOrderNotification(result) {
+  const orderValue = Number(result?.orderValue || result?.netRevenue || result?.approvedAmount || 0);
+  const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
+    ? result.productNames.map(line => `• ${escapeHtml(line)}`).join('\n')
+    : '• Product name unavailable';
+  const paymentLabel = [
+    result?.paymentLabel,
+    result?.paymentMethod,
+  ].filter(Boolean).map(value => escapeHtml(value)).join(' · ');
+
+  const sections = [
+    '🛎️ <b>New Imweb Order</b>',
+    '',
+    `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
+    `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,
+    `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
+    `Order value: ${escapeHtml(formatStoreMoney(orderValue))} · ${escapeHtml(getOrderSizeLabel(orderValue))}`,
+    `Payment: ${paymentLabel || 'Check payment now'}`,
+  ];
+
+  if (result?.paymentState !== 'paid') {
+    sections.push('Next: Check payment in Imweb');
+  }
+
+  sections.push('', 'Products:', productLines);
+  return sections.join('\n');
+}
+
 function buildAutofillNotification(result) {
   const revenue = Number(result?.netRevenue || result?.approvedAmount || 0);
   const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
@@ -367,7 +550,7 @@ function buildAutofillNotification(result) {
     : '• Product name unavailable';
 
   const sections = [
-    '🧾 <b>New Imweb Order Logged 🎉🎉</b>',
+    '✅ <b>Paid Imweb Order Logged</b>',
     '',
     `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
     `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,
@@ -682,6 +865,32 @@ function extractInlineOrder(payload) {
   return candidates.find(candidate => candidate && typeof candidate === 'object' && candidate.orderNo) || null;
 }
 
+async function getWebhookOrder(payload, orderNo) {
+  const inlineOrder = extractInlineOrder(payload);
+  if (inlineOrder && asString(inlineOrder.orderNo) === asString(orderNo)) {
+    return inlineOrder;
+  }
+
+  return imweb.getOrder(orderNo);
+}
+
+function isNewOrderWebhookEvent(eventName) {
+  const normalized = asString(eventName).toUpperCase();
+  if (!normalized) return false;
+  if (!normalized.startsWith('ORDER_') || COGS_WEBHOOK_EVENTS.has(normalized)) return false;
+  if (isTerminalOrderWebhookEvent(normalized)) return false;
+  return true;
+}
+
+function shouldSendNewOrderNotification(order, eventName) {
+  const normalizedOrderNo = asString(order?.orderNo);
+  if (!normalizedOrderNo) return false;
+  if (isTerminalOrderWebhookEvent(eventName)) return false;
+  if (isTerminalOrderState(order)) return false;
+  if (hasRecognizedPayment(order)) return false;
+  return true;
+}
+
 async function syncOrderToCogsSheet(order, options = {}) {
   if (!isConfigured()) {
     return { ok: false, status: 'disabled', reason: 'COGS autofill is not configured' };
@@ -692,44 +901,29 @@ async function syncOrderToCogsSheet(order, options = {}) {
     throw new Error('Order is missing orderNo');
   }
 
-  const orderDate = order?.wtime ? formatDateInTimeZone(order.wtime) : '';
-  if (!orderDate) {
+  const summary = buildOrderNotificationResult(order);
+  if (!summary.orderDate) {
     throw new Error(`Order ${normalizedOrderNo} is missing wtime`);
   }
-  const customerName = asString(order?.ordererName || order?.memberName);
-  const productNames = getOrderProductNames(order).filter(Boolean);
-  const contact = getOrderContactSnapshot(order);
-  const deliveryAddress = contact.address || '';
-  const firstSection = getOrderSections(order)[0] || null;
-  const deliveryNote = asString(firstSection?.delivery?.memo || firstSection?.pickupMemo);
-  const cashTotals = getOrderCashTotals(order);
+  const alreadyNotified = wasOrderNotified(normalizedOrderNo);
 
   const importedMetadata = getImportedOrderMetadata(normalizedOrderNo);
-  const target = options.target || await resolveTargetSheet(orderDate);
+  const target = options.target || await resolveTargetSheet(summary.orderDate);
   const existingRows = options.existingRows || await getRowsForTarget(target, options.sheetCache);
   await ensureOptionalHeaders(target, existingRows);
   if (hasOrderNumber(existingRows, normalizedOrderNo)) {
     markOrderImported(normalizedOrderNo, {
       source: importedMetadata ? (importedMetadata.source || 'sheet_duplicate') : 'sheet_duplicate',
       sheetName: target.sheetName,
-      orderDate,
+      orderDate: summary.orderDate,
     });
     return {
+      ...summary,
       ok: true,
       status: 'duplicate',
       reason: importedMetadata ? 'order already imported' : 'order already exists in sheet',
-      orderNo: normalizedOrderNo,
-      orderDate,
-      customerName,
-      productNames,
-      productLines: buildNotificationProductLines(order),
-      customerPhone: contact.receiverPhone || contact.ordererPhone,
-      deliveryAddress,
-      deliveryNote,
+      alreadyNotified,
       sheetName: target.sheetName,
-      approvedAmount: cashTotals.approvedAmount,
-      netRevenue: cashTotals.netPaidAmount,
-      refundedAmount: cashTotals.refundedAmount,
     };
   }
 
@@ -740,27 +934,18 @@ async function syncOrderToCogsSheet(order, options = {}) {
   markOrderImported(normalizedOrderNo, {
     source: importedMetadata ? 'recovered_append' : 'append',
     sheetName: target.sheetName,
-    orderDate,
+    orderDate: summary.orderDate,
     rowCount: rows.length,
   });
 
   return {
+    ...summary,
     ok: true,
     status: 'appended',
-    orderNo: normalizedOrderNo,
-    orderDate,
-    customerName,
-    productNames,
-    productLines: buildNotificationProductLines(order),
-    customerPhone: contact.receiverPhone || contact.ordererPhone,
-    deliveryAddress,
-    deliveryNote,
+    alreadyNotified,
     sheetName: target.sheetName,
     rowCount: rows.length,
     sequenceNo: nextSequenceNo,
-    approvedAmount: cashTotals.approvedAmount,
-    netRevenue: cashTotals.netPaidAmount,
-    refundedAmount: cashTotals.refundedAmount,
   };
 }
 
@@ -847,7 +1032,49 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
 
 async function handleWebhookPayload(payload) {
   const eventName = extractWebhookEventName(payload);
-  if (!SUPPORTED_EVENTS.has(eventName)) {
+  if (isNewOrderWebhookEvent(eventName)) {
+    const orderNo = extractOrderNoFromWebhookPayload(payload);
+    if (!orderNo) {
+      throw new Error('Webhook payload did not include orderNo');
+    }
+
+    const order = await getWebhookOrder(payload, orderNo);
+    if (!shouldSendNewOrderNotification(order, eventName)) {
+      return {
+        ok: true,
+        status: 'ignored',
+        reason: 'order event is already paid or terminal',
+      };
+    }
+    const summary = buildOrderNotificationResult(order, {
+      webhookEvent: eventName,
+    });
+    const existingNotification = getNotifiedOrderMetadata(orderNo);
+    if (existingNotification) {
+      return {
+        ...summary,
+        ok: true,
+        status: 'already_notified',
+        reason: 'order notification already sent',
+        notificationKind: null,
+      };
+    }
+
+    markOrderNotified(orderNo, {
+      source: 'webhook_new_order',
+      eventName,
+      orderDate: summary.orderDate,
+      paymentState: summary.paymentState,
+    });
+    return {
+      ...summary,
+      ok: true,
+      status: 'notified',
+      notificationKind: 'new_order',
+    };
+  }
+
+  if (!COGS_WEBHOOK_EVENTS.has(eventName)) {
     return { ok: true, status: 'ignored', reason: `unsupported event: ${eventName || 'unknown'}` };
   }
 
@@ -856,12 +1083,25 @@ async function handleWebhookPayload(payload) {
     throw new Error('Webhook payload did not include orderNo');
   }
 
-  const inlineOrder = extractInlineOrder(payload);
-  if (inlineOrder && asString(inlineOrder.orderNo) === asString(orderNo)) {
-    return syncOrderToCogsSheet(inlineOrder);
+  const result = await syncOrderToCogsSheet(await getWebhookOrder(payload, orderNo));
+  if (result?.status === 'appended' && !wasOrderNotified(orderNo)) {
+    markOrderNotified(orderNo, {
+      source: 'cogs_autofill_fallback',
+      eventName,
+      orderDate: result.orderDate,
+      paymentState: result.paymentState,
+    });
+    return {
+      ...result,
+      notificationKind: 'cogs_autofill',
+    };
   }
 
-  return syncImwebOrderToCogs(orderNo);
+  return {
+    ...result,
+    notificationKind: null,
+    notificationSuppressed: result?.status === 'appended',
+  };
 }
 
 module.exports = {
@@ -875,6 +1115,7 @@ module.exports = {
   hasOrderNumber,
   findTargetForMonth,
   resolveTargetSheet,
+  buildNewOrderNotification,
   buildAutofillNotification,
   buildAutofillPrivateNotification,
   sanitizeAutofillResultForResponse,

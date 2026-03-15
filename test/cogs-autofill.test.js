@@ -212,7 +212,47 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
   }
 });
 
-test('buildAutofillNotification formats the public Shue order summary', async () => {
+test('buildNewOrderNotification formats the pre-payment order alert', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const message = service.buildNewOrderNotification({
+      orderNo: '202603145648900',
+      orderDate: '2026-03-13',
+      customerName: '홍신희',
+      orderValue: 111000,
+      paymentLabel: 'Awaiting payment check',
+      paymentMethod: 'BANK_TRANSFER',
+      paymentState: 'awaiting_check',
+      productNames: ['실크 모노그램 방도'],
+    });
+
+    assert.match(message, /🛎️ <b>New Imweb Order<\/b>/);
+    assert.match(message, /Order: 202603145648900/);
+    assert.match(message, /Date: 2026-03-13/);
+    assert.match(message, /Customer: 홍신희/);
+    assert.match(message, /Order value: ₩111,000 · 🐟 small fish ₩₩/);
+    assert.match(message, /Payment: Awaiting payment check · BANK_TRANSFER/);
+    assert.match(message, /Next: Check payment in Imweb/);
+    assert.match(message, /Products:\n• 실크 모노그램 방도/);
+  });
+});
+
+test('buildAutofillNotification formats the paid-order COGS summary', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
 
@@ -245,7 +285,7 @@ test('buildAutofillNotification formats the public Shue order summary', async ()
       productLines: ['실크 모노그램 방도', '에르 스카프 (od202601302d5ef0d5fc48b)'],
     });
 
-    assert.match(message, /🧾 <b>New Imweb Order Logged 🎉🎉<\/b>/);
+    assert.match(message, /✅ <b>Paid Imweb Order Logged<\/b>/);
     assert.match(message, /Order: 202603145648900/);
     assert.match(message, /Date: 2026-03-13/);
     assert.match(message, /Customer: 홍신희/);
@@ -440,6 +480,92 @@ test('syncOrderToCogsSheet recovers when imported state exists but the sheet row
   }
 });
 
+test('syncOrderToCogsSheet marks paid appends that were already alerted in Telegram', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  let appendCount = 0;
+  let headerUpdateCount = 0;
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {},
+    notifiedOrders: {
+      '20260313225187': {
+        orderNo: '20260313225187',
+        notifiedAt: '2026-03-13T00:00:00.000Z',
+        source: 'webhook_new_order',
+      },
+    },
+  }, null, 2));
+
+  global.fetch = async (url) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateCount += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6 }),
+      };
+    }
+
+    appendCount += 1;
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 2 } }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({
+          workbookSheets: [{ name: '3월 주문', path: 'xl/worksheets/sheet2.xml' }],
+        }),
+        buildSheetTargets: () => [
+          { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+        ],
+        fetchSheetCSV: async () => [
+          ['번호', '날짜', '이름', '주문번호'],
+          [],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for already-notified append test');
+        },
+      },
+    }, async service => {
+      const result = await service.syncOrderToCogsSheet(createOrder({
+        totalPaymentPrice: 111000,
+        payments: [
+          {
+            paidPrice: 111000,
+            paymentStatus: 'PAYMENT_COMPLETE',
+            paymentCompleteTime: '2026-03-13T03:10:00.000Z',
+            method: 'CARD',
+          },
+        ],
+      }));
+
+      assert.equal(result.status, 'appended');
+      assert.equal(result.alreadyNotified, true);
+      assert.equal(appendCount, 1);
+      assert.equal(headerUpdateCount, 1);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('handleWebhookPayload processes deposit-complete and product-preparation order events and ignores unsupported events', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
@@ -509,6 +635,7 @@ test('handleWebhookPayload processes deposit-complete and product-preparation or
     }, async service => {
       const depositComplete = await service.handleWebhookPayload({ eventName: 'ORDER_DEPOSIT_COMPLETE', orderNo: '20260313225187' });
       assert.equal(depositComplete.status, 'appended');
+      assert.equal(depositComplete.notificationKind, 'cogs_autofill');
       assert.deepEqual(depositComplete.productNames, ['실크 모노그램 방도', '에르 스카프']);
       assert.equal(getOrderCalls, 1);
 
@@ -518,6 +645,7 @@ test('handleWebhookPayload processes deposit-complete and product-preparation or
       });
 
       assert.equal(appended.status, 'duplicate');
+      assert.equal(appended.notificationKind, null);
       assert.equal(getOrderCalls, 1);
       assert.equal(appendCount, 1);
       assert.equal(headerUpdateCount, 1);
@@ -591,9 +719,187 @@ test('handleWebhookPayload accepts eventType payloads from Imweb order webhooks'
       });
 
       assert.equal(appended.status, 'appended');
+      assert.equal(appended.notificationKind, 'cogs_autofill');
       assert.equal(appended.orderNo, '202603138754779');
       assert.equal(appended.customerName, '박유림');
       assert.equal(getOrderCalls, 1);
+      assert.equal(appendCount, 1);
+      assert.equal(headerUpdateCount, 1);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('handleWebhookPayload sends a new-order notification before payment events and suppresses repeats', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => {
+        throw new Error('sheet lookup should not run for new-order notifications');
+      },
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => createOrder({
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        paymentMethod: 'BANK_TRANSFER',
+        payments: [],
+      }),
+    },
+  }, async service => {
+    const first = await service.handleWebhookPayload({
+      eventName: 'ORDER_CREATE',
+      orderNo: '20260313225187',
+    });
+
+    assert.equal(first.status, 'notified');
+    assert.equal(first.notificationKind, 'new_order');
+    assert.equal(first.paymentState, 'check_now');
+    assert.equal(first.paymentLabel, 'Check payment now');
+
+    const repeated = await service.handleWebhookPayload({
+      eventName: 'ORDER_CREATE',
+      orderNo: '20260313225187',
+    });
+
+    assert.equal(repeated.status, 'already_notified');
+    assert.equal(repeated.notificationKind, null);
+    assert.equal(repeated.reason, 'order notification already sent');
+  });
+});
+
+test('handleWebhookPayload treats an unknown unpaid order event as the first-order alert', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => {
+        throw new Error('sheet lookup should not run for pre-payment alerts');
+      },
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => createOrder({
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+    },
+  }, async service => {
+    const result = await service.handleWebhookPayload({
+      eventName: 'ORDER_SOMETHING_NEW',
+      orderNo: '20260313225187',
+    });
+
+    assert.equal(result.status, 'notified');
+    assert.equal(result.notificationKind, 'new_order');
+    assert.equal(result.paymentState, 'check_now');
+  });
+});
+
+test('handleWebhookPayload suppresses the later paid-order ping when a new-order alert already went out', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  let appendCount = 0;
+  let headerUpdateCount = 0;
+  let getOrderCalls = 0;
+
+  global.fetch = async (url, options = {}) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdateCount += 1;
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 6, echoedBody: JSON.parse(options.body) }),
+      };
+    }
+
+    appendCount += 1;
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 1 }, echoedBody: JSON.parse(options.body) }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({
+          workbookSheets: [{ name: '3월 주문', path: 'xl/worksheets/sheet2.xml' }],
+        }),
+        buildSheetTargets: () => [
+          { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+        ],
+        fetchSheetCSV: async () => [
+          ['번호', '날짜', '이름', '주문번호'],
+          [],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          getOrderCalls += 1;
+          if (getOrderCalls === 1) {
+            return createOrder({
+              totalPrice: 111000,
+              totalPaymentPrice: 0,
+              paymentMethod: 'BANK_TRANSFER',
+              payments: [],
+            });
+          }
+
+          return createOrder({
+            totalPrice: 111000,
+            totalPaymentPrice: 111000,
+            paymentMethod: 'CARD',
+            payments: [
+              {
+                paidPrice: 111000,
+                paymentStatus: 'PAYMENT_COMPLETE',
+                paymentCompleteTime: '2026-03-13T03:10:00.000Z',
+                method: 'CARD',
+              },
+            ],
+          });
+        },
+      },
+    }, async service => {
+      const first = await service.handleWebhookPayload({
+        eventName: 'ORDER_CREATE',
+        orderNo: '20260313225187',
+      });
+      assert.equal(first.status, 'notified');
+      assert.equal(first.notificationKind, 'new_order');
+
+      const paid = await service.handleWebhookPayload({
+        eventName: 'ORDER_DEPOSIT_COMPLETE',
+        orderNo: '20260313225187',
+      });
+      assert.equal(paid.status, 'appended');
+      assert.equal(paid.notificationKind, null);
+      assert.equal(paid.notificationSuppressed, true);
       assert.equal(appendCount, 1);
       assert.equal(headerUpdateCount, 1);
     });
