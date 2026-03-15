@@ -10,6 +10,24 @@
   let scanPollId = null;
   let bootstrapPollId = null;
 
+  function isPageRefreshable(pageName) {
+    return ['overview', 'optimizations', 'campaigns', 'analytics', 'calendar', 'settings', 'fatigue', 'budget'].includes(pageName);
+  }
+
+  async function refreshPageIfActive(pageName) {
+    if (!live.isLiveEnabled()) return;
+    if (!isPageRefreshable(pageName)) return;
+    await live.refresh(pageName);
+  }
+
+  async function refreshStartupState() {
+    const activePage = live.getActivePage();
+    await live.refresh('overview');
+    if (activePage && activePage !== 'overview') {
+      await refreshPageIfActive(activePage);
+    }
+  }
+
   function renderStaticCampaignsView() {
     const activeContainer = document.getElementById('activeAdsContainer');
     const activeCount = document.getElementById('activeCount');
@@ -78,19 +96,15 @@
 
     if (!optimizationPollId) {
       optimizationPollId = setInterval(async () => {
-        await live.refresh('optimizations');
+        if (live.getActivePage() === 'optimizations') {
+          await live.refresh('optimizations');
+        }
       }, 60000);
     }
 
     if (!secondaryPollId) {
       secondaryPollId = setInterval(async () => {
-        await live.refresh('campaigns');
-        await live.refresh('analytics');
-        await live.refresh('fatigue');
-        await live.refresh('budget');
-        if (live.getActivePage() === 'calendar') {
-          await live.refresh('calendar');
-        }
+        await refreshPageIfActive(live.getActivePage());
       }, 120000);
     }
   }
@@ -122,21 +136,17 @@
       await live.refresh('overview');
 
       if (!health.isScanning && hasCompletedScan) {
-        await live.refresh('optimizations');
-        await live.refresh('campaigns');
-        await live.refresh('analytics');
-        await live.refresh('calendar');
-        await live.refresh('settings');
+        const activePage = live.getActivePage();
+        if (activePage && activePage !== 'overview') {
+          await refreshPageIfActive(activePage);
+        }
       }
     }, 3000);
   }
 
   async function handlePageActivated(pageName) {
     if (!live.isLiveEnabled()) return;
-
-    if (pageName === 'overview' || pageName === 'campaigns' || pageName === 'calendar' || pageName === 'settings') {
-      await live.refresh(pageName);
-    }
+    await refreshPageIfActive(pageName);
   }
 
   async function startLiveMode() {
@@ -153,12 +163,11 @@
     showLiveIndicator();
     wireScanButton();
 
-    try { await live.refresh('overview'); } catch (e) { console.warn('[LIVE] overview refresh error:', e.message); }
-    try { await live.refresh('optimizations'); } catch (e) { console.warn('[LIVE] optimizations refresh error:', e.message); }
-    try { await live.refresh('campaigns'); } catch (e) { console.warn('[LIVE] campaigns refresh error:', e.message); }
-    try { await live.refresh('analytics'); } catch (e) { console.warn('[LIVE] analytics refresh error:', e.message); }
-    try { await live.refresh('calendar'); } catch (e) { console.warn('[LIVE] calendar refresh error:', e.message); }
-    try { await live.refresh('settings'); } catch (e) { console.warn('[LIVE] settings refresh error:', e.message); }
+    try {
+      await refreshStartupState();
+    } catch (e) {
+      console.warn('[LIVE] startup refresh error:', e.message);
+    }
 
     const health = await api('/health');
     if (health?.isScanning || !health?.lastScan) {
@@ -178,8 +187,6 @@
     registerSeriesWindowRefresher('revenue-quality', () => live.refresh('analytics'));
     initSeriesWindowControls();
 
-    setTimeout(() => {
-      startLiveMode();
-    }, 1500);
+    startLiveMode();
   });
 })();

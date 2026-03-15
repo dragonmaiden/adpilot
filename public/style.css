@@ -954,6 +954,16 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   word-break: break-word;
 }
 
+.data-table th.cell-wrap {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+.data-table th.cell-fit.cell-wrap {
+  min-width: 7.5rem;
+}
+
 .data-table .cell-primary,
 .data-table th.cell-primary,
 .data-table td.cell-primary {
