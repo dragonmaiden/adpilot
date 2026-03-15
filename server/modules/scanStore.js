@@ -38,7 +38,6 @@ function createLatestDataState() {
     adSets: [],
     ads: [],
     campaignInsights: [],
-    adSetInsights: [],
     adInsights: [],
     revenueData: null,
     orders: [],
@@ -137,7 +136,7 @@ function normalizeSources(raw, latestData) {
 
   const derivedFlags = {
     metaStructure: asArray(latestData.campaigns).length > 0 || asArray(latestData.adSets).length > 0 || asArray(latestData.ads).length > 0,
-    metaInsights: asArray(latestData.campaignInsights).length > 0 || asArray(latestData.adSetInsights).length > 0 || asArray(latestData.adInsights).length > 0,
+    metaInsights: asArray(latestData.campaignInsights).length > 0 || asArray(latestData.adInsights).length > 0,
     imweb: hasUsableRevenueData(latestData.revenueData) || asArray(latestData.orders).length > 0,
     cogs: hasUsableCogsData(latestData.cogsData),
   };
@@ -166,7 +165,6 @@ function normalizeLatestData(raw) {
     adSets: asArray(raw.adSets),
     ads: asArray(raw.ads),
     campaignInsights: asArray(raw.campaignInsights),
-    adSetInsights: asArray(raw.adSetInsights),
     adInsights: asArray(raw.adInsights),
     revenueData: raw.revenueData && typeof raw.revenueData === 'object' ? raw.revenueData : null,
     orders: asArray(raw.orders),
@@ -219,7 +217,6 @@ function hydrateLatestDataFromSnapshot(scanId, latestData) {
   if (latestData.adSets.length === 0 && structure?.adSets) snapshotPatch.adSets = structure.adSets;
   if (latestData.ads.length === 0 && structure?.ads) snapshotPatch.ads = structure.ads;
   if (latestData.campaignInsights.length === 0 && insights?.campaignInsights) snapshotPatch.campaignInsights = insights.campaignInsights;
-  if (latestData.adSetInsights.length === 0 && insights?.adSetInsights) snapshotPatch.adSetInsights = insights.adSetInsights;
   if (latestData.adInsights.length === 0 && insights?.adInsights) snapshotPatch.adInsights = insights.adInsights;
   if (latestData.orders.length === 0 && Array.isArray(orders) && orders.length > 0) snapshotPatch.orders = orders;
   if (!hasUsableRevenueData(latestData.revenueData) && hasUsableRevenueData(normalized?.revenueData)) snapshotPatch.revenueData = normalized.revenueData;

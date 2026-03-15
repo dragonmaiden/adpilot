@@ -20,16 +20,13 @@ const { buildMeasurementTrust } = require('../services/measurementTrustService')
 const {
   buildDefaultChampionPolicy,
   evaluateBudgetSnapshot,
-  createDecisionTrace,
 } = require('../services/budgetPolicyService');
-const policyLabService = require('../services/policyLabService');
 const observabilityService = require('../services/observabilityService');
 const {
   OPTIMIZATION_TYPES,
   isBudgetDecreaseAction,
   isBudgetIncreaseAction,
   isExecutableOptimization,
-  isReallocationAction,
   requiresApproval,
 } = require('../domain/optimizationSemantics');
 const runtimeSettings = require('../runtime/runtimeSettings');
@@ -72,7 +69,6 @@ class BusinessDecisionEngine {
   constructor(scanId = Date.now(), options = {}) {
     this.actions = []; // Generated actions for this scan
     this.scanId = scanId;
-    this.decisionTraces = [];
     this.budgetPolicy = options.budgetPolicy || null;
     this.measurementTrust = null;
   }
@@ -206,15 +202,10 @@ class BusinessDecisionEngine {
     return optimization;
   }
 
-  getDecisionTraces() {
-    return this.decisionTraces.slice();
-  }
-
   // ── Run all optimization checks ──
-  async analyze(campaignData, adSetData, adData, campaignInsights, adSetInsights, adInsights, revenueData, revenueSource = null, cogsData = null) {
+  async analyze(campaignData, adData, campaignInsights, adInsights, revenueData, revenueSource = null, cogsData = null) {
     const rules = this.getRules();
     this.actions = [];
-    this.decisionTraces = [];
     this.measurementTrust = null;
     const referenceDate = getTodayInTimeZone();
     const budgetPolicy = this.budgetPolicy || buildDefaultChampionPolicy(rules);
@@ -275,7 +266,6 @@ class BusinessDecisionEngine {
       campaignEconomics,
       referenceDate,
       campaignRiskContext,
-      adSetData,
       budgetPolicy,
       measurementTrust
     );
@@ -341,7 +331,6 @@ class BusinessDecisionEngine {
     campaignEconomicsContext = null,
     referenceDate = getTodayInTimeZone(),
     campaignRiskContext = null,
-    adSets = [],
     budgetPolicy = null,
     measurementTrust = null
   ) {
@@ -399,14 +388,6 @@ class BusinessDecisionEngine {
         timestamp: new Date().toISOString(),
       };
       const budgetEvaluation = evaluateBudgetSnapshot(budgetSnapshot, activeBudgetPolicy, rules);
-      const budgetTrace = createDecisionTrace({
-        scanId: this.scanId,
-        mode: 'champion',
-        policy: activeBudgetPolicy,
-        snapshot: budgetSnapshot,
-        evaluation: budgetEvaluation,
-      });
-      this.decisionTraces.push(budgetTrace);
 
       if (budgetEvaluation.shouldCreateOptimization && budgetEvaluation.verdict === 'reduce') {
         const targetCpaSuffix = campaignEconomics?.targetCpa
@@ -422,8 +403,6 @@ class BusinessDecisionEngine {
           budgetEvaluation.impactSummary,
           budgetEvaluation.priority,
           this.buildBusinessMetadata({
-            policyVersionId: activeBudgetPolicy.id,
-            traceId: budgetTrace.traceId,
             decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
             decisionKind: DECISION_KINDS.REDUCE_BUDGET,
             decisionVerdict: budgetEvaluation.verdict,
@@ -432,7 +411,7 @@ class BusinessDecisionEngine {
             measurementTrust: measurementTrust?.level || 'low',
           })
         );
-        budgetTrace.optimizationId = budgetAction.id;
+        void budgetAction;
       }
 
       // Rule: CPA too high — pause campaign
@@ -477,8 +456,6 @@ class BusinessDecisionEngine {
           `Estimated +${impactRange.min} to +${impactRange.max} Meta-attributed purchases/day if CPA holds. Review after 48-72 hours.`,
           budgetEvaluation.priority,
           this.buildBusinessMetadata({
-            policyVersionId: activeBudgetPolicy.id,
-            traceId: budgetTrace.traceId,
             decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
             decisionKind: DECISION_KINDS.SCALE_BUDGET,
             decisionVerdict: budgetEvaluation.verdict,
@@ -487,7 +464,7 @@ class BusinessDecisionEngine {
             measurementTrust: measurementTrust?.level || 'low',
           })
         );
-        budgetTrace.optimizationId = budgetAction.id;
+        void budgetAction;
       }
     }
   }
@@ -555,16 +532,6 @@ class BusinessDecisionEngine {
     }
   }
 
-  // Retired: Meta should own ad set budget control and ad-level delivery.
-  analyzeAdSets() {
-    return [];
-  }
-
-  // Retired: creative fatigue is now surfaced as input pressure, not micro-actions.
-  analyzeAds() {
-    return [];
-  }
-
   // ── 4. Budget Reallocation ──
   analyzeBudgetReallocation(campaigns, insights, campaignEconomicsContext = null, measurementTrust = null) {
     const rules = this.getRules();
@@ -624,11 +591,6 @@ class BusinessDecisionEngine {
         })
       );
     }
-  }
-
-  // Retired: Meta should own schedule/daypart delivery decisions.
-  analyzeScheduling() {
-    return [];
   }
 
   // ── 5. Portfolio-Level Profitability Guardrails ──
@@ -778,7 +740,6 @@ class BusinessDecisionEngine {
       action.executed = true;
       action.executionResult = result ? 'Success' : 'No action taken';
       if (action.executed) {
-        policyLabService.seedBudgetOutcomeFromAction(action);
         observabilityService.captureMessage(
           `Optimization executed: ${action.action}`,
           'info',
@@ -788,13 +749,11 @@ class BusinessDecisionEngine {
             tags: {
               optimization_type: action.type,
               optimization_level: action.level,
-              policy_version: action.policyVersionId || 'manual',
               decision_verdict: action.decisionVerdict || 'unknown',
             },
             data: {
               targetId: action.targetId,
               targetName: action.targetName,
-              traceId: action.traceId || null,
             },
           }
         );
@@ -809,12 +768,10 @@ class BusinessDecisionEngine {
         tags: {
           optimization_type: action.type,
           optimization_level: action.level,
-          policy_version: action.policyVersionId || 'manual',
         },
         data: {
           targetId: action.targetId,
           targetName: action.targetName,
-          traceId: action.traceId || null,
           action: action.action,
         },
       });

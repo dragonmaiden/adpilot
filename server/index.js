@@ -21,7 +21,6 @@ const campaignService = require('./services/campaignService');
 const postmortemService = require('./services/postmortemService');
 const recommendationQualityService = require('./services/recommendationQualityService');
 const aiOperationsService = require('./services/aiOperationsService');
-const policyLabService = require('./services/policyLabService');
 const analyticsService = require('./services/analyticsService');
 const livePerformanceService = require('./services/livePerformanceService');
 const calendarService = require('./services/calendarService');
@@ -179,8 +178,6 @@ if (runtimePaths.usedFallback) {
 }
 
 observabilityService.initObservability('adpilot-server');
-policyLabService.ensureInitialized(runtimeSettings.getRules());
-policyLabService.runResearchIteration(runtimeSettings.getRules());
 
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || `http://localhost:${config.server.port}`;
 const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY;
@@ -697,46 +694,6 @@ app.get('/api/recommendation-quality', (req, res) => {
 
 app.get('/api/ai-operations', (req, res) => {
   res.json(aiOperationsService.getAiOperationsResponse());
-});
-
-app.get('/api/policy-lab', (req, res) => {
-  res.json(contracts.policyLab(policyLabService.getPolicyLabResponse()));
-});
-
-app.get('/api/policy-lab/experiments', (req, res) => {
-  res.json(contracts.policyLabExperiments(policyLabService.getExperimentsResponse()));
-});
-
-app.get('/api/policy-lab/traces', (req, res) => {
-  res.json(contracts.policyLabTraces(policyLabService.getTracesResponse()));
-});
-
-app.get('/api/policy-lab/outcomes', (req, res) => {
-  res.json(contracts.policyLabOutcomes(policyLabService.getOutcomesResponse()));
-});
-
-app.get('/api/policy-lab/observability', (req, res) => {
-  res.json(contracts.policyLabObservability(policyLabService.getObservabilityResponse()));
-});
-
-app.get('/api/karpathy', (req, res) => {
-  res.json(contracts.policyLab(policyLabService.getPolicyLabResponse()));
-});
-
-app.get('/api/karpathy/experiments', (req, res) => {
-  res.json(contracts.policyLabExperiments(policyLabService.getExperimentsResponse()));
-});
-
-app.get('/api/karpathy/traces', (req, res) => {
-  res.json(contracts.policyLabTraces(policyLabService.getTracesResponse()));
-});
-
-app.get('/api/karpathy/outcomes', (req, res) => {
-  res.json(contracts.policyLabOutcomes(policyLabService.getOutcomesResponse()));
-});
-
-app.get('/api/karpathy/observability', (req, res) => {
-  res.json(contracts.policyLabObservability(policyLabService.getObservabilityResponse()));
 });
 
 // ── Optimization Timeline (for micro-adjustment chart) ──

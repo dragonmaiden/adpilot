@@ -137,7 +137,6 @@ function getAnalyticsResponse() {
     charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit, fatigueTrend },
     revenueData: revenue,
     dailyInsights: data.campaignInsights || [],
-    adSetInsights: data.adSetInsights || [],
     adInsights: data.adInsights || [],
     dataSources,
     cogsData: cogs,

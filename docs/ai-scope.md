@@ -18,7 +18,7 @@ Meta owns auction-level delivery. AdPilot owns business judgment.
 - Measurement trust: freeze budget changes when revenue, COGS, or coverage quality is too weak
 - Creative input pressure: tell the operator when Meta needs stronger creative supply before more budget
 - Operator workflow: approvals, hold states, fix-input advisories, cleanup, and audit compression
-- Policy learning: optimize budget-policy thresholds, penalties, trust weights, and review windows
+- Policy rules: explicit budget thresholds, penalties, trust weights, and review windows that stay understandable to the operator
 
 ## What AdPilot Does Not Own
 
@@ -53,23 +53,6 @@ Meta owns auction-level delivery. AdPilot owns business judgment.
 - `cleanup`: stale approvals, delivery failures, and audit clutter
 - `research`: advisory context that is useful for audit, not action
 
-## Policy Lab Scope
+## Current Simplification
 
-The policy lab may search over:
-
-- scale thresholds
-- reduce thresholds
-- trust penalties
-- fatigue / concentration / creative-depth penalties
-- specialist weights
-- step-size caps
-- review-window and synthesis thresholds
-
-The policy lab must not search over:
-
-- bidding policies
-- scheduling policies
-- targeting expansion policies
-- ad / ad-set delivery micromanagement
-
-Low-trust windows should be excluded from replay scoring whenever budget changes should have been frozen.
+The live product no longer runs an internal policy-lab or shadow-learning loop. Budget policy changes should happen deliberately through explicit rules and operator review, not a hidden replay system.

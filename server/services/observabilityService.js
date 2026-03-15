@@ -1,6 +1,6 @@
 const Sentry = require('@sentry/node');
 const config = require('../config');
-const policyLabStore = require('../modules/policyLabStore');
+const observabilityStore = require('../modules/observabilityStore');
 
 const serviceState = {
   initialized: false,
@@ -93,7 +93,7 @@ function persistLocalEvent({
     sentryStatus,
   };
 
-  policyLabStore.addObservabilityEvent(event);
+  observabilityStore.addObservabilityEvent(event);
   serviceState.lastEventAt = event.timestamp;
   return event;
 }

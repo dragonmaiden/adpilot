@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 async function withMockedObservabilityService(run) {
   const servicePath = require.resolve('../server/services/observabilityService');
   const configPath = require.resolve('../server/config');
-  const storePath = require.resolve('../server/modules/policyLabStore');
+  const storePath = require.resolve('../server/modules/observabilityStore');
 
   const originalConfig = require.cache[configPath] || null;
   const originalStore = require.cache[storePath] || null;
@@ -52,18 +52,18 @@ async function withMockedObservabilityService(run) {
 test('captureMessage records a local observability event even when Sentry is disabled', async () => {
   await withMockedObservabilityService(async (service, recordedEvents) => {
     service.initObservability('test-service');
-    service.captureMessage('Replay loop completed', 'warning', {
-      category: 'policy_lab.research',
-      title: 'Research loop warning',
+    service.captureMessage('Decision engine warning', 'warning', {
+      category: 'optimizer.execution',
+      title: 'Execution warning',
       tags: {
-        candidate_version: 'cand-1',
+        decision_kind: 'scale_budget',
       },
     });
 
     assert.equal(recordedEvents.length, 1);
-    assert.equal(recordedEvents[0].message, 'Replay loop completed');
+    assert.equal(recordedEvents[0].message, 'Decision engine warning');
     assert.equal(recordedEvents[0].level, 'warning');
-    assert.equal(recordedEvents[0].tags.candidate_version, 'cand-1');
+    assert.equal(recordedEvents[0].tags.decision_kind, 'scale_budget');
     assert.equal(service.getStatus().enabled, false);
     assert.ok(service.getStatus().lastEventAt);
   });

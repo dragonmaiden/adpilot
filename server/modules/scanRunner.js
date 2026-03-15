@@ -14,9 +14,9 @@ const runtimeSettings = require('../runtime/runtimeSettings');
 const { filterDuplicateApprovalOptimizations } = require('../services/optimizationDedupService');
 const { arbitrateOptimizations } = require('../services/optimizationArbitrationService');
 const { buildEconomicsLedger } = require('../services/economicsLedgerService');
+const { buildDefaultChampionPolicy } = require('../services/budgetPolicyService');
 const cogsAutofillService = require('../services/cogsAutofillService');
 const orderNotificationService = require('../services/orderNotificationService');
-const policyLabService = require('../services/policyLabService');
 const observabilityService = require('../services/observabilityService');
 
 function nowIso() {
@@ -127,22 +127,19 @@ async function fetchMetaInsights(scanResult, since, until) {
   const attemptedAt = nowIso();
 
   try {
-    const [campaignInsights, adSetInsights, adInsights] = await Promise.all([
+    const [campaignInsights, adInsights] = await Promise.all([
       meta.getAllCampaignInsights(since, until),
-      meta.getAllAdSetInsights(since, until),
       meta.getAllAdInsights(since, until),
     ]);
 
     const campaignInsightsValid = validateMetaInsights(campaignInsights, 'campaign');
-    const adSetInsightsValid = validateMetaInsights(adSetInsights, 'adset');
     const adInsightsValid = validateMetaInsights(adInsights, 'ad');
     logValidation(campaignInsightsValid, 'Meta campaign insights');
-    logValidation(adSetInsightsValid, 'Meta adset insights');
     logValidation(adInsightsValid, 'Meta ad insights');
 
-    scanStore.patchLatestData({ campaignInsights, adSetInsights, adInsights });
+    scanStore.patchLatestData({ campaignInsights, adInsights });
     markSourceSuccess('metaInsights', attemptedAt, {
-      hasData: campaignInsights.length > 0 || adSetInsights.length > 0 || adInsights.length > 0,
+      hasData: campaignInsights.length > 0 || adInsights.length > 0,
     });
     scanStore.saveLatestData();
 
@@ -151,24 +148,22 @@ async function fetchMetaInsights(scanResult, since, until) {
       status: 'ok',
       period: `${since} to ${until}`,
       campaignRows: campaignInsights.length,
-      adSetRows: adSetInsights.length,
       adRows: adInsights.length,
       validation: {
         campaigns: campaignInsightsValid.valid,
-        adSets: adSetInsightsValid.valid,
         ads: adInsightsValid.valid,
       },
     });
-    console.log(`[SCHEDULER]   → ${campaignInsights.length} campaign, ${adSetInsights.length} ad set, ${adInsights.length} ad insight rows`);
+    console.log(`[SCHEDULER]   → ${campaignInsights.length} campaign and ${adInsights.length} ad insight rows`);
 
-    return { ok: true, campaignInsights, adSetInsights, adInsights };
+    return { ok: true, campaignInsights, adInsights };
   } catch (err) {
     console.error('[SCHEDULER]   ⚠ Meta insights fetch failed:', err.message);
     pushError(scanResult, 'meta_insights', err);
     pushStep(scanResult, { step: 'meta_insights', status: 'failed', period: `${since} to ${until}` });
     const latestData = scanStore.getLatestData();
     markSourceFailure('metaInsights', attemptedAt, err, {
-      hasData: (latestData.campaignInsights || []).length > 0 || (latestData.adSetInsights || []).length > 0 || (latestData.adInsights || []).length > 0,
+      hasData: (latestData.campaignInsights || []).length > 0 || (latestData.adInsights || []).length > 0,
     });
     scanStore.saveLatestData();
     return { ok: false };
@@ -404,7 +399,6 @@ async function runScan(manual = false) {
   };
 
   try {
-    policyLabService.ensureInitialized(runtimeSettings.getRules());
     const metaStructureResult = await fetchMetaStructure(scanResult);
     sourceStatus.metaStructure = metaStructureResult.ok;
 
@@ -459,27 +453,17 @@ async function runScan(manual = false) {
       console.log('[SCHEDULER] Step 4: Running business decision engine...');
       const latestData = scanStore.getLatestData();
       const optimizer = new OptimizationEngine(scanId, {
-        budgetPolicy: policyLabService.getChampionPolicy(runtimeSettings.getRules()),
+        budgetPolicy: buildDefaultChampionPolicy(runtimeSettings.getRules()),
       });
       const analyzedOptimizations = await optimizer.analyze(
         metaStructureResult.campaigns,
-        metaStructureResult.adSets,
         metaStructureResult.ads,
         metaInsightsResult.campaignInsights,
-        metaInsightsResult.adSetInsights,
         metaInsightsResult.adInsights,
         latestData.revenueData,
         latestData.sources?.imweb || null,
         latestData.cogsData || null
       );
-      const championTraces = optimizer.getDecisionTraces();
-      policyLabService.recordDecisionTraces(championTraces);
-      const researchResult = policyLabService.runResearchIteration(runtimeSettings.getRules());
-      const shadowResult = policyLabService.runShadowEvaluation({
-        scanId,
-        championTraces,
-        rules: runtimeSettings.getRules(),
-      });
       const arbitrated = arbitrateOptimizations(analyzedOptimizations, {
         adSets: metaStructureResult.adSets,
         ads: metaStructureResult.ads,
@@ -496,11 +480,6 @@ async function runScan(manual = false) {
         step: 'optimizer',
         status: 'ok',
         totalOptimizations: optimizations.length,
-        budgetDecisionTraces: championTraces.length,
-        policyLabCandidates: researchResult.experiments.length,
-        policyLabReplaySamples: researchResult.replaySampleSize,
-        policyLabScoreMode: researchResult.scoreMode,
-        shadowEvaluations: shadowResult.challengerTraces.length,
         suppressedArbitratedActions: arbitrated.suppressed.length,
         suppressedDuplicateApprovals: deduped.suppressed.length,
       });
@@ -531,7 +510,6 @@ async function runScan(manual = false) {
       if (runtimeSettings.getRules().autonomousMode) {
         console.log('[SCHEDULER] Step 5: Processing approval-required optimizations...');
         const executed = await optimizer.processApprovalQueue();
-        policyLabService.refreshBudgetOutcomes();
         pushStep(scanResult, {
           step: 'execution',
           status: 'ok',
@@ -573,7 +551,6 @@ async function runScan(manual = false) {
           } : {}),
           ...(sourceStatus.metaInsights ? {
             campaignInsights: latestData.campaignInsights,
-            adSetInsights: latestData.adSetInsights,
             adInsights: latestData.adInsights,
           } : {}),
           ...(sourceStatus.imweb ? {
@@ -589,8 +566,6 @@ async function runScan(manual = false) {
         console.warn('[SCHEDULER]   ⚠ Snapshot save failed:', err.message);
       }
     }
-
-    policyLabService.refreshBudgetOutcomes();
 
     scanResult.stats = buildScanStats(latestData, until);
     scanResult.sourceHealth = scanStore.getSourceHealth();

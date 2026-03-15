@@ -3,12 +3,10 @@ const contracts = require('../contracts/v1');
 const {
   OPTIMIZATION_TYPES,
   getOptimizationDirection,
-  getOptimizationStatus,
   isBudgetIncreaseAction,
   isBudgetDecreaseAction,
-  isExecutableOptimization,
+  getOptimizationStatus,
   isOpenApprovalStatus,
-  requiresApproval,
 } = require('../domain/optimizationSemantics');
 
 /**

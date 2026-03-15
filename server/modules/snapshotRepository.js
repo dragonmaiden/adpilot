@@ -46,10 +46,9 @@ function saveSnapshot(scanId, snapshotData) {
     });
   }
 
-  if (Array.isArray(snapshotData.campaignInsights) || Array.isArray(snapshotData.adSetInsights) || Array.isArray(snapshotData.adInsights)) {
+  if (Array.isArray(snapshotData.campaignInsights) || Array.isArray(snapshotData.adInsights)) {
     saveSnapshotFile(`${scanId}_meta_insights.json`, {
       campaignInsights: snapshotData.campaignInsights ?? [],
-      adSetInsights: snapshotData.adSetInsights ?? [],
       adInsights: snapshotData.adInsights ?? [],
     });
   }

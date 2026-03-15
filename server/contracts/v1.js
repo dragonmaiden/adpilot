@@ -82,7 +82,7 @@ function overviewNotReady() {
 /**
  * Build /api/analytics response.
  */
-function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsights, cogsData, monthlyRates, profitAnalysis, dataSources }) {
+function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, monthlyRates, profitAnalysis, dataSources }) {
   const refundMetric = buildRateMetric({
     rate: revenueData?.refundRate ?? 0,
     numerator: revenueData?.totalRefunded ?? 0,
@@ -132,7 +132,6 @@ function analytics({ charts, revenueData, dailyInsights, adSetInsights, adInsigh
     cogsOrders: cogsData?.orderCount ?? 0,
     // Raw insight rows (campaigns may still need them for tables)
     dailyInsights: dailyInsights ?? [],
-    adSetInsights: adSetInsights ?? [],
     adInsights: adInsights ?? [],
     dataSources: dataSources ?? {},
     // Profit Analysis
@@ -239,8 +238,6 @@ function optimizations({ total, showing, optimizations: opts, stats }) {
       status: o.status ?? 'unknown',
       timestamp: o.timestamp ?? null,
       scanId: o.scanId ?? null,
-      policyVersionId: o.policyVersionId ?? null,
-      traceId: o.traceId ?? null,
       controlSurface: o.controlSurface ?? null,
       decisionKind: o.decisionKind ?? null,
       decisionDomain: o.decisionDomain ?? null,
@@ -295,41 +292,6 @@ function aiOperations({ generatedAt, windowHours, latestScanId, summary, quality
     activity: activity ?? [],
     decisionMarkers: decisionMarkers ?? [],
     clusters: clusters ?? [],
-  };
-}
-
-function policyLab(data) {
-  return {
-    apiVersion: API_VERSION,
-    ...data,
-  };
-}
-
-function policyLabExperiments(data) {
-  return {
-    apiVersion: API_VERSION,
-    ...data,
-  };
-}
-
-function policyLabTraces(data) {
-  return {
-    apiVersion: API_VERSION,
-    ...data,
-  };
-}
-
-function policyLabOutcomes(data) {
-  return {
-    apiVersion: API_VERSION,
-    ...data,
-  };
-}
-
-function policyLabObservability(data) {
-  return {
-    apiVersion: API_VERSION,
-    ...data,
   };
 }
 
@@ -480,11 +442,6 @@ module.exports = {
   optimizations,
   recommendationQuality,
   aiOperations,
-  policyLab,
-  policyLabExperiments,
-  policyLabTraces,
-  policyLabOutcomes,
-  policyLabObservability,
   scans,
   spendDaily,
   reconciliation,

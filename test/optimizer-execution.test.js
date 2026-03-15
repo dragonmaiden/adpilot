@@ -7,7 +7,6 @@ async function withMockedOptimizer(overrides, run) {
     [require.resolve('../server/modules/metaClient'), overrides.metaClient],
     [require.resolve('../server/runtime/runtimeSettings'), overrides.runtimeSettings],
     [require.resolve('../server/modules/telegram'), overrides.telegram || {}],
-    [require.resolve('../server/services/policyLabService'), overrides.policyLabService || { seedBudgetOutcomeFromAction: () => null }],
     [require.resolve('../server/services/observabilityService'), overrides.observabilityService || { captureMessage: () => null, captureException: () => null }],
   ];
 

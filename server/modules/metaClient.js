@@ -93,15 +93,6 @@ async function getCampaignInsights(campaignId, since, until) {
   });
 }
 
-// Get ad set-level daily insights
-async function getAdSetInsights(adSetId, since, until) {
-  return metaApi(`/${adSetId}/insights`, 'GET', {
-    fields: 'adset_name,spend,impressions,reach,clicks,ctr,cpc,cpm,actions,cost_per_action_type,frequency',
-    time_range: JSON.stringify({ since, until }),
-    time_increment: 1,
-  });
-}
-
 // Get ad-level insights (for fatigue detection)
 async function getAdInsights(adId, since, until) {
   return metaApi(`/${adId}/insights`, 'GET', {
@@ -118,16 +109,6 @@ async function getAllCampaignInsights(since, until) {
     time_range: JSON.stringify({ since, until }),
     time_increment: 1,
     level: 'campaign',
-  });
-}
-
-// Get all ad set daily insights in bulk
-async function getAllAdSetInsights(since, until) {
-  return metaApiPaginated(`/${AD_ACCOUNT}/insights`, {
-    fields: 'adset_id,adset_name,campaign_id,spend,impressions,reach,clicks,ctr,cpc,cpm,actions,cost_per_action_type,frequency',
-    time_range: JSON.stringify({ since, until }),
-    time_increment: 1,
-    level: 'adset',
   });
 }
 
@@ -165,10 +146,8 @@ module.exports = {
   getAds,
   getAccountInsights,
   getCampaignInsights,
-  getAdSetInsights,
   getAdInsights,
   getAllCampaignInsights,
-  getAllAdSetInsights,
   getAllAdInsights,
   // Write
   updateCampaignStatus,

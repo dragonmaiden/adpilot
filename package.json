@@ -6,8 +6,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test": "node --test",
-    "policy-lab": "node server/workers/policyLabWorker.js"
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18.0.0"

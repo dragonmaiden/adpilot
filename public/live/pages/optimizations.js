@@ -4,20 +4,13 @@
     esc,
     safeOptType,
     timeSince,
-    formatKrw,
     formatCount,
     tr,
-    getLocale,
     localizeOptimizationText,
   } = live.shared;
   const {
     fetchAiOperations,
     fetchOptimizations,
-    fetchPolicyLab,
-    fetchPolicyLabExperiments,
-    fetchPolicyLabTraces,
-    fetchPolicyLabOutcomes,
-    fetchPolicyLabObservability,
     executeOptimization,
   } = live.api;
 
@@ -129,66 +122,6 @@
       icon: EVENT_ICON_MAP[normalized] || 'radar',
       dotClass: normalized,
     };
-  }
-
-  function syncSelectOptions(select, values, allLabel) {
-    if (!select) return;
-    const currentValue = select.value || 'all';
-    const options = ['all', ...(Array.isArray(values) ? values : []).filter(Boolean)];
-    select.innerHTML = options.map(value => `
-      <option value="${esc(value)}">${esc(value === 'all' ? allLabel : value)}</option>
-    `).join('');
-    select.value = options.includes(currentValue) ? currentValue : 'all';
-  }
-
-  function verdictMeta(verdict) {
-    switch (String(verdict || '').toLowerCase()) {
-      case 'scale':
-        return { label: tr('Scale', '증액'), className: 'badge-success' };
-      case 'reduce':
-        return { label: tr('Reduce', '감액'), className: 'badge-warning' };
-      case 'hold':
-        return { label: tr('Hold', '유지'), className: 'badge-info' };
-      case 'suppress':
-      default:
-        return { label: tr('Suppress', '보류'), className: 'badge-neutral' };
-    }
-  }
-
-  function traceModeLabel(mode) {
-    switch (String(mode || '').toLowerCase()) {
-      case 'challenger_shadow':
-        return tr('Live compare', '라이브 비교');
-      case 'research_replay':
-        return tr('Research replay', '연구 리플레이');
-      case 'champion':
-      default:
-        return tr('Champion', '챔피언');
-    }
-  }
-
-  function levelMeta(level) {
-    switch (String(level || '').toLowerCase()) {
-      case 'error':
-        return { label: tr('Error', '오류'), className: 'badge-danger' };
-      case 'warning':
-        return { label: tr('Warning', '경고'), className: 'badge-warning' };
-      case 'info':
-      default:
-        return { label: tr('Info', '정보'), className: 'badge-info' };
-    }
-  }
-
-  function experimentStatusMeta(status) {
-    switch (String(status || '').toLowerCase()) {
-      case 'promotion_ready':
-        return { label: tr('Promotion ready', '승격 준비'), className: 'badge-success' };
-      case 'active_candidate':
-        return { label: tr('Active candidate', '활성 후보'), className: 'badge-warning' };
-      case 'challenger':
-      default:
-        return { label: tr('Candidate', '후보'), className: 'badge-info' };
-    }
   }
 
   function compareClusters(left, right) {
@@ -555,10 +488,10 @@
         'If anything changes, it will show up in the action lane or recent changes before it matters elsewhere.',
         '무언가 바뀌면 다른 곳보다 먼저 액션 레인이나 최근 변화에 나타납니다.'
       );
-      ignoreNow = tr('Archive and Research Lab can stay folded', '아카이브와 리서치 랩은 접어둬도 됩니다');
+      ignoreNow = tr('Archive can stay folded', '아카이브는 접어둬도 됩니다');
       ignoreNowMeta = tr(
-        'Use the deeper sections only when you need audit detail or policy-lab investigation.',
-        '감사용 세부 내용이나 정책 연구 조사가 필요할 때만 아래 섹션을 열면 됩니다.'
+        'Use the deeper sections only when you need audit detail or older raw history.',
+        '감사용 세부 내용이나 오래된 원시 이력이 필요할 때만 아래 섹션을 열면 됩니다.'
       );
     }
 
@@ -584,26 +517,14 @@
     `).join('');
   }
 
-  function renderSectionSummaries(aiOps, policyLab) {
+  function renderSectionSummaries(aiOps) {
     const archiveEl = document.getElementById('optArchiveSummary');
-    const researchLabMetaEl = document.getElementById('karpathyFoldMeta');
 
     if (archiveEl) {
       archiveEl.textContent = tr(
         `${formatCount(aiOps?.clusters?.length || 0)} families hidden · open only for audit detail`,
         `숨겨진 패밀리 ${formatCount(aiOps?.clusters?.length || 0)}개 · 감사 세부 내용이 필요할 때만 열기`
       );
-    }
-
-    if (researchLabMetaEl) {
-      const labSummary = policyLab?.summary || {};
-      const harness = labSummary.harnessStatus || {};
-      researchLabMetaEl.textContent = policyLab
-        ? tr(
-            `${labSummary.maturityLabel || 'Research idle'} · ${formatCount(labSummary.completedOutcomeCount || 0)} real outcomes · ${formatCount(harness.candidatePool || labSummary.challengerCount || 0)} variants`,
-            `${labSummary.maturityLabel || '연구 대기'} · 실제 결과 ${formatCount(labSummary.completedOutcomeCount || 0)}개 · 정책 변형 ${formatCount(harness.candidatePool || labSummary.challengerCount || 0)}개`
-          )
-        : tr('No policy-lab data yet', '아직 정책 실험 데이터 없음');
     }
   }
 
@@ -904,422 +825,6 @@
     if (window.lucide) lucide.createIcons();
   }
 
-  function renderResearchLabSummary(policyLab) {
-    const container = document.getElementById('karpathySummary');
-    const metaEl = document.getElementById('karpathySummaryMeta');
-    const calloutEl = document.getElementById('karpathyStatusCallout');
-    const deepMetaEl = document.getElementById('karpathyDeepMeta');
-    if (!container) return;
-
-    if (!policyLab) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('Policy-lab data is not available yet.', '정책 실험 데이터가 아직 없습니다.'))}</div>`;
-      if (metaEl) metaEl.textContent = tr('No data', '데이터 없음');
-      if (calloutEl) {
-        calloutEl.innerHTML = `<div class="empty-state">${esc(tr('Policy-lab data is not available yet.', '정책 실험 데이터가 아직 없습니다.'))}</div>`;
-      }
-      if (deepMetaEl) {
-        deepMetaEl.textContent = tr('Open only when you need to inspect the learning loop', '학습 루프를 점검할 때만 여세요');
-      }
-      return;
-    }
-
-    const summary = policyLab.summary || {};
-    const sentryStatus = summary.sentryStatus || {};
-    const sentryLabel = sentryStatus.enabled
-      ? tr('Sentry live', '센트리 연결')
-      : tr('Local only', '로컬만');
-    const harness = summary.harnessStatus || {};
-    const maturityLabel = summary.maturityLabel || tr('Unknown', '알 수 없음');
-    const realOutcomeMeta = summary.usesRealOutcomes
-      ? tr('Used in replay scoring', '리플레이 점수화에 사용 중')
-      : tr('No real outcome proof yet', '아직 실제 결과 증거 없음');
-
-    if (metaEl) {
-      metaEl.textContent = summary.lastResearchRunAt
-        ? tr(
-            `${maturityLabel} · last run ${formatRelative(summary.lastResearchRunAt)}`,
-            `${maturityLabel} · 최근 실행 ${formatRelative(summary.lastResearchRunAt)}`
-          )
-        : tr('No research runs yet', '아직 연구 실행 없음');
-    }
-
-    if (calloutEl) {
-      calloutEl.dataset.state = summary.maturityState || 'inactive';
-      calloutEl.innerHTML = `
-        <span class="karpathy-status-pill">${esc(maturityLabel)}</span>
-        <strong>${esc(summary.maturityHeadline || tr('No learning summary yet.', '아직 학습 요약이 없습니다.'))}</strong>
-        <p>${esc(summary.maturityGuidance || tr('Use this as research context, not a live operator queue.', '이 영역은 라이브 운영 큐가 아니라 연구 맥락으로 보세요.'))}</p>
-        <small>${esc(summary.maturityDetail || tr('No detail captured yet.', '아직 세부 내용이 없습니다.'))}</small>
-      `;
-    }
-
-    if (deepMetaEl) {
-      deepMetaEl.textContent = summary.maturityGuidance || tr('Open only when you need to inspect the learning loop', '학습 루프를 점검할 때만 여세요');
-    }
-
-    const cards = [
-      { label: tr('Stage', '단계'), value: maturityLabel, meta: summary.maturityDetail || '—' },
-      { label: tr('Champion', '챔피언'), value: summary.championPolicyLabel || '—', meta: summary.championPolicyId || '—' },
-      { label: tr('Policy pool', '정책 풀'), value: formatCount(harness.candidatePool || summary.challengerCount || 0), meta: tr(`${formatCount(harness.activeCandidates || summary.activeCandidateCount || 0)} active · ${formatCount(harness.promotionReady || summary.promotionReadyCount || 0)} ready`, `${formatCount(harness.activeCandidates || summary.activeCandidateCount || 0)}개 활성 · ${formatCount(harness.promotionReady || summary.promotionReadyCount || 0)}개 준비`) },
-      { label: tr('Real outcomes', '실제 결과'), value: formatCount(summary.completedOutcomeCount || 0), meta: realOutcomeMeta },
-      { label: tr('Observability', '관측 상태'), value: sentryLabel, meta: sentryStatus.lastEventAt ? tr(`Last event ${formatRelative(sentryStatus.lastEventAt)}`, `최근 이벤트 ${formatRelative(sentryStatus.lastEventAt)}`) : tr('No events yet', '아직 이벤트 없음') },
-    ];
-
-    container.innerHTML = cards.map(card => `
-      <div class="karpathy-summary-card">
-        <span>${esc(card.label)}</span>
-        <strong>${esc(card.value)}</strong>
-        <small>${esc(card.meta)}</small>
-      </div>
-    `).join('');
-  }
-
-  function renderResearchLabTimeline(policyLab, experimentsData) {
-    const container = document.getElementById('karpathyTimeline');
-    const metaEl = document.getElementById('karpathyTimelineMeta');
-    if (!container) return;
-
-    const markers = policyLab?.strategyMarkers || [];
-    const experiments = experimentsData?.experiments || policyLab?.experimentsPreview || [];
-
-    if (metaEl) {
-      metaEl.textContent = tr(
-        `${formatCount(experiments.length)} variants tried · ${formatCount(policyLab?.summary?.completedOutcomeCount || 0)} real outcomes · ${formatCount(policyLab?.experimentFunnel?.promotionReady || 0)} ready`,
-        `시도한 변형 ${formatCount(experiments.length)}개 · 실제 결과 ${formatCount(policyLab?.summary?.completedOutcomeCount || 0)}개 · 준비됨 ${formatCount(policyLab?.experimentFunnel?.promotionReady || 0)}개`
-      );
-    }
-
-    if (markers.length === 0 && experiments.length === 0) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('No strategy progression logged yet.', '아직 전략 진행 이력이 없습니다.'))}</div>`;
-      return;
-    }
-
-    const timelineItems = experiments.length > 0
-      ? experiments.slice(0, 10).map(experiment => {
-          const visual = eventVisual(experiment.status === 'promotion_ready' ? 'promoted' : 'challenger');
-          const replay = experiment.replaySummary || {};
-          const status = experimentStatusMeta(experiment.status);
-          return `
-            <div class="karpathy-timeline-item">
-              <div class="opt-icon">
-                <i data-lucide="${visual.icon}"></i>
-              </div>
-              <div class="opt-content">
-                <div class="opt-header">
-                  <span class="opt-action">${esc(experiment.label || experiment.policyId || tr('Challenger policy', '도전자 정책'))}</span>
-                  <span class="badge ${status.className}">${esc(status.label)}</span>
-                </div>
-                <div class="opt-reason">${esc(experiment.summaryLine || tr('No diff summary recorded.', '차이 요약이 없습니다.'))}</div>
-                <div class="opt-cluster-meta">
-                  <span class="opt-cluster-stat"><strong>${esc(formatCount(replay.sampleSize || 0))}</strong>${esc(tr('replay samples', '리플레이 샘플'))}</span>
-                  <span class="opt-cluster-stat"><strong>${esc(`${Math.round((replay.improvementRatio || 0) * 100)}%`)}</strong>${esc(tr('score lift', '점수 상승'))}</span>
-                  <span class="opt-cluster-stat"><strong>${esc(`${Math.round((replay.divergenceRate || 0) * 100)}%`)}</strong>${esc(tr('divergence', '분기율'))}</span>
-                  <span class="opt-cluster-stat"><strong>${esc(experiment.scoreMode === 'bootstrap_proxy' ? tr('Bootstrap', '부트스트랩') : tr('Replay', '리플레이'))}</strong>${esc(tr('mode', '모드'))}</span>
-                </div>
-                <div class="opt-time">${esc(formatRelative(experiment.createdAt))}</div>
-              </div>
-            </div>
-          `;
-        })
-      : markers.slice(0, 10).map(marker => {
-          const visual = eventVisual(marker.kind);
-          return `
-            <div class="karpathy-timeline-item">
-              <div class="opt-icon">
-                <i data-lucide="${visual.icon}"></i>
-              </div>
-              <div class="opt-content">
-                <div class="opt-header">
-                  <span class="opt-action">${esc(marker.title || tr('Strategy event', '전략 이벤트'))}</span>
-                  <span class="badge ${marker.kind === 'promoted' ? 'badge-success' : 'badge-info'}">${esc(marker.kind || 'event')}</span>
-                </div>
-                <div class="opt-reason">${esc(marker.detail || tr('No detail captured.', '세부 내용이 없습니다.'))}</div>
-                <div class="opt-time">${esc(marker.date || '—')}</div>
-              </div>
-            </div>
-          `;
-        });
-
-    container.innerHTML = timelineItems.join('');
-
-    if (window.lucide) lucide.createIcons();
-  }
-
-  function renderResearchLabMetrics(policyLab, outcomesData) {
-    const container = document.getElementById('karpathyMetrics');
-    const metaEl = document.getElementById('karpathyMetricsMeta');
-    if (!container) return;
-
-    const metrics = policyLab?.metrics || {};
-    const summary = metrics.summary || {};
-    const outcomes = outcomesData?.outcomes || policyLab?.outcomesPreview || [];
-    const experimentFunnel = policyLab?.experimentFunnel || {};
-    const specialistScoreboard = policyLab?.specialistScoreboard || [];
-    const regimePerformance = policyLab?.regimePerformance || [];
-
-    if (metaEl) {
-      metaEl.textContent = tr(
-        `${formatCount(outcomes.length)} recent outcomes · ${formatCount(experimentFunnel.totalIterations || policyLab?.experimentsPreview?.length || 0)} logged iterations`,
-        `${formatCount(outcomes.length)}개 최근 결과 · ${formatCount(experimentFunnel.totalIterations || policyLab?.experimentsPreview?.length || 0)}개 학습 반복`
-      );
-    }
-
-    if (!policyLab) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('Policy-lab metrics are not available yet.', '정책 실험 지표가 아직 없습니다.'))}</div>`;
-      return;
-    }
-
-    const rewardTrend = metrics.rewardTrend || [];
-    const candidateTrend = metrics.candidateTrend || [];
-
-    container.innerHTML = `
-      <div class="karpathy-metric-grid">
-        <div class="karpathy-metric-card">
-          <span>${esc(tr('Total reward', '총 보상'))}</span>
-          <strong>${esc(formatKrw(summary.totalReward || 0))}</strong>
-        </div>
-        <div class="karpathy-metric-card">
-          <span>${esc(tr('Realized profit delta', '실현 이익 증감'))}</span>
-          <strong>${esc(formatKrw(summary.totalProfitDelta || 0))}</strong>
-        </div>
-        <div class="karpathy-metric-card">
-          <span>${esc(tr('Approval friction', '승인 마찰'))}</span>
-          <strong>${esc(formatCount(summary.approvalFriction || 0))}</strong>
-        </div>
-        <div class="karpathy-metric-card">
-          <span>${esc(tr('Live divergence', '라이브 분기'))}</span>
-          <strong>${esc(`${Math.round((summary.shadowDivergenceRate || 0) * 100)}%`)}</strong>
-        </div>
-        <div class="karpathy-metric-card">
-          <span>${esc(tr('Active candidates', '활성 후보'))}</span>
-          <strong>${esc(formatCount(experimentFunnel.activeCandidates || 0))}</strong>
-        </div>
-        <div class="karpathy-metric-card">
-          <span>${esc(tr('Promotion ready', '승격 준비'))}</span>
-          <strong>${esc(formatCount(experimentFunnel.promotionReady || 0))}</strong>
-        </div>
-      </div>
-      <div class="karpathy-mini-columns">
-        <div class="karpathy-mini-card">
-          <h3>${esc(tr('Experiment funnel', '실험 퍼널'))}</h3>
-          <div class="karpathy-row">
-            <strong>${esc(tr('Iterations', '반복'))}</strong>
-            <span>${esc(formatCount(experimentFunnel.totalIterations || 0))}</span>
-          </div>
-          <div class="karpathy-row">
-            <strong>${esc(tr('Candidate pool', '후보 풀'))}</strong>
-            <span>${esc(formatCount(experimentFunnel.candidatePool || 0))}</span>
-          </div>
-          <div class="karpathy-row">
-            <strong>${esc(tr('Active candidates', '활성 후보'))}</strong>
-            <span>${esc(formatCount(experimentFunnel.activeCandidates || 0))}</span>
-          </div>
-          <div class="karpathy-row">
-            <strong>${esc(tr('Promotion ready', '승격 준비'))}</strong>
-            <span>${esc(formatCount(experimentFunnel.promotionReady || 0))}</span>
-          </div>
-        </div>
-        <div class="karpathy-mini-card">
-          <h3>${esc(tr('Specialist scoreboard', '전문가 스코어보드'))}</h3>
-          ${(specialistScoreboard.length === 0 ? `<div class="empty-state compact">${esc(tr('No specialist traces yet.', '아직 전문가 트레이스가 없습니다.'))}</div>` : specialistScoreboard.slice(0, 6).map(entry => `
-            <div class="karpathy-row">
-              <strong>${esc(entry.label || entry.key)}</strong>
-              <span>${esc(`${Math.round((entry.avgWeightedScore || 0) * 100) / 100}`)}</span>
-              <span>${esc(`${entry.blockCount}/${entry.cautionCount}/${entry.passCount}`)}</span>
-            </div>
-          `).join(''))}
-        </div>
-      </div>
-      <div class="karpathy-mini-columns">
-        <div class="karpathy-mini-card">
-          <h3>${esc(tr('Reward trend', '보상 추세'))}</h3>
-          ${(rewardTrend.length === 0 ? `<div class="empty-state compact">${esc(tr('No completed 72h outcomes yet.', '아직 완료된 72시간 결과가 없습니다.'))}</div>` : rewardTrend.slice(-6).reverse().map(row => `
-            <div class="karpathy-row">
-              <strong>${esc(row.date)}</strong>
-              <span>${esc(formatKrw(row.reward || 0))}</span>
-              <span>${esc(formatKrw(row.realizedProfitDelta || 0))}</span>
-            </div>
-          `).join(''))}
-        </div>
-        <div class="karpathy-mini-card">
-          <h3>${esc(tr('Candidate trend', '도전자 추세'))}</h3>
-          ${(candidateTrend.length === 0 ? `<div class="empty-state compact">${esc(tr('No challenger scoring yet.', '아직 도전자 점수가 없습니다.'))}</div>` : candidateTrend.slice(-6).reverse().map(row => `
-            <div class="karpathy-row">
-              <strong>${esc(row.date)}</strong>
-              <span>${esc(`${Math.round((row.improvementRatio || 0) * 100)}%`)}</span>
-              <span>${esc(`${Math.round((row.approvalLoadRatio || 0) * 100)}%`)}</span>
-            </div>
-          `).join(''))}
-        </div>
-      </div>
-      <div class="karpathy-mini-card">
-        <h3>${esc(tr('Regime performance', '레짐 성과'))}</h3>
-        ${(regimePerformance.length === 0 ? `<div class="empty-state compact">${esc(tr('No completed regime outcomes yet.', '아직 완료된 레짐 결과가 없습니다.'))}</div>` : regimePerformance.slice(0, 6).map(entry => `
-          <div class="karpathy-row">
-            <strong>${esc(entry.tag)}</strong>
-            <span>${esc(`${Math.round((entry.winRate || 0) * 100)}%`)}</span>
-            <span>${esc(formatKrw(entry.totalReward || 0))}</span>
-          </div>
-        `).join(''))}
-      </div>
-      <div class="karpathy-mini-card">
-        <h3>${esc(tr('Latest scored outcomes', '최근 점수화 결과'))}</h3>
-        ${(outcomes.filter(outcome => outcome.status === 'complete').slice(0, 6).map(outcome => `
-          <div class="karpathy-outcome-row">
-            <div>
-              <strong>${esc(outcome.targetName || tr('Unknown target', '알 수 없는 대상'))}</strong>
-              <div class="opt-time">${esc(formatRelative(outcome.executedAt))}</div>
-            </div>
-            <div class="karpathy-outcome-values">
-              <span>${esc(outcome.finalReward?.rewardBucket || tr('pending', '대기'))}</span>
-              <strong>${esc(formatKrw(outcome.finalReward?.total || 0))}</strong>
-            </div>
-          </div>
-        `).join('')) || `<div class="empty-state compact">${esc(tr('No completed reward windows yet.', '아직 완료된 보상 윈도우가 없습니다.'))}</div>`}
-      </div>
-    `;
-  }
-
-  function renderResearchLabObservability(policyLab, observabilityData) {
-    const container = document.getElementById('karpathyObservability');
-    const metaEl = document.getElementById('karpathyObservabilityMeta');
-    if (!container) return;
-
-    const events = observabilityData?.events || policyLab?.observability?.recent || [];
-    const status = observabilityData?.status || policyLab?.observability?.status || {};
-
-    if (metaEl) {
-      metaEl.textContent = status.enabled
-        ? tr('Sentry enabled', '센트리 활성')
-        : tr('Local observability only', '로컬 관측만');
-    }
-
-    if (events.length === 0) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('No observability warnings have been recorded yet.', '아직 기록된 관측 경고가 없습니다.'))}</div>`;
-      return;
-    }
-
-    container.innerHTML = events.slice(0, 12).map(event => {
-      const severity = levelMeta(event.level);
-      const visual = eventVisual(event.level);
-      return `
-        <div class="optimization-item grouped">
-          <div class="opt-icon">
-            <i data-lucide="${visual.icon}"></i>
-          </div>
-          <div class="opt-content">
-            <div class="opt-header">
-              <span class="opt-action">${esc(event.title || event.message || tr('Observability event', '관측 이벤트'))}</span>
-              <span class="badge ${severity.className}">${esc(severity.label)}</span>
-            </div>
-            <div class="opt-target">${esc(event.category || tr('General', '일반'))}</div>
-            <div class="opt-reason">${esc(event.message || tr('No message captured.', '메시지가 없습니다.'))}</div>
-            <div class="opt-summary-line">${esc(Object.entries(event.tags || {}).slice(0, 3).map(([key, value]) => `${key}: ${value}`).join(' · ') || tr('No tags captured.', '태그가 없습니다.'))}</div>
-            <div class="opt-time">${esc(formatRelative(event.timestamp))}</div>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    if (window.lucide) lucide.createIcons();
-  }
-
-  function filterResearchLabTraces(tracesData) {
-    const traces = tracesData?.traces || [];
-    const policyFilter = document.getElementById('karpathyTracePolicyFilter')?.value || 'all';
-    const verdictFilter = document.getElementById('karpathyTraceVerdictFilter')?.value || 'all';
-    const targetFilter = (document.getElementById('karpathyTraceTargetFilter')?.value || '').trim().toLowerCase();
-
-    return traces.filter(trace => {
-      if (policyFilter !== 'all' && trace.policyVersionId !== policyFilter) return false;
-      if (verdictFilter !== 'all' && trace.verdict !== verdictFilter) return false;
-      if (targetFilter && !String(trace.entity?.targetName || '').toLowerCase().includes(targetFilter)) return false;
-      return true;
-    });
-  }
-
-  function renderResearchLabTraces(tracesData) {
-    const container = document.getElementById('karpathyTraceExplorer');
-    const statsEl = document.getElementById('karpathyTraceStats');
-    if (!container) return;
-
-    const filters = tracesData?.filters || {};
-    syncSelectOptions(document.getElementById('karpathyTracePolicyFilter'), filters.policyIds, tr('All policies', '모든 정책'));
-    syncSelectOptions(document.getElementById('karpathyTraceVerdictFilter'), filters.verdicts, tr('All verdicts', '모든 판정'));
-
-    const filtered = filterResearchLabTraces(tracesData);
-
-    if (statsEl) {
-      statsEl.textContent = tr(
-        `${formatCount(filtered.length)} traces shown · ${formatCount(tracesData?.traces?.length || 0)} total`,
-        `${formatCount(filtered.length)}개 트레이스 표시 · 총 ${formatCount(tracesData?.traces?.length || 0)}개`
-      );
-    }
-
-    if (filtered.length === 0) {
-      container.innerHTML = `<div class="empty-state">${esc(tr('No traces match the current filters.', '현재 필터와 일치하는 트레이스가 없습니다.'))}</div>`;
-      return;
-    }
-
-    container.innerHTML = filtered.slice(0, 40).map(trace => {
-      const verdict = verdictMeta(trace.verdict);
-      const gates = trace.gates || [];
-      const penalties = trace.penalties || [];
-      const blockers = trace.blockers || [];
-      const cautions = trace.cautions || [];
-      const specialists = trace.specialists || [];
-      const regimeTags = trace.regimeTags || [];
-      const synthesis = trace.synthesis || {};
-      return `
-        <details class="karpathy-trace-item">
-          <summary>
-            <div class="karpathy-trace-head">
-              <div>
-                <div class="opt-header">
-                  <span class="opt-action">${esc(trace.entity?.targetName || tr('Unknown target', '알 수 없는 대상'))}</span>
-                  <span class="badge ${verdict.className}">${esc(verdict.label)}</span>
-                  <span class="badge badge-neutral">${esc(traceModeLabel(trace.mode))}</span>
-                </div>
-                <div class="opt-target">${esc(trace.policyVersionId || '—')}</div>
-              </div>
-              <span class="opt-time">${esc(formatRelative(trace.timestamp))}</span>
-            </div>
-          </summary>
-          <div class="karpathy-trace-body">
-            <div class="opt-reason">${esc(trace.rationaleSummary || trace.reasoning || tr('No rationale captured.', '판단 근거가 없습니다.'))}</div>
-            <div class="opt-cluster-meta">
-              <span class="opt-cluster-stat"><strong>${esc(String(trace.inputSnapshot?.avgCpa ?? '—'))}</strong>${esc(tr('CPA', 'CPA'))}</span>
-              <span class="opt-cluster-stat"><strong>${esc(formatCount(trace.inputSnapshot?.purchases || 0))}</strong>${esc(tr('purchases', '구매'))}</span>
-              <span class="opt-cluster-stat"><strong>${esc(`${trace.actionPercent || 0}%`)}</strong>${esc(tr('step', '변경폭'))}</span>
-              <span class="opt-cluster-stat"><strong>${esc(trace.confidence || 'low')}</strong>${esc(tr('confidence', '신뢰도'))}</span>
-            </div>
-            ${regimeTags.length > 0 ? `<div class="karpathy-tag-list">${regimeTags.slice(0, 8).map(tag => `<span class="karpathy-tag">${esc(tag)}</span>`).join('')}</div>` : ''}
-            <div class="karpathy-trace-columns">
-              <div class="karpathy-trace-panel">
-                <h4>${esc(tr('Gates', '게이트'))}</h4>
-                ${gates.map(gate => `<div class="karpathy-trace-line ${gate.passed ? 'passed' : 'failed'}"><strong>${esc(gate.key)}</strong><span>${esc(gate.detail || '')}</span></div>`).join('') || `<div class="empty-state compact">${esc(tr('No gates recorded.', '기록된 게이트 없음'))}</div>`}
-              </div>
-              <div class="karpathy-trace-panel">
-                <h4>${esc(tr('Penalties and blockers', '패널티와 차단'))}</h4>
-                ${penalties.map(penalty => `<div class="karpathy-trace-line"><strong>${esc(penalty.type)}</strong><span>${esc(`${penalty.detail || ''} (w=${penalty.weight ?? 0})`)}</span></div>`).join('')}
-                ${blockers.map(blocker => `<div class="karpathy-trace-line failed"><strong>${esc(tr('blocker', '차단'))}</strong><span>${esc(blocker)}</span></div>`).join('')}
-                ${cautions.map(caution => `<div class="karpathy-trace-line"><strong>${esc(tr('caution', '주의'))}</strong><span>${esc(caution)}</span></div>`).join('')}
-                ${(penalties.length || blockers.length || cautions.length) ? '' : `<div class="empty-state compact">${esc(tr('No penalties or blockers recorded.', '패널티/차단 없음'))}</div>`}
-              </div>
-              <div class="karpathy-trace-panel">
-                <h4>${esc(tr('Specialists and synthesis', '전문가와 합성'))}</h4>
-                ${specialists.slice(0, 8).map(entry => `<div class="karpathy-trace-line ${entry.status === 'block' ? 'failed' : entry.status === 'pass' ? 'passed' : ''}"><strong>${esc(entry.label || entry.key)}</strong><span>${esc(`${entry.summary || ''} (${entry.status}, w=${entry.weight ?? 0}, s=${entry.weightedScore ?? entry.score ?? 0})`)}</span></div>`).join('')}
-                <div class="karpathy-trace-line"><strong>${esc(tr('friction', '마찰'))}</strong><span>${esc(String(synthesis.frictionScore ?? 0))}</span></div>
-                <div class="karpathy-trace-line"><strong>${esc(tr('penalty weight', '패널티 가중치'))}</strong><span>${esc(String(synthesis.penaltyWeight ?? 0))}</span></div>
-                ${(specialists.length || synthesis.frictionScore != null) ? '' : `<div class="empty-state compact">${esc(tr('No specialist detail recorded.', '전문가 세부 정보 없음'))}</div>`}
-              </div>
-            </div>
-          </div>
-        </details>
-      `;
-    }).join('');
-  }
-
   function bindExecuteButtons(scope = document) {
     scope.querySelectorAll('.execute-opt').forEach(button => {
       if (button.dataset.bound === 'true') return;
@@ -1349,7 +854,7 @@
     if (document.body.dataset.optFiltersBound === 'true') return;
     document.body.dataset.optFiltersBound = 'true';
 
-    ['optTypeFilter', 'optStatusFilter', 'karpathyTracePolicyFilter', 'karpathyTraceVerdictFilter', 'karpathyTraceTargetFilter'].forEach(id => {
+    ['optTypeFilter', 'optStatusFilter'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       const eventName = el.tagName === 'INPUT' ? 'input' : 'change';
@@ -1362,14 +867,9 @@
   async function refreshOptimizationsPage() {
     bindOptimizationFilters();
 
-    const [aiOps, optData, policyLab, experimentsData, tracesData, outcomesData, observabilityData] = await Promise.all([
+    const [aiOps, optData] = await Promise.all([
       fetchAiOperations(),
       fetchOptimizations(500),
-      fetchPolicyLab(),
-      fetchPolicyLabExperiments(),
-      fetchPolicyLabTraces(),
-      fetchPolicyLabOutcomes(),
-      fetchPolicyLabObservability(),
     ]);
 
     if (!aiOps) return;
@@ -1384,12 +884,7 @@
     renderSystemChatter(aiOps);
     renderClusters(aiOps);
     renderRawHistory(optData || { optimizations: [], total: 0 });
-    renderSectionSummaries(aiOps, policyLab);
-    renderResearchLabSummary(policyLab);
-    renderResearchLabTimeline(policyLab, experimentsData);
-    renderResearchLabTraces(tracesData || { traces: [], filters: { policyIds: [], verdicts: [] } });
-    renderResearchLabMetrics(policyLab, outcomesData);
-    renderResearchLabObservability(policyLab, observabilityData);
+    renderSectionSummaries(aiOps);
   }
 
   live.registerPage('optimizations', {

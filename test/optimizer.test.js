@@ -273,33 +273,6 @@ test('analyzeBudgetReallocation follows contribution estimates instead of issuin
   assert.match(engine.actions[0].action, /Reallocate \$45\.00\/day/);
 });
 
-test('analyzeAdSets skips budget reduction actions when the ad set budget is controlled at campaign level', () => {
-  const engine = new OptimizationEngine(11);
-  const adSets = [
-    {
-      id: 'as1',
-      name: 'CBO Ad Set',
-      campaign_id: 'c1',
-      effective_status: 'ACTIVE',
-    },
-  ];
-  const campaigns = [
-    { id: 'c1', name: 'Campaign Alpha' },
-  ];
-  const insights = [
-    { adset_id: 'as1', campaign_id: 'c1', date_start: '2026-03-08', spend: '30', actions: createActions(1) },
-    { adset_id: 'as1', campaign_id: 'c1', date_start: '2026-03-09', spend: '30', actions: createActions(1) },
-    { adset_id: 'as1', campaign_id: 'c1', date_start: '2026-03-10', spend: '30', actions: createActions(1) },
-    { adset_id: 'as2', campaign_id: 'c1', date_start: '2026-03-08', spend: '30', actions: createActions(5) },
-    { adset_id: 'as2', campaign_id: 'c1', date_start: '2026-03-09', spend: '30', actions: createActions(5) },
-    { adset_id: 'as2', campaign_id: 'c1', date_start: '2026-03-10', spend: '30', actions: createActions(5) },
-  ];
-
-  engine.analyzeAdSets(adSets, insights, campaigns);
-
-  assert.equal(engine.actions.length, 0);
-});
-
 test('analyze removes Meta-overlap actions and freezes budget changes when measurement trust is weak', async () => {
   const engine = new OptimizationEngine(12);
   const campaigns = [createCampaign()];
@@ -327,14 +300,6 @@ test('analyze removes Meta-overlap actions and freezes budget changes when measu
     actions: createActions(1),
     frequency: '1.2',
   }));
-  const adSetInsights = Array.from({ length: 6 }, (_, index) => ({
-    adset_id: 'as1',
-    campaign_id: 'c1',
-    date_start: recentDate(index + 1),
-    spend: '25',
-    actions: createActions(index === 0 ? 0 : 1),
-    ctr: '0.9',
-  }));
   const adInsights = Array.from({ length: 6 }, (_, index) => ({
     ad_id: 'ad1',
     campaign_id: 'c1',
@@ -348,10 +313,8 @@ test('analyze removes Meta-overlap actions and freezes budget changes when measu
 
   const actions = await engine.analyze(
     campaigns,
-    adSets,
     ads,
     campaignInsights,
-    adSetInsights,
     adInsights,
     null,
     { status: 'disconnected', stale: true },
