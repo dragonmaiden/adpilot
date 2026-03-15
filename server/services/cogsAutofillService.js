@@ -909,6 +909,74 @@ function shouldSendNewOrderNotification(order, eventName) {
   return true;
 }
 
+function getOrderCreationTimestamp(order) {
+  return parseTimestamp(order?.wtime);
+}
+
+function shouldBackfillNewOrderNotification(order) {
+  const normalizedOrderNo = asString(order?.orderNo);
+  if (!normalizedOrderNo) {
+    return false;
+  }
+
+  const notification = getNotifiedOrderMetadata(normalizedOrderNo);
+  if (notification?.notificationStage === 'payment_confirmed') {
+    return false;
+  }
+
+  if (notification?.messageId) {
+    return false;
+  }
+
+  return shouldSendNewOrderNotification(order, '');
+}
+
+async function collectRecentNewOrderNotifications(orders, options = {}) {
+  const windowStart = resolveWindowStart(options);
+  const pending = [];
+  const seenOrderNos = new Set();
+
+  const eligibleOrders = (Array.isArray(orders) ? orders : [])
+    .filter(order => {
+      const orderNo = asString(order?.orderNo);
+      if (!orderNo || seenOrderNos.has(orderNo)) {
+        return false;
+      }
+
+      if (!shouldBackfillNewOrderNotification(order)) {
+        return false;
+      }
+
+      const createdAt = getOrderCreationTimestamp(order);
+      if (!isRecentEnough(createdAt, windowStart)) {
+        return false;
+      }
+
+      seenOrderNos.add(orderNo);
+      return true;
+    })
+    .sort((left, right) => {
+      const leftTime = getOrderCreationTimestamp(left)?.getTime() || 0;
+      const rightTime = getOrderCreationTimestamp(right)?.getTime() || 0;
+      return leftTime - rightTime;
+    });
+
+  for (const order of eligibleOrders) {
+    pending.push(buildOrderNotificationResult(order, {
+      notificationKind: 'new_order',
+      notificationSource: 'scan_backstop',
+    }));
+  }
+
+  return {
+    ok: true,
+    status: 'ok',
+    windowStartAt: windowStart ? windowStart.toISOString() : null,
+    eligibleOrders: eligibleOrders.length,
+    pending,
+  };
+}
+
 async function syncOrderToCogsSheet(order, options = {}) {
   if (!isConfigured()) {
     return { ok: false, status: 'disabled', reason: 'COGS autofill is not configured' };
@@ -1083,6 +1151,7 @@ async function handleWebhookPayload(payload) {
       eventName,
       orderDate: summary.orderDate,
       paymentState: summary.paymentState,
+      notificationStage: 'delivery_pending',
     });
     return {
       ...summary,
@@ -1141,6 +1210,7 @@ module.exports = {
   getNotifiedOrderMetadata,
   recordOrderNotificationDelivery,
   markOrderNotificationCompleted,
+  collectRecentNewOrderNotifications,
   syncOrderToCogsSheet,
   syncImwebOrderToCogs,
   syncRecentOrdersToCogs,

@@ -16,7 +16,7 @@ async function deliverNewOrderNotification(result) {
       notificationStage: 'payment_pending',
       paymentState: result.paymentState,
       orderDate: result.orderDate,
-      source: 'webhook_new_order',
+      source: result.notificationSource || 'webhook_new_order',
     });
   }
 

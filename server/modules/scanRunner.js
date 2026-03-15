@@ -253,8 +253,59 @@ async function fetchCogs(scanResult) {
   }
 }
 
+async function backfillRecentNewOrderNotifications(scanResult, orders) {
+  console.log('[SCHEDULER] Step 3a: Backfilling missed new-order Telegram alerts...');
+
+  try {
+    const previousScanTime = scanStore.getLastScanTime();
+    const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
+    const graceMinutes = 10;
+    const fallbackWindowStart = new Date(Date.now() - (Math.max(intervalMinutes * 2, intervalMinutes + 15) * 60 * 1000));
+    const scanWindowStart = previousScanTime
+      ? new Date(previousScanTime.getTime() - (graceMinutes * 60 * 1000))
+      : fallbackWindowStart;
+    const result = await cogsAutofillService.collectRecentNewOrderNotifications(orders, {
+      sinceTime: scanWindowStart,
+    });
+
+    let deliveredAlerts = 0;
+    let failedAlerts = 0;
+
+    for (const pending of result.pending) {
+      const delivery = await orderNotificationService.deliverNewOrderNotification(pending);
+      if (delivery?.publicMessage?.ok) {
+        deliveredAlerts += 1;
+      } else {
+        failedAlerts += 1;
+        pushError(scanResult, 'new_order_notification_backstop', new Error(`Failed to deliver new-order alert for ${pending.orderNo || 'unknown order'}`));
+      }
+    }
+
+    pushStep(scanResult, {
+      step: 'new_order_notification_backstop',
+      status: failedAlerts > 0 && deliveredAlerts === 0 && result.pending.length > 0 ? 'failed' : 'ok',
+      windowStartAt: result.windowStartAt,
+      eligibleOrders: result.eligibleOrders,
+      deliveredAlerts,
+      failedAlerts,
+    });
+    console.log(
+      `[SCHEDULER]   → ${deliveredAlerts} backfilled alert${deliveredAlerts === 1 ? '' : 's'}, `
+      + `${failedAlerts} failed `
+      + `(${result.eligibleOrders} candidate order${result.eligibleOrders === 1 ? '' : 's'} checked since ${result.windowStartAt || 'startup'})`
+    );
+
+    return { ok: failedAlerts === 0, result };
+  } catch (err) {
+    console.error('[SCHEDULER]   ⚠ New-order alert backfill failed:', err.message);
+    pushError(scanResult, 'new_order_notification_backstop', err);
+    pushStep(scanResult, { step: 'new_order_notification_backstop', status: 'failed' });
+    return { ok: false, result: null };
+  }
+}
+
 async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
-  console.log('[SCHEDULER] Step 3a: Reconciling recent paid Imweb orders into the COGS sheet...');
+  console.log('[SCHEDULER] Step 3b: Reconciling recent paid Imweb orders into the COGS sheet...');
 
   if (!cogsAutofillService.isConfigured()) {
     pushStep(scanResult, {
@@ -367,6 +418,7 @@ async function runScan(manual = false) {
     sourceStatus.imweb = imwebResult.ok;
 
     if (imwebResult.ok) {
+      await backfillRecentNewOrderNotifications(scanResult, imwebResult.orders);
       await reconcileRecentImwebOrdersToCogs(scanResult, imwebResult.orders);
     }
 

@@ -69,6 +69,7 @@ test('deliverNewOrderNotification stores the public Telegram message id for late
       orderNo: '202603150001',
       paymentState: 'awaiting_check',
       orderDate: '2026-03-15',
+      notificationSource: 'scan_backstop',
     });
 
     assert.equal(result.messageId, 4321);
@@ -81,7 +82,7 @@ test('deliverNewOrderNotification stores the public Telegram message id for late
           notificationStage: 'payment_pending',
           paymentState: 'awaiting_check',
           orderDate: '2026-03-15',
-          source: 'webhook_new_order',
+          source: 'scan_backstop',
         },
       },
     ]);

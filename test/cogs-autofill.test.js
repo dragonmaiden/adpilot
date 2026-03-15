@@ -945,6 +945,118 @@ test('handleWebhookPayload suppresses the later paid-order ping when a new-order
   }
 });
 
+test('collectRecentNewOrderNotifications backfills recent unpaid orders that were missed or left delivery-pending', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const now = Date.now();
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {},
+    notifiedOrders: {
+      '20260313002': {
+        orderNo: '20260313002',
+        notifiedAt: new Date(now - (8 * 60 * 1000)).toISOString(),
+        source: 'webhook_new_order',
+        notificationStage: 'delivery_pending',
+      },
+      '20260313003': {
+        orderNo: '20260313003',
+        notifiedAt: new Date(now - (7 * 60 * 1000)).toISOString(),
+        source: 'webhook_new_order',
+        notificationStage: 'payment_pending',
+        messageId: 4321,
+      },
+      '20260313004': {
+        orderNo: '20260313004',
+        notifiedAt: new Date(now - (6 * 60 * 1000)).toISOString(),
+        source: 'cogs_autofill_fallback',
+        notificationStage: 'payment_confirmed',
+      },
+    },
+  }, null, 2));
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const result = await service.collectRecentNewOrderNotifications([
+      createOrder({
+        orderNo: '20260313001',
+        wtime: new Date(now - (4 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313002',
+        wtime: new Date(now - (5 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313003',
+        wtime: new Date(now - (6 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313004',
+        wtime: new Date(now - (7 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313005',
+        wtime: new Date(now - (3 * 60 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313006',
+        wtime: new Date(now - (2 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 111000,
+        payments: [
+          {
+            paidPrice: 111000,
+            paymentStatus: 'PAYMENT_COMPLETE',
+            paymentCompleteTime: new Date(now - (90 * 1000)).toISOString(),
+            method: 'CARD',
+          },
+        ],
+      }),
+    ], {
+      sinceTime: new Date(now - (30 * 60 * 1000)),
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.eligibleOrders, 2);
+    assert.deepEqual(result.pending.map(order => order.orderNo), ['20260313002', '20260313001']);
+    assert.equal(result.pending[0].notificationSource, 'scan_backstop');
+    assert.equal(result.pending[1].notificationKind, 'new_order');
+  });
+});
+
 test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or duplicate candidates', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
