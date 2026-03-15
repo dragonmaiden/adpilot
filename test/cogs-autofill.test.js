@@ -245,7 +245,7 @@ test('buildNewOrderNotification formats the pre-payment order alert', async () =
     assert.match(message, /Order: 202603145648900/);
     assert.match(message, /Date: 2026-03-13/);
     assert.match(message, /Customer: 홍신희/);
-    assert.match(message, /Order value: ₩111,000 · 🐟 small fish ₩₩/);
+    assert.match(message, /Revenue: ₩111,000 · 🐟 small fish ₩₩/);
     assert.match(message, /Payment: Awaiting payment check · BANK_TRANSFER/);
     assert.match(message, /Next: Check payment in Imweb/);
     assert.match(message, /Products:\n• 실크 모노그램 방도/);

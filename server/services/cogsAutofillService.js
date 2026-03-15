@@ -531,7 +531,7 @@ function buildNewOrderNotification(result) {
     `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
     `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,
     `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
-    `Order value: ${escapeHtml(formatStoreMoney(orderValue))} · ${escapeHtml(getOrderSizeLabel(orderValue))}`,
+    `Revenue: ${escapeHtml(formatStoreMoney(orderValue))} · ${escapeHtml(getOrderSizeLabel(orderValue))}`,
     `Payment: ${paymentLabel || 'Check payment now'}`,
   ];
 
