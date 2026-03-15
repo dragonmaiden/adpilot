@@ -19,6 +19,8 @@ const cogsAutofillService = require('../services/cogsAutofillService');
 const orderNotificationService = require('../services/orderNotificationService');
 const observabilityService = require('../services/observabilityService');
 
+const META_AD_INSIGHTS_LOOKBACK_DAYS = 45;
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -78,6 +80,11 @@ function buildScanStats(latestData, until) {
   };
 }
 
+function resolveAdInsightsSince(since, until, lookbackDays = META_AD_INSIGHTS_LOOKBACK_DAYS) {
+  const rollingSince = shiftDate(until, -(Math.max(lookbackDays, 1) - 1));
+  return rollingSince > since ? rollingSince : since;
+}
+
 async function fetchMetaStructure(scanResult) {
   console.log('[SCHEDULER] Step 1: Fetching Meta Ads campaigns, ad sets, ads...');
   const attemptedAt = nowIso();
@@ -123,13 +130,14 @@ async function fetchMetaStructure(scanResult) {
 }
 
 async function fetchMetaInsights(scanResult, since, until) {
-  console.log('[SCHEDULER] Step 2: Fetching Meta Ads insights (full history)...');
+  const adSince = resolveAdInsightsSince(since, until);
+  console.log('[SCHEDULER] Step 2: Fetching Meta Ads insights...');
   const attemptedAt = nowIso();
 
   try {
     const [campaignInsights, adInsights] = await Promise.all([
       meta.getAllCampaignInsights(since, until),
-      meta.getAllAdInsights(since, until),
+      meta.getAllAdInsights(adSince, until),
     ]);
 
     const campaignInsightsValid = validateMetaInsights(campaignInsights, 'campaign');
@@ -147,6 +155,8 @@ async function fetchMetaInsights(scanResult, since, until) {
       step: 'meta_insights',
       status: 'ok',
       period: `${since} to ${until}`,
+      adPeriod: `${adSince} to ${until}`,
+      mode: adSince === since ? 'full_history' : 'ad_recent_window',
       campaignRows: campaignInsights.length,
       adRows: adInsights.length,
       validation: {
@@ -154,13 +164,19 @@ async function fetchMetaInsights(scanResult, since, until) {
         ads: adInsightsValid.valid,
       },
     });
-    console.log(`[SCHEDULER]   → ${campaignInsights.length} campaign and ${adInsights.length} ad insight rows`);
+    console.log(`[SCHEDULER]   → ${campaignInsights.length} campaign rows (${since} → ${until}) and ${adInsights.length} ad rows (${adSince} → ${until})`);
 
     return { ok: true, campaignInsights, adInsights };
   } catch (err) {
     console.error('[SCHEDULER]   ⚠ Meta insights fetch failed:', err.message);
     pushError(scanResult, 'meta_insights', err);
-    pushStep(scanResult, { step: 'meta_insights', status: 'failed', period: `${since} to ${until}` });
+    pushStep(scanResult, {
+      step: 'meta_insights',
+      status: 'failed',
+      period: `${since} to ${until}`,
+      adPeriod: `${adSince} to ${until}`,
+      mode: adSince === since ? 'full_history' : 'ad_recent_window',
+    });
     const latestData = scanStore.getLatestData();
     markSourceFailure('metaInsights', attemptedAt, err, {
       hasData: (latestData.campaignInsights || []).length > 0 || (latestData.adInsights || []).length > 0,
@@ -634,4 +650,7 @@ async function runScan(manual = false) {
 
 module.exports = {
   runScan,
+  __private: {
+    resolveAdInsightsSince,
+  },
 };
