@@ -931,9 +931,8 @@ function shouldBackfillNewOrderNotification(order) {
   return shouldSendNewOrderNotification(order, '');
 }
 
-async function collectRecentNewOrderNotifications(orders, options = {}) {
+function collectRecentNewOrderNotifications(orders, options = {}) {
   const windowStart = resolveWindowStart(options);
-  const pending = [];
   const seenOrderNos = new Set();
 
   const eligibleOrders = (Array.isArray(orders) ? orders : [])
@@ -961,12 +960,10 @@ async function collectRecentNewOrderNotifications(orders, options = {}) {
       return leftTime - rightTime;
     });
 
-  for (const order of eligibleOrders) {
-    pending.push(buildOrderNotificationResult(order, {
-      notificationKind: 'new_order',
-      notificationSource: 'scan_backstop',
-    }));
-  }
+  const pending = eligibleOrders.map(order => buildOrderNotificationResult(order, {
+    notificationKind: 'new_order',
+    notificationSource: 'scan_backstop',
+  }));
 
   return {
     ok: true,

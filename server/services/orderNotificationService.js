@@ -6,6 +6,14 @@ function getTelegramMessageId(response) {
   return Number.isFinite(Number(messageId)) ? Number(messageId) : null;
 }
 
+async function sendPrivateOrderDetails(result) {
+  return telegram.sendMessage(
+    cogsAutofillService.buildAutofillPrivateNotification(result),
+    'HTML',
+    { protectContent: true }
+  );
+}
+
 async function deliverNewOrderNotification(result) {
   const publicMessage = await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification(result));
   const messageId = getTelegramMessageId(publicMessage);
@@ -22,11 +30,7 @@ async function deliverNewOrderNotification(result) {
 
   let privateMessage = null;
   if (publicMessage?.ok) {
-    privateMessage = await telegram.sendMessage(
-      cogsAutofillService.buildAutofillPrivateNotification(result),
-      'HTML',
-      { protectContent: true }
-    );
+    privateMessage = await sendPrivateOrderDetails(result);
   }
 
   return {
@@ -94,11 +98,7 @@ async function deliverPaidOrderNotification(result) {
   const publicMessage = await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
   let privateMessage = null;
   if (publicMessage?.ok) {
-    privateMessage = await telegram.sendMessage(
-      cogsAutofillService.buildAutofillPrivateNotification(result),
-      'HTML',
-      { protectContent: true }
-    );
+    privateMessage = await sendPrivateOrderDetails(result);
   }
 
   if (result?.orderNo && publicMessage?.ok) {

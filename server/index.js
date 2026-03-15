@@ -39,6 +39,11 @@ function isValidMetaId(id) {
   return /^\d{1,20}$/.test(String(id || ''));
 }
 
+function shouldDeliverPaidOrderNotification(result) {
+  return result?.status === 'appended'
+    || (result?.status === 'duplicate' && result?.alreadyNotified);
+}
+
 function handleInternalError(req, res, err) {
   console.error(`[API] ${req.method} ${req.path} error:`, err);
   observabilityService.captureException(err, {
@@ -261,7 +266,7 @@ app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
       await orderNotificationService.deliverNewOrderNotification(result);
     } else if (result?.notificationKind === 'cogs_autofill') {
       await orderNotificationService.deliverPaidOrderNotification(result);
-    } else if (result?.alreadyNotified && ['appended', 'duplicate'].includes(result?.status)) {
+    } else if (shouldDeliverPaidOrderNotification(result)) {
       await orderNotificationService.deliverPaidOrderNotification(result);
     }
     res.json(cogsAutofillService.sanitizeAutofillResultForResponse(result));
@@ -409,12 +414,8 @@ app.post('/api/cogs/autofill-order', writeLimiter, async (req, res) => {
     }
 
     const result = await cogsAutofillService.syncImwebOrderToCogs(orderNo);
-    if (['appended', 'duplicate'].includes(result?.status)) {
-      if (result?.alreadyNotified) {
-        await orderNotificationService.deliverPaidOrderNotification(result);
-      } else if (result?.status === 'appended') {
-        await orderNotificationService.deliverPaidOrderNotification(result);
-      }
+    if (shouldDeliverPaidOrderNotification(result)) {
+      await orderNotificationService.deliverPaidOrderNotification(result);
     }
     res.json(cogsAutofillService.sanitizeAutofillResultForResponse(result));
   } catch (err) {

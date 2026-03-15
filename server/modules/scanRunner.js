@@ -253,17 +253,25 @@ async function fetchCogs(scanResult) {
   }
 }
 
+function resolveRecentImwebWindowStart(previousScanTime) {
+  const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
+  const graceMinutes = 10;
+  const fallbackWindowStart = new Date(Date.now() - (Math.max(intervalMinutes * 2, intervalMinutes + 15) * 60 * 1000));
+  if (!previousScanTime) {
+    return fallbackWindowStart;
+  }
+
+  return new Date(Math.max(
+    previousScanTime.getTime() - (graceMinutes * 60 * 1000),
+    fallbackWindowStart.getTime()
+  ));
+}
+
 async function backfillRecentNewOrderNotifications(scanResult, orders) {
   console.log('[SCHEDULER] Step 3a: Backfilling missed new-order Telegram alerts...');
 
   try {
-    const previousScanTime = scanStore.getLastScanTime();
-    const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
-    const graceMinutes = 10;
-    const fallbackWindowStart = new Date(Date.now() - (Math.max(intervalMinutes * 2, intervalMinutes + 15) * 60 * 1000));
-    const scanWindowStart = previousScanTime
-      ? new Date(previousScanTime.getTime() - (graceMinutes * 60 * 1000))
-      : fallbackWindowStart;
+    const scanWindowStart = resolveRecentImwebWindowStart(scanStore.getLastScanTime());
     const result = await cogsAutofillService.collectRecentNewOrderNotifications(orders, {
       sinceTime: scanWindowStart,
     });
@@ -318,14 +326,7 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
   }
 
   try {
-    const previousScanTime = scanStore.getLastScanTime();
-    const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
-    const graceMinutes = 10;
-    const maxLookbackMinutes = Math.max(intervalMinutes * 2, intervalMinutes + 15);
-    const fallbackWindowStart = new Date(Date.now() - (maxLookbackMinutes * 60 * 1000));
-    const scanWindowStart = previousScanTime
-      ? new Date(Math.max(previousScanTime.getTime() - (graceMinutes * 60 * 1000), fallbackWindowStart.getTime()))
-      : fallbackWindowStart;
+    const scanWindowStart = resolveRecentImwebWindowStart(scanStore.getLastScanTime());
     const result = await cogsAutofillService.syncRecentOrdersToCogs(orders, {
       sinceTime: scanWindowStart,
     });
@@ -353,10 +354,6 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
     }
 
     for (const appended of result.appended) {
-      if (appended?.alreadyNotified) {
-        await orderNotificationService.deliverPaidOrderNotification(appended);
-        continue;
-      }
       await orderNotificationService.deliverPaidOrderNotification(appended);
     }
 
