@@ -112,7 +112,7 @@
       if (windowNoteEl) {
         windowNoteEl.textContent = postmortem.windowDays
           ? tr(`Recent ${postmortem.windowDays} day creative health view`, `최근 ${postmortem.windowDays}일 크리에이티브 상태 보기`)
-          : tr('All available creative health history', '사용 가능한 전체 크리에이티브 상태 이력');
+          : tr('Recent retained creative health history (up to 45 days)', '최근 보관된 크리에이티브 상태 이력 (최대 45일)');
       }
       if (grid) {
         const active = (postmortem.active || []).slice().sort((left, right) => {
