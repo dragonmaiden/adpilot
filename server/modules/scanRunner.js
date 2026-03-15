@@ -15,6 +15,7 @@ const { filterDuplicateApprovalOptimizations } = require('../services/optimizati
 const { arbitrateOptimizations } = require('../services/optimizationArbitrationService');
 const { buildEconomicsLedger } = require('../services/economicsLedgerService');
 const cogsAutofillService = require('../services/cogsAutofillService');
+const orderNotificationService = require('../services/orderNotificationService');
 const policyLabService = require('../services/policyLabService');
 const observabilityService = require('../services/observabilityService');
 
@@ -302,10 +303,10 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
 
     for (const appended of result.appended) {
       if (appended?.alreadyNotified) {
+        await orderNotificationService.deliverPaidOrderNotification(appended);
         continue;
       }
-      await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(appended));
-      await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(appended), 'HTML', { protectContent: true });
+      await orderNotificationService.deliverPaidOrderNotification(appended);
     }
 
     return { ok: true, result };

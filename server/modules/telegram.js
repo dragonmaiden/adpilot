@@ -165,6 +165,58 @@ async function sendMessage(text, parseMode = 'HTML', options = {}) {
   }
 }
 
+async function editMessageText(messageId, text, parseMode = 'HTML') {
+  const configError = getConfigurationError();
+  if (configError) {
+    syncStatus({ status: 'misconfigured', lastCheckedAt: nowIso(), lastError: configError });
+    console.error('[TELEGRAM] Edit skipped:', configError);
+    return null;
+  }
+
+  if (!messageId) {
+    return null;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: CHAT_ID,
+        message_id: messageId,
+        text,
+        parse_mode: parseMode,
+      }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      const message = describeTelegramFailure(data, 'Telegram editMessageText failed');
+      if (message.toLowerCase().includes('message is not modified')) {
+        return { ok: true, result: null, description: message };
+      }
+      syncStatus({ status: 'error', lastCheckedAt: nowIso(), lastError: message });
+      console.error('[TELEGRAM] Edit failed:', message);
+    } else {
+      const checkedAt = nowIso();
+      syncStatus({
+        status: 'connected',
+        lastCheckedAt: checkedAt,
+        lastOkAt: checkedAt,
+        lastError: null,
+      });
+    }
+    return data;
+  } catch (err) {
+    syncStatus({
+      status: 'error',
+      lastCheckedAt: nowIso(),
+      lastError: `Telegram editMessageText failed: ${err.message}`,
+    });
+    console.error('[TELEGRAM] Edit error:', err.message);
+    return null;
+  }
+}
+
 async function maybeSendStartupMessage() {
   const state = telegramState.getState();
   if (!shouldSendStartupMessage(state)) {
@@ -495,6 +547,7 @@ function getPendingApprovals() {
 
 module.exports = {
   sendMessage,
+  editMessageText,
   maybeSendStartupMessage,
   requestApproval,
   waitForApproval,

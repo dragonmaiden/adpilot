@@ -30,6 +30,7 @@ const reconciliationService = require('./services/reconciliationService');
 const operatorSummaryService = require('./services/operatorSummaryService');
 const briefService = require('./services/briefService');
 const cogsAutofillService = require('./services/cogsAutofillService');
+const orderNotificationService = require('./services/orderNotificationService');
 const imwebAppInstallService = require('./services/imwebAppInstallService');
 const observabilityService = require('./services/observabilityService');
 const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
@@ -257,11 +258,11 @@ app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
 
     const result = await cogsAutofillService.handleWebhookPayload(req.body || {});
     if (result?.notificationKind === 'new_order') {
-      await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification(result));
-      await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(result), 'HTML', { protectContent: true });
+      await orderNotificationService.deliverNewOrderNotification(result);
     } else if (result?.notificationKind === 'cogs_autofill') {
-      await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
-      await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(result), 'HTML', { protectContent: true });
+      await orderNotificationService.deliverPaidOrderNotification(result);
+    } else if (result?.alreadyNotified && ['appended', 'duplicate'].includes(result?.status)) {
+      await orderNotificationService.deliverPaidOrderNotification(result);
     }
     res.json(cogsAutofillService.sanitizeAutofillResultForResponse(result));
   } catch (err) {
@@ -408,9 +409,12 @@ app.post('/api/cogs/autofill-order', writeLimiter, async (req, res) => {
     }
 
     const result = await cogsAutofillService.syncImwebOrderToCogs(orderNo);
-    if (result?.status === 'appended' && !result?.alreadyNotified) {
-      await telegram.sendMessage(cogsAutofillService.buildAutofillNotification(result));
-      await telegram.sendMessage(cogsAutofillService.buildAutofillPrivateNotification(result), 'HTML', { protectContent: true });
+    if (['appended', 'duplicate'].includes(result?.status)) {
+      if (result?.alreadyNotified) {
+        await orderNotificationService.deliverPaidOrderNotification(result);
+      } else if (result?.status === 'appended') {
+        await orderNotificationService.deliverPaidOrderNotification(result);
+      }
     }
     res.json(cogsAutofillService.sanitizeAutofillResultForResponse(result));
   } catch (err) {

@@ -247,8 +247,45 @@ test('buildNewOrderNotification formats the pre-payment order alert', async () =
     assert.match(message, /Customer: 홍신희/);
     assert.match(message, /Revenue: ₩111,000 · 🐟 small fish ₩₩/);
     assert.match(message, /Payment: Awaiting payment check · BANK_TRANSFER/);
-    assert.match(message, /Next: Check payment in Imweb/);
+    assert.match(message, /Checklist:\n☐ Check payment in Imweb/);
     assert.match(message, /Products:\n• 실크 모노그램 방도/);
+  });
+});
+
+test('buildNewOrderNotification formats the completed checklist state after payment recognition', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const message = service.buildNewOrderNotification({
+      orderNo: '202603145648900',
+      orderDate: '2026-03-13',
+      customerName: '홍신희',
+      orderValue: 111000,
+      paymentLabel: 'Paid confirmed',
+      paymentMethod: 'CARD',
+      paymentState: 'paid',
+      notificationStage: 'payment_confirmed',
+      sheetName: '3월 주문',
+      productNames: ['실크 모노그램 방도'],
+    });
+
+    assert.match(message, /✅ <b>New Imweb Order<\/b>/);
+    assert.match(message, /Payment: Paid confirmed · CARD/);
+    assert.match(message, /Checklist:\n✅ Payment recognized in Imweb\n✅ COGS logged in 3월 주문/);
   });
 });
 

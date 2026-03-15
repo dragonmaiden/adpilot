@@ -125,11 +125,26 @@ function markOrderNotified(orderNo, metadata = {}) {
 
   const state = loadState();
   state.notifiedOrders[normalizedOrderNo] = {
+    ...(state.notifiedOrders[normalizedOrderNo] || {}),
     orderNo: normalizedOrderNo,
-    notifiedAt: new Date().toISOString(),
+    notifiedAt: state.notifiedOrders[normalizedOrderNo]?.notifiedAt || new Date().toISOString(),
     ...metadata,
   };
   saveState(state);
+}
+
+function recordOrderNotificationDelivery(orderNo, metadata = {}) {
+  markOrderNotified(orderNo, metadata);
+  return getNotifiedOrderMetadata(orderNo);
+}
+
+function markOrderNotificationCompleted(orderNo, metadata = {}) {
+  markOrderNotified(orderNo, {
+    notificationStage: 'payment_confirmed',
+    paymentConfirmedAt: new Date().toISOString(),
+    ...metadata,
+  });
+  return getNotifiedOrderMetadata(orderNo);
 }
 
 function getNotifiedOrderMetadata(orderNo) {
@@ -516,6 +531,7 @@ function buildOrderNotificationResult(order, overrides = {}) {
 }
 
 function buildNewOrderNotification(result) {
+  const isCompleted = result?.paymentState === 'paid' || result?.notificationStage === 'payment_confirmed';
   const orderValue = Number(result?.orderValue || result?.netRevenue || result?.approvedAmount || 0);
   const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
     ? result.productNames.map(line => `• ${escapeHtml(line)}`).join('\n')
@@ -526,17 +542,19 @@ function buildNewOrderNotification(result) {
   ].filter(Boolean).map(value => escapeHtml(value)).join(' · ');
 
   const sections = [
-    '🛎️ <b>New Imweb Order</b>',
+    `${isCompleted ? '✅' : '🛎️'} <b>New Imweb Order</b>`,
     '',
     `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
     `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,
     `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
     `Revenue: ${escapeHtml(formatStoreMoney(orderValue))} · ${escapeHtml(getOrderSizeLabel(orderValue))}`,
-    `Payment: ${paymentLabel || 'Check payment now'}`,
+    `Payment: ${paymentLabel || (isCompleted ? 'Paid confirmed' : 'Check payment now')}`,
+    'Checklist:',
+    isCompleted ? '✅ Payment recognized in Imweb' : '☐ Check payment in Imweb',
   ];
 
-  if (result?.paymentState !== 'paid') {
-    sections.push('Next: Check payment in Imweb');
+  if (isCompleted && result?.sheetName) {
+    sections.push(`✅ COGS logged in ${escapeHtml(result.sheetName)}`);
   }
 
   sections.push('', 'Products:', productLines);
@@ -1120,6 +1138,9 @@ module.exports = {
   buildAutofillPrivateNotification,
   sanitizeAutofillResultForResponse,
   getImportedOrderMetadata,
+  getNotifiedOrderMetadata,
+  recordOrderNotificationDelivery,
+  markOrderNotificationCompleted,
   syncOrderToCogsSheet,
   syncImwebOrderToCogs,
   syncRecentOrdersToCogs,
