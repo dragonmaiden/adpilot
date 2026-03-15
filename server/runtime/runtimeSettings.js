@@ -36,6 +36,12 @@ const defaultState = {
   scheduler: pick(config.scheduler, MUTABLE_SCHEDULER_KEYS),
 };
 
+const runtimeMetadata = {
+  hasPersistedFile: false,
+  persistedSchedulerScanIntervalMinutes: null,
+  migratedLegacyScheduler: false,
+};
+
 function validateSettingsPatch(updates) {
   const errors = [];
 
@@ -67,14 +73,24 @@ function persistState(state) {
   }, null, 2));
 }
 
+function updateRuntimeMetadata(patch = {}) {
+  Object.assign(runtimeMetadata, patch);
+}
+
 function loadState() {
   if (!fs.existsSync(runtimePaths.runtimeSettingsFile)) {
+    updateRuntimeMetadata({
+      hasPersistedFile: false,
+      persistedSchedulerScanIntervalMinutes: null,
+      migratedLegacyScheduler: false,
+    });
     return cloneState(defaultState);
   }
 
   try {
     const raw = JSON.parse(fs.readFileSync(runtimePaths.runtimeSettingsFile, 'utf8'));
     let shouldPersistMigration = false;
+    let migratedLegacyScheduler = false;
     const persisted = {
       autonomousMode: raw.rules?.autonomousMode,
       maxBudgetChangePercent: raw.rules?.maxBudgetChangePercent,
@@ -98,6 +114,7 @@ function loadState() {
         scanIntervalMinutes: 10,
       };
       shouldPersistMigration = true;
+      migratedLegacyScheduler = true;
     }
 
     const errors = validateSettingsPatch(Object.fromEntries(
@@ -106,10 +123,17 @@ function loadState() {
 
     if (errors.length > 0) {
       console.warn(`[SETTINGS] Ignoring invalid persisted runtime settings: ${errors.join('; ')}`);
+      updateRuntimeMetadata({
+        hasPersistedFile: true,
+        persistedSchedulerScanIntervalMinutes: Number.isFinite(persisted.scanIntervalMinutes)
+          ? persisted.scanIntervalMinutes
+          : null,
+        migratedLegacyScheduler: false,
+      });
       return cloneState(defaultState);
     }
 
-    return {
+    const nextState = {
       rules: {
         ...defaultState.rules,
         ...(raw.rules || {}),
@@ -122,10 +146,10 @@ function loadState() {
 
     if (raw.schemaVersion !== SETTINGS_SCHEMA_VERSION) {
       shouldPersistMigration = true;
+      raw.schemaVersion = SETTINGS_SCHEMA_VERSION;
     }
 
     if (shouldPersistMigration) {
-      raw.schemaVersion = SETTINGS_SCHEMA_VERSION;
       fs.writeFileSync(runtimePaths.runtimeSettingsFile, JSON.stringify({
         schemaVersion: raw.schemaVersion,
         rules: nextState.rules,
@@ -134,9 +158,22 @@ function loadState() {
       }, null, 2));
     }
 
+    updateRuntimeMetadata({
+      hasPersistedFile: true,
+      persistedSchedulerScanIntervalMinutes: Number.isFinite(persisted.scanIntervalMinutes)
+        ? persisted.scanIntervalMinutes
+        : null,
+      migratedLegacyScheduler,
+    });
+
     return nextState;
   } catch (err) {
     console.warn(`[SETTINGS] Failed to load persisted runtime settings: ${err.message}`);
+    updateRuntimeMetadata({
+      hasPersistedFile: true,
+      persistedSchedulerScanIntervalMinutes: null,
+      migratedLegacyScheduler: false,
+    });
     return cloneState(defaultState);
   }
 }
@@ -162,6 +199,32 @@ function getRules() {
 
 function getSchedulerSettings() {
   return getSettings().scheduler;
+}
+
+function getSchedulerDiagnostics() {
+  const settings = getSettings();
+  const effectiveScanIntervalMinutes = Number(settings.scheduler?.scanIntervalMinutes ?? null);
+  const configuredScanIntervalMinutes = Number(config.scheduler?.scanIntervalMinutes ?? null);
+  const persistedScanIntervalMinutes = Number.isFinite(runtimeMetadata.persistedSchedulerScanIntervalMinutes)
+    ? Number(runtimeMetadata.persistedSchedulerScanIntervalMinutes)
+    : null;
+  const driftDetected = Number.isFinite(effectiveScanIntervalMinutes)
+    && Number.isFinite(configuredScanIntervalMinutes)
+    && effectiveScanIntervalMinutes !== configuredScanIntervalMinutes;
+
+  let intervalSource = 'config_default';
+  if (runtimeMetadata.hasPersistedFile) {
+    intervalSource = driftDetected ? 'runtime_override' : 'persisted_matches_config';
+  }
+
+  return {
+    scanIntervalMinutes: effectiveScanIntervalMinutes,
+    configuredScanIntervalMinutes,
+    persistedScanIntervalMinutes,
+    driftDetected,
+    intervalSource,
+    migratedLegacyScheduler: Boolean(runtimeMetadata.migratedLegacyScheduler),
+  };
 }
 
 function updateSettings(updates) {
@@ -199,6 +262,13 @@ function updateSettings(updates) {
 
   state = nextState;
   persistState(state);
+  updateRuntimeMetadata({
+    hasPersistedFile: true,
+    persistedSchedulerScanIntervalMinutes: Number.isFinite(nextState.scheduler.scanIntervalMinutes)
+      ? nextState.scheduler.scanIntervalMinutes
+      : null,
+    migratedLegacyScheduler: false,
+  });
 
   const current = getSettings();
   emitter.emit('changed', {
@@ -222,6 +292,7 @@ module.exports = {
   getSettings,
   getRules,
   getSchedulerSettings,
+  getSchedulerDiagnostics,
   updateSettings,
   validateSettingsPatch,
   onChange,

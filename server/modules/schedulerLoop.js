@@ -9,6 +9,18 @@ let nextInitialRunAt = null;
 let unsubscribeSettings = null;
 let runScanRef = null;
 
+function logSchedulerDiagnostics(prefix) {
+  const diagnostics = runtimeSettings.getSchedulerDiagnostics();
+  if (!diagnostics.driftDetected) return;
+
+  const persistedSuffix = Number.isFinite(diagnostics.persistedScanIntervalMinutes)
+    ? `; persisted runtime ${diagnostics.persistedScanIntervalMinutes} min`
+    : '';
+  console.warn(
+    `[SCHEDULER] ${prefix}: live ${diagnostics.scanIntervalMinutes} min vs config ${diagnostics.configuredScanIntervalMinutes} min${persistedSuffix}`
+  );
+}
+
 function clearRecurringTimer() {
   if (scanTimer) {
     clearInterval(scanTimer);
@@ -37,6 +49,7 @@ function startScheduler(runScan) {
   runScanRef = runScan;
   const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
   console.log(`[SCHEDULER] Starting scan scheduler (every ${intervalMinutes} min)`);
+  logSchedulerDiagnostics('Runtime interval override detected');
 
   imweb.loadTokens();
   telegram.startPolling();
@@ -54,6 +67,7 @@ function startScheduler(runScan) {
     if (!changedKeys.includes('scanIntervalMinutes')) return;
     scheduleRecurringLoop();
     console.log(`[SCHEDULER] Rescheduled scan loop (every ${current.scheduler.scanIntervalMinutes} min)`);
+    logSchedulerDiagnostics('Runtime interval override still active after reschedule');
   });
 
   return scanTimer;

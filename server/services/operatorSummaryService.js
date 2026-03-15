@@ -99,12 +99,29 @@ function isFreshAlert(opt, now = Date.now()) {
   return (now - timestampMs) <= ACTIVE_ALERT_MAX_AGE_MS;
 }
 
+function getSchedulerDiagnostics(settings) {
+  if (typeof runtimeSettings.getSchedulerDiagnostics === 'function') {
+    return runtimeSettings.getSchedulerDiagnostics();
+  }
+
+  return {
+    scanIntervalMinutes: settings.scheduler?.scanIntervalMinutes ?? null,
+    configuredScanIntervalMinutes: settings.scheduler?.scanIntervalMinutes ?? null,
+    driftDetected: false,
+    intervalSource: 'unknown',
+  };
+}
+
 function buildScanSection(overview, settings) {
+  const schedulerDiagnostics = getSchedulerDiagnostics(settings);
   return {
     lastScan: overview.lastScan ?? null,
     nextScan: scheduler.getNextScheduledRunAt()?.toISOString() ?? null,
     isScanning: overview.isScanning ?? false,
-    intervalMinutes: settings.scheduler?.scanIntervalMinutes ?? null,
+    intervalMinutes: schedulerDiagnostics.scanIntervalMinutes ?? settings.scheduler?.scanIntervalMinutes ?? null,
+    configuredIntervalMinutes: schedulerDiagnostics.configuredScanIntervalMinutes ?? null,
+    intervalDriftDetected: schedulerDiagnostics.driftDetected ?? false,
+    intervalSource: schedulerDiagnostics.intervalSource ?? null,
     autonomousMode: settings.rules?.autonomousMode ?? false,
     activeCampaigns: Number(overview.scanStats?.activeCampaigns ?? 0),
     activeAds: Number(overview.scanStats?.activeAds ?? 0),

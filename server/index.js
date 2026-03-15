@@ -613,6 +613,7 @@ app.post('/api/seed-token', writeLimiter, async (req, res) => {
 // ── Settings ──
 app.get('/api/settings', (req, res) => {
   const settings = runtimeSettings.getSettings();
+  const schedulerDiagnostics = runtimeSettings.getSchedulerDiagnostics();
   const sourceHealth = scheduler.getSourceHealth();
   const latestData = scheduler.getLatestData();
   const cogsData = latestData.cogsData || null;
@@ -620,7 +621,10 @@ app.get('/api/settings', (req, res) => {
   const cogsSheets = Array.isArray(cogsData?.sheets) ? cogsData.sheets : [];
   res.json(contracts.settings({
     rules: settings.rules,
-    scheduler: settings.scheduler,
+    scheduler: {
+      ...settings.scheduler,
+      ...schedulerDiagnostics,
+    },
     meta: {
       adAccountId: config.meta.adAccountId,
       apiVersion: config.meta.apiVersion,
@@ -804,12 +808,19 @@ app.get('/{*path}', (req, res) => {
 const PORT = config.server.port;
 
 app.listen(PORT, '0.0.0.0', () => {
+  const schedulerDiagnostics = runtimeSettings.getSchedulerDiagnostics();
   console.log('\n' + '='.repeat(60));
   console.log('  AdPilot Backend Server');
   console.log(`  Port: ${PORT}`);
   console.log(`  Data: ${DATA_DIR}`);
   console.log(`  Mode: ${runtimeSettings.getRules().autonomousMode ? 'APPROVAL-GATED' : 'ADVISORY ONLY'}`);
-  console.log(`  Scan interval: ${runtimeSettings.getSchedulerSettings().scanIntervalMinutes} min`);
+  console.log(`  Scan interval: ${schedulerDiagnostics.scanIntervalMinutes} min`);
+  if (schedulerDiagnostics.driftDetected) {
+    console.log(`  Scheduler drift: live ${schedulerDiagnostics.scanIntervalMinutes} min vs config ${schedulerDiagnostics.configuredScanIntervalMinutes} min`);
+  }
+  if (schedulerDiagnostics.migratedLegacyScheduler) {
+    console.log(`  Scheduler migration: normalized legacy persisted cadence to ${schedulerDiagnostics.scanIntervalMinutes} min`);
+  }
   console.log('='.repeat(60) + '\n');
 
   // Start the scheduler

@@ -4,7 +4,16 @@
 // ═══════════════════════════════════════════════════════
 
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+
+try {
+  require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+} catch (err) {
+  // Local test/worktree environments may not install dotenv, and production
+  // already provides real env vars. Missing dotenv should not block startup.
+  if (err?.code !== 'MODULE_NOT_FOUND') {
+    throw err;
+  }
+}
 
 function deepFreeze(obj) {
   Object.freeze(obj);

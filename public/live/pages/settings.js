@@ -71,6 +71,11 @@
     return `${formatDateKey(range.from)} → ${formatDateKey(range.to)}${suffix}`;
   }
 
+  function asFiniteNumber(value) {
+    const nextValue = Number(value);
+    return Number.isFinite(nextValue) ? nextValue : null;
+  }
+
   function formatSourceStatus(source) {
     if (!source) return { text: tr('Unknown', '알 수 없음'), badge: 'badge-neutral' };
     if (source.stale) return { text: tr('Cached Data', '캐시 데이터'), badge: 'badge-warning' };
@@ -119,10 +124,59 @@
         fetchSettings(),
       ]);
       const k = overview?.kpis || {};
+      const schedulerSettings = settingsData?.scheduler || {};
       const imwebAuth = settingsData?.imweb?.auth || null;
       const imwebData = settingsData?.imweb?.data || settingsData?.sources?.imweb || null;
       const cogsData = settingsData?.cogs || null;
       const telegramStatus = settingsData?.telegram || null;
+
+      const scanFrequencySelect = document.getElementById('settingsScanFrequency');
+      const scanFrequencyDescEl = document.getElementById('settingsScanFreqDesc');
+      const scanFrequencyNoteEl = document.getElementById('settingsScanFrequencyNote');
+      const liveScanInterval = asFiniteNumber(schedulerSettings.scanIntervalMinutes);
+      const configuredScanInterval = asFiniteNumber(schedulerSettings.configuredScanIntervalMinutes);
+      const persistedScanInterval = asFiniteNumber(schedulerSettings.persistedScanIntervalMinutes);
+      const schedulerDriftDetected = Boolean(schedulerSettings.driftDetected);
+
+      if (scanFrequencySelect && liveScanInterval) {
+        const optionValues = Array.from(scanFrequencySelect.options).map(option => Number(option.value));
+        if (!optionValues.includes(liveScanInterval)) {
+          const customOption = document.createElement('option');
+          customOption.value = String(liveScanInterval);
+          customOption.textContent = tr(`Every ${liveScanInterval} minutes`, `${liveScanInterval}분마다`);
+          scanFrequencySelect.appendChild(customOption);
+        }
+        scanFrequencySelect.value = String(liveScanInterval);
+      }
+
+      if (scanFrequencyDescEl && liveScanInterval) {
+        scanFrequencyDescEl.textContent = tr(
+          `Live scheduler is currently running every ${liveScanInterval} minutes.`,
+          `라이브 스케줄러는 현재 ${liveScanInterval}분마다 실행됩니다.`
+        );
+      }
+
+      if (scanFrequencyNoteEl) {
+        if (schedulerDriftDetected && liveScanInterval && configuredScanInterval) {
+          scanFrequencyNoteEl.dataset.tone = 'warning';
+          scanFrequencyNoteEl.textContent = tr(
+            `Scheduler drift detected: live runtime is ${liveScanInterval} minutes while service config is ${configuredScanInterval} minutes${persistedScanInterval ? ` (persisted runtime override: ${persistedScanInterval} min)` : ''}.`,
+            `스케줄러 드리프트 감지: 라이브 런타임은 ${liveScanInterval}분인데 서비스 설정은 ${configuredScanInterval}분입니다${persistedScanInterval ? ` (저장된 런타임 오버라이드: ${persistedScanInterval}분)` : ''}.`
+          );
+        } else if (liveScanInterval) {
+          scanFrequencyNoteEl.dataset.tone = 'neutral';
+          scanFrequencyNoteEl.textContent = tr(
+            `Service config and live runtime are aligned at ${liveScanInterval} minutes.`,
+            `서비스 설정과 라이브 런타임이 ${liveScanInterval}분으로 일치합니다.`
+          );
+        } else {
+          scanFrequencyNoteEl.dataset.tone = 'neutral';
+          scanFrequencyNoteEl.textContent = tr(
+            'Live scheduler status is not available yet.',
+            '라이브 스케줄러 상태가 아직 준비되지 않았습니다.'
+          );
+        }
+      }
 
       const imwebStatusEl = document.getElementById('settingsImwebStatus');
       if (imwebStatusEl) {
