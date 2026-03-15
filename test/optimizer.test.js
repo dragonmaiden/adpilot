@@ -67,7 +67,7 @@ function createCampaignEconomicsContext(overrides = {}) {
   };
 }
 
-test('analyzeCampaigns suppresses scale-up when the current weekday is materially weak', () => {
+test('analyzeCampaigns ignores a weak weekday pocket when economics still support scaling', () => {
   const engine = new OptimizationEngine(1);
   const insights = buildInsights({
     baselineSpend: 60,
@@ -78,10 +78,11 @@ test('analyzeCampaigns suppresses scale-up when the current weekday is materiall
 
   engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE);
 
-  assert.equal(engine.actions.length, 0);
+  assert.equal(engine.actions.length, 1);
+  assert.equal(engine.actions[0].priority, 'medium');
 });
 
-test('analyzeCampaigns downgrades scale-up to low priority when the current weekday is mildly weak', () => {
+test('analyzeCampaigns no longer injects weekday-softness language into scale rationale', () => {
   const engine = new OptimizationEngine(2);
   const insights = buildInsights({
     baselineSpend: 60,
@@ -93,9 +94,9 @@ test('analyzeCampaigns downgrades scale-up to low priority when the current week
   engine.analyzeCampaigns([createCampaign()], insights, createCampaignEconomicsContext(), REFERENCE_DATE);
 
   assert.equal(engine.actions.length, 1);
-  assert.equal(engine.actions[0].priority, 'low');
+  assert.equal(engine.actions[0].priority, 'medium');
   assert.match(engine.actions[0].reason, /Meta-attributed purchases/);
-  assert.match(engine.actions[0].reason, /Wednesday is softer than the weekday baseline/);
+  assert.doesNotMatch(engine.actions[0].reason, /weekday baseline|Wednesday is softer/i);
 });
 
 test('analyzeCampaigns allows a medium-priority scale-up when the current weekday is healthy', () => {

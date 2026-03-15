@@ -105,7 +105,7 @@ function synthesizeDecision(context, specialists) {
   if (scaleBlockers.length > 0 || frictionScore >= context.synthesizer.frictionSuppressThreshold) {
     const blockers = scaleBlockers.length > 0
       ? scaleBlockers
-      : ['Combined friction across economics, structure, and trend is too high to scale'];
+      : ['Combined friction across economics, trust, and creative readiness is too high to scale'];
     return {
       verdict: 'suppress',
       shouldCreateOptimization: false,

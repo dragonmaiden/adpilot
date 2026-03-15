@@ -13,14 +13,12 @@ const {
 const { buildFatigueSnapshot, classifyFatigue } = require('../domain/fatigue');
 const {
   filterRecentInsights,
-  buildWeekdayScaleContext,
   buildProfitContext,
 } = require('../domain/performanceContext');
 const { buildCampaignEconomics } = require('../services/campaignEconomicsService');
 const { buildMeasurementTrust } = require('../services/measurementTrustService');
 const {
   buildDefaultChampionPolicy,
-  classifyControlSurface,
   evaluateBudgetSnapshot,
   createDecisionTrace,
 } = require('../services/budgetPolicyService');
@@ -38,18 +36,11 @@ const runtimeSettings = require('../runtime/runtimeSettings');
 const { getTodayInTimeZone } = require('../domain/time');
 
 const PERFORMANCE_LOOKBACK_DAYS = 7;
-const SCHEDULE_LOOKBACK_DAYS = 28;
 const PROFIT_SCALE_MARGIN_THRESHOLD = 0.08;
 const MIN_PROFIT_COVERAGE_RATIO = 0.8;
-const WEEKDAY_SCALE_CAUTION_RATIO = 1.15;
-const WEEKDAY_SCALE_SUPPRESS_RATIO = 1.4;
 const OPTIMIZER_WINDOW_OPTIONS = Object.freeze({ includeCurrentDay: false });
-const MIN_SCALE_PURCHASES = 8;
-const MIN_SCALE_PURCHASE_DAYS = 3;
 const MIN_REALLOCATION_PURCHASES = 5;
 const MIN_REALLOCATION_PURCHASE_DAYS = 3;
-const SCALE_TREND_CAUTION_RATIO = 1.2;
-const SCALE_TREND_SUPPRESS_RATIO = 1.45;
 const DECISION_DOMAINS = Object.freeze({
   MACRO_BUDGET: 'macro_budget',
   PORTFOLIO: 'portfolio_guardrails',
@@ -115,13 +106,6 @@ class BusinessDecisionEngine {
     };
   }
 
-  hasScaleConfidence(evidence, rules) {
-    return evidence.observationDays >= Math.max(rules.minDataDays, MIN_SCALE_PURCHASE_DAYS)
-      && evidence.spend >= rules.minSpendForDecision
-      && evidence.purchases >= MIN_SCALE_PURCHASES
-      && evidence.purchaseDays >= MIN_SCALE_PURCHASE_DAYS;
-  }
-
   hasReallocationConfidence(evidence, rules) {
     return evidence.observationDays >= Math.max(rules.minDataDays, MIN_REALLOCATION_PURCHASE_DAYS)
       && evidence.spend >= rules.minSpendForDecision
@@ -179,61 +163,6 @@ class BusinessDecisionEngine {
     return riskByCampaignId;
   }
 
-  buildScaleTrendContext(insights, rules) {
-    const rows = Array.isArray(insights) ? insights : [];
-    if (rows.length < Math.max(rules.minDataDays, 5)) {
-      return { status: 'neutral' };
-    }
-
-    const recent = rows.slice(-3);
-    const baseline = rows.slice(0, -3);
-    if (recent.length < 3 || baseline.length < 2) {
-      return { status: 'neutral' };
-    }
-
-    const recentTotals = summarizeInsights(recent);
-    const baselineTotals = summarizeInsights(baseline);
-
-    if ((recentTotals.purchases || 0) === 0 && (recentTotals.spend || 0) >= rules.minSpendForDecision) {
-      return {
-        status: 'suppress',
-        reason: `Recent 3d delivery spent $${recentTotals.spend.toFixed(2)} with 0 Meta-attributed purchases`,
-      };
-    }
-
-    if (!recentTotals.cpa || !baselineTotals.cpa || baselineTotals.cpa <= 0) {
-      return { status: 'neutral' };
-    }
-
-    const weaknessRatio = recentTotals.cpa / baselineTotals.cpa;
-    if (weaknessRatio >= SCALE_TREND_SUPPRESS_RATIO) {
-      return {
-        status: 'suppress',
-        weaknessRatio,
-        recentCpa: recentTotals.cpa,
-        baselineCpa: baselineTotals.cpa,
-        reason: `Recent 3d CPA is $${recentTotals.cpa.toFixed(2)} versus a $${baselineTotals.cpa.toFixed(2)} prior-window CPA`,
-      };
-    }
-
-    if (weaknessRatio >= SCALE_TREND_CAUTION_RATIO) {
-      return {
-        status: 'caution',
-        weaknessRatio,
-        recentCpa: recentTotals.cpa,
-        baselineCpa: baselineTotals.cpa,
-        reason: `Recent 3d CPA is softening at $${recentTotals.cpa.toFixed(2)} versus $${baselineTotals.cpa.toFixed(2)} previously`,
-      };
-    }
-
-    return {
-      status: 'stable',
-      weaknessRatio,
-      recentCpa: recentTotals.cpa,
-      baselineCpa: baselineTotals.cpa,
-    };
-  }
-
   buildScaleImpactRange(increaseUsd, avgCPA, cautionCount = 0, confidence = 'low') {
     const baseLift = avgCPA > 0 ? increaseUsd / avgCPA : 0;
     if (!Number.isFinite(baseLift) || baseLift <= 0) {
@@ -253,118 +182,6 @@ class BusinessDecisionEngine {
 
     return { min, max };
   }
-
-  buildScaleDecision({
-    campaign,
-    totals,
-    evidence,
-    rules,
-    campaignEconomics,
-    weekdayScaleContext,
-    trendContext,
-    riskSnapshot,
-  }) {
-    const blockers = [];
-    const cautions = [];
-    const avgCPA = totals.cpa;
-    const dynamicTargetCpa = campaignEconomics?.targetCpa > 0
-      ? campaignEconomics.targetCpa
-      : Number((rules.cpaWarningThreshold * 0.5).toFixed(2));
-    const breakEvenCpa = campaignEconomics?.breakEvenCpa > 0 ? campaignEconomics.breakEvenCpa : null;
-
-    if (!this.hasScaleConfidence(evidence, rules)) {
-      blockers.push('Recent delivery evidence is still too thin to scale confidently');
-    }
-
-    if (!avgCPA) {
-      blockers.push('Recent CPA is unavailable');
-    }
-
-    if (!campaignEconomics) {
-      blockers.push('Campaign economics are unavailable');
-    } else {
-      if (!campaignEconomics.hasReliableEstimate) {
-        blockers.push('Campaign contribution estimate is not reliable enough yet');
-      }
-
-      if (campaignEconomics.estimatedTrueNetProfit <= 0 || campaignEconomics.estimatedMargin < PROFIT_SCALE_MARGIN_THRESHOLD) {
-        blockers.push('Estimated contribution is not yet strong enough to justify scaling');
-      }
-
-      if (avgCPA && breakEvenCpa && avgCPA > breakEvenCpa) {
-        blockers.push(`7d CPA is above the estimated break-even CPA of $${breakEvenCpa.toFixed(2)}`);
-      } else if (avgCPA && dynamicTargetCpa && avgCPA > dynamicTargetCpa) {
-        blockers.push(`7d CPA is above the estimated target CPA of $${dynamicTargetCpa.toFixed(2)}`);
-      }
-
-      if (campaignEconomics.confidence !== 'high') {
-        cautions.push(`${campaignEconomics.confidenceLabel} contribution estimate`);
-      }
-
-      if (campaignEconomics.coverageRatio < MIN_PROFIT_COVERAGE_RATIO) {
-        cautions.push(`COGS coverage on active spend is ${(campaignEconomics.coverageRatio * 100).toFixed(1)}%`);
-      }
-    }
-
-    if (weekdayScaleContext?.status === 'suppress') {
-      blockers.push(weekdayScaleContext.reason);
-    } else if (weekdayScaleContext?.status === 'caution') {
-      cautions.push(weekdayScaleContext.reason);
-    }
-
-    if (trendContext?.status === 'suppress') {
-      blockers.push(trendContext.reason);
-    } else if (trendContext?.status === 'caution') {
-      cautions.push(trendContext.reason);
-    }
-
-    if (riskSnapshot?.severeFatigueBlock) {
-      blockers.push(`${riskSnapshot.fatiguedAds.length}/${riskSnapshot.activeAdCount} active ads already show fatigue`);
-    } else if ((riskSnapshot?.fatiguedAds || []).length > 0) {
-      const names = riskSnapshot.fatiguedAds.slice(0, 2).map(ad => ad.name).join(', ');
-      cautions.push(`${riskSnapshot.fatiguedAds.length}/${riskSnapshot.activeAdCount} active ads show fatigue${names ? ` (${names})` : ''}`);
-    }
-
-    if (riskSnapshot?.hasConcentrationRisk) {
-      cautions.push(`${riskSnapshot.activeCampaignCount} active campaign is carrying spend`);
-    }
-
-    if (riskSnapshot?.hasCreativeDepthRisk) {
-      cautions.push(`Only ${riskSnapshot.activeAdCount} active ads are available to absorb extra budget`);
-    }
-
-    if (blockers.length > 0) {
-      return {
-        shouldScale: false,
-        blockers,
-        cautions,
-        dynamicTargetCpa,
-        breakEvenCpa,
-      };
-    }
-
-    const cautionCount = cautions.length;
-    const increasePercent = cautionCount >= 3
-      ? Math.min(rules.maxBudgetChangePercent, 10)
-      : rules.maxBudgetChangePercent;
-    const currentBudget = parseInt(campaign.daily_budget || campaign.dailyBudget || 0, 10);
-    const increase = Math.round(currentBudget * increasePercent / 100);
-    const priority = cautionCount > 0 ? 'low' : 'medium';
-    const impactRange = this.buildScaleImpactRange(increase / 100, avgCPA, cautionCount, campaignEconomics?.confidence || 'low');
-
-    return {
-      shouldScale: increase > 0,
-      blockers,
-      cautions,
-      dynamicTargetCpa,
-      breakEvenCpa,
-      increase,
-      increasePercent,
-      priority,
-      impactRange,
-    };
-  }
-
   // ── Log an optimization action ──
   addAction(type, level, targetId, targetName, action, reason, impact, priority = 'medium', metadata = null) {
     const optimization = {
@@ -487,7 +304,6 @@ class BusinessDecisionEngine {
           measurementTrustReason: measurementTrust.reason,
           blockingIssues: measurementTrust.blockingIssues,
           cautionIssues: measurementTrust.cautionIssues,
-          controlSurface: 'account_guardrail',
         })
       );
     }
@@ -510,7 +326,6 @@ class BusinessDecisionEngine {
           decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
           decisionVerdict: 'hold',
           measurementTrust: measurementTrust.level,
-          controlSurface: 'account_guardrail',
         })
       );
     }
@@ -542,7 +357,6 @@ class BusinessDecisionEngine {
       // Get recent insights for this campaign (last 7 days)
       const cInsights = filterRecentInsights(insights, 'campaign_id', campaign.id, PERFORMANCE_LOOKBACK_DAYS, referenceDate, OPTIMIZER_WINDOW_OPTIONS);
       if (cInsights.length === 0) continue;
-      const campaignHistory = filterRecentInsights(insights, 'campaign_id', campaign.id, SCHEDULE_LOOKBACK_DAYS, referenceDate, OPTIMIZER_WINDOW_OPTIONS);
 
       const totals = summarizeInsights(cInsights);
       const totalSpend = totals.spend;
@@ -551,19 +365,7 @@ class BusinessDecisionEngine {
       const evidence = this.buildDecisionEvidence(cInsights, totals);
       const hasDecisionData = evidence.observationDays >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
       const riskSnapshot = campaignRiskContext?.get(String(campaign.id)) || null;
-      const trendContext = this.buildScaleTrendContext(cInsights, rules);
       const campaignEconomics = campaignEconomicsById.get(String(campaign.id)) || null;
-      const weekdayScaleContext = buildWeekdayScaleContext(campaignHistory, rules, referenceDate, {
-        lookbackDays: SCHEDULE_LOOKBACK_DAYS,
-        cautionRatio: WEEKDAY_SCALE_CAUTION_RATIO,
-        suppressRatio: WEEKDAY_SCALE_SUPPRESS_RATIO,
-        includeCurrentDay: false,
-      });
-      const controlSurface = classifyControlSurface({
-        level: 'campaign',
-        campaign,
-        adSets,
-      });
       const budgetSnapshot = {
         targetId: campaign.id,
         targetName: campaign.name,
@@ -584,8 +386,6 @@ class BusinessDecisionEngine {
           confidenceLabel: campaignEconomics?.confidenceLabel ?? 'Low confidence',
           hasReliableEstimate: campaignEconomics?.hasReliableEstimate ?? false,
         },
-        weekday: weekdayScaleContext,
-        trend: trendContext,
         risk: {
           activeCampaignCount: riskSnapshot?.activeCampaignCount ?? 0,
           activeAdCount: riskSnapshot?.activeAdCount ?? 0,
@@ -594,7 +394,6 @@ class BusinessDecisionEngine {
           hasCreativeDepthRisk: Boolean(riskSnapshot?.hasCreativeDepthRisk),
           fatiguedAds: riskSnapshot?.fatiguedAds ?? [],
         },
-        controlSurface,
         measurementTrust,
         reviewWindowHours: 72,
         timestamp: new Date().toISOString(),
@@ -625,7 +424,6 @@ class BusinessDecisionEngine {
           this.buildBusinessMetadata({
             policyVersionId: activeBudgetPolicy.id,
             traceId: budgetTrace.traceId,
-            controlSurface,
             decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
             decisionKind: DECISION_KINDS.REDUCE_BUDGET,
             decisionVerdict: budgetEvaluation.verdict,
@@ -647,7 +445,6 @@ class BusinessDecisionEngine {
           this.buildBusinessMetadata({
             decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
             decisionKind: DECISION_KINDS.HARD_STOPLOSS,
-            controlSurface,
             measurementTrust: measurementTrust?.level || 'low',
           })
         );
@@ -682,7 +479,6 @@ class BusinessDecisionEngine {
           this.buildBusinessMetadata({
             policyVersionId: activeBudgetPolicy.id,
             traceId: budgetTrace.traceId,
-            controlSurface,
             decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
             decisionKind: DECISION_KINDS.SCALE_BUDGET,
             decisionVerdict: budgetEvaluation.verdict,
@@ -825,7 +621,6 @@ class BusinessDecisionEngine {
           decisionKind: DECISION_KINDS.REALLOCATE_BUDGET,
           decisionDomain: DECISION_DOMAINS.REALLOCATION,
           measurementTrust: measurementTrust?.level || 'low',
-          controlSurface: 'portfolio_guardrail',
         })
       );
     }
@@ -855,7 +650,6 @@ class BusinessDecisionEngine {
           decisionDomain: DECISION_DOMAINS.PORTFOLIO,
           decisionVerdict: 'reduce',
           measurementTrust: measurementTrust?.level || 'low',
-          controlSurface: 'account_guardrail',
         })
       );
       return;
@@ -876,7 +670,6 @@ class BusinessDecisionEngine {
           decisionDomain: DECISION_DOMAINS.PORTFOLIO,
           decisionVerdict: 'scale',
           measurementTrust: measurementTrust?.level || 'low',
-          controlSurface: 'account_guardrail',
         })
       );
     }
@@ -996,7 +789,6 @@ class BusinessDecisionEngine {
               optimization_type: action.type,
               optimization_level: action.level,
               policy_version: action.policyVersionId || 'manual',
-              control_surface: action.controlSurface || 'unknown',
               decision_verdict: action.decisionVerdict || 'unknown',
             },
             data: {
@@ -1018,7 +810,6 @@ class BusinessDecisionEngine {
           optimization_type: action.type,
           optimization_level: action.level,
           policy_version: action.policyVersionId || 'manual',
-          control_surface: action.controlSurface || 'unknown',
         },
         data: {
           targetId: action.targetId,
@@ -1095,4 +886,3 @@ module.exports = BusinessDecisionEngine;
 module.exports.BusinessDecisionEngine = BusinessDecisionEngine;
 module.exports.OptimizationEngine = BusinessDecisionEngine;
 module.exports.buildProfitContext = buildProfitContext;
-module.exports.buildWeekdayScaleContext = buildWeekdayScaleContext;

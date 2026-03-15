@@ -34,16 +34,6 @@ function normalizeBudgetSnapshot(snapshot) {
       confidenceLabel: snapshot?.economics?.confidenceLabel ?? 'Low confidence',
       hasReliableEstimate: Boolean(snapshot?.economics?.hasReliableEstimate),
     },
-    weekday: {
-      status: snapshot?.weekday?.status ?? 'neutral',
-      reason: snapshot?.weekday?.reason ?? '',
-      weaknessRatio: snapshot?.weekday?.weaknessRatio == null ? null : asNumber(snapshot.weekday.weaknessRatio, null),
-    },
-    trend: {
-      status: snapshot?.trend?.status ?? 'neutral',
-      reason: snapshot?.trend?.reason ?? '',
-      weaknessRatio: snapshot?.trend?.weaknessRatio == null ? null : asNumber(snapshot.trend.weaknessRatio, null),
-    },
     risk: {
       activeCampaignCount: asNumber(snapshot?.risk?.activeCampaignCount, 0),
       activeAdCount: asNumber(snapshot?.risk?.activeAdCount, 0),
@@ -73,7 +63,6 @@ function normalizeBudgetSnapshot(snapshot) {
         ? snapshot.measurementTrust.degradedSources.slice(0, 4)
         : [],
     },
-    controlSurface: snapshot?.controlSurface ?? 'mixed_or_unsupported',
     reviewWindowHours: asNumber(snapshot?.reviewWindowHours, DEFAULT_REVIEW_WINDOW_HOURS),
     timestamp: snapshot?.timestamp ?? nowIso(),
   };
@@ -82,13 +71,11 @@ function normalizeBudgetSnapshot(snapshot) {
 function buildSpecialistWeights(parameters = {}) {
   const specialistWeights = parameters.specialists || {};
   return {
-    controlSurface: asNumber(specialistWeights.controlSurface, 1),
     measurementTrust: asNumber(specialistWeights.measurementTrust, 1.2),
     economics: asNumber(specialistWeights.economics, 1),
     confidence: asNumber(specialistWeights.confidence, 1),
     fatigue: asNumber(specialistWeights.fatigue, 1),
     structure: asNumber(specialistWeights.structure, 1),
-    trend: asNumber(specialistWeights.trend, 1),
     scaleSizer: asNumber(specialistWeights.scaleSizer, 1),
     reduceSizer: asNumber(specialistWeights.reduceSizer, 1),
   };
@@ -97,7 +84,6 @@ function buildSpecialistWeights(parameters = {}) {
 function buildRegimeTags(snapshot, derived) {
   const tags = [
     snapshot.targetLevel === 'campaign' ? 'campaign_target' : 'adset_target',
-    snapshot.controlSurface,
     snapshot.measurementTrust.level ? `trust_${snapshot.measurementTrust.level}` : null,
     snapshot.measurementTrust.shouldFreezeBudgetChanges ? 'trust_frozen' : 'trust_open',
     derived.reliableEconomics ? 'economics_reliable' : 'economics_unreliable',
@@ -110,10 +96,6 @@ function buildRegimeTags(snapshot, derived) {
   if (snapshot.risk.hasCreativeDepthRisk) tags.push('thin_creative_depth');
   if (snapshot.risk.severeFatigueBlock) tags.push('fatigue_blocked');
   else if (snapshot.risk.fatiguedAds.length > 0) tags.push('fatigue_pressure');
-  if (snapshot.weekday.status === 'caution') tags.push('weekday_softening');
-  if (snapshot.weekday.status === 'suppress') tags.push('weekday_suppressed');
-  if (snapshot.trend.status === 'caution') tags.push('trend_softening');
-  if (snapshot.trend.status === 'suppress') tags.push('trend_suppressed');
   if (derived.reduceRecommended) tags.push('reduction_pressure');
   if (derived.positiveHeadroomRatio >= 0.15) tags.push('scaling_headroom');
   if (snapshot.avgCpa != null && snapshot.economics.targetCpa != null && snapshot.avgCpa <= snapshot.economics.targetCpa) {

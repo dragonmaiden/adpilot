@@ -554,7 +554,6 @@ function buildTraceFilters(traces) {
   return {
     policyIds: Array.from(new Set(traces.map(trace => trace.policyVersionId).filter(Boolean))).sort(),
     verdicts: Array.from(new Set(traces.map(trace => trace.verdict).filter(Boolean))).sort(),
-    controlSurfaces: Array.from(new Set(traces.map(trace => trace.controlSurface).filter(Boolean))).sort(),
     regimeTags: Array.from(new Set(traces.flatMap(trace => trace.regimeTags || []).filter(Boolean))).sort(),
     targets: Array.from(new Set(traces.map(trace => trace.entity?.targetName).filter(Boolean))).sort().slice(0, 50),
   };

@@ -141,18 +141,6 @@
     select.value = options.includes(currentValue) ? currentValue : 'all';
   }
 
-  function controlSurfaceLabel(value) {
-    switch (value) {
-      case 'campaign_budget_controlled':
-        return tr('Campaign budget', '캠페인 예산');
-      case 'adset_budget_controlled':
-        return tr('Ad set budget', '광고세트 예산');
-      case 'mixed_or_unsupported':
-      default:
-        return tr('Mixed / unsupported', '혼합 / 미지원');
-    }
-  }
-
   function verdictMeta(verdict) {
     switch (String(verdict || '').toLowerCase()) {
       case 'scale':
@@ -1240,13 +1228,11 @@
     const traces = tracesData?.traces || [];
     const policyFilter = document.getElementById('karpathyTracePolicyFilter')?.value || 'all';
     const verdictFilter = document.getElementById('karpathyTraceVerdictFilter')?.value || 'all';
-    const surfaceFilter = document.getElementById('karpathyTraceSurfaceFilter')?.value || 'all';
     const targetFilter = (document.getElementById('karpathyTraceTargetFilter')?.value || '').trim().toLowerCase();
 
     return traces.filter(trace => {
       if (policyFilter !== 'all' && trace.policyVersionId !== policyFilter) return false;
       if (verdictFilter !== 'all' && trace.verdict !== verdictFilter) return false;
-      if (surfaceFilter !== 'all' && trace.controlSurface !== surfaceFilter) return false;
       if (targetFilter && !String(trace.entity?.targetName || '').toLowerCase().includes(targetFilter)) return false;
       return true;
     });
@@ -1260,14 +1246,6 @@
     const filters = tracesData?.filters || {};
     syncSelectOptions(document.getElementById('karpathyTracePolicyFilter'), filters.policyIds, tr('All policies', '모든 정책'));
     syncSelectOptions(document.getElementById('karpathyTraceVerdictFilter'), filters.verdicts, tr('All verdicts', '모든 판정'));
-
-    const surfaceSelect = document.getElementById('karpathyTraceSurfaceFilter');
-    if (surfaceSelect) {
-      const selected = surfaceSelect.value;
-      const values = ['all', ...(filters.controlSurfaces || [])];
-      surfaceSelect.innerHTML = values.map(value => `<option value="${esc(value)}">${esc(value === 'all' ? tr('All control surfaces', '모든 예산 표면') : controlSurfaceLabel(value))}</option>`).join('');
-      surfaceSelect.value = values.includes(selected) ? selected : 'all';
-    }
 
     const filtered = filterResearchLabTraces(tracesData);
 
@@ -1302,7 +1280,7 @@
                   <span class="badge ${verdict.className}">${esc(verdict.label)}</span>
                   <span class="badge badge-neutral">${esc(traceModeLabel(trace.mode))}</span>
                 </div>
-                <div class="opt-target">${esc(trace.policyVersionId || '—')} · ${esc(controlSurfaceLabel(trace.controlSurface))}</div>
+                <div class="opt-target">${esc(trace.policyVersionId || '—')}</div>
               </div>
               <span class="opt-time">${esc(formatRelative(trace.timestamp))}</span>
             </div>
@@ -1371,7 +1349,7 @@
     if (document.body.dataset.optFiltersBound === 'true') return;
     document.body.dataset.optFiltersBound = 'true';
 
-    ['optTypeFilter', 'optStatusFilter', 'karpathyTracePolicyFilter', 'karpathyTraceVerdictFilter', 'karpathyTraceSurfaceFilter', 'karpathyTraceTargetFilter'].forEach(id => {
+    ['optTypeFilter', 'optStatusFilter', 'karpathyTracePolicyFilter', 'karpathyTraceVerdictFilter', 'karpathyTraceTargetFilter'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       const eventName = el.tagName === 'INPUT' ? 'input' : 'change';
@@ -1409,7 +1387,7 @@
     renderSectionSummaries(aiOps, policyLab);
     renderResearchLabSummary(policyLab);
     renderResearchLabTimeline(policyLab, experimentsData);
-    renderResearchLabTraces(tracesData || { traces: [], filters: { policyIds: [], verdicts: [], controlSurfaces: [] } });
+    renderResearchLabTraces(tracesData || { traces: [], filters: { policyIds: [], verdicts: [] } });
     renderResearchLabMetrics(policyLab, outcomesData);
     renderResearchLabObservability(policyLab, observabilityData);
   }

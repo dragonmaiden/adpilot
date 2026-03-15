@@ -3,7 +3,6 @@ const assert = require('node:assert/strict');
 
 const {
   buildDefaultChampionPolicy,
-  classifyControlSurface,
   evaluateBudgetSnapshot,
   createDecisionTrace,
   computeReward,
@@ -36,14 +35,6 @@ function createScaleSnapshot(overrides = {}) {
       confidenceLabel: 'Medium confidence',
       hasReliableEstimate: true,
     },
-    weekday: {
-      status: 'stable',
-      reason: '',
-    },
-    trend: {
-      status: 'stable',
-      reason: '',
-    },
     risk: {
       activeCampaignCount: 1,
       activeAdCount: 4,
@@ -52,49 +43,24 @@ function createScaleSnapshot(overrides = {}) {
       hasCreativeDepthRisk: false,
       fatiguedAds: [],
     },
-    controlSurface: 'campaign_budget_controlled',
     reviewWindowHours: 72,
     ...overrides,
   };
 }
 
-test('classifyControlSurface distinguishes campaign and ad set budget ownership', () => {
-  assert.equal(
-    classifyControlSurface({
-      level: 'campaign',
-      campaign: { id: 'c1', daily_budget: '11000' },
-      adSets: [],
-    }),
-    'campaign_budget_controlled'
-  );
-
-  assert.equal(
-    classifyControlSurface({
-      level: 'adset',
-      campaign: { id: 'c1', daily_budget: '11000' },
-      adSet: { id: 'a1', campaign_id: 'c1' },
-    }),
-    'campaign_budget_controlled'
-  );
-
-  assert.equal(
-    classifyControlSurface({
-      level: 'adset',
-      campaign: { id: 'c1' },
-      adSet: { id: 'a1', campaign_id: 'c1', daily_budget: '4000' },
-    }),
-    'adset_budget_controlled'
-  );
-});
-
-test('evaluateBudgetSnapshot suppresses ad set budget changes when the campaign owns budget control', () => {
+test('evaluateBudgetSnapshot ignores retired delivery-management fields when economics support scaling', () => {
   const policy = buildDefaultChampionPolicy({ maxBudgetChangePercent: 20 });
   const evaluation = evaluateBudgetSnapshot(
     createScaleSnapshot({
-      targetId: 'a1',
-      targetName: 'Ad Set 1',
-      targetLevel: 'adset',
-      controlSurface: 'campaign_budget_controlled',
+      weekday: {
+        status: 'suppress',
+        reason: 'Legacy weekday pacing softening',
+      },
+      trend: {
+        status: 'suppress',
+        reason: 'Legacy short-term Meta trend wobble',
+      },
+      controlSurface: 'mixed_or_unsupported',
     }),
     policy,
     {
@@ -105,9 +71,9 @@ test('evaluateBudgetSnapshot suppresses ad set budget changes when the campaign 
     }
   );
 
-  assert.equal(evaluation.verdict, 'suppress');
-  assert.equal(evaluation.shouldCreateOptimization, false);
-  assert.match(evaluation.reasoning, /campaign level/i);
+  assert.equal(evaluation.verdict, 'scale');
+  assert.equal(evaluation.shouldCreateOptimization, true);
+  assert.doesNotMatch(evaluation.reasoning, /weekday|trend|control surface|campaign level/i);
 });
 
 test('createDecisionTrace captures the structured policy evaluation context', () => {

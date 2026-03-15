@@ -80,14 +80,6 @@ function createSnapshot() {
       confidenceLabel: 'Medium confidence',
       hasReliableEstimate: true,
     },
-    weekday: {
-      status: 'stable',
-      reason: '',
-    },
-    trend: {
-      status: 'stable',
-      reason: '',
-    },
     risk: {
       activeCampaignCount: 1,
       activeAdCount: 2,
@@ -96,7 +88,6 @@ function createSnapshot() {
       hasCreativeDepthRisk: true,
       fatiguedAds: [{ id: 'ad1', name: 'Fatigued Ad' }],
     },
-    controlSurface: 'campaign_budget_controlled',
     reviewWindowHours: 72,
   };
 }

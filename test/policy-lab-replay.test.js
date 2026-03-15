@@ -35,14 +35,6 @@ function createSnapshot() {
       confidenceLabel: 'High confidence',
       hasReliableEstimate: true,
     },
-    weekday: {
-      status: 'stable',
-      reason: '',
-    },
-    trend: {
-      status: 'stable',
-      reason: '',
-    },
     risk: {
       activeCampaignCount: 1,
       activeAdCount: 4,
@@ -51,7 +43,6 @@ function createSnapshot() {
       hasCreativeDepthRisk: false,
       fatiguedAds: [],
     },
-    controlSurface: 'campaign_budget_controlled',
     reviewWindowHours: 72,
   };
 }

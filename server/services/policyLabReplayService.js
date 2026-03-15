@@ -88,11 +88,8 @@ function deriveProxyIdealVerdict(snapshot, rules = {}) {
   );
 
   if (trustFrozen) return 'suppress';
-  if (snapshot?.controlSurface === 'mixed_or_unsupported') return 'suppress';
-  if (snapshot?.targetLevel === 'adset' && snapshot?.controlSurface !== 'adset_budget_controlled') return 'suppress';
   if (!reliableEconomics || coverageRatio < 0.8 || estimatedMargin < 0.08 || estimatedProfit <= 0) return 'suppress';
   if (snapshot?.risk?.severeFatigueBlock) return 'suppress';
-  if (snapshot?.weekday?.status === 'suppress' || snapshot?.trend?.status === 'suppress') return 'suppress';
 
   if (avgCpa != null) {
     if (breakEvenCpa != null && avgCpa > breakEvenCpa) return 'reduce';

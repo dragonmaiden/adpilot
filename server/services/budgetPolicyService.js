@@ -52,10 +52,6 @@ function buildDefaultChampionPolicy(rules = {}) {
         minPurchaseDays: 4,
         minCoverageRatio: 0.8,
         minEstimatedMargin: 0.08,
-        weekdayCautionRatio: 1.15,
-        weekdaySuppressRatio: 1.4,
-        trendCautionRatio: 1.2,
-        trendSuppressRatio: 1.45,
         cautionStepPercentCap: Math.min(maxBudgetChangePercent, 10),
         maxStepPercent: maxBudgetChangePercent,
       },
@@ -72,13 +68,11 @@ function buildDefaultChampionPolicy(rules = {}) {
         measurementTrust: 1.25,
       },
       specialists: {
-        controlSurface: 1,
         measurementTrust: 1.25,
         economics: 1.2,
         confidence: 1.05,
         fatigue: 1.1,
         structure: 1,
-        trend: 1,
         scaleSizer: 1,
         reduceSizer: 1,
       },
@@ -109,10 +103,6 @@ function buildPolicyDiff(basePolicy, nextPolicy) {
     'parameters.scale.minPurchaseDays',
     'parameters.scale.minCoverageRatio',
     'parameters.scale.minEstimatedMargin',
-    'parameters.scale.weekdayCautionRatio',
-    'parameters.scale.weekdaySuppressRatio',
-    'parameters.scale.trendCautionRatio',
-    'parameters.scale.trendSuppressRatio',
     'parameters.scale.cautionStepPercentCap',
     'parameters.scale.maxStepPercent',
     'parameters.reduce.cpaWarningThreshold',
@@ -122,13 +112,11 @@ function buildPolicyDiff(basePolicy, nextPolicy) {
     'parameters.penalties.creativeDepth',
     'parameters.penalties.confidence',
     'parameters.penalties.measurementTrust',
-    'parameters.specialists.controlSurface',
     'parameters.specialists.measurementTrust',
     'parameters.specialists.economics',
     'parameters.specialists.confidence',
     'parameters.specialists.fatigue',
     'parameters.specialists.structure',
-    'parameters.specialists.trend',
     'parameters.specialists.scaleSizer',
     'parameters.specialists.reduceSizer',
     'parameters.synthesizer.frictionCautionThreshold',
@@ -145,24 +133,6 @@ function buildPolicyDiff(basePolicy, nextPolicy) {
     }
     return changes;
   }, []);
-}
-
-function classifyControlSurface({ level, campaign, adSet, adSets = [] }) {
-  if (level === 'adset') {
-    if (adSet?.daily_budget) return 'adset_budget_controlled';
-    if (campaign?.daily_budget) return 'campaign_budget_controlled';
-    return 'mixed_or_unsupported';
-  }
-
-  if (campaign?.daily_budget) return 'campaign_budget_controlled';
-
-  const hasDailyBudgetedAdSets = (Array.isArray(adSets) ? adSets : [])
-    .some(entry => entry?.campaign_id === campaign?.id && entry?.daily_budget);
-  if (hasDailyBudgetedAdSets) {
-    return 'adset_budget_controlled';
-  }
-
-  return 'mixed_or_unsupported';
 }
 
 function normalizeInputSnapshot(snapshot) {
@@ -186,7 +156,7 @@ function createDecisionTrace({ scanId, mode = 'champion', policy, snapshot, eval
     mode,
     policyVersionId: policy?.id ?? DEFAULT_POLICY_ID,
     policyLabel: policy?.label ?? 'Budget Policy',
-    controlSurface: normalizedSnapshot.controlSurface,
+    controlSurface: normalizedSnapshot.controlSurface ?? null,
     entity: {
       targetId: normalizedSnapshot.targetId,
       targetName: normalizedSnapshot.targetName,
@@ -231,7 +201,7 @@ function buildStructuredCandidates(championPolicy, count = 3) {
   const templates = [
     [
       ['parameters.scale.minPurchases', clamp(asNumber(getAtPath(champion, 'parameters.scale.minPurchases'), 8) - 1, 5, 20)],
-      ['parameters.scale.trendCautionRatio', clamp(asNumber(getAtPath(champion, 'parameters.scale.trendCautionRatio'), 1.2) + 0.05, 1.05, 2)],
+      ['parameters.scale.minEstimatedMargin', clamp(asNumber(getAtPath(champion, 'parameters.scale.minEstimatedMargin'), 0.08) + 0.02, 0.04, 0.3)],
       ['parameters.penalties.confidence', clamp(asNumber(getAtPath(champion, 'parameters.penalties.confidence'), 1) + 0.25, 0, 3)],
       ['parameters.penalties.measurementTrust', clamp(asNumber(getAtPath(champion, 'parameters.penalties.measurementTrust'), 1.25) + 0.25, 0.5, 3)],
       ['parameters.specialists.measurementTrust', clamp(asNumber(getAtPath(champion, 'parameters.specialists.measurementTrust'), 1.25) + 0.15, 0.5, 2.5)],
@@ -247,10 +217,10 @@ function buildStructuredCandidates(championPolicy, count = 3) {
     ],
     [
       ['parameters.reduce.cpaWarningThreshold', clamp(asNumber(getAtPath(champion, 'parameters.reduce.cpaWarningThreshold'), 30) - 2, 10, 100)],
-      ['parameters.scale.weekdaySuppressRatio', clamp(asNumber(getAtPath(champion, 'parameters.scale.weekdaySuppressRatio'), 1.4) - 0.1, 1.1, 2)],
+      ['parameters.scale.maxStepPercent', clamp(asNumber(getAtPath(champion, 'parameters.scale.maxStepPercent'), 20) - 2, 5, 40)],
       ['parameters.penalties.concentration', clamp(asNumber(getAtPath(champion, 'parameters.penalties.concentration'), 1) + 0.5, 0, 3)],
       ['parameters.specialists.structure', clamp(asNumber(getAtPath(champion, 'parameters.specialists.structure'), 1) + 0.2, 0.5, 2.5)],
-      ['parameters.specialists.trend', clamp(asNumber(getAtPath(champion, 'parameters.specialists.trend'), 1) + 0.15, 0.5, 2.5)],
+      ['parameters.specialists.economics', clamp(asNumber(getAtPath(champion, 'parameters.specialists.economics'), 1.2) + 0.15, 0.5, 2.5)],
     ],
   ];
 
@@ -276,7 +246,6 @@ module.exports = {
   REWARD_WINDOW_HOURS,
   buildDefaultChampionPolicy,
   buildPolicyDiff,
-  classifyControlSurface,
   normalizeInputSnapshot,
   evaluateBudgetSnapshot,
   createDecisionTrace,
