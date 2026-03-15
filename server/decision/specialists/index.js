@@ -1,4 +1,5 @@
 const evaluateControlSurface = require('./controlSurfaceGuard');
+const evaluateMeasurementTrust = require('./measurementTrustGuard');
 const evaluateEconomics = require('./economicsGuard');
 const evaluateConfidence = require('./confidenceGuard');
 const evaluateFatigue = require('./fatigueGuard');
@@ -10,6 +11,7 @@ const evaluateReduceSizer = require('./reduceSizer');
 function evaluateSpecialists(context) {
   return [
     evaluateControlSurface(context),
+    evaluateMeasurementTrust(context),
     evaluateEconomics(context),
     evaluateConfidence(context),
     evaluateFatigue(context),

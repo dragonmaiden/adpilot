@@ -5,7 +5,7 @@
     throw new Error('AdPilotLive core must load before shared helpers.');
   }
 
-  const SAFE_OPT_TYPES = new Set(['budget', 'bid', 'creative', 'status', 'schedule', 'targeting']);
+  const SAFE_OPT_TYPES = new Set(['budget', 'creative', 'status', 'legacy']);
   const SAFE_CONFIDENCE_LEVELS = new Set(['high', 'medium', 'low']);
 
   function esc(str) {
@@ -19,7 +19,7 @@
   }
 
   function safeOptType(type) {
-    return SAFE_OPT_TYPES.has(type) ? type : 'bid';
+    return SAFE_OPT_TYPES.has(type) ? type : 'legacy';
   }
 
   function safeConfidenceLevel(level) {
@@ -160,14 +160,20 @@
     match = text.match(/^Spent (\$[\d.,]+) with ([\d,]+) Meta-attributed purchases — manually paused or replaced by better creative$/);
     if (match) return `${match[1]}를 지출했고 메타 귀속 구매 ${match[2]}건이 발생했으며, 수동 중지되었거나 더 나은 크리에이티브로 교체되었습니다`;
 
-    match = text.match(/^Spent (\$[\d.,]+) with zero Meta-attributed purchases — creative or targeting did not resonate$/);
-    if (match) return `${match[1]}를 지출했지만 메타 귀속 구매가 없었습니다. 크리에이티브 또는 타게팅 반응이 약했습니다`;
+    match = text.match(/^Spent (\$[\d.,]+) with zero Meta-attributed purchases — the creative or offer did not convert$/);
+    if (match) return `${match[1]}를 지출했지만 메타 귀속 구매가 없었습니다. 크리에이티브나 오퍼가 전환되지 않았습니다`;
 
     match = text.match(/^Good CTR \(([\d.]+)%\) but no Meta-attributed purchases — landing page or pricing may be the issue$/);
     if (match) return `CTR은 좋았지만(${match[1]}%) 메타 귀속 구매가 없었습니다. 랜딩 페이지 또는 가격 문제가 원인일 수 있습니다`;
 
-    match = text.match(/^CTR dropped ([\d.]+)% from peak \(([\d.]+)% → ([\d.]+)%\) — audience fatigue$/);
-    if (match) return `CTR이 최고점 대비 ${match[1]}% 하락했습니다 (${match[2]}% → ${match[3]}%). 오디언스 피로 가능성이 있습니다`;
+    match = text.match(/^CPA of (\$[\d.,]+) was too high — creative, offer, or landing efficiency lagged$/);
+    if (match) return `CPA ${match[1]}가 너무 높았습니다. 크리에이티브, 오퍼, 또는 랜딩 효율이 뒤처졌습니다`;
+
+    match = text.match(/^CTR dropped ([\d.]+)% from peak \(([\d.]+)% → ([\d.]+)%\) — the creative angle fatigued$/);
+    if (match) return `CTR이 최고점 대비 ${match[1]}% 하락했습니다 (${match[2]}% → ${match[3]}%). 크리에이티브 각도가 피로해졌을 수 있습니다`;
+
+    match = text.match(/^Frequency reached ([\d.]+) — creative supply may be too shallow for more spend$/);
+    if (match) return `빈도 ${match[1]}에 도달했습니다. 더 많은 지출을 받기엔 크리에이티브 공급이 얕을 수 있습니다`;
 
     match = text.match(/^Stable delivery — CTR ([\d.]+)%, frequency ([\d.]+)\.$/);
     if (match) return `안정적 집행 — CTR ${match[1]}%, 빈도 ${match[2]}`;

@@ -106,7 +106,7 @@ function buildOperatorAlertMessage(context) {
   )).join('\n\n');
 
   const approvalNotice = context.actionable.length > 0
-    ? `\n\n<i>${pluralize(context.actionable.length, 'approval request')} sent separately for executable budget, bid, or status changes.</i>`
+    ? `\n\n<i>${pluralize(context.actionable.length, 'approval request')} sent separately for executable campaign budget or stop-loss changes.</i>`
     : '';
 
   return `🚨 <b>AdPilot Action Alert</b>

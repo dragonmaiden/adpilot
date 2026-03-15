@@ -242,6 +242,8 @@ function optimizations({ total, showing, optimizations: opts, stats }) {
       policyVersionId: o.policyVersionId ?? null,
       traceId: o.traceId ?? null,
       controlSurface: o.controlSurface ?? null,
+      decisionKind: o.decisionKind ?? null,
+      decisionDomain: o.decisionDomain ?? null,
     })),
     stats: {
       byType: stats?.byType ?? {},
@@ -283,6 +285,11 @@ function aiOperations({ generatedAt, windowHours, latestScanId, summary, quality
     systemChatter: systemChatter ?? {},
     queue: {
       immediate: queue?.immediate ?? [],
+      fixInputs: queue?.fixInputs ?? [],
+      hold: queue?.hold ?? [],
+      portfolioGuidance: queue?.portfolioGuidance ?? [],
+      cleanup: queue?.cleanup ?? [],
+      research: queue?.research ?? [],
       backlog: queue?.backlog ?? [],
     },
     activity: activity ?? [],

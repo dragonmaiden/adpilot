@@ -44,6 +44,12 @@ function createCampaign() {
   };
 }
 
+function recentDate(daysAgo) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  return date.toISOString().slice(0, 10);
+}
+
 function createCampaignEconomicsContext(overrides = {}) {
   return {
     campaigns: [
@@ -291,4 +297,67 @@ test('analyzeAdSets skips budget reduction actions when the ad set budget is con
   engine.analyzeAdSets(adSets, insights, campaigns);
 
   assert.equal(engine.actions.length, 0);
+});
+
+test('analyze removes Meta-overlap actions and freezes budget changes when measurement trust is weak', async () => {
+  const engine = new OptimizationEngine(12);
+  const campaigns = [createCampaign()];
+  const adSets = [
+    {
+      id: 'as1',
+      name: 'Legacy Ad Set',
+      campaign_id: 'c1',
+      effective_status: 'ACTIVE',
+      daily_budget: '5000',
+    },
+  ];
+  const ads = [
+    {
+      id: 'ad1',
+      name: 'Legacy Ad',
+      campaign_id: 'c1',
+      effective_status: 'ACTIVE',
+    },
+  ];
+  const campaignInsights = Array.from({ length: 6 }, (_, index) => ({
+    campaign_id: 'c1',
+    date_start: recentDate(index + 1),
+    spend: '20',
+    actions: createActions(1),
+    frequency: '1.2',
+  }));
+  const adSetInsights = Array.from({ length: 6 }, (_, index) => ({
+    adset_id: 'as1',
+    campaign_id: 'c1',
+    date_start: recentDate(index + 1),
+    spend: '25',
+    actions: createActions(index === 0 ? 0 : 1),
+    ctr: '0.9',
+  }));
+  const adInsights = Array.from({ length: 6 }, (_, index) => ({
+    ad_id: 'ad1',
+    campaign_id: 'c1',
+    date_start: recentDate(index + 1),
+    spend: '18',
+    actions: createActions(index === 0 ? 0 : 1),
+    frequency: '1.5',
+    ctr: '1.1',
+    cpm: '15',
+  }));
+
+  const actions = await engine.analyze(
+    campaigns,
+    adSets,
+    ads,
+    campaignInsights,
+    adSetInsights,
+    adInsights,
+    null,
+    { status: 'disconnected', stale: true },
+    null
+  );
+
+  assert.ok(actions.some(action => action.decisionKind === 'freeze_due_to_low_trust'));
+  assert.equal(actions.some(action => ['bid', 'schedule', 'targeting'].includes(action.type)), false);
+  assert.equal(actions.some(action => ['adset', 'ad'].includes(action.level)), false);
 });

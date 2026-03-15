@@ -47,6 +47,7 @@ function buildReplaySample(outcomes, tracesById) {
     .map(outcome => {
       const trace = tracesById.get(outcome.traceId);
       if (!trace || !trace.inputSnapshot) return null;
+      if (trace.inputSnapshot?.measurementTrust?.shouldFreezeBudgetChanges) return null;
       return {
         outcome,
         trace,
@@ -57,7 +58,11 @@ function buildReplaySample(outcomes, tracesById) {
 
 function buildBootstrapReplaySample(traces) {
   return (Array.isArray(traces) ? traces : [])
-    .filter(trace => trace?.mode === 'champion' && trace?.inputSnapshot)
+    .filter(trace =>
+      trace?.mode === 'champion'
+      && trace?.inputSnapshot
+      && !trace?.inputSnapshot?.measurementTrust?.shouldFreezeBudgetChanges
+    )
     .slice(-250)
     .map(trace => ({
       trace,
@@ -73,6 +78,7 @@ function deriveProxyIdealVerdict(snapshot, rules = {}) {
   const coverageRatio = asNumber(snapshot?.economics?.coverageRatio, 0);
   const estimatedMargin = asNumber(snapshot?.economics?.estimatedMargin, 0);
   const estimatedProfit = asNumber(snapshot?.economics?.estimatedTrueNetProfit, 0);
+  const trustFrozen = Boolean(snapshot?.measurementTrust?.shouldFreezeBudgetChanges);
   const evidence = snapshot?.evidence || {};
   const evidenceStrong = (
     asNumber(evidence.observationDays, 0) >= 3
@@ -81,6 +87,7 @@ function deriveProxyIdealVerdict(snapshot, rules = {}) {
     && asNumber(evidence.spend, 0) >= asNumber(rules.minSpendForDecision, 20)
   );
 
+  if (trustFrozen) return 'suppress';
   if (snapshot?.controlSurface === 'mixed_or_unsupported') return 'suppress';
   if (snapshot?.targetLevel === 'adset' && snapshot?.controlSurface !== 'adset_budget_controlled') return 'suppress';
   if (!reliableEconomics || coverageRatio < 0.8 || estimatedMargin < 0.08 || estimatedProfit <= 0) return 'suppress';

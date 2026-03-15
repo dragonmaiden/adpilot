@@ -157,42 +157,6 @@ async function updateCampaignBudget(campaignId, dailyBudgetCents) {
   return metaApi(`/${campaignId}`, 'POST', { daily_budget: dailyBudgetCents.toString() });
 }
 
-// Update ad set status
-async function updateAdSetStatus(adSetId, status) {
-  console.log(`[META WRITE] Ad Set ${adSetId} → status: ${status}`);
-  return metaApi(`/${adSetId}`, 'POST', { status });
-}
-
-// Update ad set daily budget
-async function updateAdSetBudget(adSetId, dailyBudgetCents) {
-  console.log(`[META WRITE] Ad Set ${adSetId} → daily_budget: ${dailyBudgetCents} cents`);
-  return metaApi(`/${adSetId}`, 'POST', { daily_budget: dailyBudgetCents.toString() });
-}
-
-// Update ad set bid amount
-async function updateAdSetBid(adSetId, bidAmountCents) {
-  console.log(`[META WRITE] Ad Set ${adSetId} → bid_amount: ${bidAmountCents} cents`);
-  return metaApi(`/${adSetId}`, 'POST', { bid_amount: bidAmountCents.toString() });
-}
-
-// Update ad status (pause/resume individual ad)
-async function updateAdStatus(adId, status) {
-  console.log(`[META WRITE] Ad ${adId} → status: ${status}`);
-  return metaApi(`/${adId}`, 'POST', { status });
-}
-
-// Update ad set targeting
-async function updateAdSetTargeting(adSetId, targeting) {
-  console.log(`[META WRITE] Ad Set ${adSetId} → targeting update`);
-  return metaApi(`/${adSetId}`, 'POST', { targeting: JSON.stringify(targeting) });
-}
-
-// Update campaign bid strategy
-async function updateCampaignBidStrategy(campaignId, bidStrategy) {
-  console.log(`[META WRITE] Campaign ${campaignId} → bid_strategy: ${bidStrategy}`);
-  return metaApi(`/${campaignId}`, 'POST', { bid_strategy: bidStrategy });
-}
-
 module.exports = {
   // Read
   getAdAccount,
@@ -209,10 +173,4 @@ module.exports = {
   // Write
   updateCampaignStatus,
   updateCampaignBudget,
-  updateAdSetStatus,
-  updateAdSetBudget,
-  updateAdSetBid,
-  updateAdStatus,
-  updateAdSetTargeting,
-  updateCampaignBidStrategy,
 };

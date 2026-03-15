@@ -52,6 +52,27 @@ function normalizeBudgetSnapshot(snapshot) {
       hasCreativeDepthRisk: Boolean(snapshot?.risk?.hasCreativeDepthRisk),
       fatiguedAds: Array.isArray(snapshot?.risk?.fatiguedAds) ? snapshot.risk.fatiguedAds.slice(0, 5) : [],
     },
+    measurementTrust: {
+      level: snapshot?.measurementTrust?.level ?? 'low',
+      label: snapshot?.measurementTrust?.label ?? 'Freeze budget changes',
+      shouldFreezeBudgetChanges: Boolean(snapshot?.measurementTrust?.shouldFreezeBudgetChanges),
+      canScale: Boolean(snapshot?.measurementTrust?.canScale),
+      shouldProceedWithBudgetChanges: Boolean(snapshot?.measurementTrust?.shouldProceedWithBudgetChanges),
+      hasReliableCoverage: Boolean(snapshot?.measurementTrust?.hasReliableCoverage),
+      hasFreshRevenue: Boolean(snapshot?.measurementTrust?.hasFreshRevenue),
+      coverageRatio: asNumber(snapshot?.measurementTrust?.coverageRatio, 0),
+      confidence: snapshot?.measurementTrust?.confidence ?? 'low',
+      reason: snapshot?.measurementTrust?.reason ?? '',
+      blockingIssues: Array.isArray(snapshot?.measurementTrust?.blockingIssues)
+        ? snapshot.measurementTrust.blockingIssues.slice(0, 4)
+        : [],
+      cautionIssues: Array.isArray(snapshot?.measurementTrust?.cautionIssues)
+        ? snapshot.measurementTrust.cautionIssues.slice(0, 4)
+        : [],
+      degradedSources: Array.isArray(snapshot?.measurementTrust?.degradedSources)
+        ? snapshot.measurementTrust.degradedSources.slice(0, 4)
+        : [],
+    },
     controlSurface: snapshot?.controlSurface ?? 'mixed_or_unsupported',
     reviewWindowHours: asNumber(snapshot?.reviewWindowHours, DEFAULT_REVIEW_WINDOW_HOURS),
     timestamp: snapshot?.timestamp ?? nowIso(),
@@ -62,6 +83,7 @@ function buildSpecialistWeights(parameters = {}) {
   const specialistWeights = parameters.specialists || {};
   return {
     controlSurface: asNumber(specialistWeights.controlSurface, 1),
+    measurementTrust: asNumber(specialistWeights.measurementTrust, 1.2),
     economics: asNumber(specialistWeights.economics, 1),
     confidence: asNumber(specialistWeights.confidence, 1),
     fatigue: asNumber(specialistWeights.fatigue, 1),
@@ -76,6 +98,8 @@ function buildRegimeTags(snapshot, derived) {
   const tags = [
     snapshot.targetLevel === 'campaign' ? 'campaign_target' : 'adset_target',
     snapshot.controlSurface,
+    snapshot.measurementTrust.level ? `trust_${snapshot.measurementTrust.level}` : null,
+    snapshot.measurementTrust.shouldFreezeBudgetChanges ? 'trust_frozen' : 'trust_open',
     derived.reliableEconomics ? 'economics_reliable' : 'economics_unreliable',
     snapshot.economics.confidence ? `${snapshot.economics.confidence}_confidence` : null,
     derived.evidenceStrong ? 'evidence_strong' : 'evidence_thin',
@@ -120,6 +144,7 @@ function buildDecisionContext(snapshotInput, policy, rules = {}) {
   const reliableEconomics = Boolean(snapshot.economics.hasReliableEstimate);
   const healthyCoverage = snapshot.economics.coverageRatio >= asNumber(scaleParams.minCoverageRatio, 0.8);
   const healthyMargin = snapshot.economics.estimatedMargin >= asNumber(scaleParams.minEstimatedMargin, 0.08);
+  const trustHealthy = !snapshot.measurementTrust.shouldFreezeBudgetChanges;
   const avgCpa = snapshot.avgCpa;
   const positiveHeadroomRatio = (avgCpa != null && snapshot.economics.targetCpa != null && snapshot.economics.targetCpa > 0)
     ? ratio(snapshot.economics.targetCpa - avgCpa, snapshot.economics.targetCpa, 0)
@@ -133,6 +158,7 @@ function buildDecisionContext(snapshotInput, policy, rules = {}) {
     reliableEconomics,
     healthyCoverage,
     healthyMargin,
+    trustHealthy,
     positiveHeadroomRatio,
     reduceRecommended,
     reduceCritical,

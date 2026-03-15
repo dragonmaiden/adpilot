@@ -29,13 +29,31 @@ const PRIORITY_RANK = Object.freeze({
 const ACTIVITY_STATUS_PRIORITY = Object.freeze({
   action_now: 0,
   awaiting_reply: 1,
-  blocked: 2,
-  stale: 3,
-  watching: 4,
-  resolved: 5,
-  archived: 6,
-  unknown: 7,
+  fix_inputs: 2,
+  hold: 3,
+  portfolio_guidance: 4,
+  cleanup: 5,
+  research: 6,
+  resolved: 7,
+  archived: 8,
+  unknown: 9,
 });
+
+const FIX_INPUT_DECISION_KINDS = new Set([
+  'freeze_due_to_low_trust',
+  'fix_measurement_inputs',
+  'fix_creative_inputs',
+]);
+
+const HOLD_DECISION_KINDS = new Set([
+  'hold_budget',
+]);
+
+const PORTFOLIO_GUIDANCE_DECISION_KINDS = new Set([
+  'reallocate_budget',
+  'portfolio_scale',
+  'portfolio_reduce',
+]);
 
 function normalizeText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
@@ -111,6 +129,78 @@ function isLatestScanCluster(cluster, latestScanId) {
   return Number(cluster?.latestScanId || 0) === Number(latestScanId || 0);
 }
 
+function getDecisionKind(optimization = {}) {
+  return String(optimization?.decisionKind || '').trim().toLowerCase();
+}
+
+function getDecisionDomain(optimization = {}) {
+  return String(optimization?.decisionDomain || '').trim().toLowerCase();
+}
+
+function getAdvisoryOwnerState(optimization, latestScan, ageHours) {
+  const decisionKind = getDecisionKind(optimization);
+  const decisionDomain = getDecisionDomain(optimization);
+  const actionText = normalizeText(optimization?.action).toLowerCase();
+
+  if (
+    FIX_INPUT_DECISION_KINDS.has(decisionKind)
+    || decisionDomain === 'measurement_trust'
+    || decisionDomain === 'creative_inputs'
+    || actionText.startsWith('freeze budget changes')
+    || actionText.includes('stronger creative inputs')
+  ) {
+    return {
+      state: 'fix_inputs',
+      actionableNow: false,
+      queueBucket: 'fix_inputs',
+      reason: 'Inputs or trust need work before another budget decision',
+      ageHours,
+    };
+  }
+
+  if (HOLD_DECISION_KINDS.has(decisionKind) || actionText.startsWith('hold budget')) {
+    return {
+      state: 'hold',
+      actionableNow: false,
+      queueBucket: 'hold',
+      reason: 'Meta should keep delivering unchanged for now',
+      ageHours,
+    };
+  }
+
+  if (
+    PORTFOLIO_GUIDANCE_DECISION_KINDS.has(decisionKind)
+    || decisionDomain === 'portfolio_guardrails'
+    || decisionDomain === 'portfolio_allocation'
+  ) {
+    return {
+      state: 'portfolio_guidance',
+      actionableNow: false,
+      queueBucket: 'portfolio_guidance',
+      reason: 'Portfolio-level budget guidance is available for the next planning pass',
+      ageHours,
+    };
+  }
+
+  if (latestScan) {
+    return {
+      state: 'research',
+      actionableNow: false,
+      queueBucket: 'research',
+      reason: 'Fresh advisory context is available for audit, not approval',
+      ageHours,
+    };
+  }
+
+  return {
+    state: 'archived',
+    actionableNow: false,
+    queueBucket: 'archive',
+    reason: 'Older advisory signal archived from the default owner view',
+    ageHours,
+  };
+}
+
 function ownerStateForCluster(cluster, nowMs, latestScanId) {
   const ageMs = cluster.latestTimestampMs > 0 ? Math.max(0, nowMs - cluster.latestTimestampMs) : Number.POSITIVE_INFINITY;
   const ageHours = Number.isFinite(ageMs)
@@ -134,9 +224,9 @@ function ownerStateForCluster(cluster, nowMs, latestScanId) {
     }
 
     return {
-      state: 'blocked',
+      state: 'cleanup',
       actionableNow: false,
-      queueBucket: 'backlog',
+      queueBucket: 'cleanup',
       reason: 'Telegram reply window looks stale; resend or rerun instead of treating this as still pending',
       ageHours,
     };
@@ -144,9 +234,9 @@ function ownerStateForCluster(cluster, nowMs, latestScanId) {
 
   if (latestStatus === 'delivery_failed') {
     return {
-      state: 'blocked',
+      state: 'cleanup',
       actionableNow: false,
-      queueBucket: 'backlog',
+      queueBucket: 'cleanup',
       reason: 'Approval delivery failed; this should not appear as an open approval',
       ageHours,
     };
@@ -154,9 +244,9 @@ function ownerStateForCluster(cluster, nowMs, latestScanId) {
 
   if (latestStatus === 'execution_failed') {
     return {
-      state: 'blocked',
+      state: 'cleanup',
       actionableNow: false,
-      queueBucket: 'backlog',
+      queueBucket: 'cleanup',
       reason: 'Approval completed but execution failed on the downstream platform',
       ageHours,
     };
@@ -175,9 +265,9 @@ function ownerStateForCluster(cluster, nowMs, latestScanId) {
 
     if (withinStaleWindow) {
       return {
-        state: 'stale',
+        state: 'cleanup',
         actionableNow: false,
-        queueBucket: 'backlog',
+        queueBucket: 'cleanup',
         reason: latestScan
           ? 'Review window has gone stale; rerun before asking for approval again'
           : 'Older recommendation was not refreshed in the latest scan',
@@ -195,14 +285,8 @@ function ownerStateForCluster(cluster, nowMs, latestScanId) {
   }
 
   if (latestStatus === 'advisory') {
-    if (withinFlowWindow && getPriorityRank(cluster.priority) <= PRIORITY_RANK.high) {
-      return {
-        state: 'watching',
-        actionableNow: false,
-        queueBucket: 'watching',
-        reason: 'Fresh advisory signal worth watching, but not an approval decision',
-        ageHours,
-      };
+    if (withinFlowWindow) {
+      return getAdvisoryOwnerState(cluster.latestOptimization || {}, latestScan, ageHours);
     }
 
     return {
@@ -235,11 +319,11 @@ function ownerStateForCluster(cluster, nowMs, latestScanId) {
   }
 
   return {
-    state: withinFlowWindow ? 'watching' : 'archived',
+    state: withinFlowWindow ? 'research' : 'archived',
     actionableNow: false,
-    queueBucket: withinFlowWindow ? 'watching' : 'archive',
+    queueBucket: withinFlowWindow ? 'research' : 'archive',
     reason: withinFlowWindow
-      ? 'Recent signal needs monitoring'
+      ? 'Recent signal is available for audit'
       : 'Older family archived from the default owner view',
     ageHours,
   };
@@ -337,6 +421,8 @@ function finalizeCluster(cluster, nowMs, latestScanId) {
     action: latestOptimization.action ?? '',
     reason: latestOptimization.reason ?? '',
     impact: latestOptimization.impact ?? '',
+    decisionKind: latestOptimization.decisionKind ?? null,
+    decisionDomain: latestOptimization.decisionDomain ?? null,
     executionResult: latestOptimization.executionResult ?? null,
     latestOptimizationId: latestOptimization.id ?? '',
     count: cluster.count,
@@ -356,7 +442,7 @@ function finalizeCluster(cluster, nowMs, latestScanId) {
     actionableNow: ownerState.actionableNow,
     queueBucket: ownerState.queueBucket,
     stateReason: ownerState.reason,
-    stale: ownerState.state === 'stale',
+    stale: ownerState.state === 'cleanup' && latestStatus === 'needs_approval',
     backlogAgeHours: ownerState.ageHours,
     latestStatus,
     latestRecentStatus: getOptimizationStatus(recentLatestOptimization),
@@ -389,19 +475,23 @@ function buildActivityTitle(cluster) {
 
   if (currentStatus === 'action_now') return cluster.recentCount > 1 ? 'Decision resurfaced in latest scans' : 'Decision needed now';
   if (currentStatus === 'awaiting_reply') return 'Waiting for Telegram reply';
-  if (currentStatus === 'blocked') {
+  if (currentStatus === 'fix_inputs') return cluster.recentCount > 1 ? 'Input fix repeated' : 'Fix inputs before the next budget change';
+  if (currentStatus === 'hold') return 'Hold and let Meta continue';
+  if (currentStatus === 'portfolio_guidance') {
+    return cluster.recentCount > 1 ? 'Portfolio guidance repeated' : 'Portfolio guidance ready';
+  }
+  if (currentStatus === 'cleanup') {
     if (cluster.latestStatus === 'delivery_failed') return 'Approval delivery failed';
     if (cluster.latestStatus === 'execution_failed') return 'Execution failed after approval';
-    return 'Decision path is blocked';
+    return 'Cleanup needed';
   }
-  if (currentStatus === 'stale') return 'Recommendation went stale';
+  if (currentStatus === 'research') return cluster.recentCount > 1 ? 'Advisory context repeated' : 'Fresh advisory context';
   if (currentStatus === 'resolved') {
     if (counts.executed > 0) return counts.executed > 1 ? 'Multiple executions landed' : 'Optimization executed';
     if (cluster.latestStatus === 'expired') return counts.expired > 1 ? 'Approvals expired repeatedly' : 'Approval expired';
     if (cluster.latestStatus === 'rejected') return counts.rejected > 1 ? 'Approvals were rejected' : 'Approval rejected';
     return 'Decision resolved';
   }
-  if (currentStatus === 'watching') return cluster.recentCount > 1 ? 'Advisory signal repeated' : 'Fresh advisory signal';
   return 'Archived decision';
 }
 
@@ -427,11 +517,11 @@ function shouldIncludeInActivity(cluster, nowMs) {
     return false;
   }
 
-  if (['action_now', 'awaiting_reply', 'blocked', 'stale', 'resolved'].includes(cluster.currentStatus)) {
+  if (['action_now', 'awaiting_reply', 'fix_inputs', 'hold', 'portfolio_guidance', 'cleanup', 'resolved'].includes(cluster.currentStatus)) {
     return true;
   }
 
-  return cluster.currentStatus === 'watching' && getPriorityRank(cluster.priority) <= PRIORITY_RANK.high;
+  return cluster.currentStatus === 'research' && getPriorityRank(cluster.priority) <= PRIORITY_RANK.high;
 }
 
 function buildActivityEntries(clusters, nowMs) {
@@ -549,7 +639,10 @@ function buildDecisionMarkers(activity) {
 function summarizeQueue(queue) {
   return {
     familyCount: queue.length,
-    itemCount: queue.reduce((sum, cluster) => sum + (cluster.openCount || 0), 0),
+    itemCount: queue.reduce((sum, cluster) => {
+      if (cluster.actionableNow) return sum + (cluster.openCount || 0);
+      return sum + 1;
+    }, 0),
   };
 }
 
@@ -582,19 +675,25 @@ function getAiOperationsResponse() {
     .sort(sortClusters);
 
   const immediateQueue = clusters.filter(cluster => ['action_now', 'awaiting_reply'].includes(cluster.currentStatus));
-  const backlog = clusters.filter(cluster => ['blocked', 'stale'].includes(cluster.currentStatus));
+  const fixInputsQueue = clusters.filter(cluster => cluster.currentStatus === 'fix_inputs');
+  const holdQueue = clusters.filter(cluster => cluster.currentStatus === 'hold');
+  const portfolioGuidanceQueue = clusters.filter(cluster => cluster.currentStatus === 'portfolio_guidance');
+  const cleanupQueue = clusters.filter(cluster => cluster.currentStatus === 'cleanup');
+  const researchQueue = clusters.filter(cluster => cluster.currentStatus === 'research');
   const visibleClusters = clusters.filter(cluster => cluster.currentStatus !== 'archived');
   const activity = buildActivityEntries(clusters, nowMs);
   const decisionMarkers = buildDecisionMarkers(activity);
   const systemChatter = buildSystemChatter(scans, nowMs, systemWindowMs);
   const qualityState = buildQualityState(qualityResponse.summary || {}, optimizations.length, clusters.length);
   const queueSummary = summarizeQueue(immediateQueue);
-  const backlogSummary = summarizeQueue(backlog);
-  const watchingFamilies = countByState(clusters, 'watching');
+  const fixInputsSummary = summarizeQueue(fixInputsQueue);
+  const holdSummary = summarizeQueue(holdQueue);
+  const portfolioGuidanceSummary = summarizeQueue(portfolioGuidanceQueue);
+  const cleanupSummary = summarizeQueue(cleanupQueue);
+  const researchSummary = summarizeQueue(researchQueue);
   const resolvedFamilies = countByState(clusters, 'resolved');
   const archivedFamilies = countByState(clusters, 'archived');
-  const blockedFamilies = countByState(clusters, 'blocked');
-  const staleFamilies = countByState(clusters, 'stale');
+  const cleanupFamilies = countByState(clusters, 'cleanup');
 
   return contracts.aiOperations({
     generatedAt: new Date(nowMs).toISOString(),
@@ -606,15 +705,24 @@ function getAiOperationsResponse() {
       compressionRatio: clusters.length > 0 ? Math.round((optimizations.length / clusters.length) * 10) / 10 : 0,
       actionNowFamilies: queueSummary.familyCount,
       actionNowItems: queueSummary.itemCount,
-      blockedFamilies: blockedFamilies + staleFamilies,
-      blockedItems: backlogSummary.familyCount,
-      watchingFamilies,
+      fixInputFamilies: fixInputsSummary.familyCount,
+      fixInputItems: fixInputsSummary.itemCount,
+      holdFamilies: holdSummary.familyCount,
+      holdItems: holdSummary.itemCount,
+      portfolioGuidanceFamilies: portfolioGuidanceSummary.familyCount,
+      portfolioGuidanceItems: portfolioGuidanceSummary.itemCount,
+      cleanupFamilies,
+      cleanupItems: cleanupSummary.itemCount,
+      researchFamilies: researchSummary.familyCount,
       resolvedFamilies,
       archivedFamilies,
       awaitingTelegram: countByState(clusters, 'awaiting_reply'),
-      staleBacklogFamilies: staleFamilies,
-      openBacklogFamilies: backlogSummary.familyCount,
-      openBacklogItems: backlogSummary.familyCount,
+      blockedFamilies: cleanupFamilies,
+      blockedItems: cleanupSummary.itemCount,
+      staleBacklogFamilies: cleanupFamilies,
+      openBacklogFamilies: cleanupSummary.familyCount,
+      openBacklogItems: cleanupSummary.itemCount,
+      watchingFamilies: researchSummary.familyCount,
       recentChangeCount: activity.length,
     },
     quality: {
@@ -624,7 +732,12 @@ function getAiOperationsResponse() {
     systemChatter,
     queue: {
       immediate: immediateQueue,
-      backlog,
+      fixInputs: fixInputsQueue,
+      hold: holdQueue,
+      portfolioGuidance: portfolioGuidanceQueue,
+      cleanup: cleanupQueue,
+      research: researchQueue,
+      backlog: cleanupQueue,
     },
     activity,
     decisionMarkers,

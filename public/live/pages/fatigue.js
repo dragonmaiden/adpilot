@@ -27,9 +27,9 @@
       const summary = postmortem?.lessonsSummary || {};
       const lessonLabels = {
         no_conversions: { icon: '⚠️', title: tr('Zero conversions', '전환 없음'), color: '#f87171', tip: tr('Test a different offer, audience, or hook before adding more spend.', '지출을 늘리기 전에 다른 오퍼, 오디언스, 후킹 포인트를 테스트하세요.') },
-        high_cpa: { icon: '💸', title: tr('High CPA', '높은 CPA'), color: '#facc15', tip: tr('Acquisition cost rose above a healthy range. Tighten targeting or refresh the creative.', '획득 비용이 정상 범위를 넘었습니다. 타게팅을 조이거나 크리에이티브를 교체하세요.') },
+        high_cpa: { icon: '💸', title: tr('High CPA', '높은 CPA'), color: '#facc15', tip: tr('Acquisition cost rose above a healthy range. Improve the creative, offer, or landing experience before scaling.', '획득 비용이 정상 범위를 넘었습니다. 스케일 전에 크리에이티브, 오퍼, 또는 랜딩 경험을 먼저 개선하세요.') },
         ctr_decay: { icon: '📉', title: tr('CTR decay', 'CTR 하락'), color: '#fb923c', tip: tr('The ad lost click momentum. Rotate or replace before spend drifts.', '광고 클릭 모멘텀이 떨어졌습니다. 지출이 새기 전에 교체하거나 회전하세요.') },
-        high_frequency: { icon: '🔁', title: tr('Audience saturation', '오디언스 포화'), color: '#c084fc', tip: tr('Frequency is climbing. Open new audiences or rotate the creative set.', '빈도가 상승 중입니다. 새 오디언스를 열거나 크리에이티브 세트를 교체하세요.') },
+        high_frequency: { icon: '🔁', title: tr('Audience saturation', '오디언스 포화'), color: '#c084fc', tip: tr('Frequency is climbing. Feed Meta more creative depth before forcing more spend.', '빈도가 상승 중입니다. 지출을 더 밀기 전에 Meta에 더 깊은 크리에이티브 공급을 주세요.') },
         clicks_no_purchase: { icon: '🛒', title: tr('Clicks without sales', '클릭 대비 판매 없음'), color: '#38bdf8', tip: tr('The ad got attention but did not close. Review landing page, pricing, or checkout.', '광고는 관심을 끌었지만 구매로 이어지지 않았습니다. 랜딩, 가격, 결제를 점검하세요.') },
         general: { icon: '📝', title: tr('Manual pause', '수동 중지'), color: '#94a3b8', tip: tr('Use this as a reference when deciding which creative patterns to revisit.', '어떤 크리에이티브 패턴을 다시 볼지 판단할 때 참고하세요.') },
       };

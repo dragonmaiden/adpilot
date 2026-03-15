@@ -506,84 +506,6 @@ app.post('/api/campaigns/:id/budget', writeLimiter, validateMetaIdParam, async (
   }
 });
 
-// ── Ad set actions (require Telegram approval) ──
-app.post('/api/adsets/:id/status', writeLimiter, validateMetaIdParam, async (req, res) => {
-  try {
-    const { status } = req.body || {};
-    if (!['ACTIVE', 'PAUSED'].includes(status)) {
-      return res.status(400).json({ error: 'Status must be ACTIVE or PAUSED' });
-    }
-
-    const data = scheduler.getLatestData();
-    const adSet = (data.adSets || []).find(a => a.id === req.params.id);
-    const name = adSet ? adSet.name : req.params.id;
-
-    const approvalId = await telegram.requestApproval({
-      type: 'status',
-      level: 'adset',
-      targetId: req.params.id,
-      targetName: name,
-      action: `${status === 'PAUSED' ? 'Pause' : 'Resume'} ad set "${name}"`,
-      reason: `Manual ${status === 'PAUSED' ? 'pause' : 'resume'} request from dashboard`,
-      impact: status === 'PAUSED' ? 'Ad set will stop spending immediately' : 'Ad set will resume spending',
-      priority: 'high',
-    });
-
-    if (!approvalId) {
-      return res.status(500).json({ error: 'Failed to send Telegram approval' });
-    }
-
-    res.json({ success: true, pending: true, message: 'Approval request sent to Telegram.' });
-
-    const response = await telegram.waitForApproval(approvalId, 300000);
-    if (response.approved) {
-      const result = await meta.updateAdSetStatus(req.params.id, status);
-      await telegram.sendMessage(`✅ Ad set "${name}" ${status === 'PAUSED' ? 'paused' : 'resumed'} successfully.`);
-    }
-  } catch (err) {
-    handleInternalError(req, res, err);
-  }
-});
-
-// ── Ad actions (require Telegram approval) ──
-app.post('/api/ads/:id/status', writeLimiter, validateMetaIdParam, async (req, res) => {
-  try {
-    const { status } = req.body || {};
-    if (!['ACTIVE', 'PAUSED'].includes(status)) {
-      return res.status(400).json({ error: 'Status must be ACTIVE or PAUSED' });
-    }
-
-    const data = scheduler.getLatestData();
-    const ad = (data.ads || []).find(a => a.id === req.params.id);
-    const name = ad ? ad.name : req.params.id;
-
-    const approvalId = await telegram.requestApproval({
-      type: 'status',
-      level: 'ad',
-      targetId: req.params.id,
-      targetName: name,
-      action: `${status === 'PAUSED' ? 'Pause' : 'Resume'} ad "${name}"`,
-      reason: `Manual ${status === 'PAUSED' ? 'pause' : 'resume'} request from dashboard`,
-      impact: status === 'PAUSED' ? 'Ad will stop serving immediately' : 'Ad will resume serving',
-      priority: 'high',
-    });
-
-    if (!approvalId) {
-      return res.status(500).json({ error: 'Failed to send Telegram approval' });
-    }
-
-    res.json({ success: true, pending: true, message: 'Approval request sent to Telegram.' });
-
-    const response = await telegram.waitForApproval(approvalId, 300000);
-    if (response.approved) {
-      const result = await meta.updateAdStatus(req.params.id, status);
-      await telegram.sendMessage(`✅ Ad "${name}" ${status === 'PAUSED' ? 'paused' : 'resumed'} successfully.`);
-    }
-  } catch (err) {
-    handleInternalError(req, res, err);
-  }
-});
-
 // ── Execute specific optimization ──
 app.post('/api/optimizations/:id/execute', writeLimiter, async (req, res) => {
   try {
@@ -886,7 +808,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('  AdPilot Backend Server');
   console.log(`  Port: ${PORT}`);
   console.log(`  Data: ${DATA_DIR}`);
-  console.log(`  Mode: ${runtimeSettings.getRules().autonomousMode ? 'AUTONOMOUS' : 'SUGGESTION ONLY'}`);
+  console.log(`  Mode: ${runtimeSettings.getRules().autonomousMode ? 'APPROVAL-GATED' : 'ADVISORY ONLY'}`);
   console.log(`  Scan interval: ${runtimeSettings.getSchedulerSettings().scanIntervalMinutes} min`);
   console.log('='.repeat(60) + '\n');
 

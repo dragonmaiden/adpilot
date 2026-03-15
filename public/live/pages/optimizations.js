@@ -24,18 +24,18 @@
   const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
   const ICON_MAP = {
     budget: 'wallet',
-    bid: 'gavel',
     creative: 'image',
     status: 'power',
-    schedule: 'clock',
-    targeting: 'target',
+    legacy: 'archive',
   };
   const EVENT_ICON_MAP = {
     action_now: 'sparkles',
     awaiting_reply: 'send',
-    blocked: 'triangle-alert',
-    stale: 'archive',
-    watching: 'radar',
+    fix_inputs: 'wrench',
+    hold: 'pause-circle',
+    portfolio_guidance: 'arrow-right-left',
+    cleanup: 'archive',
+    research: 'radar',
     resolved: 'check-check',
     executed: 'check-check',
     expired: 'clock-3',
@@ -83,12 +83,16 @@
         return { label: tr('Decide now', '지금 결정'), className: 'badge-warning' };
       case 'awaiting_reply':
         return { label: tr('Awaiting reply', '응답 대기'), className: 'badge-info' };
-      case 'blocked':
-        return { label: tr('Blocked', '막힘'), className: 'badge-danger' };
-      case 'stale':
-        return { label: tr('Stale', '오래됨'), className: 'badge-neutral' };
-      case 'watching':
-        return { label: tr('Watching', '관찰 중'), className: 'badge-info' };
+      case 'fix_inputs':
+        return { label: tr('Fix inputs', '입력 수정'), className: 'badge-warning' };
+      case 'hold':
+        return { label: tr('Hold', '유지'), className: 'badge-info' };
+      case 'portfolio_guidance':
+        return { label: tr('Portfolio guidance', '포트폴리오 가이드'), className: 'badge-info' };
+      case 'cleanup':
+        return { label: tr('Cleanup', '정리'), className: 'badge-neutral' };
+      case 'research':
+        return { label: tr('Research', '리서치'), className: 'badge-neutral' };
       case 'resolved':
         return { label: tr('Resolved', '해결됨'), className: 'badge-success' };
       case 'executed':
@@ -212,10 +216,16 @@
     switch (statusFilter) {
       case 'live':
         return ['action_now', 'awaiting_reply'].includes(cluster.currentStatus);
-      case 'blocked':
-        return ['blocked', 'stale'].includes(cluster.currentStatus);
-      case 'watching':
-        return cluster.currentStatus === 'watching';
+      case 'fix_inputs':
+        return cluster.currentStatus === 'fix_inputs';
+      case 'hold':
+        return cluster.currentStatus === 'hold';
+      case 'portfolio_guidance':
+        return cluster.currentStatus === 'portfolio_guidance';
+      case 'research':
+        return cluster.currentStatus === 'research';
+      case 'cleanup':
+        return cluster.currentStatus === 'cleanup';
       case 'resolved':
         return cluster.currentStatus === 'resolved';
       case 'all':
@@ -242,13 +252,20 @@
     return (Array.isArray(optimizations) ? optimizations : [])
       .filter(opt => typeFilter === 'all' || opt.type === typeFilter)
       .filter(opt => {
+        const decisionKind = String(opt.decisionKind || '').toLowerCase();
         switch (statusFilter) {
           case 'live':
             return opt.status === 'needs_approval' || opt.status === 'awaiting_telegram';
-          case 'blocked':
-            return opt.status === 'delivery_failed' || opt.status === 'execution_failed';
-          case 'watching':
-            return opt.status === 'advisory';
+          case 'fix_inputs':
+            return opt.status === 'advisory' && ['freeze_due_to_low_trust', 'fix_measurement_inputs', 'fix_creative_inputs'].includes(decisionKind);
+          case 'hold':
+            return opt.status === 'advisory' && decisionKind === 'hold_budget';
+          case 'portfolio_guidance':
+            return opt.status === 'advisory' && ['reallocate_budget', 'portfolio_scale', 'portfolio_reduce'].includes(decisionKind);
+          case 'research':
+            return opt.status === 'advisory' && !['freeze_due_to_low_trust', 'fix_measurement_inputs', 'fix_creative_inputs', 'hold_budget', 'reallocate_budget', 'portfolio_scale', 'portfolio_reduce'].includes(decisionKind);
+          case 'cleanup':
+            return ['delivery_failed', 'execution_failed'].includes(opt.status);
           case 'resolved':
             return opt.status === 'executed' || opt.status === 'rejected' || opt.status === 'expired';
           case 'all':
@@ -276,7 +293,9 @@
     if (counts.expired) parts.push(tr(`${formatCount(counts.expired)} expired`, `${formatCount(counts.expired)}건 만료`));
     if (counts.rejected) parts.push(tr(`${formatCount(counts.rejected)} rejected`, `${formatCount(counts.rejected)}건 거절`));
     if (counts.executed) parts.push(tr(`${formatCount(counts.executed)} executed`, `${formatCount(counts.executed)}건 실행`));
-    if (counts.advisory && cluster.currentStatus === 'watching') parts.push(tr(`${formatCount(counts.advisory)} advisory`, `${formatCount(counts.advisory)}건 참고용`));
+    if (counts.advisory && ['fix_inputs', 'hold', 'portfolio_guidance', 'research'].includes(cluster.currentStatus)) {
+      parts.push(tr(`${formatCount(counts.advisory)} advisory`, `${formatCount(counts.advisory)}건 참고용`));
+    }
 
     return parts.join(' · ');
   }
@@ -291,11 +310,14 @@
     if (cluster.actionableNow) {
       items.push(`<span class="opt-cluster-stat"><strong>${esc(formatCount(cluster.openCount || 0))}</strong>${esc(tr('live', '라이브'))}</span>`);
     }
-    if (['blocked', 'stale'].includes(cluster.currentStatus)) {
-      const cleanupLabel = cluster.currentStatus === 'blocked'
-        ? tr('Blocked', '막힘')
-        : tr('Stale', '오래됨');
-      items.push(`<span class="opt-cluster-stat"><strong>${esc(cleanupLabel)}</strong>${esc(tr(`${cluster.backlogAgeHours || 0}h age`, `${cluster.backlogAgeHours || 0}시간`))}</span>`);
+    if (cluster.currentStatus === 'cleanup') {
+      items.push(`<span class="opt-cluster-stat"><strong>${esc(tr('Cleanup', '정리'))}</strong>${esc(tr(`${cluster.backlogAgeHours || 0}h age`, `${cluster.backlogAgeHours || 0}시간`))}</span>`);
+    }
+    if (cluster.currentStatus === 'hold') {
+      items.push(`<span class="opt-cluster-stat"><strong>${esc(tr('No change', '변경 없음'))}</strong>${esc(tr('Meta keeps running', 'Meta 계속 집행'))}</span>`);
+    }
+    if (cluster.currentStatus === 'portfolio_guidance') {
+      items.push(`<span class="opt-cluster-stat"><strong>${esc(tr('Macro plan', '거시 계획'))}</strong>${esc(tr('Next planning pass', '다음 운영 사이클'))}</span>`);
     }
 
     return items.join('');
@@ -319,10 +341,20 @@
           `원시 ${formatCount(cluster.count)}행을 하나의 의사결정 패밀리로 압축`
         )
       : '';
-    const stateCallout = ['blocked', 'stale'].includes(cluster.currentStatus)
+    const stateCallout = cluster.currentStatus === 'cleanup'
       ? tr(
           'This family is shown for cleanup only. It is not asking for approval right now.',
           '이 패밀리는 정리용으로만 표시됩니다. 지금 승인 요청 중인 항목이 아닙니다.'
+        )
+      : cluster.currentStatus === 'hold'
+      ? tr(
+          'This is an explicit no-change state. The system is telling you to leave delivery alone for now.',
+          '이것은 명시적인 변경 없음 상태입니다. 지금은 집행을 그대로 두라는 뜻입니다.'
+        )
+      : cluster.currentStatus === 'portfolio_guidance'
+      ? tr(
+          'This is macro guidance for the next planning pass. It should shape budget direction, but it is not a live approval queue.',
+          '이것은 다음 운영 사이클을 위한 거시 가이드입니다. 예산 방향에는 반영해야 하지만 라이브 승인 큐는 아닙니다.'
         )
       : '';
 
@@ -359,9 +391,9 @@
 
     const valueMap = {
       optActionNow: summary.actionNowFamilies ?? 0,
-      optBacklog: summary.blockedFamilies ?? 0,
-      optFriction: summary.watchingFamilies ?? 0,
-      optQuality: summary.recentChangeCount ?? 0,
+      optBacklog: summary.fixInputFamilies ?? 0,
+      optFriction: summary.holdFamilies ?? 0,
+      optPortfolio: summary.portfolioGuidanceFamilies ?? 0,
     };
 
     Object.entries(valueMap).forEach(([id, value]) => {
@@ -376,16 +408,16 @@
         `검토 창 안에 있는 라이브 승인 ${formatCount(summary.actionNowItems || 0)}건`
       ),
       optBacklogMeta: tr(
-        `${formatCount(summary.blockedFamilies || 0)} cleanup families · ${formatCount(qualitySummary.failedApprovalRequests || 0)} delivery failures`,
-        `정리 패밀리 ${formatCount(summary.blockedFamilies || 0)}개 · 전달 실패 ${formatCount(qualitySummary.failedApprovalRequests || 0)}개`
+        `${formatCount(summary.fixInputFamilies || 0)} input fixes · ${formatCount(summary.cleanupFamilies || 0)} cleanup families behind them`,
+        `입력 수정 ${formatCount(summary.fixInputFamilies || 0)}개 · 뒤에 정리 패밀리 ${formatCount(summary.cleanupFamilies || 0)}개`
       ),
       optFrictionMeta: tr(
-        `${formatCount(summary.watchingFamilies || 0)} advisory families still worth monitoring`,
-        `계속 관찰할 참고용 패밀리 ${formatCount(summary.watchingFamilies || 0)}개`
+        `${formatCount(summary.holdFamilies || 0)} explicit no-change states`,
+        `명시적 유지 상태 ${formatCount(summary.holdFamilies || 0)}개`
       ),
-      optQualityMeta: tr(
-        `${formatCount(summary.recentChangeCount || 0)} material changes in the last ${aiOps?.systemChatter?.windowHours || 24}h`,
-        `최근 ${aiOps?.systemChatter?.windowHours || 24}시간 동안 의미 있는 변화 ${formatCount(summary.recentChangeCount || 0)}개`
+      optPortfolioMeta: tr(
+        `${formatCount(summary.portfolioGuidanceFamilies || 0)} macro advisories for the next planning pass`,
+        `다음 운영 사이클용 거시 가이드 ${formatCount(summary.portfolioGuidanceFamilies || 0)}개`
       ),
     };
 
@@ -417,18 +449,22 @@
 
     const summary = aiOps?.summary || {};
     const immediate = aiOps?.queue?.immediate || [];
-    const backlog = aiOps?.queue?.backlog || [];
-    const clusters = aiOps?.clusters || [];
-    const watchCluster = clusters.find(cluster => cluster.currentStatus === 'watching');
+    const fixInputs = aiOps?.queue?.fixInputs || [];
+    const holdQueue = aiOps?.queue?.hold || [];
+    const portfolioQueue = aiOps?.queue?.portfolioGuidance || [];
+    const cleanupQueue = aiOps?.queue?.cleanup || [];
     const latestChange = aiOps?.activity?.[0];
     const topImmediate = immediate[0];
-    const topCleanup = backlog[0];
+    const topFixInput = fixInputs[0];
+    const topHold = holdQueue[0];
+    const topPortfolio = portfolioQueue[0];
+    const topCleanup = cleanupQueue[0];
 
     let tone = 'neutral';
     let title = tr('Waiting for AI operations data...', 'AI 운영 데이터 대기 중...');
     let body = tr(
-      'This space will tell you what still needs a decision, what is cleanup only, and what can safely wait.',
-      '이 영역은 아직 결정이 필요한 것, 정리만 필요한 것, 기다려도 되는 것을 구분해 보여줍니다.'
+      'This space will tell you what still needs a decision, what inputs need fixing, and when the right move is to leave delivery alone.',
+      '이 영역은 아직 결정이 필요한 것, 어떤 입력을 고쳐야 하는지, 그리고 언제 집행을 그대로 두는 것이 맞는지를 알려줍니다.'
     );
     let nextMove = '—';
     let nextMoveMeta = '—';
@@ -439,43 +475,71 @@
       tone = 'warning';
       title = tr('Act on the live queue first', '라이브 큐부터 처리하세요');
       body = tr(
-        `${formatCount(summary.actionNowFamilies)} decision families are still inside the review window. Start with ${topImmediate.targetName || 'the top item'} before looking at backlog or research detail.`,
-        `검토 창 안에 아직 ${formatCount(summary.actionNowFamilies)}개 결정 패밀리가 있습니다. 백로그나 연구 영역보다 먼저 ${topImmediate.targetName || '최상단 항목'}부터 보세요.`
+        `${formatCount(summary.actionNowFamilies)} budget or stop-loss decisions are still inside the review window. Start with ${topImmediate.targetName || 'the top item'} before looking at input fixes or portfolio guidance.`,
+        `검토 창 안에 아직 ${formatCount(summary.actionNowFamilies)}개 예산/가드레일 결정 패밀리가 있습니다. 입력 수정이나 포트폴리오 가이드보다 먼저 ${topImmediate.targetName || '최상단 항목'}부터 보세요.`
       );
       nextMove = topImmediate.targetName || tr('Open the top live decision', '상단 라이브 결정을 열기');
       nextMoveMeta = localizeOptimizationText(topImmediate.action || topImmediate.reason || tr('Review the recommendation and decide.', '추천 내용을 검토하고 결정하세요.'));
-      ignoreNow = tr('Archive and Karpathy can wait', '아카이브와 Karpathy는 나중에');
+      ignoreNow = tr('Hold states and portfolio guidance can wait', '유지 상태와 포트폴리오 가이드는 나중에');
       ignoreNowMeta = tr(
         'Do not spend attention on audit history until the live queue is clear.',
         '라이브 큐가 비기 전까지는 감사용 이력에 주의를 뺏기지 않아도 됩니다.'
       );
-    } else if (((summary.blockedFamilies || 0) + (summary.staleBacklogFamilies || 0)) > 0 && topCleanup) {
+    } else if ((summary.fixInputFamilies || 0) > 0 && topFixInput) {
       tone = 'calm';
-      title = tr('No live approvals, but cleanup still matters', '라이브 승인은 없지만 정리는 필요합니다');
+      title = tr('No live approvals, fix the inputs next', '라이브 승인은 없지만 입력 수정이 먼저입니다');
       body = tr(
-        `${formatCount(summary.blockedFamilies)} family is not asking for approval anymore, but leaving it around will keep the page noisy and untrustworthy.`,
-        `${formatCount(summary.blockedFamilies)}개 패밀리는 더 이상 승인을 묻지 않지만, 그대로 두면 페이지가 계속 시끄럽고 신뢰하기 어려워집니다.`
+        `${formatCount(summary.fixInputFamilies)} family is asking for better inputs or stronger measurement trust before the next budget move.`,
+        `다음 예산 변경 전에 ${formatCount(summary.fixInputFamilies)}개 패밀리가 더 나은 입력이나 더 강한 측정 신뢰를 요구하고 있습니다.`
       );
-      nextMove = topCleanup.targetName || tr('Clean up the blocked family', '막힌 패밀리 정리');
-      nextMoveMeta = buildClusterStatusLine(topCleanup) || localizeOptimizationText(topCleanup.reason || tr('Resolve the delivery or archive state.', '전달 또는 아카이브 상태를 정리하세요.'));
-      ignoreNow = tr('There is no live queue pressure', '라이브 큐 압박은 없습니다');
+      nextMove = topFixInput.targetName || tr('Fix the top input issue', '최상단 입력 이슈 수정');
+      nextMoveMeta = localizeOptimizationText(topFixInput.reason || tr('Improve trust or creative inputs before scaling.', '스케일 전에 신뢰나 크리에이티브 입력을 개선하세요.'));
+      ignoreNow = tr('Do not over-edit delivery', '집행을 과도하게 건드리지 마세요');
       ignoreNowMeta = tr(
-        'Nothing currently needs approval. Use this pass to clean trust issues instead of rushing into archive detail.',
-        '현재 승인 필요한 항목은 없습니다. 아카이브를 뒤지기보다 신뢰를 해치는 정리 이슈부터 처리하세요.'
+        'The point here is to improve inputs, not to compensate for Meta by making more delivery edits.',
+        '여기서 중요한 것은 입력을 개선하는 것이지, 집행 편집을 늘려 Meta를 대신하려는 것이 아닙니다.'
       );
-    } else if ((summary.watchingFamilies || 0) > 0 && watchCluster) {
+    } else if ((summary.holdFamilies || 0) > 0 && topHold) {
       tone = 'calm';
-      title = tr('Nothing to approve right now', '지금 승인할 것은 없습니다');
+      title = tr('Nothing to change right now', '지금 바꿀 것은 없습니다');
       body = tr(
-        `${formatCount(summary.watchingFamilies)} advisory family is worth monitoring, but the account is in watch mode rather than action mode.`,
-        `${formatCount(summary.watchingFamilies)}개 참고용 패밀리는 계속 볼 가치가 있지만, 지금은 액션 모드보다 관찰 모드에 가깝습니다.`
+        `${formatCount(summary.holdFamilies)} family is explicitly telling you to leave Meta delivery alone and wait for a material shift.`,
+        `${formatCount(summary.holdFamilies)}개 패밀리가 Meta 집행을 그대로 두고 의미 있는 변화가 올 때까지 기다리라고 명시적으로 말하고 있습니다.`
       );
-      nextMove = watchCluster.targetName || tr('Watch the main advisory signal', '주요 참고 신호 관찰');
-      nextMoveMeta = localizeOptimizationText(watchCluster.reason || tr('Review the latest advisory reasoning.', '최신 참고 사유를 확인하세요.'));
-      ignoreNow = tr('Cleanup and archive can stay closed', '정리와 아카이브는 닫아둬도 됩니다');
+      nextMove = topHold.targetName || tr('Respect the hold state', '유지 상태 존중');
+      nextMoveMeta = localizeOptimizationText(topHold.reason || tr('No budget change is warranted in the current window.', '현재 구간에서는 예산 변경이 타당하지 않습니다.'));
+      ignoreNow = tr('You do not need a heroic tweak', '억지로 손볼 필요는 없습니다');
       ignoreNowMeta = tr(
-        'There is no approval pressure. Focus on the watch signal only if it starts to move.',
-        '승인 압박은 없습니다. 관찰 신호가 움직일 때만 집중하면 됩니다.'
+        'A clear hold state is a decision too. Let Meta keep doing the auction-level work.',
+        '명확한 유지 상태도 하나의 결정입니다. 경매 수준의 일은 Meta가 계속 하게 두세요.'
+      );
+    } else if ((summary.portfolioGuidanceFamilies || 0) > 0 && topPortfolio) {
+      tone = 'neutral';
+      title = tr('No urgent blocker, review portfolio guidance next', '긴급한 차단 요인은 없고 포트폴리오 가이드를 다음으로 보세요');
+      body = tr(
+        `${formatCount(summary.portfolioGuidanceFamilies)} macro guidance family is ready for the next planning pass. Use it to shape how much room Meta gets, not to micromanage delivery.`,
+        `다음 운영 사이클을 위한 거시 가이드 패밀리 ${formatCount(summary.portfolioGuidanceFamilies)}개가 준비되어 있습니다. 집행을 미세 조정하는 대신 Meta에 어느 정도 여지를 줄지 결정할 때 사용하세요.`
+      );
+      nextMove = topPortfolio.targetName || tr('Review the top portfolio advisory', '상단 포트폴리오 가이드 검토');
+      nextMoveMeta = localizeOptimizationText(topPortfolio.reason || topPortfolio.action || tr('Use this to shape the next budget planning pass.', '다음 예산 운영 사이클을 잡는 데 사용하세요.'));
+      ignoreNow = tr('Archive and research can stay folded', '아카이브와 연구는 접어둬도 됩니다');
+      ignoreNowMeta = tr(
+        'This is planning guidance, not a live approval queue. Stay at the macro level.',
+        '이것은 라이브 승인 큐가 아니라 계획 가이드입니다. 거시 수준에서 보세요.'
+      );
+    } else if ((summary.cleanupFamilies || 0) > 0 && topCleanup) {
+      tone = 'neutral';
+      title = tr('Decision flow is clear, but cleanup remains', '의사결정 흐름은 비었지만 정리는 남아 있습니다');
+      body = tr(
+        `${formatCount(summary.cleanupFamilies)} family is only cleanup now: stale approvals, delivery failures, or old audit clutter.`,
+        `${formatCount(summary.cleanupFamilies)}개 패밀리는 이제 정리용입니다. 오래된 승인, 전달 실패, 혹은 감사용 잡음입니다.`
+      );
+      nextMove = topCleanup.targetName || tr('Clear the top cleanup family', '최상단 정리 패밀리 정리');
+      nextMoveMeta = buildClusterStatusLine(topCleanup) || localizeOptimizationText(topCleanup.reason || tr('Clean up stale approval history or delivery failures.', '오래된 승인 이력이나 전달 실패를 정리하세요.'));
+      ignoreNow = tr('No live budget decision is waiting', '대기 중인 라이브 예산 결정은 없습니다');
+      ignoreNowMeta = tr(
+        'This is hygiene work, not strategy. Clear it when convenient.',
+        '이것은 전략이 아니라 위생 작업입니다. 편한 때 정리하면 됩니다.'
       );
     } else if ((summary.recentChangeCount || 0) > 0 || (summary.resolvedFamilies || 0) > 0) {
       tone = 'good';
@@ -495,15 +559,15 @@
       tone = 'good';
       title = tr('Clear runway right now', '지금은 깔끔한 상태입니다');
       body = tr(
-        'No live approvals, blocked cleanup, or watch signals are competing for attention. You can treat AI Operations as quiet until a fresh state change lands.',
-        '라이브 승인, 막힌 정리, 관찰 신호가 모두 비어 있습니다. 새로운 상태 변화가 생길 때까지 AI Operations는 조용한 상태로 봐도 됩니다.'
+        'No live approvals, fix-input alerts, or hold exceptions are competing for attention. You can treat Decision Center as quiet until a fresh state change lands.',
+        '라이브 승인, 입력 수정 알림, 유지 예외가 모두 비어 있습니다. 새로운 상태 변화가 생길 때까지 의사결정 센터는 조용한 상태로 봐도 됩니다.'
       );
       nextMove = tr('Stay on the top workflow', '상단 워크플로만 보면 됩니다');
       nextMoveMeta = tr(
         'If anything changes, it will show up in the action lane or recent changes before it matters elsewhere.',
         '무언가 바뀌면 다른 곳보다 먼저 액션 레인이나 최근 변화에 나타납니다.'
       );
-      ignoreNow = tr('Archive and Karpathy can stay folded', '아카이브와 Karpathy는 접어둬도 됩니다');
+      ignoreNow = tr('Archive and Research Lab can stay folded', '아카이브와 리서치 랩은 접어둬도 됩니다');
       ignoreNowMeta = tr(
         'Use the deeper sections only when you need audit detail or policy-lab investigation.',
         '감사용 세부 내용이나 정책 연구 조사가 필요할 때만 아래 섹션을 열면 됩니다.'
@@ -512,9 +576,9 @@
 
     const chips = [
       { label: tr('Live', '라이브'), rawValue: summary.actionNowFamilies || 0 },
-      { label: tr('Cleanup', '정리'), rawValue: (summary.blockedFamilies || 0) + (summary.staleBacklogFamilies || 0) },
-      { label: tr('Watching', '관찰'), rawValue: summary.watchingFamilies || 0 },
-      { label: tr('Recent changes', '최근 변화'), rawValue: summary.recentChangeCount || 0 },
+      { label: tr('Fix inputs', '입력 수정'), rawValue: summary.fixInputFamilies || 0 },
+      { label: tr('Hold', '유지'), rawValue: summary.holdFamilies || 0 },
+      { label: tr('Portfolio guidance', '포트폴리오 가이드'), rawValue: summary.portfolioGuidanceFamilies || 0 },
     ].filter(chip => chip.rawValue > 0 || chip.label === tr('Live', '라이브'));
 
     card.dataset.tone = tone;
@@ -534,7 +598,7 @@
 
   function renderSectionSummaries(aiOps, policyLab) {
     const archiveEl = document.getElementById('optArchiveSummary');
-    const karpathyEl = document.getElementById('karpathyFoldMeta');
+    const researchLabMetaEl = document.getElementById('karpathyFoldMeta');
 
     if (archiveEl) {
       archiveEl.textContent = tr(
@@ -543,10 +607,10 @@
       );
     }
 
-    if (karpathyEl) {
+    if (researchLabMetaEl) {
       const labSummary = policyLab?.summary || {};
       const harness = labSummary.harnessStatus || {};
-      karpathyEl.textContent = policyLab
+      researchLabMetaEl.textContent = policyLab
         ? tr(
             `${labSummary.maturityLabel || 'Research idle'} · ${formatCount(labSummary.completedOutcomeCount || 0)} real outcomes · ${formatCount(harness.candidatePool || labSummary.challengerCount || 0)} variants`,
             `${labSummary.maturityLabel || '연구 대기'} · 실제 결과 ${formatCount(labSummary.completedOutcomeCount || 0)}개 · 정책 변형 ${formatCount(harness.candidatePool || labSummary.challengerCount || 0)}개`
@@ -574,8 +638,8 @@
       container.innerHTML = renderLaneEmpty(
         tr('No live decisions right now', '지금 처리할 라이브 결정이 없습니다'),
         tr(
-          'Nothing is currently asking for approval. If trust still needs work, use the cleanup lane beside this card instead of digging through archive history.',
-          '현재 승인 요청 중인 항목이 없습니다. 신뢰 정리가 필요하다면 아카이브를 뒤지기보다 옆 정리 레인을 보세요.'
+          'Nothing is currently asking for approval. If trust or creative supply still needs work, use the fix-inputs lane beside this card instead of digging through archive history.',
+          '현재 승인 요청 중인 항목이 없습니다. 신뢰나 크리에이티브 공급 정리가 필요하다면 아카이브를 뒤지기보다 옆 입력 수정 레인을 보세요.'
         )
       );
       return;
@@ -589,24 +653,78 @@
   function renderBacklog(aiOps) {
     const container = document.getElementById('optimizationBacklog');
     const statsEl = document.getElementById('optBacklogStats');
-    const entries = aiOps?.queue?.backlog || [];
+    const entries = aiOps?.queue?.fixInputs || [];
 
     if (statsEl) {
-      const blockedFamilies = entries.filter(cluster => cluster.currentStatus === 'blocked').length;
-      const staleFamilies = entries.filter(cluster => cluster.currentStatus === 'stale').length;
       statsEl.textContent = tr(
-        `${formatCount(blockedFamilies)} blocked · ${formatCount(staleFamilies)} stale`,
-        `${formatCount(blockedFamilies)}개 막힘 · ${formatCount(staleFamilies)}개 오래됨`
+        `${formatCount(entries.length)} fix-input families`,
+        `${formatCount(entries.length)}개 입력 수정 패밀리`
       );
     }
 
     if (!container) return;
     if (entries.length === 0) {
       container.innerHTML = renderLaneEmpty(
-        tr('Cleanup is clear right now', '지금은 정리할 백로그가 없습니다'),
+        tr('Inputs are clear right now', '지금은 고칠 입력이 없습니다'),
         tr(
-          'Blocked or stale families are not accumulating. This lane should stay quiet unless delivery fails or old history needs to be archived.',
-          '막히거나 오래된 패밀리가 쌓이지 않고 있습니다. 전달 실패나 오래된 이력 정리가 생길 때만 이 레인이 시끄러워져야 합니다.'
+          'Measurement trust and creative supply are not blocking the next budget decision. This lane should stay quiet unless something upstream needs fixing.',
+          '측정 신뢰도나 크리에이티브 공급이 다음 예산 결정을 막고 있지 않습니다. 상위 입력을 고쳐야 할 때만 이 레인이 시끄러워져야 합니다.'
+        )
+      );
+      return;
+    }
+
+    container.innerHTML = entries.map(cluster => renderClusterCard(cluster)).join('');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderHold(aiOps) {
+    const container = document.getElementById('optimizationHold');
+    const statsEl = document.getElementById('optHoldStats');
+    const entries = aiOps?.queue?.hold || [];
+
+    if (statsEl) {
+      statsEl.textContent = tr(
+        `${formatCount(entries.length)} no-change families`,
+        `${formatCount(entries.length)}개 변경 없음 패밀리`
+      );
+    }
+
+    if (!container) return;
+    if (entries.length === 0) {
+      container.innerHTML = renderLaneEmpty(
+        tr('No explicit hold states right now', '지금은 명시적 유지 상태가 없습니다'),
+        tr(
+          'If this lane is empty, the system either has a live decision, an input fix, or nothing material to say.',
+          '이 레인이 비어 있다면 시스템에는 라이브 결정, 입력 수정, 혹은 말할 만한 변화가 없는 것입니다.'
+        )
+      );
+      return;
+    }
+
+    container.innerHTML = entries.map(cluster => renderClusterCard(cluster)).join('');
+    if (window.lucide) lucide.createIcons();
+  }
+
+  function renderPortfolioGuidance(aiOps) {
+    const container = document.getElementById('optimizationPortfolio');
+    const statsEl = document.getElementById('optPortfolioStats');
+    const entries = aiOps?.queue?.portfolioGuidance || [];
+
+    if (statsEl) {
+      statsEl.textContent = tr(
+        `${formatCount(entries.length)} macro guidance families`,
+        `${formatCount(entries.length)}개 거시 가이드 패밀리`
+      );
+    }
+
+    if (!container) return;
+    if (entries.length === 0) {
+      container.innerHTML = renderLaneEmpty(
+        tr('No portfolio guidance right now', '지금은 포트폴리오 가이드가 없습니다'),
+        tr(
+          'If this lane is empty, the system has no macro reallocation or portfolio guardrail advice worth surfacing right now.',
+          '이 레인이 비어 있다면 지금 표면에 올릴 만한 거시 재배분 또는 포트폴리오 가드레일 조언이 없는 상태입니다.'
         )
       );
       return;
@@ -623,11 +741,14 @@
 
     if (statsEl) {
       const openish = entries.filter(entry => ['action_now', 'awaiting_reply'].includes(entry.kind)).length;
-      const blocked = entries.filter(entry => ['blocked', 'stale'].includes(entry.kind)).length;
+      const fixInputs = entries.filter(entry => entry.kind === 'fix_inputs').length;
+      const hold = entries.filter(entry => entry.kind === 'hold').length;
+      const portfolio = entries.filter(entry => entry.kind === 'portfolio_guidance').length;
+      const cleanup = entries.filter(entry => entry.kind === 'cleanup').length;
       const resolved = entries.filter(entry => entry.kind === 'resolved').length;
       statsEl.textContent = tr(
-        `${formatCount(entries.length)} events · ${formatCount(openish)} live · ${formatCount(blocked)} blocked/stale · ${formatCount(resolved)} resolved`,
-        `${formatCount(entries.length)}개 이벤트 · ${formatCount(openish)}개 라이브 · ${formatCount(blocked)}개 막힘/오래됨 · ${formatCount(resolved)}개 해결`
+        `${formatCount(entries.length)} events · ${formatCount(openish)} live · ${formatCount(fixInputs)} fix inputs · ${formatCount(hold)} hold · ${formatCount(portfolio)} portfolio · ${formatCount(cleanup)} cleanup · ${formatCount(resolved)} resolved`,
+        `${formatCount(entries.length)}개 이벤트 · ${formatCount(openish)}개 라이브 · ${formatCount(fixInputs)}개 입력 수정 · ${formatCount(hold)}개 유지 · ${formatCount(portfolio)}개 포트폴리오 · ${formatCount(cleanup)}개 정리 · ${formatCount(resolved)}개 해결`
       );
     }
 
@@ -687,14 +808,18 @@
         </div>
         <div class="ai-ops-system-copy">
           ${esc(tr(
-            `This is background hygiene, not a decision queue. Use it to spot delivery issues, stale clutter, and scan health.`,
-            `여기는 결정 큐가 아니라 배경 위생 정보입니다. 전달 이슈, 오래된 잡음, 스캔 상태를 볼 때만 사용하세요.`
+            `This is background hygiene, not a decision queue. Use it to spot cleanup debt, background advisories, and scan health.`,
+            `여기는 결정 큐가 아니라 배경 위생 정보입니다. 정리 부채, 배경 참고 맥락, 스캔 상태를 볼 때만 사용하세요.`
           ))}
         </div>
         <div class="ai-ops-system-metrics">
           <div class="ai-ops-system-metric">
             <span>${esc(tr('Cleanup families', '정리 패밀리'))}</span>
-            <strong>${esc(formatCount(summary.blockedFamilies || 0))}</strong>
+            <strong>${esc(formatCount(summary.cleanupFamilies || 0))}</strong>
+          </div>
+          <div class="ai-ops-system-metric">
+            <span>${esc(tr('Background advisories', '배경 참고 패밀리'))}</span>
+            <strong>${esc(formatCount(summary.researchFamilies || 0))}</strong>
           </div>
           <div class="ai-ops-system-metric">
             <span>${esc(tr('Delivery failures', '전달 실패'))}</span>
@@ -791,7 +916,7 @@
     if (window.lucide) lucide.createIcons();
   }
 
-  function renderKarpathySummary(policyLab) {
+  function renderResearchLabSummary(policyLab) {
     const container = document.getElementById('karpathySummary');
     const metaEl = document.getElementById('karpathySummaryMeta');
     const calloutEl = document.getElementById('karpathyStatusCallout');
@@ -861,7 +986,7 @@
     `).join('');
   }
 
-  function renderKarpathyTimeline(policyLab, experimentsData) {
+  function renderResearchLabTimeline(policyLab, experimentsData) {
     const container = document.getElementById('karpathyTimeline');
     const metaEl = document.getElementById('karpathyTimelineMeta');
     if (!container) return;
@@ -932,7 +1057,7 @@
     if (window.lucide) lucide.createIcons();
   }
 
-  function renderKarpathyMetrics(policyLab, outcomesData) {
+  function renderResearchLabMetrics(policyLab, outcomesData) {
     const container = document.getElementById('karpathyMetrics');
     const metaEl = document.getElementById('karpathyMetricsMeta');
     if (!container) return;
@@ -1067,7 +1192,7 @@
     `;
   }
 
-  function renderKarpathyObservability(policyLab, observabilityData) {
+  function renderResearchLabObservability(policyLab, observabilityData) {
     const container = document.getElementById('karpathyObservability');
     const metaEl = document.getElementById('karpathyObservabilityMeta');
     if (!container) return;
@@ -1111,7 +1236,7 @@
     if (window.lucide) lucide.createIcons();
   }
 
-  function filterKarpathyTraces(tracesData) {
+  function filterResearchLabTraces(tracesData) {
     const traces = tracesData?.traces || [];
     const policyFilter = document.getElementById('karpathyTracePolicyFilter')?.value || 'all';
     const verdictFilter = document.getElementById('karpathyTraceVerdictFilter')?.value || 'all';
@@ -1127,7 +1252,7 @@
     });
   }
 
-  function renderKarpathyTraces(tracesData) {
+  function renderResearchLabTraces(tracesData) {
     const container = document.getElementById('karpathyTraceExplorer');
     const statsEl = document.getElementById('karpathyTraceStats');
     if (!container) return;
@@ -1144,7 +1269,7 @@
       surfaceSelect.value = values.includes(selected) ? selected : 'all';
     }
 
-    const filtered = filterKarpathyTraces(tracesData);
+    const filtered = filterResearchLabTraces(tracesData);
 
     if (statsEl) {
       statsEl.textContent = tr(
@@ -1275,16 +1400,18 @@
     renderSummary(aiOps);
     renderQueue(aiOps);
     renderBacklog(aiOps);
+    renderHold(aiOps);
+    renderPortfolioGuidance(aiOps);
     renderActivity(aiOps);
     renderSystemChatter(aiOps);
     renderClusters(aiOps);
     renderRawHistory(optData || { optimizations: [], total: 0 });
     renderSectionSummaries(aiOps, policyLab);
-    renderKarpathySummary(policyLab);
-    renderKarpathyTimeline(policyLab, experimentsData);
-    renderKarpathyTraces(tracesData || { traces: [], filters: { policyIds: [], verdicts: [], controlSurfaces: [] } });
-    renderKarpathyMetrics(policyLab, outcomesData);
-    renderKarpathyObservability(policyLab, observabilityData);
+    renderResearchLabSummary(policyLab);
+    renderResearchLabTimeline(policyLab, experimentsData);
+    renderResearchLabTraces(tracesData || { traces: [], filters: { policyIds: [], verdicts: [], controlSurfaces: [] } });
+    renderResearchLabMetrics(policyLab, outcomesData);
+    renderResearchLabObservability(policyLab, observabilityData);
   }
 
   live.registerPage('optimizations', {

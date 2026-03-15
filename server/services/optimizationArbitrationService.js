@@ -62,9 +62,7 @@ function getActionScore(optimization) {
 
   const direction = getOptimizationDirection(optimization.action);
   if (optimization.type === 'budget' && direction === 'down') return 80;
-  if (optimization.type === 'bid' && direction === 'down') return 70;
   if (optimization.type === 'budget' && direction === 'up') return 60;
-  if (optimization.type === 'bid') return 50;
   return 10;
 }
 

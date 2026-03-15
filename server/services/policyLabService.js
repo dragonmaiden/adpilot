@@ -46,7 +46,7 @@ function buildLearningMaturity({
     return {
       state: 'inactive',
       label: 'Not active yet',
-      headline: 'Karpathy has not collected enough budget traces to say anything useful yet.',
+      headline: 'Research Lab has not collected enough budget traces to say anything useful yet.',
       detail: 'No meaningful learning activity has been recorded yet.',
       guidance: 'Ignore this section until the learning loop starts producing traces.',
       usesRealOutcomes: false,
@@ -57,7 +57,7 @@ function buildLearningMaturity({
     return {
       state: 'proxy_only',
       label: 'Proxy-scored only',
-      headline: 'Karpathy is testing budget-policy variants against live traces, not real profit outcomes yet.',
+      headline: 'Research Lab is testing budget-policy variants against live traces, not real profit outcomes yet.',
       detail: `${samples} ${evaluationMode === 'realized_replay' ? 'replay' : 'bootstrap'} sample${samples === 1 ? '' : 's'} · ${traces} trace${traces === 1 ? '' : 's'}`,
       guidance: 'Useful for research direction, but not decision-grade proof yet.',
       usesRealOutcomes: false,
@@ -68,7 +68,7 @@ function buildLearningMaturity({
     return {
       state: 'early_real_data',
       label: 'Early real outcomes',
-      headline: 'Karpathy has started learning from executed actions, but the real sample is still thin.',
+      headline: 'Research Lab has started learning from executed actions, but the real sample is still thin.',
       detail: `${completed} completed reward window${completed === 1 ? '' : 's'} · ${samples} replay sample${samples === 1 ? '' : 's'}`,
       guidance: 'Directionally useful, but still too early to trust as a strong profit signal.',
       usesRealOutcomes: true,
@@ -78,7 +78,7 @@ function buildLearningMaturity({
   return {
     state: 'real_outcome_learning',
     label: 'Real outcome learning',
-    headline: 'Karpathy is replaying budget-policy variants against completed executed outcomes.',
+    headline: 'Research Lab is replaying budget-policy variants against completed executed outcomes.',
     detail: `${completed} completed reward windows · ${samples} replay samples`,
     guidance: 'This is becoming more decision-grade, but champion changes should still be deliberate.',
     usesRealOutcomes: true,

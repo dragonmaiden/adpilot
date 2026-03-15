@@ -1,11 +1,10 @@
 (function () {
   const live = window.AdPilotLive;
   const { esc, formatUsd, formatPercent, formatCompactKrw, formatSignedCompactKrw, timeSince, tr, getLocale, localizeCreativeText } = live.shared;
-  const { fetchCampaigns, fetchLivePerformance, fetchPostmortem, fetchOptimizations, fetchAnalytics, fetchOverview, fetchScans, fetchSpendDaily, updateCampaignStatus } = live.api;
+  const { fetchCampaigns, fetchLivePerformance, fetchPostmortem, fetchAnalytics, fetchOverview, fetchSpendDaily, updateCampaignStatus } = live.api;
   const { getSeriesWindowMeta } = live.seriesWindows;
 
   const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
-  const EXECUTABLE_TYPES = new Set(['budget', 'bid', 'status']);
   let liveIntradayChart = null;
   let liveDailyContextChart = null;
 
@@ -50,48 +49,8 @@
     return { label: labels[normalized] || normalized, klass };
   }
 
-  function fatigueWeight(status) {
-    if (status === 'danger') return 2;
-    if (status === 'warning') return 1;
-    return 0;
-  }
-
   function getAttributedPurchases(subject) {
     return Number(subject?.attributedPurchases ?? subject?.metaPurchases ?? 0);
-  }
-
-  function normalizeActionKey(action) {
-    return String(action || '').trim().replace(/\s+/g, ' ').toLowerCase();
-  }
-
-  function getPendingExecutableGroups(optData, latestScanId = null) {
-    const pending = (optData?.optimizations || [])
-      .filter(opt => !opt.executed && EXECUTABLE_TYPES.has(opt.type))
-      .filter(opt => latestScanId == null || opt.scanId === latestScanId)
-      .slice()
-      .sort((left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || '')));
-
-    const groups = new Map();
-    for (const opt of pending) {
-      const key = [
-        String(opt.type || ''),
-        String(opt.targetId || opt.targetName || ''),
-        normalizeActionKey(opt.action),
-      ].join('|');
-      const existing = groups.get(key);
-      if (existing) {
-        existing.repeats += 1;
-        continue;
-      }
-      groups.set(key, { ...opt, repeats: 1 });
-    }
-
-    return Array.from(groups.values()).sort((left, right) => {
-      const leftPriority = PRIORITY_RANK[left.priority] ?? PRIORITY_RANK.low;
-      const rightPriority = PRIORITY_RANK[right.priority] ?? PRIORITY_RANK.low;
-      if (leftPriority !== rightPriority) return leftPriority - rightPriority;
-      return String(right.timestamp || '').localeCompare(String(left.timestamp || ''));
-    });
   }
 
   function getPaceSnapshot(campaignData, analyticsData) {
@@ -540,16 +499,9 @@
     }
   }
 
-  function renderLiveKpis(campaignData, postmortem, optData, analyticsData, scansData) {
+  function renderLiveKpis(campaignData, analyticsData) {
     const campaigns = campaignData?.campaigns || [];
     const activeCampaigns = campaigns.filter(campaign => campaign.status === 'ACTIVE');
-    const fatigueAds = (postmortem?.active || []).filter(ad => ad.fatigue?.status !== 'healthy');
-    const warningCount = fatigueAds.filter(ad => ad.fatigue?.status === 'warning').length;
-    const dangerCount = fatigueAds.filter(ad => ad.fatigue?.status === 'danger').length;
-    const latestScanId = scansData?.lastScan?.scanId ?? null;
-    const executablePending = getPendingExecutableGroups(optData, latestScanId);
-    const historicalPending = Number(optData?.stats?.pending || 0);
-    const olderPending = Math.max(historicalPending - executablePending.length, 0);
     const burnRiskCampaigns = activeCampaigns.filter(campaign => {
       const metrics = campaign.metricsWindow || {};
       return Number(metrics.spend || 0) > 0 && getAttributedPurchases(metrics) === 0;
@@ -557,6 +509,25 @@
     const burnRiskSpend = burnRiskCampaigns.reduce((sum, campaign) => sum + Number(campaign.metricsWindow?.spend || 0), 0);
     const pace = getPaceSnapshot(campaignData, analyticsData);
     const paceTone = pace.pacePct >= 100 ? 'negative' : pace.pacePct >= 65 ? 'neutral' : 'positive';
+    const coverage = analyticsData?.profitAnalysis?.coverage || {};
+    const coverageRatio = Math.max(0, Math.round(Number(coverage.coverageRatio || 0) * 100));
+    const coverageLevel = String(coverage.confidence?.level || '').toLowerCase();
+    const coverageValue = coverageLevel === 'high'
+      ? tr('High', '높음')
+      : coverageLevel === 'medium'
+      ? tr('Mixed', '혼합')
+      : coverageLevel === 'low'
+      ? tr('Low', '낮음')
+      : '—';
+    const coverageTone = coverageLevel === 'high' ? 'positive' : coverageLevel === 'medium' ? 'warning' : coverageLevel === 'low' ? 'negative' : 'neutral';
+    const todaySummary = analyticsData?.profitAnalysis?.todaySummary || null;
+    const bestScaleCandidate = activeCampaigns
+      .filter(campaign => getAttributedPurchases(campaign.metricsWindow) > 0)
+      .sort((left, right) => {
+        const purchaseGap = getAttributedPurchases(right.metricsWindow) - getAttributedPurchases(left.metricsWindow);
+        if (purchaseGap !== 0) return purchaseGap;
+        return Number(left.metricsWindow?.cpa || Infinity) - Number(right.metricsWindow?.cpa || Infinity);
+      })[0] || null;
 
     updateLiveKpi(
       'activeCampaigns',
@@ -565,27 +536,26 @@
       activeCampaigns.length > 0 ? 'positive' : 'neutral'
     );
     updateLiveKpi(
-      'pendingApprovals',
-      executablePending.length.toString(),
-      olderPending > 0
+      'profitConfidence',
+      coverageValue,
+      todaySummary
         ? tr(
-            `${executablePending.length} current from the latest scan · ${olderPending} older pending in AI Operations`,
-            `최신 스캔 기준 ${executablePending.length.toLocaleString(getLocale())}건 · AI 운영에 이전 대기 ${olderPending.toLocaleString(getLocale())}건`
+            `${coverageRatio}% weighted coverage · latest signal ${todaySummary.date}`,
+            `${coverageRatio.toLocaleString(getLocale())}% 가중 커버 · 최신 신호 ${todaySummary.date}`
           )
-        : tr(
-            `${executablePending.length} current from the latest scan`,
-            `최신 스캔 기준 ${executablePending.length.toLocaleString(getLocale())}건`
-          ),
-      executablePending.length > 0 ? 'warning' : 'positive'
+        : tr('Waiting for covered profit data', '원가 포함 수익 데이터 대기 중'),
+      coverageTone
     );
     updateLiveKpi(
-      'fatigueAlerts',
-      fatigueAds.length.toString(),
-      tr(
-        `${dangerCount} high risk · ${warningCount} watch closely`,
-        `고위험 ${dangerCount.toLocaleString(getLocale())}건 · 주의 ${warningCount.toLocaleString(getLocale())}건`
-      ),
-      dangerCount > 0 ? 'negative' : fatigueAds.length > 0 ? 'warning' : 'positive'
+      'strongestCampaign',
+      bestScaleCandidate ? getAttributedPurchases(bestScaleCandidate.metricsWindow).toLocaleString(getLocale()) : '—',
+      bestScaleCandidate
+        ? tr(
+            `${bestScaleCandidate.name} · ${formatUsd(bestScaleCandidate.metricsWindow?.cpa || 0, 2)} CPA`,
+            `${bestScaleCandidate.name} · CPA ${formatUsd(bestScaleCandidate.metricsWindow?.cpa || 0, 2)}`
+          )
+        : tr('No active campaign has purchase volume worth calling a leader yet', '아직 선두라고 부를 만한 구매 볼륨을 가진 활성 캠페인이 없습니다'),
+      bestScaleCandidate ? 'positive' : 'neutral'
     );
     updateLiveKpi(
       'spendPace',
@@ -605,7 +575,7 @@
     );
   }
 
-  function buildSignalCards(campaignData, postmortem, overviewData, analyticsData) {
+  function buildSignalCards(campaignData, overviewData, analyticsData) {
     const campaigns = campaignData?.campaigns || [];
     const activeCampaigns = campaigns.filter(campaign => campaign.status === 'ACTIVE');
     const pace = getPaceSnapshot(campaignData, analyticsData);
@@ -619,14 +589,6 @@
     const burnRiskCampaign = activeCampaigns
       .filter(campaign => Number(campaign.metricsWindow?.spend || 0) > 0 && getAttributedPurchases(campaign.metricsWindow) === 0)
       .sort((left, right) => Number(right.metricsWindow?.spend || 0) - Number(left.metricsWindow?.spend || 0))[0] || null;
-    const fatigueRisk = (postmortem?.active || [])
-      .slice()
-      .sort((left, right) => {
-        const statusGap = fatigueWeight(right.fatigue?.status) - fatigueWeight(left.fatigue?.status);
-        if (statusGap !== 0) return statusGap;
-        return Number(right.spend || 0) - Number(left.spend || 0);
-      })[0] || null;
-
     const sourceHealth = overviewData?.dataSources || {};
     const sourceEntries = Object.entries(sourceHealth);
     const staleSources = sourceEntries.filter(([, source]) => source?.stale).length;
@@ -659,14 +621,6 @@
           : tr('No active campaign is spending without attributed purchases.', '귀속 구매 없이 지출 중인 활성 캠페인이 없습니다.')
       },
       {
-        tone: fatigueRisk && fatigueRisk.fatigue?.status === 'danger' ? 'negative' : fatigueRisk && fatigueRisk.fatigue?.status === 'warning' ? 'warning' : 'positive',
-        label: tr('Creative pressure', '크리에이티브 압박'),
-        title: fatigueRisk ? fatigueRisk.name : tr('Creatives look stable', '크리에이티브 안정적'),
-        detail: fatigueRisk
-          ? localizeCreativeText(fatigueRisk.fatigue?.summary || `Frequency ${Number(fatigueRisk.lastFrequency || 0).toFixed(1)} · CTR ${Number(fatigueRisk.lastCTR || fatigueRisk.avgCTR || 0).toFixed(2)}%`)
-          : tr('No active ad currently shows fatigue pressure.', '현재 피로 압박이 감지된 활성 광고가 없습니다.')
-      },
-      {
         tone: errorSources > 0 ? 'negative' : staleSources > 0 ? 'warning' : 'positive',
         label: tr('Source health', '소스 상태'),
         title: errorSources > 0 ? tr(`${errorSources} source error${errorSources !== 1 ? 's' : ''}`, `소스 오류 ${errorSources.toLocaleString(getLocale())}건`) : staleSources > 0 ? tr(`${staleSources} cached source${staleSources !== 1 ? 's' : ''}`, `캐시 소스 ${staleSources.toLocaleString(getLocale())}건`) : tr(`${healthySources} sources healthy`, `정상 소스 ${healthySources.toLocaleString(getLocale())}건`),
@@ -679,9 +633,9 @@
     return cards;
   }
 
-  function renderOperatorSignals(container, campaignData, postmortem, overviewData, analyticsData) {
+  function renderOperatorSignals(container, campaignData, overviewData, analyticsData) {
     if (!container) return;
-    const signals = buildSignalCards(campaignData, postmortem, overviewData, analyticsData);
+    const signals = buildSignalCards(campaignData, overviewData, analyticsData);
     container.innerHTML = signals.map(signal => `
       <article class="operator-signal-card ${signal.tone}">
         <div class="operator-signal-label">${esc(signal.label)}</div>
@@ -785,7 +739,7 @@
                 <div><span>CPA</span><strong style="color:${cpaColor}">${cpaStr}</strong></div>
                 <div><span>CTR</span><strong>${Number(ad.avgCTR || 0).toFixed(2)}%</strong></div>
               </div>
-              <div class="live-ad-note">${esc(localizeCreativeText(ad.fatigue?.summary || tr('Use Creative Health for fatigue diagnosis and rotation decisions.', '피로 진단과 교체 판단은 크리에이티브 상태 탭에서 확인하세요.')))}</div>
+              <div class="live-ad-note">${esc(localizeCreativeText(ad.fatigue?.summary || tr('Use Creative Health to diagnose creative-input pressure before scaling.', '스케일 전에 크리에이티브 입력 압박은 크리에이티브 상태 탭에서 진단하세요.')))}</div>
             </div>
           `;
         }).join('')}
@@ -795,8 +749,8 @@
 
   function renderCampaignPageUnavailable(windowLabel, windowMeta) {
     updateLiveKpi('activeCampaigns', '—', tr('Live campaign data is unavailable right now', '라이브 캠페인 데이터를 지금 불러올 수 없습니다'), 'neutral');
-    updateLiveKpi('pendingApprovals', '—', tr('Approval state is temporarily unavailable', '승인 상태를 일시적으로 불러올 수 없습니다'), 'neutral');
-    updateLiveKpi('fatigueAlerts', '—', tr('Creative pressure will return after the next refresh', '다음 새로고침 후 크리에이티브 상태가 돌아옵니다'), 'neutral');
+    updateLiveKpi('profitConfidence', '—', tr('Profit confidence will return after the next refresh', '다음 새로고침 후 수익 신뢰도가 돌아옵니다'), 'neutral');
+    updateLiveKpi('strongestCampaign', '—', tr('Leader identification is temporarily unavailable', '선두 캠페인 식별을 일시적으로 불러올 수 없습니다'), 'neutral');
     updateLiveKpi('spendPace', '—', tr('Spend pacing is temporarily unavailable', '지출 페이싱을 일시적으로 불러올 수 없습니다'), 'neutral');
     updateLiveKpi('burnRisk', '—', tr('Burn-risk checks will return after the next refresh', '다음 새로고침 후 소진 위험 점검이 돌아옵니다'), 'neutral');
 
@@ -828,14 +782,12 @@
     const windowMeta = getSeriesWindowMeta('campaigns');
     setDailyContextLoading(true);
     try {
-      const [campaignData, livePerformance, postmortem, optData, analyticsData, overviewData, scansData, spendDaily] = await Promise.all([
+      const [campaignData, livePerformance, postmortem, analyticsData, overviewData, spendDaily] = await Promise.all([
         fetchCampaigns(windowMeta.key),
         fetchLivePerformance(windowMeta.key),
         fetchPostmortem(windowMeta.key),
-        fetchOptimizations(12),
         fetchAnalytics(),
         fetchOverview(),
-        fetchScans(),
         fetchSpendDaily(),
       ]);
 
@@ -846,8 +798,8 @@
       const windowNoteEl = document.getElementById('campaignWindowNote');
       if (windowNoteEl) {
         windowNoteEl.textContent = tr(
-          `${windowLabel} · active delivery, pacing, fatigue, and approvals in one place.`,
-          `${windowLabel} · 집행, 페이싱, 피로도, 승인 현황을 한 곳에서 확인`
+          `${windowLabel} · active delivery, pacing, burn risk, and campaign-level guardrails in one place.`,
+          `${windowLabel} · 집행, 페이싱, 소진 위험, 캠페인 수준 가드레일을 한 곳에서 확인`
         );
       }
 
@@ -856,10 +808,10 @@
         return;
       }
 
-      renderLiveKpis(campaignData, postmortem, optData, analyticsData, scansData);
+      renderLiveKpis(campaignData, analyticsData);
       renderIntradaySection(livePerformance);
       renderDailyContextSection(spendDaily || [], windowMeta);
-      renderOperatorSignals(document.getElementById('operatorSignalGrid'), campaignData, postmortem, overviewData, analyticsData);
+      renderOperatorSignals(document.getElementById('operatorSignalGrid'), campaignData, overviewData, analyticsData);
       renderActiveAds(document.getElementById('activeAdsContainer'), document.getElementById('activeCount'), postmortem, windowLabel);
       renderCampaignTable(document.getElementById('campaignBody'), campaignData.campaigns || []);
 

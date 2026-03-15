@@ -1,15 +1,11 @@
 const OPTIMIZATION_TYPES = Object.freeze({
   BUDGET: 'budget',
-  BID: 'bid',
   CREATIVE: 'creative',
   STATUS: 'status',
-  SCHEDULE: 'schedule',
-  TARGETING: 'targeting',
 });
 
 const APPROVAL_REQUIRED_TYPES = new Set([
   OPTIMIZATION_TYPES.BUDGET,
-  OPTIMIZATION_TYPES.BID,
   OPTIMIZATION_TYPES.STATUS,
 ]);
 
@@ -62,18 +58,14 @@ function isExecutableOptimization(action) {
   if (!action || !action.type) return false;
 
   if (action.type === OPTIMIZATION_TYPES.STATUS) {
-    return ['campaign', 'adset', 'ad'].includes(action.level);
+    return action.level === 'campaign';
   }
 
   if (action.type === OPTIMIZATION_TYPES.BUDGET) {
     if (isReallocationAction(action.action)) {
       return false;
     }
-    return ['campaign', 'adset'].includes(action.level);
-  }
-
-  if (action.type === OPTIMIZATION_TYPES.BID) {
-    return action.level === 'adset';
+    return action.level === 'campaign';
   }
 
   return false;

@@ -65,16 +65,16 @@ function getPostmortemResponse(query = {}) {
     const lessons = [];
     if (ad.effective_status !== 'ACTIVE') {
       if (totalSpend > 0 && totalAttributedPurchases === 0) {
-        lessons.push({ type: 'no_conversions', text: `Spent $${totalSpend.toFixed(2)} with zero Meta-attributed purchases — creative or targeting did not resonate` });
+        lessons.push({ type: 'no_conversions', text: `Spent $${totalSpend.toFixed(2)} with zero Meta-attributed purchases — the creative or offer did not convert` });
       }
       if (cpa && cpa > 30) {
-        lessons.push({ type: 'high_cpa', text: `CPA of $${cpa.toFixed(2)} was too high — audience may have been too broad or creative lacked urgency` });
+        lessons.push({ type: 'high_cpa', text: `CPA of $${cpa.toFixed(2)} was too high — creative, offer, or landing efficiency lagged` });
       }
       if (peakCTR > 0 && lastCTR > 0 && ((peakCTR - lastCTR) / peakCTR) > 0.3) {
-        lessons.push({ type: 'ctr_decay', text: `CTR dropped ${((peakCTR - lastCTR) / peakCTR * 100).toFixed(0)}% from peak (${peakCTR.toFixed(2)}% → ${lastCTR.toFixed(2)}%) — audience fatigue` });
+        lessons.push({ type: 'ctr_decay', text: `CTR dropped ${((peakCTR - lastCTR) / peakCTR * 100).toFixed(0)}% from peak (${peakCTR.toFixed(2)}% → ${lastCTR.toFixed(2)}%) — the creative angle fatigued` });
       }
       if (lastFreq > 3) {
-        lessons.push({ type: 'high_frequency', text: `Frequency reached ${lastFreq.toFixed(1)} — same people seeing the ad too many times` });
+        lessons.push({ type: 'high_frequency', text: `Frequency reached ${lastFreq.toFixed(1)} — creative supply may be too shallow for more spend` });
       }
       if (avgCTR > 1.5 && totalAttributedPurchases === 0) {
         lessons.push({ type: 'clicks_no_purchase', text: `Good CTR (${avgCTR.toFixed(2)}%) but no Meta-attributed purchases — landing page or pricing may be the issue` });

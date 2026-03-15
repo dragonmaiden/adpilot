@@ -456,7 +456,7 @@ async function runScan(manual = false) {
     }
 
     if (sourceStatus.metaStructure && sourceStatus.metaInsights) {
-      console.log('[SCHEDULER] Step 4: Running optimization engine...');
+      console.log('[SCHEDULER] Step 4: Running business decision engine...');
       const latestData = scanStore.getLatestData();
       const optimizer = new OptimizationEngine(scanId, {
         budgetPolicy: policyLabService.getChampionPolicy(runtimeSettings.getRules()),

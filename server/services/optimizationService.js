@@ -88,9 +88,7 @@ function getTimelineResponse() {
     const budgetUp = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.BUDGET && isBudgetIncreaseAction(o.action)).length;
     const budgetDown = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.BUDGET && isBudgetDecreaseAction(o.action)).length;
     const pauses = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.STATUS).length;
-    const fatigue = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.CREATIVE || o.type === OPTIMIZATION_TYPES.TARGETING).length;
-    const bids = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.BID).length;
-    const schedule = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.SCHEDULE).length;
+    const creativeInputs = scanOpts.filter(o => o.type === OPTIMIZATION_TYPES.CREATIVE).length;
 
     return {
       time: s.time,
@@ -99,9 +97,7 @@ function getTimelineResponse() {
       budgetUp,
       budgetDown,
       pauses,
-      fatigue,
-      bids,
-      schedule,
+      creativeInputs,
     };
   });
 

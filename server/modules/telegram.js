@@ -223,7 +223,7 @@ async function maybeSendStartupMessage() {
     return { skipped: true, reason: 'startup-cooldown' };
   }
 
-  const result = await sendMessage('🤖 <b>AdPilot Agent Started</b>\n\nAutonomous scanning is active. Executable budget, bid, and status changes will request your approval here.');
+  const result = await sendMessage('🤖 <b>AdPilot Agent Started</b>\n\nApproval-gated scanning is active. Executable campaign budget and stop-loss changes will request your approval here.');
   if (result?.ok) {
     telegramState.markStartupSent();
   }
@@ -251,10 +251,7 @@ async function requestApproval(optimization) {
   const typeEmoji = {
     budget: '💰',
     status: '⏸',
-    bid: '📊',
     creative: '🎨',
-    schedule: '🕐',
-    targeting: '🎯',
   };
 
   const emoji = typeEmoji[optimization.type] || '⚡';

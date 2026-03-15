@@ -37,7 +37,7 @@ test('pause actions dominate other executable actions on the same target', () =>
   assert.equal(result.suppressed[0].optimizationId, 'pause');
 });
 
-test('parent campaign pause suppresses child executable actions', () => {
+test('parent campaign pause does not suppress child advisory actions that are outside execution scope', () => {
   const result = arbitrateOptimizations([
     buildOptimization({
       id: 'campaign-pause',
@@ -57,10 +57,9 @@ test('parent campaign pause suppresses child executable actions', () => {
     ads: [],
   });
 
-  assert.equal(result.optimizations.length, 1);
-  assert.equal(result.optimizations[0].id, 'campaign-pause');
-  assert.equal(result.suppressed.length, 1);
-  assert.equal(result.suppressed[0].reason, 'parent-paused');
+  assert.equal(result.optimizations.length, 2);
+  assert.deepEqual(result.optimizations.map(item => item.id).sort(), ['adset-budget', 'campaign-pause']);
+  assert.equal(result.suppressed.length, 0);
 });
 
 test('advisory actions remain when a target has a stronger executable winner', () => {

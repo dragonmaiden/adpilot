@@ -70,10 +70,10 @@ const pageTitles = {
   analytics: 'Profit Analytics',
   calendar: 'Calendar Analysis',
   campaigns: 'Live Performance',
-  optimizations: 'AI Operations',
+  optimizations: 'Decision Center',
   fatigue: 'Creative Health',
   budget: 'Spend Pacing',
-  settings: 'Settings'
+  settings: 'Guardrails'
 };
 
 navItems.forEach(item => {
@@ -949,10 +949,10 @@ async function initOptTimeline() {
           backgroundColor: [
             '#20808D', // budget
             '#fb923c', // creative
-            '#38bdf8', // bid
             '#ef4444', // status
-            '#a78bfa', // schedule
-            '#facc15', // targeting
+            '#94a3b8', // legacy
+            '#CBD5E1', // overflow 1
+            '#E2E8F0', // overflow 2
           ],
           borderWidth: 0,
         }],

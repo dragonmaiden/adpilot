@@ -53,7 +53,7 @@
       </a>
       <a href="#" class="nav-item" data-page="optimizations">
         <i data-lucide="zap"></i>
-        <span data-i18n="nav.optimizations">AI Operations</span>
+        <span data-i18n="nav.optimizations">Decision Center</span>
       </a>
       <a href="#" class="nav-item" data-page="fatigue">
         <i data-lucide="activity"></i>
@@ -65,7 +65,7 @@
       </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="settings"></i>
-        <span data-i18n="nav.settings">Settings</span>
+        <span data-i18n="nav.settings">Guardrails</span>
       </a>
     </nav>
     <div class="sidebar-footer">
@@ -322,11 +322,11 @@
           <article class="workflow-card">
             <div class="workflow-card-head">
               <span class="workflow-icon"><i data-lucide="list-todo"></i></span>
-              <span class="badge badge-warning" data-i18n="overview.workflow.aiBadge">AI decisioning</span>
+              <span class="badge badge-warning" data-i18n="overview.workflow.aiBadge">Business decisions</span>
             </div>
-            <h3 data-i18n="overview.workflow.aiTitle">AI Operations</h3>
-            <p data-i18n="overview.workflow.aiDesc">Inspect what the agent suggested, what needs approval, and what already executed.</p>
-            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="optimizations" data-i18n="overview.workflow.aiButton">Open AI Operations</button>
+            <h3 data-i18n="overview.workflow.aiTitle">Decision Center</h3>
+            <p data-i18n="overview.workflow.aiDesc">Review live budget decisions, fix-input blockers, explicit hold states, and portfolio guidance without micromanaging Meta delivery.</p>
+            <button class="btn btn-ghost btn-sm" type="button" data-nav-target="optimizations" data-i18n="overview.workflow.aiButton">Open Decision Center</button>
           </article>
         </div>
       </div>
@@ -719,7 +719,7 @@
         <div class="section-head-copy">
           <div class="section-kicker" data-i18n="campaigns.sectionKicker">Live Performance</div>
           <h2 data-i18n="campaigns.sectionTitle">Act on what needs attention now</h2>
-          <p class="section-note" id="campaignWindowNote">Last 7 days · active delivery, pacing, fatigue, and approvals in one place.</p>
+          <p class="section-note" id="campaignWindowNote">Last 7 days · active delivery, pacing, burn risk, and budget guardrails in one place.</p>
         </div>
         <div class="range-toolbar section-head-toolbar">
           <span class="range-toolbar-label" data-i18n="campaigns.window">Time frame</span>
@@ -738,15 +738,15 @@
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="megaphone"></i><span>—</span></div>
         </div>
-        <div class="kpi-card" data-live-kpi="pendingApprovals">
-          <div class="kpi-label" data-i18n="campaigns.kpi.approvalQueue">Approval Queue</div>
+        <div class="kpi-card" data-live-kpi="profitConfidence">
+          <div class="kpi-label" data-i18n="campaigns.kpi.profitConfidence">Profit Confidence</div>
           <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="message-square-more"></i><span>—</span></div>
+          <div class="kpi-delta neutral"><i data-lucide="shield-check"></i><span>—</span></div>
         </div>
-        <div class="kpi-card" data-live-kpi="fatigueAlerts">
-          <div class="kpi-label" data-i18n="campaigns.kpi.creativeAlerts">Creative Alerts</div>
+        <div class="kpi-card" data-live-kpi="strongestCampaign">
+          <div class="kpi-label" data-i18n="campaigns.kpi.strongestCampaign">Strongest Campaign</div>
           <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="activity"></i><span>—</span></div>
+          <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
         </div>
         <div class="kpi-card" data-live-kpi="spendPace">
           <div class="kpi-label" data-i18n="campaigns.kpi.spendPace">Spend Pace Today</div>
@@ -873,10 +873,10 @@
     <section class="page" data-page="optimizations">
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker" data-i18n="optimizations.sectionKicker">AI Operations</div>
-          <h2 data-i18n="optimizations.sectionTitle">AI decisions, approvals, and execution history</h2>
+          <div class="section-kicker" data-i18n="optimizations.sectionKicker">Decision Center</div>
+          <h2 data-i18n="optimizations.sectionTitle">Business decisions, guardrails, and operating context</h2>
         </div>
-        <p class="section-note" data-i18n="optimizations.sectionNote">Start at the top. If there is nothing to decide now, everything else here is cleanup, context, or research.</p>
+        <p class="section-note" data-i18n="optimizations.sectionNote">Start at the top. If there is nothing urgent to decide, the next priority is fixing inputs, respecting hold states, or reviewing portfolio guidance.</p>
       </div>
       <div class="card ai-ops-focus-card" id="aiOpsFocusCard" data-tone="neutral">
         <div class="ai-ops-focus-grid">
@@ -907,19 +907,19 @@
           <div class="kpi-delta neutral"><span id="optActionNowMeta">—</span></div>
         </div>
         <div class="kpi-card ai-ops-kpi ai-ops-kpi-backlog">
-          <div class="kpi-label" data-i18n="optimizations.kpiBacklog">Cleanup</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiBacklog">Fix Inputs</div>
           <div class="kpi-value" id="optBacklog" data-target="0" data-prefix="">—</div>
           <div class="kpi-delta neutral"><span id="optBacklogMeta">—</span></div>
         </div>
         <div class="kpi-card ai-ops-kpi ai-ops-kpi-watch">
-          <div class="kpi-label" data-i18n="optimizations.kpiFriction">Watching</div>
+          <div class="kpi-label" data-i18n="optimizations.kpiFriction">Hold</div>
           <div class="kpi-value" id="optFriction" data-target="0" data-prefix="">—</div>
           <div class="kpi-delta neutral"><span id="optFrictionMeta">—</span></div>
         </div>
         <div class="kpi-card ai-ops-kpi ai-ops-kpi-changes">
-          <div class="kpi-label" data-i18n="optimizations.kpiQuality">Recent Changes</div>
-          <div class="kpi-value" id="optQuality" data-target="0" data-prefix="">—</div>
-          <div class="kpi-delta neutral"><span id="optQualityMeta">—</span></div>
+          <div class="kpi-label" data-i18n="optimizations.kpiPortfolio">Portfolio Guidance</div>
+          <div class="kpi-value" id="optPortfolio" data-target="0" data-prefix="">—</div>
+          <div class="kpi-delta neutral"><span id="optPortfolioMeta">—</span></div>
         </div>
       </div>
 
@@ -940,13 +940,39 @@
         <div class="card ai-ops-lane ai-ops-lane-secondary">
           <div class="card-header">
             <div>
-              <div class="section-kicker" data-i18n="optimizations.backlogKicker">Backlog</div>
-              <h2 data-i18n="optimizations.backlogTitle">Blocked or stale families</h2>
+              <div class="section-kicker" data-i18n="optimizations.backlogKicker">Fix Inputs</div>
+              <h2 data-i18n="optimizations.backlogTitle">Inputs or trust to fix first</h2>
             </div>
             <span id="optBacklogStats"></span>
           </div>
-          <p class="card-desc" data-i18n="optimizations.backlogDesc">These are cleanup items only. They should not steal attention from live decisions.</p>
+          <p class="card-desc" data-i18n="optimizations.backlogDesc">These are non-delivery fixes: measurement trust, creative supply, and other inputs that should improve before the next budget change.</p>
           <div class="optimization-log optimization-log-grouped" id="optimizationBacklog">
+            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+          </div>
+        </div>
+        <div class="card ai-ops-lane ai-ops-lane-tertiary">
+          <div class="card-header">
+            <div>
+              <div class="section-kicker" data-i18n="optimizations.holdKicker">Hold</div>
+              <h2 data-i18n="optimizations.holdTitle">Let Meta keep delivering</h2>
+            </div>
+            <span id="optHoldStats"></span>
+          </div>
+          <p class="card-desc" data-i18n="optimizations.holdDesc">These are explicit no-change states. The right move is to leave delivery alone until the next meaningful shift.</p>
+          <div class="optimization-log optimization-log-grouped" id="optimizationHold">
+            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
+          </div>
+        </div>
+        <div class="card ai-ops-lane ai-ops-lane-tertiary">
+          <div class="card-header">
+            <div>
+              <div class="section-kicker" data-i18n="optimizations.portfolioKicker">Portfolio Guidance</div>
+              <h2 data-i18n="optimizations.portfolioTitle">Macro budget direction for the next pass</h2>
+            </div>
+            <span id="optPortfolioStats"></span>
+          </div>
+          <p class="card-desc" data-i18n="optimizations.portfolioDesc">These are advisory macro moves: portfolio scale, reduce, or reallocation guidance that should shape the next planning pass.</p>
+          <div class="optimization-log optimization-log-grouped" id="optimizationPortfolio">
             <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
           </div>
         </div>
@@ -991,23 +1017,23 @@
                 <select class="select-input" id="optTypeFilter">
                   <option value="all" data-i18n="opt.allTypes">All Types</option>
                   <option value="budget" data-i18n="opt.budget">Budget</option>
-                  <option value="bid" data-i18n="opt.bid">Bid</option>
                   <option value="creative" data-i18n="opt.creative">Creative</option>
                   <option value="status" data-i18n="opt.status">Status</option>
-                  <option value="schedule" data-i18n="opt.schedule">Schedule</option>
-                  <option value="targeting" data-i18n="opt.targeting">Targeting</option>
                 </select>
                 <select class="select-input" id="optStatusFilter">
                   <option value="all" data-i18n="opt.allStatuses">All States</option>
                   <option value="live" data-i18n="opt.openBacklog">Live Decisions</option>
-                  <option value="blocked" data-i18n="opt.awaitingTelegram">Blocked / Stale</option>
-                  <option value="watching" data-i18n="opt.advisoryOnly">Watching</option>
+                  <option value="fix_inputs" data-i18n="opt.awaitingTelegram">Fix Inputs</option>
+                  <option value="hold" data-i18n="opt.advisoryOnly">Hold</option>
+                  <option value="portfolio_guidance" data-i18n="opt.portfolioOnly">Portfolio Guidance</option>
+                  <option value="research" data-i18n="opt.researchOnly">Research</option>
+                  <option value="cleanup" data-i18n="opt.cleanupOnly">Cleanup</option>
                   <option value="resolved" data-i18n="opt.resolved">Resolved</option>
                 </select>
               </div>
             </div>
           </div>
-          <p class="card-desc" data-i18n="opt.clusterDesc">Grouped by decision family so repeat pressure, stale backlog, and the latest reasoning are easy to read.</p>
+          <p class="card-desc" data-i18n="opt.clusterDesc">Grouped by decision family so macro budget calls, fix-input advisories, hold states, and cleanup history stay easy to read.</p>
           <div class="optimization-log optimization-log-grouped" id="optimizationClusters">
             <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
           </div>
@@ -1028,7 +1054,7 @@
       <details class="karpathy-shell">
         <summary class="karpathy-shell-summary">
           <div>
-            <div class="section-kicker">Karpathy</div>
+            <div class="section-kicker">Research Lab</div>
             <h2>Experimental policy lab</h2>
           </div>
           <span id="karpathyFoldMeta">—</span>
@@ -1043,7 +1069,7 @@
                 </div>
                 <span id="karpathySummaryMeta"></span>
               </div>
-              <p class="card-desc">Karpathy should first tell you whether it has real outcome proof or is still proxy-scored. Only then do the research metrics matter.</p>
+              <p class="card-desc">Research Lab should first tell you whether it has real outcome proof or is still proxy-scored. Only then do the research metrics matter.</p>
               <div class="karpathy-status-callout" id="karpathyStatusCallout">
                 <div class="empty-state">Waiting for policy-lab data...</div>
               </div>
@@ -1127,7 +1153,7 @@
                     </div>
                     <span id="karpathyObservabilityMeta"></span>
                   </div>
-                  <p class="card-desc">Recent Sentry-backed or locally captured warnings from the optimizer, research worker, replay loop, and execution path.</p>
+                  <p class="card-desc">Recent Sentry-backed or locally captured warnings from the decision engine, research worker, replay loop, and execution path.</p>
                   <div class="optimization-log optimization-log-grouped karpathy-observability-list" id="karpathyObservability">
                     <div class="empty-state">Waiting for policy-lab data...</div>
                   </div>
@@ -1251,7 +1277,7 @@
     <section class="page" data-page="settings">
       <div class="card">
         <div class="card-header">
-          <h2 data-i18n="settings.agentConfig">Agent Configuration</h2>
+          <h2 data-i18n="settings.agentConfig">Operating Guardrails</h2>
         </div>
         <div class="settings-grid">
           <div class="setting-group">
@@ -1264,7 +1290,7 @@
               <option data-i18n="settings.every2h">Every 2 hours</option>
               <option data-i18n="settings.every4h">Every 4 hours</option>
             </select>
-            <span class="setting-desc" data-i18n="settings.scanFreqDesc">How often the agent scans your campaigns for optimization opportunities</span>
+            <span class="setting-desc" data-i18n="settings.scanFreqDesc">How often the decision engine refreshes campaign, trust, and pacing context</span>
           </div>
           <div class="setting-group">
             <label class="setting-label" data-i18n="settings.maxBudgetChange">Max Daily Budget Change</label>
@@ -1272,48 +1298,40 @@
               <input type="number" class="text-input" value="20" min="1" max="100">
               <span class="unit">%</span>
             </div>
-            <span class="setting-desc" data-i18n="settings.maxBudgetDesc">Maximum percentage the agent can adjust a campaign's daily budget per scan</span>
+            <span class="setting-desc" data-i18n="settings.maxBudgetDesc">Maximum percentage the engine can move a campaign budget in one scan</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.autoPause">Auto-pause Threshold (CPA)</label>
+            <label class="setting-label" data-i18n="settings.autoPause">Hard Stop-Loss Threshold (CPA)</label>
             <div class="input-with-unit">
               <input type="number" class="text-input" value="15" min="1">
               <span class="unit">$</span>
             </div>
-            <span class="setting-desc" data-i18n="settings.autoPauseDesc">Pause campaigns when CPA exceeds this amount for 24+ hours</span>
+            <span class="setting-desc" data-i18n="settings.autoPauseDesc">Pause a campaign only when CPA breaches this stop-loss threshold over a sustained window</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.fatigueSens">Fatigue Detection Sensitivity</label>
+            <label class="setting-label" data-i18n="settings.fatigueSens">Creative Pressure Sensitivity</label>
             <select class="select-input">
               <option data-i18n="settings.low">Low</option>
               <option selected data-i18n="settings.medium">Medium</option>
               <option data-i18n="settings.high">High</option>
             </select>
-            <span class="setting-desc" data-i18n="settings.fatigueSensDesc">How aggressively the agent flags creatives for fatigue</span>
+            <span class="setting-desc" data-i18n="settings.fatigueSensDesc">How readily the system flags weak creative supply before more budget is added</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.autoMode">Autonomous Mode</label>
+            <label class="setting-label" data-i18n="settings.autoMode">Approval-Gated Execution</label>
             <div class="toggle-switch">
               <input type="checkbox" id="autoMode" checked>
               <label for="autoMode" class="toggle-track"></label>
             </div>
-            <span class="setting-desc" data-i18n="settings.autoModeDesc">When enabled, the agent applies optimizations automatically. When disabled, it only suggests changes.</span>
+            <span class="setting-desc" data-i18n="settings.autoModeDesc">When enabled, executable campaign budget and stop-loss actions can request approval during scans. When disabled, everything stays advisory-only.</span>
           </div>
           <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.budgetRealloc">Budget Reallocation</label>
+            <label class="setting-label" data-i18n="settings.budgetRealloc">Portfolio Reallocation Guidance</label>
             <div class="toggle-switch">
               <input type="checkbox" id="budgetRealloc" checked>
               <label for="budgetRealloc" class="toggle-track"></label>
             </div>
-            <span class="setting-desc" data-i18n="settings.budgetReallocDesc">Allow the agent to move budget between campaigns based on performance</span>
-          </div>
-          <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.creativeRotation">Creative Rotation</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="creativeRotation" checked>
-              <label for="creativeRotation" class="toggle-track"></label>
-            </div>
-            <span class="setting-desc" data-i18n="settings.creativeRotDesc">Automatically rotate underperforming creatives when fatigue is detected</span>
+            <span class="setting-desc" data-i18n="settings.budgetReallocDesc">Allow portfolio-level reallocation advisories when contribution diverges across campaigns</span>
           </div>
           <div class="setting-group">
             <label class="setting-label" data-i18n="settings.notifChannel">Notification Channel</label>

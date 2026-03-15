@@ -1,27 +1,23 @@
 // ═══════════════════════════════════════════════════════
-// AdPilot — Optimization Engine
-// Analyzes Meta Ads data and generates micro-optimizations
+// AdPilot — Business Decision Engine
+// Meta owns auction delivery. AdPilot owns business judgment.
 // ═══════════════════════════════════════════════════════
 
 const config = require('../config');
 const meta = require('./metaClient');
 const telegram = require('./telegram');
 const {
-  averagePositiveField,
-  calcROAS,
-  convertUsdToKrw,
   getPurchases,
   summarizeInsights,
 } = require('../domain/metrics');
 const { buildFatigueSnapshot, classifyFatigue } = require('../domain/fatigue');
 const {
   filterRecentInsights,
-  filterAllRecentInsights,
-  sumRecentNetRevenue,
   buildWeekdayScaleContext,
   buildProfitContext,
 } = require('../domain/performanceContext');
 const { buildCampaignEconomics } = require('../services/campaignEconomicsService');
+const { buildMeasurementTrust } = require('../services/measurementTrustService');
 const {
   buildDefaultChampionPolicy,
   classifyControlSurface,
@@ -54,6 +50,26 @@ const MIN_REALLOCATION_PURCHASES = 5;
 const MIN_REALLOCATION_PURCHASE_DAYS = 3;
 const SCALE_TREND_CAUTION_RATIO = 1.2;
 const SCALE_TREND_SUPPRESS_RATIO = 1.45;
+const DECISION_DOMAINS = Object.freeze({
+  MACRO_BUDGET: 'macro_budget',
+  PORTFOLIO: 'portfolio_guardrails',
+  REALLOCATION: 'portfolio_allocation',
+  MEASUREMENT: 'measurement_trust',
+  CREATIVE: 'creative_inputs',
+});
+
+const DECISION_KINDS = Object.freeze({
+  SCALE_BUDGET: 'scale_budget',
+  REDUCE_BUDGET: 'reduce_budget',
+  REALLOCATE_BUDGET: 'reallocate_budget',
+  HOLD_BUDGET: 'hold_budget',
+  HARD_STOPLOSS: 'hard_stoploss',
+  FREEZE_LOW_TRUST: 'freeze_due_to_low_trust',
+  FIX_MEASUREMENT_INPUTS: 'fix_measurement_inputs',
+  FIX_CREATIVE_INPUTS: 'fix_creative_inputs',
+  PORTFOLIO_SCALE: 'portfolio_scale',
+  PORTFOLIO_REDUCE: 'portfolio_reduce',
+});
 
 function parseActionPercent(actionText, fallbackPercent) {
   const match = String(actionText || '').match(/(\d+(?:\.\d+)?)%/);
@@ -61,16 +77,29 @@ function parseActionPercent(actionText, fallbackPercent) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackPercent;
 }
 
-class OptimizationEngine {
+class BusinessDecisionEngine {
   constructor(scanId = Date.now(), options = {}) {
     this.actions = []; // Generated actions for this scan
     this.scanId = scanId;
     this.decisionTraces = [];
     this.budgetPolicy = options.budgetPolicy || null;
+    this.measurementTrust = null;
   }
 
   getRules() {
     return runtimeSettings.getRules();
+  }
+
+  buildBusinessMetadata(overrides = {}) {
+    return {
+      optimizationScope: 'business_decisioning',
+      automationScope: 'macro',
+      ...overrides,
+    };
+  }
+
+  hasAction(decisionKind) {
+    return this.actions.some(action => action?.decisionKind === decisionKind);
   }
 
   buildDecisionEvidence(insights, totals = summarizeInsights(insights)) {
@@ -342,7 +371,7 @@ class OptimizationEngine {
       id: `opt_${this.scanId}_${this.actions.length}`,
       timestamp: new Date().toISOString(),
       scanId: this.scanId,
-      type,       // budget | bid | creative | schedule | targeting | status
+      type,       // budget | creative | status
       level,      // campaign | adset | ad
       targetId,
       targetName,
@@ -369,6 +398,7 @@ class OptimizationEngine {
     const rules = this.getRules();
     this.actions = [];
     this.decisionTraces = [];
+    this.measurementTrust = null;
     const referenceDate = getTodayInTimeZone();
     const budgetPolicy = this.budgetPolicy || buildDefaultChampionPolicy(rules);
     const profitContext = buildProfitContext(campaignInsights, revenueData, cogsData, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), {
@@ -388,36 +418,104 @@ class OptimizationEngine {
         minCoverageRatio: MIN_PROFIT_COVERAGE_RATIO,
       }
     );
+    const measurementTrust = buildMeasurementTrust({
+      sourceHealth: {
+        metaInsights: {
+          status: Array.isArray(campaignInsights) && campaignInsights.length > 0 ? 'connected' : 'error',
+          stale: false,
+          hasData: Array.isArray(campaignInsights) && campaignInsights.length > 0,
+        },
+        imweb: {
+          status: revenueSource?.status ?? 'unknown',
+          stale: Boolean(revenueSource?.stale),
+          hasData: Array.isArray(revenueData?.dailyRevenue) && revenueData.dailyRevenue.length > 0,
+          lastError: revenueSource?.lastError ?? null,
+        },
+        cogs: {
+          status: cogsData?.error ? 'error' : cogsData ? 'connected' : 'unknown',
+          stale: Boolean(cogsData?.stale),
+          hasData: Array.isArray(cogsData?.dailyCOGS) && cogsData.dailyCOGS.length > 0,
+          lastError: cogsData?.error || null,
+        },
+      },
+      revenueSource,
+      campaignEconomicsSummary: campaignEconomics?.summary || null,
+      profitContext,
+    });
     const campaignRiskContext = this.buildCampaignRiskContext(
       campaignData,
       adData,
       adInsights,
       referenceDate
     );
+    this.measurementTrust = measurementTrust;
 
-    console.log(`[OPTIMIZER] Starting scan ${this.scanId}...`);
+    console.log(`[BUSINESS ENGINE] Starting scan ${this.scanId}...`);
 
-    // 1. Campaign-level optimizations
-    this.analyzeCampaigns(campaignData, campaignInsights, campaignEconomics, referenceDate, campaignRiskContext, adSetData, budgetPolicy);
+    this.analyzeCampaigns(
+      campaignData,
+      campaignInsights,
+      campaignEconomics,
+      referenceDate,
+      campaignRiskContext,
+      adSetData,
+      budgetPolicy,
+      measurementTrust
+    );
 
-    // 2. Ad set-level optimizations
-    this.analyzeAdSets(adSetData, adSetInsights, campaignData, budgetPolicy);
-
-    // 3. Ad-level optimizations (fatigue, creative performance)
-    this.analyzeAds(adData, adInsights);
-
-    // 4. Budget reallocation across campaigns
     if (rules.budgetReallocationEnabled) {
-      this.analyzeBudgetReallocation(campaignData, campaignInsights, campaignEconomics);
+      this.analyzeBudgetReallocation(campaignData, campaignInsights, campaignEconomics, measurementTrust);
     }
 
-    // 5. Scheduling optimizations
-    this.analyzeScheduling(adSetInsights);
+    this.analyzeROAS(campaignInsights, revenueData, revenueSource, profitContext, measurementTrust);
+    this.analyzeCreativeInputs(campaignData, campaignRiskContext, campaignEconomics, measurementTrust);
 
-    // 6. ROAS-based optimizations
-    this.analyzeROAS(campaignInsights, revenueData, revenueSource, profitContext);
+    if (measurementTrust.shouldFreezeBudgetChanges) {
+      this.addAction(
+        OPTIMIZATION_TYPES.BUDGET,
+        'account',
+        config.meta.adAccountId,
+        'Measurement Trust',
+        'Freeze budget changes — measurement trust is too weak',
+        `${measurementTrust.reason}. ${measurementTrust.blockingIssues.join('; ')}`,
+        'Fix source health, freshness, and coverage before changing budget guardrails.',
+        'high',
+        this.buildBusinessMetadata({
+          decisionKind: DECISION_KINDS.FREEZE_LOW_TRUST,
+          decisionDomain: DECISION_DOMAINS.MEASUREMENT,
+          measurementTrust: measurementTrust.level,
+          measurementTrustReason: measurementTrust.reason,
+          blockingIssues: measurementTrust.blockingIssues,
+          cautionIssues: measurementTrust.cautionIssues,
+          controlSurface: 'account_guardrail',
+        })
+      );
+    }
 
-    console.log(`[OPTIMIZER] Scan complete. Generated ${this.actions.length} optimizations.`);
+    if (!this.actions.length) {
+      const holdReason = measurementTrust.level === 'high'
+        ? 'Measurement trust is decision-grade and no campaign crossed the current scale, reduce, or stop-loss guardrails.'
+        : `No campaign crossed the current guardrails. ${measurementTrust.reason}`;
+      this.addAction(
+        OPTIMIZATION_TYPES.BUDGET,
+        'account',
+        config.meta.adAccountId,
+        'Meta Delivery',
+        'Hold budget — let Meta continue delivery',
+        holdReason,
+        'No operator change needed. Re-evaluate after the next scan or when source quality shifts.',
+        'low',
+        this.buildBusinessMetadata({
+          decisionKind: DECISION_KINDS.HOLD_BUDGET,
+          decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
+          decisionVerdict: 'hold',
+          measurementTrust: measurementTrust.level,
+          controlSurface: 'account_guardrail',
+        })
+      );
+    }
+
+    console.log(`[BUSINESS ENGINE] Scan complete. Generated ${this.actions.length} decisions.`);
     return this.actions;
   }
 
@@ -429,7 +527,8 @@ class OptimizationEngine {
     referenceDate = getTodayInTimeZone(),
     campaignRiskContext = null,
     adSets = [],
-    budgetPolicy = null
+    budgetPolicy = null,
+    measurementTrust = null
   ) {
     const rules = this.getRules();
     const activeBudgetPolicy = budgetPolicy || this.budgetPolicy || buildDefaultChampionPolicy(rules);
@@ -449,7 +548,6 @@ class OptimizationEngine {
       const totalSpend = totals.spend;
       const totalPurchases = totals.purchases;
       const avgCPA = totals.cpa;
-      const avgFrequency = averagePositiveField(cInsights, 'frequency');
       const evidence = this.buildDecisionEvidence(cInsights, totals);
       const hasDecisionData = evidence.observationDays >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
       const riskSnapshot = campaignRiskContext?.get(String(campaign.id)) || null;
@@ -497,6 +595,7 @@ class OptimizationEngine {
           fatiguedAds: riskSnapshot?.fatiguedAds ?? [],
         },
         controlSurface,
+        measurementTrust,
         reviewWindowHours: 72,
         timestamp: new Date().toISOString(),
       };
@@ -523,14 +622,17 @@ class OptimizationEngine {
           `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA is $${avgCPA.toFixed(2)}${targetCpaSuffix}. ${budgetEvaluation.reasoning}`,
           budgetEvaluation.impactSummary,
           budgetEvaluation.priority,
-          {
+          this.buildBusinessMetadata({
             policyVersionId: activeBudgetPolicy.id,
             traceId: budgetTrace.traceId,
             controlSurface,
+            decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
+            decisionKind: DECISION_KINDS.REDUCE_BUDGET,
             decisionVerdict: budgetEvaluation.verdict,
             decisionActionPercent: budgetEvaluation.actionPercent,
             traceActionPercent: budgetEvaluation.actionPercent,
-          }
+            measurementTrust: measurementTrust?.level || 'low',
+          })
         );
         budgetTrace.optimizationId = budgetAction.id;
       }
@@ -541,7 +643,13 @@ class OptimizationEngine {
           `Pause campaign — CPA critically high`,
           `Last ${PERFORMANCE_LOOKBACK_DAYS}d CPA $${avgCPA.toFixed(2)} exceeds $${rules.cpaPauseThreshold} threshold`,
           `Save ~$${(totalSpend / cInsights.length).toFixed(2)}/day in wasted spend`,
-          'critical'
+          'critical',
+          this.buildBusinessMetadata({
+            decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
+            decisionKind: DECISION_KINDS.HARD_STOPLOSS,
+            controlSurface,
+            measurementTrust: measurementTrust?.level || 'low',
+          })
         );
       }
 
@@ -571,204 +679,100 @@ class OptimizationEngine {
           scaleReason,
           `Estimated +${impactRange.min} to +${impactRange.max} Meta-attributed purchases/day if CPA holds. Review after 48-72 hours.`,
           budgetEvaluation.priority,
-          {
+          this.buildBusinessMetadata({
             policyVersionId: activeBudgetPolicy.id,
             traceId: budgetTrace.traceId,
             controlSurface,
+            decisionDomain: DECISION_DOMAINS.MACRO_BUDGET,
+            decisionKind: DECISION_KINDS.SCALE_BUDGET,
             decisionVerdict: budgetEvaluation.verdict,
             decisionActionPercent: budgetEvaluation.actionPercent,
             traceActionPercent: budgetEvaluation.actionPercent,
-          }
-        );
-        budgetTrace.optimizationId = budgetAction.id;
-      }
-
-      // Rule: High frequency warning (audience saturation)
-      if (hasDecisionData && avgFrequency > rules.fatigueFrequencyThreshold) {
-        this.addAction(OPTIMIZATION_TYPES.TARGETING, 'campaign', campaign.id, campaign.name,
-          `Expand audience — frequency is ${avgFrequency.toFixed(1)}`,
-          `Last ${PERFORMANCE_LOOKBACK_DAYS}d average frequency of ${avgFrequency.toFixed(1)} indicates audience saturation (threshold: ${rules.fatigueFrequencyThreshold})`,
-          `Reduce frequency by expanding lookalike or interest targeting`,
-          'high'
-        );
-      }
-    }
-  }
-
-  // ── 2. Ad Set-Level Analysis ──
-  analyzeAdSets(adSets, insights, campaigns, budgetPolicy = null) {
-    const rules = this.getRules();
-    const activeBudgetPolicy = budgetPolicy || this.budgetPolicy || buildDefaultChampionPolicy(rules);
-    for (const adSet of adSets) {
-      if (adSet.effective_status !== 'ACTIVE') continue;
-
-      const asInsights = filterRecentInsights(insights, 'adset_id', adSet.id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
-      if (asInsights.length === 0) continue;
-
-      const totals = summarizeInsights(asInsights);
-      const totalSpend = totals.spend;
-      const totalPurchases = totals.purchases;
-      const avgCPA = totals.cpa;
-      const evidence = this.buildDecisionEvidence(asInsights, totals);
-      const hasDecisionData = evidence.observationDays >= rules.minDataDays && totalSpend >= rules.minSpendForDecision;
-      const parentCampaign = campaigns.find(c => c.id === adSet.campaign_id);
-      const campaignInsights = parentCampaign
-        ? filterRecentInsights(insights, 'campaign_id', adSet.campaign_id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS)
-        : [];
-      const campaignTotals = summarizeInsights(campaignInsights);
-      const controlSurface = classifyControlSurface({
-        level: 'adset',
-        campaign: parentCampaign,
-        adSet,
-      });
-      const budgetSnapshot = {
-        targetId: adSet.id,
-        targetName: adSet.name,
-        targetLevel: 'adset',
-        currentBudgetCents: Number.parseInt(adSet?.daily_budget || 0, 10),
-        avgCpa: avgCPA,
-        spend: totalSpend,
-        purchases: totalPurchases,
-        evidence,
-        economics: {
-          targetCpa: campaignTotals?.cpa ?? null,
-          breakEvenCpa: null,
-          estimatedRevenue: 0,
-          estimatedTrueNetProfit: 0,
-          estimatedMargin: 0,
-          coverageRatio: 0,
-          confidence: 'low',
-          confidenceLabel: 'Low confidence',
-          hasReliableEstimate: false,
-        },
-        weekday: { status: 'neutral', reason: '' },
-        trend: { status: 'neutral', reason: '' },
-        risk: {
-          activeCampaignCount: 0,
-          activeAdCount: 0,
-          severeFatigueBlock: false,
-          hasConcentrationRisk: false,
-          hasCreativeDepthRisk: false,
-          fatiguedAds: [],
-        },
-        controlSurface,
-        reviewWindowHours: 72,
-        timestamp: new Date().toISOString(),
-      };
-      const budgetEvaluation = evaluateBudgetSnapshot(budgetSnapshot, activeBudgetPolicy, rules);
-      const budgetTrace = createDecisionTrace({
-        scanId: this.scanId,
-        mode: 'champion',
-        policy: activeBudgetPolicy,
-        snapshot: budgetSnapshot,
-        evaluation: budgetEvaluation,
-      });
-      this.decisionTraces.push(budgetTrace);
-
-      // Rule: Ad set spending with zero conversions
-      if (hasDecisionData && totalPurchases === 0) {
-        this.addAction(OPTIMIZATION_TYPES.STATUS, 'adset', adSet.id, adSet.name,
-          `Pause ad set — $${totalSpend.toFixed(2)} spent with 0 purchases`,
-          `Last ${PERFORMANCE_LOOKBACK_DAYS}d: $${totalSpend.toFixed(2)} spend, zero purchases`,
-          `Save $${(totalSpend / asInsights.length).toFixed(2)}/day`,
-          'critical'
-        );
-      }
-
-      // Rule: CTR declining (compare first half vs second half)
-      if (asInsights.length >= 6) {
-        const half = Math.floor(asInsights.length / 2);
-        const firstHalf = asInsights.slice(0, half);
-        const secondHalf = asInsights.slice(half);
-        const ctrFirst = firstHalf.reduce((s, i) => s + parseFloat(i.ctr || 0), 0) / firstHalf.length;
-        const ctrSecond = secondHalf.reduce((s, i) => s + parseFloat(i.ctr || 0), 0) / secondHalf.length;
-
-        if (ctrFirst > 0 && ((ctrFirst - ctrSecond) / ctrFirst * 100) > rules.fatigueCtrDecayPercent) {
-          this.addAction(OPTIMIZATION_TYPES.CREATIVE, 'adset', adSet.id, adSet.name,
-            `Refresh creatives — CTR declining ${((ctrFirst - ctrSecond) / ctrFirst * 100).toFixed(0)}%`,
-            `CTR dropped from ${ctrFirst.toFixed(2)}% to ${ctrSecond.toFixed(2)}% (${((ctrFirst - ctrSecond) / ctrFirst * 100).toFixed(0)}% decay)`,
-            `Restoring CTR could reduce CPA by ~${((ctrFirst - ctrSecond) / ctrFirst * 50).toFixed(0)}%`,
-            'high'
-          );
-        }
-      }
-
-      if (budgetEvaluation.shouldCreateOptimization && budgetEvaluation.verdict === 'reduce') {
-        const campaignCpaSuffix = campaignTotals?.cpa
-          ? ` vs campaign avg $${campaignTotals.cpa.toFixed(2)}`
-          : '';
-        const budgetAction = this.addAction(OPTIMIZATION_TYPES.BUDGET, 'adset', adSet.id, adSet.name,
-          `Reduce daily budget by ${budgetEvaluation.actionPercent}%`,
-          `Ad set CPA is $${avgCPA.toFixed(2)}${campaignCpaSuffix}. ${budgetEvaluation.reasoning}`,
-          budgetEvaluation.impactSummary,
-          budgetEvaluation.priority,
-          {
-            policyVersionId: activeBudgetPolicy.id,
-            traceId: budgetTrace.traceId,
-            controlSurface,
-            decisionVerdict: budgetEvaluation.verdict,
-            decisionActionPercent: budgetEvaluation.actionPercent,
-            traceActionPercent: budgetEvaluation.actionPercent,
-          }
+            measurementTrust: measurementTrust?.level || 'low',
+          })
         );
         budgetTrace.optimizationId = budgetAction.id;
       }
     }
   }
 
-  // ── 3. Ad-Level Analysis (Fatigue Detection) ──
-  analyzeAds(ads, insights) {
-    const rules = this.getRules();
-    for (const ad of ads) {
-      if (ad.effective_status !== 'ACTIVE') continue;
+  analyzeCreativeInputs(campaigns, campaignRiskContext = null, campaignEconomicsContext = null, measurementTrust = null) {
+    if (measurementTrust?.shouldFreezeBudgetChanges) return;
 
-      const adInsights = filterRecentInsights(insights, 'ad_id', ad.id, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
-      if (adInsights.length < 3) continue;
+    const economicsByCampaignId = new Map(
+      (campaignEconomicsContext?.campaigns || []).map(campaign => [String(campaign.campaignId), campaign])
+    );
+    const candidates = (Array.isArray(campaigns) ? campaigns : [])
+      .filter(campaign => campaign.status === 'ACTIVE')
+      .map(campaign => ({
+        campaign,
+        economics: economicsByCampaignId.get(String(campaign.id)) || null,
+        risk: campaignRiskContext?.get(String(campaign.id)) || null,
+      }))
+      .filter(entry =>
+        entry.economics?.hasReliableEstimate
+        && entry.economics?.estimatedTrueNetProfit > 0
+        && entry.economics?.estimatedMargin >= PROFIT_SCALE_MARGIN_THRESHOLD
+        && entry.risk
+        && (
+          entry.risk.severeFatigueBlock
+          || entry.risk.hasCreativeDepthRisk
+          || (entry.risk.fatiguedAds || []).length > 0
+        )
+      )
+      .sort((left, right) => (right.economics?.estimatedTrueNetProfit || 0) - (left.economics?.estimatedTrueNetProfit || 0))
+      .slice(0, 3);
 
-      const totals = summarizeInsights(adInsights);
-      const totalSpend = totals.spend;
-      const totalPurchases = totals.purchases;
-      const fatigueSnapshot = buildFatigueSnapshot(adInsights);
-      const fatigue = classifyFatigue(fatigueSnapshot, {
-        frequencyThreshold: rules.fatigueFrequencyThreshold,
-        ctrDecayPercent: rules.fatigueCtrDecayPercent,
-        minDataDays: rules.minDataDays,
-      });
+    for (const entry of candidates) {
+      const issues = [];
+      let priority = 'medium';
 
-      if (fatigue.status === 'danger') {
-        this.addAction(OPTIMIZATION_TYPES.CREATIVE, 'ad', ad.id, ad.name,
-          `Ad fatigued — pause & replace creative`,
-          `Last ${PERFORMANCE_LOOKBACK_DAYS}d: frequency ${fatigueSnapshot.lastFrequency.toFixed(1)}, CTR down ${fatigueSnapshot.ctrDecayPercent.toFixed(0)}% from peak (${fatigueSnapshot.peakCTR.toFixed(2)}% → ${fatigueSnapshot.recentCTR.toFixed(2)}%)`,
-          `Replacing creative typically restores CTR within 3-5 days`,
-          'high'
-        );
+      if (entry.risk.severeFatigueBlock) {
+        issues.push(`${entry.risk.fatiguedAds.length}/${entry.risk.activeAdCount} active ads are already fatigued`);
+        priority = 'high';
+      } else if ((entry.risk.fatiguedAds || []).length > 0) {
+        issues.push(`${entry.risk.fatiguedAds.length}/${entry.risk.activeAdCount} active ads are showing fatigue`);
       }
 
-      // Fatigue: CPM rising significantly
-      if (fatigue.flags.cpmPressure && totalSpend >= rules.minSpendForDecision) {
-        this.addAction(OPTIMIZATION_TYPES.BID, 'ad', ad.id, ad.name,
-          `CPM rising ${fatigueSnapshot.cpmRisePercent.toFixed(0)}% — review bid strategy`,
-          `Recent CPM: $${fatigueSnapshot.recentCPM.toFixed(2)} vs average: $${fatigueSnapshot.avgCPM.toFixed(2)}`,
-          `Rising CPM with stable CTR suggests increased competition or audience fatigue`,
-          'medium'
-        );
+      if (entry.risk.hasCreativeDepthRisk) {
+        issues.push(`only ${entry.risk.activeAdCount} active ads are available to absorb more spend`);
       }
 
-      // Ad spending with no purchases
-      if (adInsights.length >= rules.minDataDays && totalSpend > rules.minSpendForDecision * 1.5 && totalPurchases === 0) {
-        this.addAction(OPTIMIZATION_TYPES.STATUS, 'ad', ad.id, ad.name,
-          `Pause ad — $${totalSpend.toFixed(2)} spent, 0 purchases`,
-          `No purchases after $${totalSpend.toFixed(2)} spend over the last ${PERFORMANCE_LOOKBACK_DAYS}d`,
-          `Save daily spend and reallocate to converting ads`,
-          'critical'
-        );
-      }
+      if (issues.length === 0) continue;
+
+      this.addAction(
+        OPTIMIZATION_TYPES.CREATIVE,
+        'campaign',
+        entry.campaign.id,
+        entry.campaign.name,
+        'Feed Meta stronger creative inputs before scaling',
+        `${entry.campaign.name} is still contribution-positive, but ${issues.join('; ')}. Improve creative supply instead of micromanaging delivery edits.`,
+        'Better creative inventory gives Meta healthier inputs without forcing auction-level overrides.',
+        priority,
+        this.buildBusinessMetadata({
+          decisionKind: DECISION_KINDS.FIX_CREATIVE_INPUTS,
+          decisionDomain: DECISION_DOMAINS.CREATIVE,
+          measurementTrust: measurementTrust?.level || 'low',
+          estimatedTrueNetProfit: entry.economics?.estimatedTrueNetProfit || 0,
+        })
+      );
     }
+  }
+
+  // Retired: Meta should own ad set budget control and ad-level delivery.
+  analyzeAdSets() {
+    return [];
+  }
+
+  // Retired: creative fatigue is now surfaced as input pressure, not micro-actions.
+  analyzeAds() {
+    return [];
   }
 
   // ── 4. Budget Reallocation ──
-  analyzeBudgetReallocation(campaigns, insights, campaignEconomicsContext = null) {
+  analyzeBudgetReallocation(campaigns, insights, campaignEconomicsContext = null, measurementTrust = null) {
     const rules = this.getRules();
+    if (measurementTrust?.shouldFreezeBudgetChanges) return;
     const activeCampaigns = campaigns.filter(c => c.status === 'ACTIVE');
     if (activeCampaigns.length < 2) return;
     const economicsByCampaignId = new Map(
@@ -816,99 +820,64 @@ class OptimizationEngine {
         `Reallocate $${(moveAmount / 100).toFixed(2)}/day from worst → best campaign`,
         `${worst.name} estimated contribution is -₩${Math.abs(worst.campaignEconomics.estimatedTrueNetProfit).toLocaleString()} at ${(worst.campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin, while ${best.name} is +₩${best.campaignEconomics.estimatedTrueNetProfit.toLocaleString()} at ${(best.campaignEconomics.estimatedMargin * 100).toFixed(1)}% margin`,
         `Shift budget toward the higher-contribution campaign while keeping approvals reviewable`,
-        'high'
+        'high',
+        this.buildBusinessMetadata({
+          decisionKind: DECISION_KINDS.REALLOCATE_BUDGET,
+          decisionDomain: DECISION_DOMAINS.REALLOCATION,
+          measurementTrust: measurementTrust?.level || 'low',
+          controlSurface: 'portfolio_guardrail',
+        })
       );
     }
   }
 
-  // ── 5. Scheduling Optimizations ──
-  analyzeScheduling(adSetInsights) {
-    const rules = this.getRules();
-    const recentInsights = filterAllRecentInsights(adSetInsights, SCHEDULE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
-    if (recentInsights.length < 14) return;
-
-    // Aggregate by day of week
-    const dayPerf = {};
-    for (const insight of recentInsights) {
-      const date = new Date(insight.date_start);
-      const day = date.toLocaleDateString('en-US', { weekday: 'long' });
-      if (!dayPerf[day]) dayPerf[day] = { spend: 0, purchases: 0 };
-      dayPerf[day].spend += summarizeInsights([insight]).spend;
-      dayPerf[day].purchases += getPurchases(insight.actions);
-    }
-
-    // Find best and worst days
-    const days = Object.entries(dayPerf).map(([day, d]) => ({
-      day, ...d, cpa: d.purchases > 0 ? d.spend / d.purchases : Infinity
-    }));
-
-    const bestDays = days.filter(d => d.purchases > 0).sort((a, b) => a.cpa - b.cpa);
-    const worstDays = days.filter(d => d.cpa === Infinity || d.cpa > rules.cpaWarningThreshold);
-
-    if (bestDays.length > 0 && worstDays.length > 0) {
-      const bestStr = bestDays.slice(0, 2).map(d => `${d.day} ($${d.cpa.toFixed(2)} CPA)`).join(', ');
-      const worstStr = worstDays.slice(0, 2).map(d => d.day).join(', ');
-
-      this.addAction(OPTIMIZATION_TYPES.SCHEDULE, 'account', config.meta.adAccountId, 'SHUE Ad Account',
-        `Consider dayparting: best performance on ${bestDays[0].day}`,
-        `Last ${SCHEDULE_LOOKBACK_DAYS}d best days: ${bestStr}. Underperforming: ${worstStr}`,
-        `Shifting more budget to high-performing days could improve overall CPA`,
-        'low'
-      );
-    }
+  // Retired: Meta should own schedule/daypart delivery decisions.
+  analyzeScheduling() {
+    return [];
   }
 
-  // ── 6. ROAS-Based Optimizations ──
-  analyzeROAS(campaignInsights, revenueData, revenueSource, profitContext = null) {
+  // ── 5. Portfolio-Level Profitability Guardrails ──
+  analyzeROAS(campaignInsights, revenueData, revenueSource, profitContext = null, measurementTrust = null) {
     const rules = this.getRules();
     if (!revenueData) return;
     if (revenueSource?.stale || revenueSource?.status !== 'connected') return;
+    if (measurementTrust?.shouldFreezeBudgetChanges) return;
+    if (!profitContext?.hasReliableCoverage || profitContext.adSpendKRW < rules.minSpendForDecision * 1300) return;
 
-    const recentCampaignInsights = filterAllRecentInsights(campaignInsights, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
-    const totalSpend = summarizeInsights(recentCampaignInsights).spend;
-    const netRevenue = sumRecentNetRevenue(revenueData, PERFORMANCE_LOOKBACK_DAYS, getTodayInTimeZone(), OPTIMIZER_WINDOW_OPTIONS);
-    if (totalSpend < rules.minSpendForDecision) return;
-
-    if (profitContext?.hasReliableCoverage) {
-      if (profitContext.trueNetProfit < 0) {
-        this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall Profitability',
-          `True net profit is -₩${Math.abs(profitContext.trueNetProfit).toLocaleString()} — reduce spend`,
-          `Last ${PERFORMANCE_LOOKBACK_DAYS}d true net profit is -₩${Math.abs(profitContext.trueNetProfit).toLocaleString()} after ₩${profitContext.cogs.toLocaleString()} COGS, ₩${profitContext.shipping.toLocaleString()} shipping, ₩${profitContext.paymentFees.toLocaleString()} fees, and ₩${profitContext.adSpendKRW.toLocaleString()} ad spend`,
-          `Reduce wasted spend until contribution margin turns positive`,
-          'critical'
-        );
-        return;
-      }
-
-      if (profitContext.trueNetProfit > 0 && profitContext.margin >= PROFIT_SCALE_MARGIN_THRESHOLD) {
-        this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall Profitability',
-          `True net profit is ₩${profitContext.trueNetProfit.toLocaleString()} — room to scale`,
-          `Last ${PERFORMANCE_LOOKBACK_DAYS}d true net profit is ₩${profitContext.trueNetProfit.toLocaleString()} on ₩${profitContext.netRevenue.toLocaleString()} net revenue (${(profitContext.margin * 100).toFixed(1)}% true net margin)`,
-          `Consider increasing total ad spend by 10-20% while margins stay above ${(PROFIT_SCALE_MARGIN_THRESHOLD * 100).toFixed(0)}%`,
-          'medium'
-        );
-      }
+    if (profitContext.trueNetProfit < 0) {
+      this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall Profitability',
+        `True net profit is -₩${Math.abs(profitContext.trueNetProfit).toLocaleString()} — constrain spend`,
+        `Last ${PERFORMANCE_LOOKBACK_DAYS}d true net profit is -₩${Math.abs(profitContext.trueNetProfit).toLocaleString()} after ₩${profitContext.cogs.toLocaleString()} COGS, ₩${profitContext.shipping.toLocaleString()} shipping, ₩${profitContext.paymentFees.toLocaleString()} fees, and ₩${profitContext.adSpendKRW.toLocaleString()} ad spend.`,
+        `Treat this as a portfolio guardrail: reduce exposure until contribution turns positive again.`,
+        'critical',
+        this.buildBusinessMetadata({
+          decisionKind: DECISION_KINDS.PORTFOLIO_REDUCE,
+          decisionDomain: DECISION_DOMAINS.PORTFOLIO,
+          decisionVerdict: 'reduce',
+          measurementTrust: measurementTrust?.level || 'low',
+          controlSurface: 'account_guardrail',
+        })
+      );
       return;
     }
 
-    const totalSpendKRW = convertUsdToKrw(totalSpend);
-    const roas = calcROAS(netRevenue, totalSpend);
-
-    if (roas < rules.roasMinimum) {
-      this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall ROAS',
-        `ROAS is ${roas.toFixed(2)}x — below ${rules.roasMinimum}x minimum`,
-        `Last ${PERFORMANCE_LOOKBACK_DAYS}d net revenue ₩${netRevenue.toLocaleString()} / ad spend ₩${totalSpendKRW.toLocaleString()} = ${roas.toFixed(2)}x ROAS`,
-        `Consider reducing overall spend or improving conversion rate`,
-        'critical'
-      );
-    }
-
-    if (roas > 4) {
-      this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall ROAS',
-        `ROAS is ${roas.toFixed(2)}x — strong performance, room to scale`,
-        `Last ${PERFORMANCE_LOOKBACK_DAYS}d net revenue ₩${netRevenue.toLocaleString()} / ad spend ₩${totalSpendKRW.toLocaleString()} = ${roas.toFixed(2)}x ROAS`,
-        `Consider increasing total ad spend by 10-20% to capture more volume`,
-        'medium'
+    if (
+      profitContext.trueNetProfit > 0
+      && profitContext.margin >= PROFIT_SCALE_MARGIN_THRESHOLD
+      && !this.hasAction(DECISION_KINDS.SCALE_BUDGET)
+    ) {
+      this.addAction(OPTIMIZATION_TYPES.BUDGET, 'account', config.meta.adAccountId, 'Overall Profitability',
+        `True net profit is ₩${profitContext.trueNetProfit.toLocaleString()} — room to feed Meta more budget`,
+        `Last ${PERFORMANCE_LOOKBACK_DAYS}d true net profit is ₩${profitContext.trueNetProfit.toLocaleString()} on ₩${profitContext.netRevenue.toLocaleString()} net revenue (${(profitContext.margin * 100).toFixed(1)}% true net margin).`,
+        `Use this as a portfolio-level scale guardrail while the margin stays above ${(PROFIT_SCALE_MARGIN_THRESHOLD * 100).toFixed(0)}%.`,
+        'medium',
+        this.buildBusinessMetadata({
+          decisionKind: DECISION_KINDS.PORTFOLIO_SCALE,
+          decisionDomain: DECISION_DOMAINS.PORTFOLIO,
+          decisionVerdict: 'scale',
+          measurementTrust: measurementTrust?.level || 'low',
+          controlSurface: 'account_guardrail',
+        })
       );
     }
   }
@@ -934,9 +903,9 @@ class OptimizationEngine {
     try {
       let result;
 
-      // Budget changes
-      if (action.type === OPTIMIZATION_TYPES.BUDGET && (action.level === 'campaign' || action.level === 'adset')) {
-        const entities = action.level === 'campaign' ? await meta.getCampaigns() : await meta.getAdSets();
+      // Campaign budget changes
+      if (action.type === OPTIMIZATION_TYPES.BUDGET && action.level === 'campaign') {
+        const entities = await meta.getCampaigns();
         const entity = entities.find(item => item.id === action.targetId);
         const currentBudget = Number.parseInt(entity?.daily_budget || 0, 10);
         const explicitPercent = Number(action.decisionActionPercent || action.traceActionPercent || 0);
@@ -946,19 +915,13 @@ class OptimizationEngine {
 
         if (!entity) {
           action.executed = false;
-          action.executionResult = `Failed: ${action.level} not found in Meta`;
-          return action;
-        }
-
-        if (action.level === 'adset' && !entity?.daily_budget) {
-          action.executed = false;
-          action.executionResult = 'Failed: ad set budget is controlled at campaign level';
+          action.executionResult = 'Failed: campaign not found in Meta';
           return action;
         }
 
         if (entity?.lifetime_budget && !entity?.daily_budget) {
           action.executed = false;
-          action.executionResult = `Failed: ${action.level} uses lifetime budget, not daily budget`;
+          action.executionResult = 'Failed: campaign uses lifetime budget, not daily budget';
           return action;
         }
 
@@ -1009,35 +972,14 @@ class OptimizationEngine {
           }
         }
 
-        result = action.level === 'campaign'
-          ? await meta.updateCampaignBudget(action.targetId, newBudget)
-          : await meta.updateAdSetBudget(action.targetId, newBudget);
+        result = await meta.updateCampaignBudget(action.targetId, newBudget);
       }
 
       // Status changes
       if (action.type === OPTIMIZATION_TYPES.STATUS) {
         if (action.level === 'campaign') {
           result = await meta.updateCampaignStatus(action.targetId, 'PAUSED');
-        } else if (action.level === 'adset') {
-          result = await meta.updateAdSetStatus(action.targetId, 'PAUSED');
-        } else if (action.level === 'ad') {
-          result = await meta.updateAdStatus(action.targetId, 'PAUSED');
         }
-      }
-
-      if (action.type === OPTIMIZATION_TYPES.BID && action.level === 'adset') {
-        const adSets = await meta.getAdSets();
-        const adSet = adSets.find(item => item.id === action.targetId);
-        const currentBid = Number.parseInt(adSet?.bid_amount || 0, 10);
-
-        if (!Number.isFinite(currentBid) || currentBid <= 0) {
-          action.executed = false;
-          action.executionResult = 'Failed: current bid unavailable';
-          return action;
-        }
-
-        const nextBid = Math.max(1, Math.round(currentBid * 0.9));
-        result = await meta.updateAdSetBid(action.targetId, nextBid);
       }
 
       action.executed = true;
@@ -1065,7 +1007,7 @@ class OptimizationEngine {
           }
         );
       }
-      console.log(`[OPTIMIZER] Executed: ${action.action} → ${action.executionResult}`);
+      console.log(`[BUSINESS ENGINE] Executed: ${action.action} → ${action.executionResult}`);
     } catch (err) {
       action.executed = false;
       action.executionResult = `Failed: ${err.message}`;
@@ -1085,7 +1027,7 @@ class OptimizationEngine {
           action: action.action,
         },
       });
-      console.error(`[OPTIMIZER] Execution failed: ${err.message}`);
+      console.error(`[BUSINESS ENGINE] Execution failed: ${err.message}`);
     }
 
     return action;
@@ -1106,16 +1048,16 @@ class OptimizationEngine {
       this.requiresApproval(action) && this.isExecutableAction(action) && !action.executed
     );
 
-    console.log(`[OPTIMIZER] ${approvalQueue.length} approval-required actions to process...`);
+    console.log(`[BUSINESS ENGINE] ${approvalQueue.length} approval-required actions to process...`);
 
     for (const action of approvalQueue) {
-      console.log(`[OPTIMIZER] Requesting Telegram approval for: ${action.action}`);
+      console.log(`[BUSINESS ENGINE] Requesting Telegram approval for: ${action.action}`);
       const approvalId = await telegram.requestApproval(action);
 
       if (!approvalId) {
         action.executed = false;
         action.executionResult = 'Failed to send Telegram approval request';
-        console.error(`[OPTIMIZER] Telegram request failed for: ${action.action}`);
+        console.error(`[BUSINESS ENGINE] Telegram request failed for: ${action.action}`);
         continue;
       }
 
@@ -1124,7 +1066,7 @@ class OptimizationEngine {
       const response = await telegram.waitForApproval(approvalId, 300000);
 
       if (response.approved) {
-        console.log(`[OPTIMIZER] ✅ APPROVED: ${action.action}`);
+        console.log(`[BUSINESS ENGINE] ✅ APPROVED: ${action.action}`);
         await this.executeAction(action);
         action.approvalStatus = 'approved';
         const resultEmoji = action.executed ? '✅' : '❌';
@@ -1135,7 +1077,7 @@ class OptimizationEngine {
         action.executed = false;
         action.approvalStatus = String(response.reason || '').toLowerCase().includes('timeout') ? 'expired' : 'rejected';
         action.executionResult = `${action.approvalStatus === 'expired' ? 'Expired' : 'Rejected'}: ${response.reason}`;
-        console.log(`[OPTIMIZER] ❌ REJECTED: ${action.action} — ${response.reason}`);
+        console.log(`[BUSINESS ENGINE] ❌ REJECTED: ${action.action} — ${response.reason}`);
       }
 
       await new Promise(r => setTimeout(r, 1000));
@@ -1149,6 +1091,8 @@ class OptimizationEngine {
   }
 }
 
-module.exports = OptimizationEngine;
+module.exports = BusinessDecisionEngine;
+module.exports.BusinessDecisionEngine = BusinessDecisionEngine;
+module.exports.OptimizationEngine = BusinessDecisionEngine;
 module.exports.buildProfitContext = buildProfitContext;
 module.exports.buildWeekdayScaleContext = buildWeekdayScaleContext;
