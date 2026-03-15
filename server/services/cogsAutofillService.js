@@ -540,17 +540,19 @@ function buildNewOrderNotification(result) {
     result?.paymentLabel,
     result?.paymentMethod,
   ].filter(Boolean).map(value => escapeHtml(value)).join(' · ');
+  const checklistLine = isCompleted
+    ? 'Checklist: ✅ Payment recognized in Imweb'
+    : 'Checklist: ☐ Check payment in Imweb';
 
   const sections = [
-    `${isCompleted ? '✅' : '🛎️'} <b>New Imweb Order</b>`,
+    isCompleted ? '✅ <b>New Imweb Order</b>' : '🛎️ <b>New Imweb Order</b> 🎉🎉',
     '',
     `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
     `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,
     `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
     `Revenue: ${escapeHtml(formatStoreMoney(orderValue))} · ${escapeHtml(getOrderSizeLabel(orderValue))}`,
     `Payment: ${paymentLabel || (isCompleted ? 'Paid confirmed' : 'Check payment now')}`,
-    'Checklist:',
-    isCompleted ? '✅ Payment recognized in Imweb' : '☐ Check payment in Imweb',
+    checklistLine,
   ];
 
   if (isCompleted && result?.sheetName) {
@@ -599,6 +601,9 @@ function buildAutofillPrivateNotification(result) {
     '🔒 <b>Customer Details</b>',
     '',
     '<i>Tap the hidden fields to reveal customer details.</i>',
+    '',
+    '<b>Order ID</b>',
+    spoiler(result?.orderNo),
     '',
     '<b>Name</b>',
     spoiler(result?.customerName),

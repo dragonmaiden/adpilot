@@ -241,13 +241,13 @@ test('buildNewOrderNotification formats the pre-payment order alert', async () =
       productNames: ['실크 모노그램 방도'],
     });
 
-    assert.match(message, /🛎️ <b>New Imweb Order<\/b>/);
+    assert.match(message, /🛎️ <b>New Imweb Order<\/b> 🎉🎉/);
     assert.match(message, /Order: 202603145648900/);
     assert.match(message, /Date: 2026-03-13/);
     assert.match(message, /Customer: 홍신희/);
     assert.match(message, /Revenue: ₩111,000 · 🐟 small fish ₩₩/);
     assert.match(message, /Payment: Awaiting payment check · BANK_TRANSFER/);
-    assert.match(message, /Checklist:\n☐ Check payment in Imweb/);
+    assert.match(message, /Checklist: ☐ Check payment in Imweb/);
     assert.match(message, /Products:\n• 실크 모노그램 방도/);
   });
 });
@@ -285,7 +285,7 @@ test('buildNewOrderNotification formats the completed checklist state after paym
 
     assert.match(message, /✅ <b>New Imweb Order<\/b>/);
     assert.match(message, /Payment: Paid confirmed · CARD/);
-    assert.match(message, /Checklist:\n✅ Payment recognized in Imweb\n✅ COGS logged in 3월 주문/);
+    assert.match(message, /Checklist: ✅ Payment recognized in Imweb\n✅ COGS logged in 3월 주문/);
   });
 });
 
@@ -352,6 +352,7 @@ test('buildAutofillPrivateNotification formats spoiler-wrapped customer fields a
     },
   }, async service => {
     const message = service.buildAutofillPrivateNotification({
+      orderNo: '202603145648900',
       customerName: '홍신희',
       customerPhone: '01012341234',
       deliveryAddress: '서울 강남구 테헤란로 123 5층',
@@ -360,6 +361,7 @@ test('buildAutofillPrivateNotification formats spoiler-wrapped customer fields a
     });
 
     assert.match(message, /🔒 <b>Customer Details<\/b>/);
+    assert.match(message, /<b>Order ID<\/b>\n<tg-spoiler>202603145648900<\/tg-spoiler>/);
     assert.match(message, /<b>Name<\/b>\n<tg-spoiler>홍신희<\/tg-spoiler>/);
     assert.match(message, /<b>Phone number<\/b>\n<tg-spoiler>01012341234<\/tg-spoiler>/);
     assert.match(message, /<b>Address<\/b>\n<tg-spoiler>서울 강남구 테헤란로 123 5층<\/tg-spoiler>/);
