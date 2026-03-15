@@ -1076,6 +1076,106 @@ test('collectRecentNewOrderNotifications backfills only bounded-recent unpaid or
   });
 });
 
+test('getOrderNotificationDiagnostics reports when an initial bell card was sent and later completed in place', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {
+      '20260313011': {
+        orderNo: '20260313011',
+        importedAt: '2026-03-15T08:03:23.489Z',
+        source: 'append',
+        sheetName: '3월 주문',
+        orderDate: '2026-03-15',
+        rowCount: 1,
+      },
+    },
+    notifiedOrders: {
+      '20260313011': {
+        orderNo: '20260313011',
+        notifiedAt: '2026-03-15T07:58:00.000Z',
+        source: 'webhook_new_order',
+        notificationStage: 'payment_confirmed',
+        paymentConfirmedAt: '2026-03-15T08:03:23.489Z',
+        paymentState: 'paid',
+        sheetName: '3월 주문',
+        messageId: 4321,
+        rowCount: 1,
+      },
+    },
+  }, null, 2));
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const diagnostics = service.getOrderNotificationDiagnostics('20260313011');
+
+    assert.equal(diagnostics.notificationRecorded, true);
+    assert.equal(diagnostics.notification.source, 'webhook_new_order');
+    assert.equal(diagnostics.inference.initialBellCardLikelySent, true);
+    assert.equal(diagnostics.inference.completedCardLikelyEditedInPlace, true);
+    assert.equal(diagnostics.inference.completedFallbackLikelyUsed, false);
+    assert.equal(diagnostics.inference.customerDetailsLikelyResentOnCompletion, false);
+  });
+});
+
+test('getOrderNotificationDiagnostics reports when an order likely skipped the initial bell card and used the completed fallback', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {},
+    notifiedOrders: {
+      '20260313012': {
+        orderNo: '20260313012',
+        notifiedAt: '2026-03-15T08:03:23.489Z',
+        notificationStage: 'payment_confirmed',
+        paymentConfirmedAt: '2026-03-15T08:03:23.489Z',
+        paymentState: 'paid',
+        sheetName: '3월 주문',
+        messageId: 7001,
+        rowCount: 1,
+      },
+    },
+  }, null, 2));
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const diagnostics = service.getOrderNotificationDiagnostics('20260313012');
+
+    assert.equal(diagnostics.notificationRecorded, true);
+    assert.equal(diagnostics.notification.source, null);
+    assert.equal(diagnostics.inference.initialBellCardLikelySent, false);
+    assert.equal(diagnostics.inference.completedCardLikelyEditedInPlace, false);
+    assert.equal(diagnostics.inference.completedFallbackLikelyUsed, true);
+    assert.equal(diagnostics.inference.customerDetailsLikelyResentOnCompletion, true);
+  });
+});
+
 test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or duplicate candidates', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();

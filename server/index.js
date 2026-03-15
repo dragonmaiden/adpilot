@@ -389,6 +389,20 @@ app.get('/api/scans', (req, res) => {
   }));
 });
 
+app.get('/api/orders/:orderNo/notification-diagnostic', (req, res) => {
+  const orderNo = String(req.params?.orderNo || '').trim();
+  if (!orderNo) {
+    return res.status(400).json({ error: 'orderNo is required' });
+  }
+
+  const diagnostics = cogsAutofillService.getOrderNotificationDiagnostics(orderNo);
+  res.json({
+    orderNo,
+    found: Boolean(diagnostics?.notificationRecorded || diagnostics?.importedOrder),
+    diagnostics,
+  });
+});
+
 // ── Trigger manual scan ──
 app.post('/api/scan', scanLimiter, async (req, res) => {
   if (scheduler.getIsScanning()) {

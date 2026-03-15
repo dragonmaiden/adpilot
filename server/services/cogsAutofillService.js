@@ -155,6 +155,123 @@ function getNotifiedOrderMetadata(orderNo) {
   return state.notifiedOrders[normalizedOrderNo] || null;
 }
 
+function buildNotificationBehaviorInference(metadata) {
+  if (!metadata) {
+    return {
+      initialAlertStatus: 'not_recorded',
+      initialBellCardLikelySent: null,
+      completedCardLikelyEditedInPlace: null,
+      completedFallbackLikelyUsed: null,
+      customerDetailsLikelyResentOnCompletion: null,
+      summary: 'No notification record exists for this order.',
+    };
+  }
+
+  const source = asString(metadata.source);
+  const stage = asString(metadata.notificationStage);
+  const hasMessageId = Number.isFinite(Number(metadata.messageId));
+  const isInitialAlertSource = source === 'webhook_new_order' || source === 'scan_backstop';
+  const isFallbackSource = source === 'cogs_autofill_fallback' || !source;
+
+  if (stage === 'delivery_pending') {
+    return {
+      initialAlertStatus: 'delivery_pending',
+      initialBellCardLikelySent: false,
+      completedCardLikelyEditedInPlace: false,
+      completedFallbackLikelyUsed: false,
+      customerDetailsLikelyResentOnCompletion: false,
+      summary: 'The order was seen, but Telegram delivery of the initial bell card was not confirmed.',
+    };
+  }
+
+  if (isInitialAlertSource && hasMessageId && stage === 'payment_pending') {
+    return {
+      initialAlertStatus: 'sent_pending_payment',
+      initialBellCardLikelySent: true,
+      completedCardLikelyEditedInPlace: false,
+      completedFallbackLikelyUsed: false,
+      customerDetailsLikelyResentOnCompletion: false,
+      summary: 'The initial bell card was delivered and is still waiting for payment recognition.',
+    };
+  }
+
+  if (isInitialAlertSource && hasMessageId && stage === 'payment_confirmed') {
+    return {
+      initialAlertStatus: 'sent_then_completed',
+      initialBellCardLikelySent: true,
+      completedCardLikelyEditedInPlace: true,
+      completedFallbackLikelyUsed: false,
+      customerDetailsLikelyResentOnCompletion: false,
+      summary: 'The initial bell card was delivered and later completed in place.',
+    };
+  }
+
+  if (isFallbackSource && hasMessageId && stage === 'payment_confirmed') {
+    return {
+      initialAlertStatus: 'completed_fallback_only',
+      initialBellCardLikelySent: false,
+      completedCardLikelyEditedInPlace: false,
+      completedFallbackLikelyUsed: true,
+      customerDetailsLikelyResentOnCompletion: true,
+      summary: 'There is only a completed notification record, so this likely skipped the initial bell card and used the completed fallback.',
+    };
+  }
+
+  return {
+    initialAlertStatus: 'unknown',
+    initialBellCardLikelySent: null,
+    completedCardLikelyEditedInPlace: null,
+    completedFallbackLikelyUsed: null,
+    customerDetailsLikelyResentOnCompletion: null,
+    summary: 'Notification state exists, but the delivery path cannot be inferred confidently.',
+  };
+}
+
+function sanitizeNotificationMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  return {
+    orderNo: asString(metadata.orderNo) || null,
+    source: asString(metadata.source) || null,
+    eventName: asString(metadata.eventName) || null,
+    notificationStage: asString(metadata.notificationStage) || null,
+    notifiedAt: asString(metadata.notifiedAt) || null,
+    paymentConfirmedAt: asString(metadata.paymentConfirmedAt) || null,
+    orderDate: asString(metadata.orderDate) || null,
+    paymentState: asString(metadata.paymentState) || null,
+    sheetName: asString(metadata.sheetName) || null,
+    messageId: Number.isFinite(Number(metadata.messageId)) ? Number(metadata.messageId) : null,
+    rowCount: Number.isFinite(Number(metadata.rowCount)) ? Number(metadata.rowCount) : null,
+  };
+}
+
+function getOrderNotificationDiagnostics(orderNo) {
+  const normalizedOrderNo = asString(orderNo);
+  if (!normalizedOrderNo) {
+    return null;
+  }
+
+  const notification = sanitizeNotificationMetadata(getNotifiedOrderMetadata(normalizedOrderNo));
+  const imported = getImportedOrderMetadata(normalizedOrderNo);
+
+  return {
+    orderNo: normalizedOrderNo,
+    notificationRecorded: Boolean(notification),
+    notification,
+    importedOrder: imported ? {
+      orderNo: asString(imported.orderNo) || normalizedOrderNo,
+      importedAt: asString(imported.importedAt) || null,
+      source: asString(imported.source) || null,
+      sheetName: asString(imported.sheetName) || null,
+      orderDate: asString(imported.orderDate) || null,
+      rowCount: Number.isFinite(Number(imported.rowCount)) ? Number(imported.rowCount) : null,
+    } : null,
+    inference: buildNotificationBehaviorInference(notification),
+  };
+}
+
 function wasOrderNotified(orderNo) {
   return Boolean(getNotifiedOrderMetadata(orderNo));
 }
@@ -1228,6 +1345,7 @@ module.exports = {
   sanitizeAutofillResultForResponse,
   getImportedOrderMetadata,
   getNotifiedOrderMetadata,
+  getOrderNotificationDiagnostics,
   recordOrderNotificationDelivery,
   markOrderNotificationCompleted,
   collectRecentNewOrderNotifications,
