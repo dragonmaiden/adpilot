@@ -247,7 +247,7 @@ test('buildNewOrderNotification formats the pre-payment order alert', async () =
     assert.match(message, /Customer: 홍신희/);
     assert.match(message, /Revenue: ₩111,000 · 🐟 small fish ₩₩/);
     assert.match(message, /Payment: Awaiting payment check · BANK_TRANSFER/);
-    assert.match(message, /Checklist: ☐ Check payment in Imweb/);
+    assert.match(message, /Checklist: Check payment in Imweb ☐/);
     assert.match(message, /Products:\n• 실크 모노그램 방도/);
   });
 });
@@ -285,7 +285,7 @@ test('buildNewOrderNotification formats the completed checklist state after paym
 
     assert.match(message, /✅ <b>New Imweb Order<\/b>/);
     assert.match(message, /Payment: Paid confirmed · CARD/);
-    assert.match(message, /Checklist: ✅ Payment recognized in Imweb\n✅ COGS logged in 3월 주문/);
+    assert.match(message, /Checklist: Payment recognized in Imweb ✅\n✅ COGS logged in 3월 주문/);
   });
 });
 

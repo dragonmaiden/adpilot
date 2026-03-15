@@ -659,8 +659,8 @@ function buildNewOrderNotification(result) {
     result?.paymentMethod,
   ].filter(Boolean).map(value => escapeHtml(value)).join(' · ');
   const checklistLine = isCompleted
-    ? 'Checklist: ✅ Payment recognized in Imweb'
-    : 'Checklist: ☐ Check payment in Imweb';
+    ? 'Checklist: Payment recognized in Imweb ✅'
+    : 'Checklist: Check payment in Imweb ☐';
 
   const sections = [
     isCompleted ? '✅ <b>New Imweb Order</b>' : '🛎️ <b>New Imweb Order</b> 🎉🎉',
