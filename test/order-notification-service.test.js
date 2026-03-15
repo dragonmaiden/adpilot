@@ -142,9 +142,8 @@ test('completeExistingOrderNotification edits the original alert and marks the c
   });
 });
 
-test('deliverPaidOrderNotification falls back to the completed new-order card when there is no editable original message', async () => {
+test('deliverPaidOrderNotification stays silent when an existing order card cannot be edited yet', async () => {
   const sentMessages = [];
-  const completionMarks = [];
 
   await withMockedOrderNotificationService({
     telegram: {
@@ -163,10 +162,6 @@ test('deliverPaidOrderNotification falls back to the completed new-order card wh
       }),
       buildNewOrderNotification: result => `completed:${result.orderNo}:${result.notificationStage}`,
       buildAutofillPrivateNotification: result => `private:${result.orderNo}`,
-      markOrderNotificationCompleted: (orderNo, metadata) => {
-        completionMarks.push({ orderNo, metadata });
-        return { orderNo, ...metadata };
-      },
     },
   }, async service => {
     const result = await service.deliverPaidOrderNotification({
@@ -176,21 +171,9 @@ test('deliverPaidOrderNotification falls back to the completed new-order card wh
       rowCount: 1,
     });
 
-    assert.equal(result.kind, 'sent_paid_fallback');
-    assert.equal(sentMessages.length, 2);
-    assert.equal(sentMessages[0].text, 'completed:202603150001:payment_confirmed');
-    assert.deepEqual(completionMarks, [
-      {
-        orderNo: '202603150001',
-        metadata: {
-          messageId: 7001,
-          paymentState: 'paid',
-          sheetName: '3월 주문',
-          rowCount: 1,
-        },
-      },
-    ]);
-    assert.equal(sentMessages[1].options.protectContent, true);
+    assert.equal(result.kind, 'awaiting_existing_update');
+    assert.equal(result.reason, 'missing_message_id');
+    assert.equal(sentMessages.length, 0);
   });
 });
 
@@ -223,5 +206,51 @@ test('deliverPaidOrderNotification stays silent when the order was already marke
 
     assert.equal(result.kind, 'already_completed');
     assert.equal(sentMessages.length, 0);
+  });
+});
+
+test('deliverPaidOrderNotification still falls back to a completed card when no prior order alert exists', async () => {
+  const sentMessages = [];
+  const completionMarks = [];
+
+  await withMockedOrderNotificationService({
+    telegram: {
+      sendMessage: async (text, parseMode = 'HTML', options = {}) => {
+        sentMessages.push({ text, parseMode, options });
+        return { ok: true, result: { message_id: sentMessages.length + 7000 } };
+      },
+    },
+    cogsAutofillService: {
+      getNotifiedOrderMetadata: () => null,
+      buildNewOrderNotification: result => `completed:${result.orderNo}:${result.notificationStage}`,
+      buildAutofillPrivateNotification: result => `private:${result.orderNo}`,
+      markOrderNotificationCompleted: (orderNo, metadata) => {
+        completionMarks.push({ orderNo, metadata });
+        return { orderNo, ...metadata };
+      },
+    },
+  }, async service => {
+    const result = await service.deliverPaidOrderNotification({
+      orderNo: '202603150001',
+      paymentState: 'paid',
+      sheetName: '3월 주문',
+      rowCount: 1,
+    });
+
+    assert.equal(result.kind, 'sent_paid_fallback');
+    assert.equal(sentMessages.length, 2);
+    assert.equal(sentMessages[0].text, 'completed:202603150001:payment_confirmed');
+    assert.deepEqual(completionMarks, [
+      {
+        orderNo: '202603150001',
+        metadata: {
+          messageId: 7001,
+          paymentState: 'paid',
+          sheetName: '3월 주문',
+          rowCount: 1,
+        },
+      },
+    ]);
+    assert.equal(sentMessages[1].options.protectContent, true);
   });
 });

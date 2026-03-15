@@ -46,6 +46,10 @@ async function completeExistingOrderNotification(result) {
   }
 
   const metadata = cogsAutofillService.getNotifiedOrderMetadata(result.orderNo);
+  if (!metadata) {
+    return { ok: false, updated: false, reason: 'missing_notification' };
+  }
+
   if (metadata?.notificationStage === 'payment_confirmed' && (!result?.sheetName || metadata.sheetName === result.sheetName)) {
     return { ok: true, updated: false, reason: 'already_completed' };
   }
@@ -91,6 +95,13 @@ async function deliverPaidOrderNotification(result) {
   if (completed.reason === 'already_completed') {
     return {
       kind: 'already_completed',
+      ...completed,
+    };
+  }
+
+  if (completed.reason === 'missing_message_id' || completed.reason === 'edit_failed') {
+    return {
+      kind: 'awaiting_existing_update',
       ...completed,
     };
   }

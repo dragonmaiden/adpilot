@@ -368,6 +368,12 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
       await orderNotificationService.deliverPaidOrderNotification(appended);
     }
 
+    for (const duplicate of result.duplicates) {
+      if (duplicate?.alreadyNotified) {
+        await orderNotificationService.deliverPaidOrderNotification(duplicate);
+      }
+    }
+
     return { ok: true, result };
   } catch (err) {
     console.error('[SCHEDULER]   ⚠ COGS autofill reconciliation failed:', err.message);
