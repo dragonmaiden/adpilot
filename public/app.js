@@ -105,9 +105,6 @@ navItems.forEach(item => {
 
     if (window.AdPilotLive) {
       window.AdPilotLive.handlePageActivated(target);
-      if (target === 'analytics' || target === 'fatigue' || target === 'budget' || target === 'optimizations') {
-        window.AdPilotLive.refresh(target);
-      }
     }
   });
 });

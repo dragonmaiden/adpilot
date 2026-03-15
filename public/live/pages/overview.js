@@ -1,8 +1,9 @@
 (function () {
   const live = window.AdPilotLive;
   const { timeSince, tr, getLocale, localizeSystemText } = live.shared;
-  const { fetchOverview, fetchAnalytics } = live.api;
+  const { fetchOverview } = live.api;
   const { sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
+  let cachedOverviewData = null;
 
   function initOverviewPage() {
     document.querySelectorAll('[data-nav-target]').forEach(button => {
@@ -216,12 +217,15 @@
     setHeaderNotice(noticeEl, '');
   }
 
-  async function refreshOverviewPage() {
+  async function refreshOverviewPage(options = {}) {
     try {
-      const [data, analyticsData] = await Promise.all([
-        fetchOverview(),
-        fetchAnalytics(),
-      ]);
+      let data = cachedOverviewData;
+      const shouldReuseCache = Boolean(options?.preferCached && cachedOverviewData);
+      if (!shouldReuseCache) {
+        data = await fetchOverview();
+        if (!data) return;
+        cachedOverviewData = data;
+      }
       if (!data) return;
 
       const k = data.kpis;
@@ -352,7 +356,7 @@
 
       const dailyMerged = sliceRowsByWindow((data.charts && data.charts.dailyMerged) || [], 'overview');
       const dailyProfit = sliceRowsByWindow((data.charts && data.charts.dailyProfit) || [], 'overview');
-      const hourlyOrders = analyticsData?.charts?.hourlyOrders || [];
+      const hourlyOrders = data.charts?.hourlyOrders || [];
       updateSeriesWindowBadges('overview', dailyMerged);
 
       if (dailyMerged.length > 0) {

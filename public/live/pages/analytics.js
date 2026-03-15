@@ -3,6 +3,8 @@
   const { esc, safeConfidenceLevel, formatSignedKrw, formatSignedCompactKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum, tr, getLocale } = live.shared;
   const { fetchAnalytics, fetchReconciliation } = live.api;
   const { getSeriesWindowMeta, sliceRowsByWindow } = live.seriesWindows;
+  let cachedAnalyticsData = null;
+  let cachedReconciliation;
 
   function formatRateMetricDetail(metric, fallback) {
     if (!metric || metric.numerator == null || metric.denominator == null) {
@@ -411,12 +413,24 @@
     }
   }
 
-  async function refreshAnalyticsPage() {
+  async function refreshAnalyticsPage(options = {}) {
     try {
-      const [data, reconciliation] = await Promise.all([
-        fetchAnalytics(),
-        fetchReconciliation(),
-      ]);
+      let data = cachedAnalyticsData;
+      let reconciliation = cachedReconciliation;
+      const shouldReuseCache = Boolean(
+        options?.preferCached
+        && cachedAnalyticsData
+        && cachedReconciliation !== undefined
+      );
+      if (!shouldReuseCache) {
+        [data, reconciliation] = await Promise.all([
+          fetchAnalytics(),
+          fetchReconciliation(),
+        ]);
+        if (!data) return;
+        cachedAnalyticsData = data;
+        cachedReconciliation = reconciliation || null;
+      }
       if (!data) return;
 
       const colors = typeof getChartColors === 'function' ? getChartColors() : {};

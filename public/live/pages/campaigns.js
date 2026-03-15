@@ -7,6 +7,9 @@
   const PRIORITY_RANK = { critical: 0, high: 1, medium: 2, low: 3 };
   let liveIntradayChart = null;
   let liveDailyContextChart = null;
+  let cachedAnalyticsData = null;
+  let cachedOverviewData = null;
+  let cachedSpendDaily = null;
 
   function getIntradayChartColors() {
     const style = getComputedStyle(document.documentElement);
@@ -778,18 +781,39 @@
     }
   }
 
-  async function refreshCampaignsPage() {
+  async function refreshCampaignsPage(options = {}) {
     const windowMeta = getSeriesWindowMeta('campaigns');
     setDailyContextLoading(true);
     try {
-      const [campaignData, livePerformance, postmortem, analyticsData, overviewData, spendDaily] = await Promise.all([
+      const shouldReuseStaticContext = Boolean(
+        options?.preferCachedContext
+        && cachedAnalyticsData
+        && cachedOverviewData
+        && cachedSpendDaily
+      );
+      const dynamicRequest = Promise.all([
         fetchCampaigns(windowMeta.key),
         fetchLivePerformance(windowMeta.key),
         fetchPostmortem(windowMeta.key),
-        fetchAnalytics(),
-        fetchOverview(),
-        fetchSpendDaily(),
       ]);
+      const staticRequest = shouldReuseStaticContext
+        ? Promise.resolve([cachedAnalyticsData, cachedOverviewData, cachedSpendDaily])
+        : Promise.all([
+            fetchAnalytics(),
+            fetchOverview(),
+            fetchSpendDaily(),
+          ]);
+      const [[campaignData, livePerformance, postmortem], [analyticsDataRaw, overviewDataRaw, spendDailyRaw]] = await Promise.all([
+        dynamicRequest,
+        staticRequest,
+      ]);
+      const analyticsData = analyticsDataRaw || cachedAnalyticsData;
+      const overviewData = overviewDataRaw || cachedOverviewData;
+      const spendDaily = spendDailyRaw || cachedSpendDaily;
+
+      if (analyticsDataRaw) cachedAnalyticsData = analyticsDataRaw;
+      if (overviewDataRaw) cachedOverviewData = overviewDataRaw;
+      if (spendDailyRaw) cachedSpendDaily = spendDailyRaw;
 
       const resolvedWindowDays = Number(campaignData?.windowDays || postmortem?.windowDays || windowMeta?.days || 0);
       const windowLabel = resolvedWindowDays > 0

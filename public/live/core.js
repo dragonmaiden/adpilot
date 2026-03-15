@@ -24,13 +24,13 @@
     initPage(name) {
       initializePage(name);
     },
-    async refresh(name) {
+    async refresh(name, options) {
       const target = name || this.getActivePage();
       if (!liveEnabled || !target) return null;
       initializePage(target);
       const page = pages.get(target);
       if (!page || typeof page.refresh !== 'function') return null;
-      return page.refresh();
+      return page.refresh(options || {});
     },
     handlePageActivated(name) {
       initializePage(name);

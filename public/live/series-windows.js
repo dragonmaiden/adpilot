@@ -19,9 +19,20 @@
     'media-profitability': '30d',
     'revenue-quality': 'all',
   });
+  const SERIES_WINDOW_GROUP_CONTEXT = Object.freeze({
+    overview: { page: 'overview' },
+    campaigns: { page: 'campaigns' },
+    'profit-structure': { page: 'analytics' },
+    'media-profitability': { page: 'analytics' },
+    'revenue-quality': { page: 'analytics' },
+  });
 
   const seriesWindowState = { ...DEFAULT_SERIES_WINDOWS };
   const seriesWindowRefreshers = new Map();
+
+  function translate(enValue, krValue) {
+    return live.shared?.tr ? live.shared.tr(enValue, krValue) : (document.documentElement.lang === 'ko' ? krValue : enValue);
+  }
 
   function getSeriesWindowMeta(group) {
     const selectedKey = seriesWindowState[group] || DEFAULT_SERIES_WINDOWS[group] || 'all';
@@ -69,6 +80,75 @@
     });
   }
 
+  function ensureSeriesWindowStatus(groupEl) {
+    const group = groupEl?.dataset?.seriesWindowGroup;
+    const toolbar = groupEl?.closest('.range-toolbar');
+    if (!group || !toolbar) return null;
+
+    let statusEl = toolbar.querySelector(`[data-series-window-status="${group}"]`);
+    if (!statusEl) {
+      statusEl = document.createElement('span');
+      statusEl.className = 'range-toolbar-status';
+      statusEl.dataset.seriesWindowStatus = group;
+      statusEl.setAttribute('aria-live', 'polite');
+      statusEl.setAttribute('aria-atomic', 'true');
+      toolbar.appendChild(statusEl);
+    }
+
+    return statusEl;
+  }
+
+  function setSeriesWindowPageLoading(group, isLoading) {
+    const context = SERIES_WINDOW_GROUP_CONTEXT[group];
+    const page = context?.page;
+    if (!page) return;
+
+    const pageEl = document.querySelector(`.page[data-page="${page}"]`);
+    if (!pageEl) return;
+
+    if (isLoading) {
+      pageEl.dataset.seriesWindowLoading = group;
+      return;
+    }
+
+    if (pageEl.dataset.seriesWindowLoading === group) {
+      delete pageEl.dataset.seriesWindowLoading;
+    }
+  }
+
+  function setSeriesWindowLoading(group, isLoading) {
+    const statusText = isLoading
+      ? translate(
+          `Refreshing ${getSeriesWindowMeta(group).label} view...`,
+          `${getSeriesWindowMeta(group).label} 보기 업데이트 중...`
+        )
+      : '';
+
+    document.querySelectorAll(`[data-series-window-group="${group}"]`).forEach(groupEl => {
+      groupEl.dataset.loading = isLoading ? 'true' : 'false';
+      groupEl.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+      groupEl.querySelectorAll('[data-series-window-value]').forEach(button => {
+        button.disabled = isLoading;
+      });
+
+      const statusEl = ensureSeriesWindowStatus(groupEl);
+      if (statusEl) {
+        statusEl.textContent = statusText;
+        statusEl.dataset.visible = isLoading ? 'true' : 'false';
+      }
+    });
+
+    setSeriesWindowPageLoading(group, isLoading);
+  }
+
+  function waitForNextPaint() {
+    return new Promise(resolve => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(resolve);
+      });
+    });
+  }
+
   function registerSeriesWindowRefresher(group, refresher) {
     if (typeof refresher === 'function') {
       seriesWindowRefreshers.set(group, refresher);
@@ -89,6 +169,9 @@
 
     document.body.dataset.seriesWindowControlsReady = 'true';
     syncSeriesWindowControls();
+    document.querySelectorAll('[data-series-window-group]').forEach(groupEl => {
+      ensureSeriesWindowStatus(groupEl);
+    });
 
     document.addEventListener('click', async event => {
       const button = event.target.closest('[data-series-window-value]');
@@ -98,11 +181,19 @@
       const group = groupEl?.dataset.seriesWindowGroup;
       const nextValue = button.dataset.seriesWindowValue;
       if (!group || !SERIES_WINDOW_OPTIONS[nextValue]) return;
+      if (groupEl?.dataset.loading === 'true') return;
       if (seriesWindowState[group] === nextValue) return;
 
       seriesWindowState[group] = nextValue;
       syncSeriesWindowControls();
-      await refreshSeriesWindowGroup(group);
+      setSeriesWindowLoading(group, true);
+
+      try {
+        await waitForNextPaint();
+        await refreshSeriesWindowGroup(group);
+      } finally {
+        setSeriesWindowLoading(group, false);
+      }
     });
   }
 

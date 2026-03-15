@@ -180,11 +180,11 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     live.setPageActivatedHandler(handlePageActivated);
-    registerSeriesWindowRefresher('overview', () => live.refresh('overview'));
-    registerSeriesWindowRefresher('campaigns', () => live.refresh('campaigns'));
-    registerSeriesWindowRefresher('profit-structure', () => live.refresh('analytics'));
-    registerSeriesWindowRefresher('media-profitability', () => live.refresh('analytics'));
-    registerSeriesWindowRefresher('revenue-quality', () => live.refresh('analytics'));
+    registerSeriesWindowRefresher('overview', () => live.refresh('overview', { preferCached: true, cause: 'series-window' }));
+    registerSeriesWindowRefresher('campaigns', () => live.refresh('campaigns', { preferCachedContext: true, cause: 'series-window' }));
+    registerSeriesWindowRefresher('profit-structure', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
+    registerSeriesWindowRefresher('media-profitability', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
+    registerSeriesWindowRefresher('revenue-quality', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
     initSeriesWindowControls();
 
     startLiveMode();
