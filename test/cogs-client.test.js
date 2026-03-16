@@ -170,7 +170,7 @@ test('coverage and waterfall mark partial COGS days separately from fully covere
   };
 
   const coverage = buildDataCoverage(dailyMerged, dailyCOGS);
-  const waterfall = buildProfitWaterfall(dailyMerged, dailyCOGS, 0.033);
+  const waterfall = buildProfitWaterfall(dailyMerged, dailyCOGS, 0.06);
 
   assert.equal(coverage.daysWithCOGS, 2);
   assert.equal(coverage.daysWithPartialCOGS, 1);

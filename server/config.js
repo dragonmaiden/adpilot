@@ -94,7 +94,7 @@ const config = {
 
   // Fees
   fees: {
-    paymentFeeRate: 0.033, // Standard Korean PG rate (3.3%)
+    paymentFeeRate: 0.06, // Standard payment fee assumption (6%)
   },
 
   // Currency

@@ -52,20 +52,20 @@ test('buildCampaignEconomics allocates only the Meta-attributable share of store
   assert.equal(winner.estimatedRevenue, 300000);
   assert.equal(winner.allocatedCogs, 90000);
   assert.equal(winner.allocatedShipping, 15000);
-  assert.equal(winner.allocatedFees, 9900);
-  assert.equal(winner.estimatedTrueNetProfit, 98100);
+  assert.equal(winner.allocatedFees, 18000);
+  assert.equal(winner.estimatedTrueNetProfit, 90000);
   assert.equal(winner.confidence, 'medium');
   assert.equal(winner.confidenceLabel, 'Medium confidence');
   assert.equal(winner.hasReliableEstimate, true);
   assert.equal(winner.estimatedAov, 100000);
-  assert.equal(winner.breakEvenCpa, 42.55);
-  assert.equal(winner.targetCpa, 34.04);
+  assert.equal(winner.breakEvenCpa, 40.69);
+  assert.equal(winner.targetCpa, 32.55);
 
   assert.equal(small.estimatedRevenue, 100000);
   assert.equal(small.allocatedCogs, 30000);
   assert.equal(small.allocatedShipping, 5000);
-  assert.equal(small.allocatedFees, 3300);
-  assert.equal(small.estimatedTrueNetProfit, 18200);
+  assert.equal(small.allocatedFees, 6000);
+  assert.equal(small.estimatedTrueNetProfit, 15500);
   assert.equal(small.confidence, 'low');
   assert.equal(small.hasReliableEstimate, false);
   assert.match(winner.confidenceReasons[0], /COGS coverage|Meta-attributed purchase|Evidence/i);

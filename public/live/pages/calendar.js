@@ -522,7 +522,7 @@
         icon: 'package',
       },
       { label: tr('Shipping', '배송비'), value: formatSignedKrw(-(summary.shipping || 0)), sub: tr('Operational shipping cost', '운영 배송비'), tone: 'negative', icon: 'truck' },
-      { label: tr('Payment Fees', '결제 수수료'), value: formatSignedKrw(-(summary.paymentFees || 0)), sub: tr('3.3% applied to net revenue', '순매출 기준 3.3% 적용'), tone: 'negative', icon: 'credit-card' },
+      { label: tr('Payment Fees', '결제 수수료'), value: formatSignedKrw(-(summary.paymentFees || 0)), sub: tr('6% applied to net revenue', '순매출 기준 6% 적용'), tone: 'negative', icon: 'credit-card' },
       { label: tr('Ad Spend', '광고비'), value: formatSignedKrw(-(summary.adSpendKRW || 0)), sub: tr(`${formatUsd(summary.adSpend || 0, 2)} media spend`, `광고비 ${formatUsd(summary.adSpend || 0, 2)}`), tone: 'negative', icon: 'megaphone' },
       { label: tr('True Net Profit', '실질 순이익'), value: formatSignedKrw(summary.trueNetProfit || 0), sub: isProfitPositive ? tr('Profit after all deductions', '모든 차감 후 수익') : tr('Below break-even after all deductions', '모든 차감 후 손익분기 이하'), tone: isProfitPositive ? 'positive' : 'negative', icon: 'coins' },
     ];
