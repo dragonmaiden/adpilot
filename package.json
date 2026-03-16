@@ -8,7 +8,9 @@
     "dev": "node server/index.js",
     "test": "node --test",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=18.0.0"
@@ -25,6 +27,8 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.0.3",
-    "globals": "^17.4.0"
+    "eslint-plugin-n": "^17.24.0",
+    "globals": "^17.4.0",
+    "prettier": "^3.6.2"
   }
 }

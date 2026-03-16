@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import n from 'eslint-plugin-n';
 
 const commonRules = {
   'no-console': 'off',
@@ -14,6 +15,11 @@ export default [
     ],
   },
   js.configs.recommended,
+  {
+    plugins: {
+      n,
+    },
+  },
   {
     files: ['server/**/*.js', 'test/**/*.js'],
     languageOptions: {
@@ -30,6 +36,7 @@ export default [
         varsIgnorePattern: '^_',
         caughtErrorsIgnorePattern: '^_',
       }],
+      'n/no-deprecated-api': 'warn',
     },
   },
   {
