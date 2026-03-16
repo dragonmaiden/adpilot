@@ -120,12 +120,12 @@ function extractImwebError(payload) {
 
 async function readImwebResponse(res, label) {
   const rawText = await res.text();
-  let payload = null;
+  let payload;
 
   try {
     payload = rawText ? JSON.parse(rawText) : {};
   } catch (err) {
-    throw new Error(`${label} returned invalid JSON (HTTP ${res.status})`);
+    throw new Error(`${label} returned invalid JSON (HTTP ${res.status})`, { cause: err });
   }
 
   const payloadStatus = typeof payload?.statusCode === 'number' ? payload.statusCode : null;
@@ -247,7 +247,7 @@ async function refreshAccessToken(options = {}) {
     console.error(`[IMWEB] ${msg}`);
     syncAuthState({ lastError: msg, tokenSource: source });
     sendTokenAlert(msg);
-    throw new Error(msg);
+    throw new Error(msg, { cause: networkErr });
   }
 
   try {
@@ -481,7 +481,7 @@ async function getOrder(orderNo) {
     const orders = await getAllOrders();
     const fallback = orders.find(order => String(order?.orderNo || '').trim() === normalizedOrderNo);
     if (!fallback) {
-      throw new Error(`Order ${normalizedOrderNo} not found`);
+      throw new Error(`Order ${normalizedOrderNo} not found`, { cause: err });
     }
     return fallback;
   }

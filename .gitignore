@@ -4,7 +4,6 @@ server/node_modules/
 server/data/*.json
 server/data/snapshots/
 server/data/logs/
-eslint.config.mjs
 *.log
 .DS_Store
 .openclaw/

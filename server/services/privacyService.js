@@ -24,7 +24,7 @@ function normalizeZipcode(value) {
 function normalizeAddress(value) {
   return asString(value)
     .toLowerCase()
-    .replace(/[()\[\],.]/g, ' ')
+    .replace(/[()[\],.]/g, ' ')
     .replace(/\s+/g, '');
 }
 
@@ -32,7 +32,7 @@ function normalizeProductName(value) {
   return asString(value)
     .toLowerCase()
     .replace(/\s+/g, '')
-    .replace(/[\[\]()]/g, '');
+    .replace(/[[\]()]/g, '');
 }
 
 function buildCombinedAddress(delivery) {

@@ -381,16 +381,13 @@
     const topPortfolio = portfolioQueue[0];
     const topCleanup = cleanupQueue[0];
 
-    let tone = 'neutral';
-    let title = tr('Waiting for AI operations data...', 'AI 운영 데이터 대기 중...');
-    let body = tr(
-      'This space will tell you what still needs a decision, what inputs need fixing, and when the right move is to leave delivery alone.',
-      '이 영역은 아직 결정이 필요한 것, 어떤 입력을 고쳐야 하는지, 그리고 언제 집행을 그대로 두는 것이 맞는지를 알려줍니다.'
-    );
-    let nextMove = '—';
-    let nextMoveMeta = '—';
-    let ignoreNow = '—';
-    let ignoreNowMeta = '—';
+    let tone;
+    let title;
+    let body;
+    let nextMove;
+    let nextMoveMeta;
+    let ignoreNow;
+    let ignoreNowMeta;
 
     if (summary.actionNowFamilies > 0 && topImmediate) {
       tone = 'warning';
