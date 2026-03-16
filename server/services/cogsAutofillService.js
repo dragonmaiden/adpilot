@@ -292,10 +292,6 @@ function wasOrderNotified(orderNo) {
   return Boolean(getNotifiedOrderMetadata(orderNo));
 }
 
-function wasOrderImported(orderNo) {
-  return Boolean(getImportedOrderMetadata(orderNo));
-}
-
 function base64UrlEncode(input) {
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(String(input));
   return buffer.toString('base64')

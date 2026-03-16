@@ -2,7 +2,6 @@ const config = require('../config');
 const meta = require('./metaClient');
 const imweb = require('./imwebClient');
 const OptimizationEngine = require('./optimizer');
-const telegram = require('./telegram');
 const scanStore = require('./scanStore');
 const snapshotRepository = require('./snapshotRepository');
 const { validateMetaCampaigns, validateMetaInsights, validateImwebOrders, logValidation } = require('../validation/vendorSchemas');

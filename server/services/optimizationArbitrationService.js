@@ -124,7 +124,7 @@ function arbitrateOptimizations(optimizations, metaStructure = {}) {
     }
   }
 
-  for (const [entityKey, optimization] of acceptedExecutable.entries()) {
+  for (const [, optimization] of acceptedExecutable.entries()) {
     const parentKeys = getParentKeys(optimization, hierarchy);
     const suppressedByParent = parentKeys.find(key => parentPauseKeys.has(key));
     if (suppressedByParent) {

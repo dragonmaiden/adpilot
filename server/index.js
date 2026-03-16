@@ -391,7 +391,7 @@ app.post('/api/campaigns/:id/status', writeLimiter, validateMetaIdParam, async (
     // Wait and execute in background
     const response = await telegram.waitForApproval(approvalId, 300000);
     if (response.approved) {
-      const result = await meta.updateCampaignStatus(req.params.id, status);
+      await meta.updateCampaignStatus(req.params.id, status);
       await telegram.sendMessage(`✅ Campaign "${name}" ${status === 'PAUSED' ? 'paused' : 'resumed'} successfully.`);
     }
   } catch (err) {
@@ -431,7 +431,7 @@ app.post('/api/campaigns/:id/budget', writeLimiter, validateMetaIdParam, async (
 
     const response = await telegram.waitForApproval(approvalId, 300000);
     if (response.approved) {
-      const result = await meta.updateCampaignBudget(req.params.id, cents);
+      await meta.updateCampaignBudget(req.params.id, cents);
       await telegram.sendMessage(`✅ Budget for "${name}" updated to $${dailyBudget}/day.`);
     }
   } catch (err) {

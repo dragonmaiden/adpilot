@@ -1,5 +1,5 @@
 function evaluateEconomics(context) {
-  const { snapshot, scaleParams, reduceParams, penaltyWeights, specialistWeights, derived } = context;
+  const { snapshot, reduceParams, penaltyWeights, specialistWeights, derived } = context;
   const blockers = [];
   const cautions = [];
   const penalties = [];

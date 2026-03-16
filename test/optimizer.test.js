@@ -277,15 +277,6 @@ test('analyzeBudgetReallocation follows contribution estimates instead of issuin
 test('analyze removes Meta-overlap actions and freezes budget changes when measurement trust is weak', async () => {
   const engine = new OptimizationEngine(12);
   const campaigns = [createCampaign()];
-  const adSets = [
-    {
-      id: 'as1',
-      name: 'Legacy Ad Set',
-      campaign_id: 'c1',
-      effective_status: 'ACTIVE',
-      daily_budget: '5000',
-    },
-  ];
   const ads = [
     {
       id: 'ad1',
