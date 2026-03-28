@@ -267,12 +267,27 @@ function resolveRecentImwebWindowStart(previousScanTime) {
   const intervalMinutes = runtimeSettings.getSchedulerSettings().scanIntervalMinutes;
   const graceMinutes = 10;
   const fallbackWindowStart = new Date(Date.now() - (Math.max(intervalMinutes * 2, intervalMinutes + 15) * 60 * 1000));
-  if (!previousScanTime) {
+
+  // Use the last successful Imweb fetch rather than the last scan time.
+  // If Imweb was down for hours, the scan timer keeps advancing but no
+  // orders were fetched. On recovery the window must reach back to the
+  // last time we actually got good data, otherwise orders placed during
+  // the outage are permanently missed.
+  const imwebHealth = scanStore.getSourceHealth().imweb || {};
+  const lastImwebSuccess = imwebHealth.lastSuccessAt
+    ? new Date(imwebHealth.lastSuccessAt)
+    : null;
+
+  const anchor = lastImwebSuccess && !Number.isNaN(lastImwebSuccess.getTime())
+    ? lastImwebSuccess
+    : previousScanTime;
+
+  if (!anchor) {
     return fallbackWindowStart;
   }
 
   return new Date(Math.max(
-    previousScanTime.getTime() - (graceMinutes * 60 * 1000),
+    anchor.getTime() - (graceMinutes * 60 * 1000),
     fallbackWindowStart.getTime()
   ));
 }
