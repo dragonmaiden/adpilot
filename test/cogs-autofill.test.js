@@ -189,13 +189,16 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
 
       const [firstRow, secondRow] = appendRequest.body.values;
       assert.deepEqual(firstRow.slice(0, 7), ['102', '2026-03-13', '홍신희', '20260313225187', '', '', '실크 모노그램 방도']);
-      assert.deepEqual(secondRow.slice(0, 7), ['', '', '', '', '', '', '에르 스카프']);
+      assert.deepEqual(secondRow.slice(0, 7), ['102', '2026-03-13', '홍신희', '20260313225187', '', '', '에르 스카프']);
       assert.equal(firstRow[11], '');
       assert.equal(
         firstRow[12],
         'receiver: 홍신희 | phone: 01012341234 | address: 06236 서울 강남구 테헤란로 123 5층 | delivery note: 문 앞에 놓아주세요'
       );
-      assert.deepEqual(secondRow.slice(12, 17), ['', '', '', '', '']);
+      assert.equal(
+        secondRow[12],
+        'receiver: 홍신희 | phone: 01012341234 | address: 06236 서울 강남구 테헤란로 123 5층 | delivery note: 문 앞에 놓아주세요'
+      );
       assert.equal(firstRow[9], 'FALSE');
       assert.equal(firstRow[10], 'FALSE');
       assert.equal(secondRow[9], 'FALSE');
@@ -205,6 +208,95 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
       assert.equal(fs.existsSync(statePath), true);
       const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
       assert.ok(state.importedOrders['20260313225187']);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('syncOrderToCogsSheet canonicalizes stale month-only sheet titles before appending', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const appendRequests = [];
+  const batchUpdateRequests = [];
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url, options = {}) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      batchUpdateRequests.push({
+        url: textUrl,
+        body: JSON.parse(options.body),
+      });
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 1 }),
+      };
+    }
+
+    appendRequests.push({
+      url: textUrl,
+      body: JSON.parse(options.body),
+    });
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 2 } }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({
+          workbookSheets: [{ name: '4월 주문', gid: '1048499191', path: null }],
+        }),
+        buildSheetTargets: () => [
+          { label: '4월', sheetName: '4월 주문', gid: '1048499191', discovered: true },
+        ],
+        fetchSheetCSV: async () => [
+          ['번호', '날짜', '이름', '주문번호', '', '', '', '', '', '', '', '', '주문자 연락처'],
+          [],
+          ['201', '2026-04-01', '기존 고객', '20260401001'],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for canonical target test');
+        },
+      },
+    }, async service => {
+      const order = createOrder({
+        orderNo: '20260402293832',
+        wtime: '2026-04-02T08:36:00.000Z',
+      });
+
+      const result = await service.syncOrderToCogsSheet(order, {
+        target: {
+          label: '4월',
+          gid: '1048499191',
+          sheetName: '4월',
+          discovered: true,
+        },
+      });
+
+      assert.equal(result.status, 'appended');
+      assert.equal(result.sheetName, '4월 주문');
+      assert.equal(batchUpdateRequests.length, 1);
+      assert.equal(appendRequests.length, 1);
+      assert.deepEqual(
+        batchUpdateRequests[0].body.data.map(entry => entry.range),
+        ["'4월 주문'!M1"]
+      );
+      assert.match(appendRequests[0].url, /'4%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AQ:append/);
     });
   } finally {
     global.fetch = originalFetch;
@@ -432,6 +524,95 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
       assert.deepEqual(result.productNames, ['실크 모노그램 방도', '에르 스카프']);
       assert.equal(appendCount, 0);
       assert.equal(headerUpdateCount, 1);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('syncOrderToCogsSheet serializes same-month appends so sequence numbers stay monotonic', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  const appendRequests = [];
+  const sheetRows = [
+    ['번호', '날짜', '이름', '주문번호', '', '', '', '', '', '', '', '', 'delivery note'],
+    [],
+    ['101', '2026-03-12', '기존 고객', '20260312001'],
+  ];
+
+  global.fetch = async (url, options = {}) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 1 }),
+      };
+    }
+
+    const body = JSON.parse(options.body);
+    appendRequests.push(body.values);
+    await new Promise(resolve => setTimeout(resolve, 25));
+    sheetRows.push(...body.values);
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: body.values.length } }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({
+          workbookSheets: [{ name: '3월 주문', path: 'xl/worksheets/sheet2.xml' }],
+        }),
+        buildSheetTargets: () => [
+          { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+        ],
+        fetchSheetCSV: async () => sheetRows.map(row => [...row]),
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for concurrent same-month append test');
+        },
+      },
+    }, async service => {
+      const firstOrder = createOrder({
+        orderNo: '20260313225187',
+        ordererName: '첫번째 주문',
+        sections: [{ sectionItems: [{ productInfo: { prodName: '스카프 A' } }] }],
+      });
+      const secondOrder = createOrder({
+        orderNo: '20260313225188',
+        ordererName: '두번째 주문',
+        sections: [{ sectionItems: [{ productInfo: { prodName: '스카프 B' } }] }],
+      });
+
+      const [firstResult, secondResult] = await Promise.all([
+        service.syncOrderToCogsSheet(firstOrder),
+        service.syncOrderToCogsSheet(secondOrder),
+      ]);
+
+      assert.equal(firstResult.status, 'appended');
+      assert.equal(secondResult.status, 'appended');
+      assert.deepEqual(
+        [firstResult.sequenceNo, secondResult.sequenceNo].sort((left, right) => left - right),
+        [102, 103]
+      );
+      assert.equal(appendRequests.length, 2);
+      assert.deepEqual(
+        appendRequests.map(values => Number(values[0][0])).sort((left, right) => left - right),
+        [102, 103]
+      );
     });
   } finally {
     global.fetch = originalFetch;
@@ -1125,7 +1306,7 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       });
 
       const result = await service.syncRecentOrdersToCogs(
-        [stalePaid, recentDuplicate, unpaid, refundedClosed, recentPaid],
+        [stalePaid, recentDuplicate, unpaid, refundedClosed, recentPaid, recentPaid],
         { lookbackDays: 3 }
       );
 
