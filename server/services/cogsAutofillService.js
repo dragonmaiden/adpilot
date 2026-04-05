@@ -439,9 +439,19 @@ function setRowsForTarget(target, rows, sheetCache) {
 }
 
 function getNextSequenceNumber(rows) {
+  // Scan every cell, not just column 0 — the Google Sheets append API
+  // may place data at a column offset (e.g. column M) when the sheet
+  // has pre-existing data that doesn't start at column A.
   return (Array.isArray(rows) ? rows : []).reduce((max, row) => {
-    const candidate = Number.parseInt(asString(row?.[0]), 10);
-    return Number.isFinite(candidate) ? Math.max(max, candidate) : max;
+    if (!Array.isArray(row)) return max;
+    for (const cell of row) {
+      const candidate = Number.parseInt(asString(cell), 10);
+      if (Number.isFinite(candidate) && candidate > max) {
+        max = candidate;
+        break; // sequence is always the first non-empty cell
+      }
+    }
+    return max;
   }, 0) + 1;
 }
 
@@ -509,7 +519,13 @@ function hasOrderNumber(rows, orderNo) {
   const normalizedOrderNo = asString(orderNo);
   if (!normalizedOrderNo) return false;
 
-  return (Array.isArray(rows) ? rows : []).some(row => asString(row?.[3]) === normalizedOrderNo);
+  // Search every cell in each row — the Google Sheets append API may
+  // place data at a column offset when the sheet has pre-existing data
+  // that doesn't start at column A, so the order number won't always
+  // be at index 3.
+  return (Array.isArray(rows) ? rows : []).some(row =>
+    Array.isArray(row) && row.some(cell => asString(cell) === normalizedOrderNo)
+  );
 }
 
 function getOrderProductNames(order) {
