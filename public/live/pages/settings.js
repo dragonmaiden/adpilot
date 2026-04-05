@@ -39,6 +39,11 @@
     });
   }
 
+  function formatImwebScopes(scopes) {
+    if (!Array.isArray(scopes) || scopes.length === 0) return '—';
+    return scopes.join(', ');
+  }
+
   function formatTimestamp(value) {
     if (!value) return '—';
     const dt = new Date(value);
@@ -126,6 +131,7 @@
       const k = overview?.kpis || {};
       const schedulerSettings = settingsData?.scheduler || {};
       const imwebAuth = settingsData?.imweb?.auth || null;
+      const imwebRecovery = settingsData?.imweb?.recovery || null;
       const imwebData = settingsData?.imweb?.data || settingsData?.sources?.imweb || null;
       const cogsData = settingsData?.cogs || null;
       const telegramStatus = settingsData?.telegram || null;
@@ -190,6 +196,11 @@
         imwebSiteCodeEl.textContent = settingsData.imweb.siteCode;
       }
 
+      const imwebScopesEl = document.getElementById('settingsImwebScopes');
+      if (imwebScopesEl) {
+        imwebScopesEl.textContent = formatImwebScopes(settingsData?.imweb?.scopes || imwebRecovery?.scopes);
+      }
+
       const imwebTokenSourceEl = document.getElementById('settingsImwebTokenSource');
       if (imwebTokenSourceEl) {
         imwebTokenSourceEl.textContent = formatImwebAuthSource(imwebAuth?.tokenSource);
@@ -202,22 +213,20 @@
 
       const imwebAuthNoteEl = document.getElementById('settingsImwebAuthNote');
       if (imwebAuthNoteEl) {
-        const tokenMismatchNote = imwebAuth?.refreshTokenMismatch
-          ? tr(' Persisted token and IMWEB_REFRESH_TOKEN differ. Reseed one canonical token source.', ' 저장된 토큰과 IMWEB_REFRESH_TOKEN이 다릅니다. 하나의 기준 토큰 소스로 다시 시드하세요.')
+        const repairHint = imwebRecovery?.reauthorizationRequired
+          ? tr(` Use ${imwebRecovery.path || '/imweb/oauth/start'} to reauthorize Imweb.`, ` ${imwebRecovery.path || '/imweb/oauth/start'} 경로로 Imweb를 다시 인증하세요.`)
           : '';
 
         if (imwebData?.stale && imwebAuth?.lastError) {
-          imwebAuthNoteEl.textContent = tr('Using cached revenue data. Latest Imweb sync failed: ', '캐시된 매출 데이터를 사용 중입니다. 최근 Imweb 동기화 실패: ') + localizeSystemText(imwebAuth.lastError) + tokenMismatchNote;
+          imwebAuthNoteEl.textContent = tr('Using cached revenue data. Latest Imweb sync failed: ', '캐시된 매출 데이터를 사용 중입니다. 최근 Imweb 동기화 실패: ') + localizeSystemText(imwebAuth.lastError) + repairHint;
         } else if (imwebAuth?.lastError) {
-          imwebAuthNoteEl.textContent = localizeSystemText(imwebAuth.lastError) + tokenMismatchNote;
-        } else if (imwebAuth?.refreshTokenMismatch) {
-          imwebAuthNoteEl.textContent = tr('Persisted token and IMWEB_REFRESH_TOKEN differ. Keep one canonical token source and reseed before the next refresh cycle.', '저장된 토큰과 IMWEB_REFRESH_TOKEN이 다릅니다. 하나의 기준 토큰 소스를 유지하고 다음 갱신 전에 다시 시드하세요.');
+          imwebAuthNoteEl.textContent = localizeSystemText(imwebAuth.lastError) + repairHint;
         } else if (imwebAuth?.status === 'connected') {
           imwebAuthNoteEl.textContent = tr('Refreshable token is healthy', '갱신 가능한 토큰 상태가 정상입니다');
         } else if (imwebAuth?.status === 'misconfigured') {
           imwebAuthNoteEl.textContent = tr('IMWEB_CLIENT_ID / IMWEB_CLIENT_SECRET missing', 'IMWEB_CLIENT_ID / IMWEB_CLIENT_SECRET이 없습니다');
         } else if (imwebAuth?.status === 'missing') {
-          imwebAuthNoteEl.textContent = tr('No persisted or env refresh token available', '저장된 토큰 또는 환경 변수 리프레시 토큰이 없습니다');
+          imwebAuthNoteEl.textContent = tr('No persisted or env refresh token available', '저장된 토큰 또는 환경 변수 리프레시 토큰이 없습니다') + repairHint;
         } else {
           imwebAuthNoteEl.textContent = tr('Waiting for first successful token refresh', '첫 성공적인 토큰 갱신 대기 중');
         }

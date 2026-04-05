@@ -3,7 +3,6 @@
 // REST API for dashboard + autonomous optimization engine
 // ═══════════════════════════════════════════════════════
 
-const crypto = require('crypto');
 const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -32,6 +31,7 @@ const briefService = require('./services/briefService');
 const cogsAutofillService = require('./services/cogsAutofillService');
 const orderNotificationService = require('./services/orderNotificationService');
 const observabilityService = require('./services/observabilityService');
+const imwebAuthRepairService = require('./services/imwebAuthRepairService');
 const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
 
 function isValidMetaId(id) {
@@ -105,16 +105,17 @@ function renderImwebInstallPage({ title, body, statusCode = 200 }) {
 
 function buildImwebPollingModePage() {
   return renderImwebInstallPage({
-    title: 'Imweb Webhooks Disabled',
+    title: 'Imweb Integration Mode',
     statusCode: 410,
     body: `
-      <h1>Imweb Webhooks Disabled</h1>
-      <p>AdPilot now relies on the scheduled Imweb order scan instead of the deprecated app-install and webhook flow.</p>
+      <h1>Imweb Order Sync Uses Scheduled Polling</h1>
+      <p>AdPilot no longer uses the legacy Imweb webhook/app-install flow for order sync. Revenue sync still relies on Imweb OAuth tokens, and token repair remains available here when the refresh-token chain expires.</p>
       <div class="meta">
         <p><strong>Mode</strong> <code>scan_polling_primary</code></p>
         <p><strong>Order sync</strong> <code>10-minute Imweb pull + Telegram reconciliation</code></p>
+        <p><strong>Token repair</strong> <code>${imwebAuthRepairService.IMWEB_AUTH_REPAIR_PATH}</code></p>
       </div>
-      <a class="cta" href="/imweb/oauth/start">Repair Imweb Token</a>
+      <a class="cta" href="${imwebAuthRepairService.IMWEB_AUTH_REPAIR_PATH}">Repair Imweb Token</a>
       <br />
       <a class="cta" href="/">Open AdPilot</a>
     `,
@@ -127,19 +128,6 @@ function getPublicRequestOrigin(req) {
     .trim();
   const host = String(req.get('host') || '').trim();
   return `${forwardedProto || 'https'}://${host}`;
-}
-
-const IMWEB_AUTH_SCOPES = ['site-info:write', 'order:read', 'payment:read'];
-
-function buildImwebAuthorizeUrl(req) {
-  const url = new URL(`${config.imweb.baseUrl}/oauth2/authorize`);
-  url.searchParams.set('responseType', 'code');
-  url.searchParams.set('clientId', config.imweb.clientId);
-  url.searchParams.set('redirectUri', `${getPublicRequestOrigin(req)}/imweb/oauth/callback`);
-  url.searchParams.set('scope', IMWEB_AUTH_SCOPES.join(' '));
-  url.searchParams.set('state', crypto.randomBytes(12).toString('hex'));
-  url.searchParams.set('siteCode', config.imweb.siteCode);
-  return url.toString();
 }
 
 function buildImwebOAuthResultPage({ title, body, statusCode = 200 }) {
@@ -169,7 +157,7 @@ function buildImwebOAuthErrorPage({ errorCode, message }) {
       <p>${escapeHtml(detail)}</p>
       ${code ? `<div class="meta"><p><strong>Error code</strong> <code>${escapeHtml(code)}</code></p></div>` : ''}
       ${scopeHint ? `<p>${scopeHint}</p>` : ''}
-      <a class="cta" href="/imweb/oauth/start">Try Again</a>
+      <a class="cta" href="${imwebAuthRepairService.IMWEB_AUTH_REPAIR_PATH}">Try Again</a>
       <br />
       <a class="cta" href="/">Open AdPilot</a>
     `,
@@ -284,16 +272,20 @@ app.get('/imweb/install', async (req, res) => {
 });
 
 app.get('/imweb/oauth/start', (req, res) => {
-  res.redirect(buildImwebAuthorizeUrl(req));
+  res.redirect(imwebAuthRepairService.buildAuthorizeUrl({
+    baseUrl: config.imweb.baseUrl,
+    clientId: config.imweb.clientId,
+    siteCode: config.imweb.siteCode,
+    origin: getPublicRequestOrigin(req),
+  }));
 });
 
 app.get('/imweb/oauth/callback', async (req, res) => {
-  const oauthErrorCode = String(req.query.errorCode || req.query.error || '').trim();
-  const oauthErrorMessage = String(req.query.message || req.query.error_description || '').trim();
-  if (oauthErrorCode || oauthErrorMessage) {
+  const oauthError = imwebAuthRepairService.parseOAuthError(req.query);
+  if (oauthError) {
     const page = buildImwebOAuthErrorPage({
-      errorCode: oauthErrorCode,
-      message: oauthErrorMessage,
+      errorCode: oauthError.code,
+      message: oauthError.message,
     });
     return res.status(page.statusCode).type('html').send(page.html);
   }
@@ -644,6 +636,8 @@ app.get('/api/settings', (req, res) => {
   const settings = runtimeSettings.getSettings();
   const schedulerDiagnostics = runtimeSettings.getSchedulerDiagnostics();
   const sourceHealth = scheduler.getSourceHealth();
+  const imwebAuth = imweb.getAuthState();
+  const imwebRecovery = imwebAuthRepairService.buildRepairMetadata(imwebAuth);
   const latestData = scheduler.getLatestData();
   const cogsData = latestData.cogsData || null;
   const cogsDates = Object.keys(cogsData?.dailyCOGS || {}).sort();
@@ -662,14 +656,18 @@ app.get('/api/settings', (req, res) => {
     imweb: {
       siteCode: config.imweb.siteCode,
       unitCode: config.imweb.unitCode,
+      scopes: imwebRecovery.scopes,
       app: {
-        mode: 'disabled',
+        mode: 'scan_polling_primary',
+        installFlow: 'retired',
         serviceUrl: null,
-        redirectUri: null,
-        installScope: null,
+        redirectUri: imwebRecovery.callbackPath,
+        installScope: imwebRecovery.scopes.join(' '),
         installedSite: null,
+        authRepairPath: imwebRecovery.path,
       },
-      auth: imweb.getAuthState(),
+      recovery: imwebRecovery,
+      auth: imwebAuth,
       data: sourceHealth.imweb || {},
     },
     cogs: {

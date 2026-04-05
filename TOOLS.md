@@ -90,6 +90,7 @@ When using local snapshots, say clearly that the answer is from a local snapshot
 - Some zero-cost COGS rows are not “missing cost”; they can be pending recovery or supplier-hold rows after customer cancellation.
 - COGS sheet autofill is append-only and routes to monthly tabs like `3월 주문`, `4월 주문`.
 - Order logging relies on the scan reconciliation path; the webhook/app-install path has been sunset.
+- Imweb token repair is still a separate OAuth handoff via `/imweb/oauth/start`; do not confuse token repair with the retired webhook install flow.
 
 ## Response style
 
