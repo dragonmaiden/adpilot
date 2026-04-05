@@ -9,6 +9,47 @@ const {
 } = require('../server/modules/cogsClient');
 const { buildDataCoverage, buildProfitWaterfall } = require('../server/transforms/charts');
 
+async function withMockedCogsClient(overrides, run) {
+  const clientPath = require.resolve('../server/modules/cogsClient');
+  const dependencyEntries = [
+    [require.resolve('../server/config'), overrides.config],
+    [require.resolve('../server/services/googleSheetsAuthService'), overrides.googleSheetsAuthService],
+  ];
+
+  const originalEntries = new Map();
+  for (const [dependencyPath, dependencyExports] of dependencyEntries) {
+    originalEntries.set(dependencyPath, require.cache[dependencyPath] || null);
+    require.cache[dependencyPath] = {
+      id: dependencyPath,
+      filename: dependencyPath,
+      loaded: true,
+      exports: dependencyExports,
+    };
+  }
+
+  const originalClient = require.cache[clientPath] || null;
+  delete require.cache[clientPath];
+
+  try {
+    const client = require(clientPath);
+    return await run(client);
+  } finally {
+    delete require.cache[clientPath];
+    if (originalClient) {
+      require.cache[clientPath] = originalClient;
+    }
+
+    for (const [dependencyPath] of dependencyEntries) {
+      const originalEntry = originalEntries.get(dependencyPath);
+      if (originalEntry) {
+        require.cache[dependencyPath] = originalEntry;
+      } else {
+        delete require.cache[dependencyPath];
+      }
+    }
+  }
+}
+
 function makeItem(overrides = {}) {
   return {
     sheetLabel: '3월',
@@ -51,9 +92,55 @@ test('buildSheetTargets merges configured month labels with workbook-discovered 
     [
       { label: '2월', sheetName: '2월 주문', discovered: false },
       { label: '3월', sheetName: '3월 주문', discovered: false },
-      { label: '4월 주문', sheetName: '4월 주문', discovered: true },
+      { label: '4월', sheetName: '4월 주문', discovered: true },
     ]
   );
+});
+
+test('fetchSheetCSV retries with the gid-resolved title when a shorthand month label fails', async () => {
+  const fetchCalls = [];
+  let metadataRequests = 0;
+
+  await withMockedCogsClient({
+    config: {
+      cogs: {
+        spreadsheetId: 'spreadsheet-123',
+        sheetGids: {},
+      },
+    },
+    googleSheetsAuthService: {
+      isConfigured: () => true,
+      fetchSpreadsheetMetadata: async () => {
+        metadataRequests += 1;
+        return {
+          sheets: [
+            {
+              properties: {
+                sheetId: '456791124',
+                title: '3월 주문',
+              },
+            },
+          ],
+        };
+      },
+      fetchSheetValues: async (_spreadsheetId, sheetName) => {
+        fetchCalls.push(sheetName);
+        if (sheetName === '3월') {
+          throw new Error("Google Sheets values request failed: Unable to parse range: '3월'!A:Q");
+        }
+        return [['번호'], ['101']];
+      },
+    },
+  }, async client => {
+    const rows = await client.fetchSheetCSV({
+      gid: '456791124',
+      sheetName: '3월',
+    });
+
+    assert.deepEqual(rows, [['번호'], ['101']]);
+    assert.deepEqual(fetchCalls, ['3월', '3월 주문']);
+    assert.equal(metadataRequests, 1);
+  });
 });
 
 test('parseOrderItems supports the compact delivery-details cell in column M', () => {

@@ -39,16 +39,35 @@ async function fetchSheetCSV(ref) {
   const sheetName = ref && typeof ref === 'object' ? String(ref.sheetName || '').trim() : '';
 
   if (googleSheetsAuthService.isConfigured()) {
-    let resolvedSheetName = sheetName;
-    if (!resolvedSheetName && gid) {
+    const resolveSheetNameByGid = async () => {
+      if (!gid) return '';
       const metadata = await googleSheetsAuthService.fetchSpreadsheetMetadata(SPREADSHEET_ID);
       const matchedSheet = asArray(metadata?.sheets).find(sheet => String(sheet?.properties?.sheetId ?? '') === gid);
-      resolvedSheetName = String(matchedSheet?.properties?.title || '').trim();
+      return String(matchedSheet?.properties?.title || '').trim();
+    };
+
+    let resolvedSheetName = sheetName;
+    if (!resolvedSheetName && gid) {
+      resolvedSheetName = await resolveSheetNameByGid();
     }
     if (!resolvedSheetName) {
       throw new Error('Google Sheets API read requires a sheet title');
     }
-    return googleSheetsAuthService.fetchSheetValues(SPREADSHEET_ID, resolvedSheetName);
+
+    try {
+      return await googleSheetsAuthService.fetchSheetValues(SPREADSHEET_ID, resolvedSheetName);
+    } catch (err) {
+      if (!gid || !/Unable to parse range:/i.test(String(err?.message || ''))) {
+        throw err;
+      }
+
+      const canonicalSheetName = await resolveSheetNameByGid();
+      if (!canonicalSheetName || canonicalSheetName === resolvedSheetName) {
+        throw err;
+      }
+
+      return googleSheetsAuthService.fetchSheetValues(SPREADSHEET_ID, canonicalSheetName);
+    }
   }
 
   const url = gid
@@ -154,7 +173,7 @@ function buildSheetTargets(workbookSheets = []) {
     }
 
     targets.set(identity, {
-      label,
+      label: identity,
       gid: String(workbookSheet.gid || '').trim() || null,
       sheetName: workbookSheet.name,
       path: workbookSheet.path,

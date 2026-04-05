@@ -23,6 +23,7 @@ const MAX_NEW_ORDER_BACKFILL_HOURS = 1;
 const BIG_FISH_THRESHOLD_KRW = 200000;
 const COMPACT_DETAIL_COLUMN_INDEX = 12;
 const COMPACT_DETAIL_HEADER_LABEL = 'delivery note';
+const MONTH_ONLY_SHEET_RE = /^\s*\d{1,2}\s*월\s*$/;
 const TERMINAL_ORDER_STATUS_TOKENS = [
   'CANCEL',
   'RETURN',
@@ -41,6 +42,7 @@ const LEGACY_OPTIONAL_HEADER_LABELS = new Set([
 
 let googleAccessToken = null;
 let googleAccessTokenExpiry = 0;
+const inflightSheetSyncs = new Map();
 
 function normalizePrivateKey(value) {
   return asString(value).replace(/\\n/g, '\n');
@@ -376,7 +378,7 @@ async function resolveTargetSheet(dateKey) {
     const targets = cogsClient.buildSheetTargets(workbookMeta?.workbookSheets || []);
     const matched = findTargetForMonth(targets, month);
     if (matched) {
-      return matched;
+      return canonicalizeTargetSheet(matched);
     }
   } catch (err) {
     console.warn(`[COGS AUTOFILL] Workbook discovery failed, falling back to known sheet names: ${err.message}`);
@@ -408,6 +410,58 @@ async function fetchExistingRows(target) {
 function getSheetCacheKey(target) {
   if (target?.gid) return `gid:${target.gid}`;
   return `sheet:${asString(target?.sheetName || target?.label)}`;
+}
+
+function needsCanonicalSheetName(target) {
+  const gid = asString(target?.gid);
+  const sheetName = asString(target?.sheetName);
+  if (!gid) return false;
+  return !sheetName || sheetName === asString(target?.label) || MONTH_ONLY_SHEET_RE.test(sheetName);
+}
+
+async function canonicalizeTargetSheet(target) {
+  if (!needsCanonicalSheetName(target)) {
+    return target;
+  }
+
+  try {
+    const workbookMeta = await cogsClient.fetchWorkbookMetadata();
+    const matchedSheet = (Array.isArray(workbookMeta?.workbookSheets) ? workbookMeta.workbookSheets : [])
+      .find(sheet => asString(sheet?.gid) === asString(target?.gid));
+    if (!matchedSheet?.name) {
+      return target;
+    }
+
+    return {
+      ...target,
+      sheetName: matchedSheet.name,
+    };
+  } catch (err) {
+    console.warn(`[COGS AUTOFILL] Canonical sheet lookup failed for ${asString(target?.gid || target?.label)}: ${err.message}`);
+    return target;
+  }
+}
+
+async function withSheetSyncLock(target, task) {
+  const lockKey = getSheetCacheKey(target);
+  const previous = inflightSheetSyncs.get(lockKey) || Promise.resolve();
+  let releaseCurrent;
+  const current = new Promise(resolve => {
+    releaseCurrent = resolve;
+  });
+  const queue = previous.catch(() => {}).then(() => current);
+  inflightSheetSyncs.set(lockKey, queue);
+
+  await previous.catch(() => {});
+
+  try {
+    return await task();
+  } finally {
+    releaseCurrent();
+    if (inflightSheetSyncs.get(lockKey) === queue) {
+      inflightSheetSyncs.delete(lockKey);
+    }
+  }
 }
 
 function toColumnLabel(columnNumber) {
@@ -1025,11 +1079,11 @@ function buildRowsForOrder(order, nextSequenceNo) {
     address,
   });
 
-  return productNames.map((productName, index) => ([
-    index === 0 ? String(nextSequenceNo) : '',
-    index === 0 ? orderDate : '',
-    index === 0 ? customerName : '',
-    index === 0 ? orderNo : '',
+  return productNames.map(productName => ([
+    String(nextSequenceNo),
+    orderDate,
+    customerName,
+    orderNo,
     '',
     '',
     productName,
@@ -1038,7 +1092,7 @@ function buildRowsForOrder(order, nextSequenceNo) {
     'FALSE',
     'FALSE',
     '',
-    index === 0 ? compactDeliveryDetails : '',
+    compactDeliveryDetails,
     '',
     '',
     '',
@@ -1209,45 +1263,47 @@ async function syncOrderToCogsSheet(order, options = {}) {
   const alreadyNotified = wasOrderNotified(normalizedOrderNo);
 
   const importedMetadata = getImportedOrderMetadata(normalizedOrderNo);
-  const target = options.target || await resolveTargetSheet(summary.orderDate);
-  const existingRows = options.existingRows || await getRowsForTarget(target, options.sheetCache);
-  await ensureOptionalHeaders(target, existingRows);
-  if (hasOrderNumber(existingRows, normalizedOrderNo)) {
+  const target = await canonicalizeTargetSheet(options.target || await resolveTargetSheet(summary.orderDate));
+  return withSheetSyncLock(target, async () => {
+    const existingRows = options.existingRows || await getRowsForTarget(target, options.sheetCache);
+    await ensureOptionalHeaders(target, existingRows);
+    if (hasOrderNumber(existingRows, normalizedOrderNo)) {
+      markOrderImported(normalizedOrderNo, {
+        source: importedMetadata ? (importedMetadata.source || 'sheet_duplicate') : 'sheet_duplicate',
+        sheetName: target.sheetName,
+        orderDate: summary.orderDate,
+      });
+      return {
+        ...summary,
+        ok: true,
+        status: 'duplicate',
+        reason: importedMetadata ? 'order already imported' : 'order already exists in sheet',
+        alreadyNotified,
+        sheetName: target.sheetName,
+      };
+    }
+
+    const nextSequenceNo = getNextSequenceNumber(existingRows);
+    const rows = buildRowsForOrder(order, nextSequenceNo);
+    await appendRowsToSheet(target, rows);
+    setRowsForTarget(target, existingRows.concat(rows), options.sheetCache);
     markOrderImported(normalizedOrderNo, {
-      source: importedMetadata ? (importedMetadata.source || 'sheet_duplicate') : 'sheet_duplicate',
+      source: importedMetadata ? 'recovered_append' : 'append',
       sheetName: target.sheetName,
       orderDate: summary.orderDate,
+      rowCount: rows.length,
     });
+
     return {
       ...summary,
       ok: true,
-      status: 'duplicate',
-      reason: importedMetadata ? 'order already imported' : 'order already exists in sheet',
+      status: 'appended',
       alreadyNotified,
       sheetName: target.sheetName,
+      rowCount: rows.length,
+      sequenceNo: nextSequenceNo,
     };
-  }
-
-  const nextSequenceNo = getNextSequenceNumber(existingRows);
-  const rows = buildRowsForOrder(order, nextSequenceNo);
-  await appendRowsToSheet(target, rows);
-  setRowsForTarget(target, existingRows.concat(rows), options.sheetCache);
-  markOrderImported(normalizedOrderNo, {
-    source: importedMetadata ? 'recovered_append' : 'append',
-    sheetName: target.sheetName,
-    orderDate: summary.orderDate,
-    rowCount: rows.length,
   });
-
-  return {
-    ...summary,
-    ok: true,
-    status: 'appended',
-    alreadyNotified,
-    sheetName: target.sheetName,
-    rowCount: rows.length,
-    sequenceNo: nextSequenceNo,
-  };
 }
 
 async function syncImwebOrderToCogs(orderNo) {
@@ -1273,9 +1329,22 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
     ? Number(options.lookbackDays)
     : DEFAULT_POLL_LOOKBACK_DAYS;
   const windowStart = resolveWindowStart(options);
+  const seenOrderNos = new Set();
 
   const eligibleOrders = (Array.isArray(orders) ? orders : [])
-    .filter(order => isEligibleRecentOrder(order, { lookbackDays, sinceTime: windowStart }))
+    .filter(order => {
+      const orderNo = asString(order?.orderNo);
+      if (!orderNo || seenOrderNos.has(orderNo)) {
+        return false;
+      }
+
+      if (!isEligibleRecentOrder(order, { lookbackDays, sinceTime: windowStart })) {
+        return false;
+      }
+
+      seenOrderNos.add(orderNo);
+      return true;
+    })
     .sort((left, right) => {
       const leftTime = getOrderAutofillTimestamp(left)?.getTime() || 0;
       const rightTime = getOrderAutofillTimestamp(right)?.getTime() || 0;

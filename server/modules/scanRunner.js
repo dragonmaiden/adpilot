@@ -32,6 +32,26 @@ function pushError(scanResult, step, err) {
   scanResult.errors.push({ step, error: err.message });
 }
 
+function formatCogsAutofillErrorSummary(errors) {
+  const counts = new Map();
+
+  for (const entry of Array.isArray(errors) ? errors : []) {
+    const message = String(entry?.error || 'unknown error').trim() || 'unknown error';
+    counts.set(message, (counts.get(message) || 0) + 1);
+  }
+
+  const uniqueErrors = Array.from(counts.entries());
+  const visibleErrors = uniqueErrors
+    .slice(0, 3)
+    .map(([message, count]) => (count > 1 ? `${count}x ${message}` : message));
+
+  if (uniqueErrors.length > visibleErrors.length) {
+    visibleErrors.push(`+${uniqueErrors.length - visibleErrors.length} more`);
+  }
+
+  return visibleErrors.join(' | ');
+}
+
 function markSourceSuccess(sourceKey, attemptedAt, { hasData = false } = {}) {
   scanStore.updateSourceHealth(sourceKey, {
     status: 'connected',
@@ -447,6 +467,9 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, freshOrders) {
       + `${result.errors.length} failed `
       + `(${result.eligibleOrders} paid order${result.eligibleOrders === 1 ? '' : 's'} checked, source: ${orderSource})`
     );
+    if (result.errors.length > 0) {
+      console.warn(`[SCHEDULER]   ⚠ COGS autofill error summary: ${formatCogsAutofillErrorSummary(result.errors)}`);
+    }
 
     for (const failure of result.errors) {
       pushError(scanResult, 'cogs_autofill_order', new Error(`${failure.orderNo || 'unknown order'}: ${failure.error}`));
