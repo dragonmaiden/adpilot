@@ -2,7 +2,7 @@ const crypto = require('crypto');
 
 const IMWEB_AUTH_REPAIR_PATH = '/imweb/oauth/start';
 const IMWEB_AUTH_CALLBACK_PATH = '/imweb/oauth/callback';
-const IMWEB_AUTH_REPAIR_SCOPES = Object.freeze(['site-info:write', 'order:read', 'payment:read']);
+const IMWEB_AUTH_REPAIR_SCOPES = Object.freeze(['site-info:read', 'site-info:write', 'order:read']);
 
 function buildAuthorizeUrl({ baseUrl, clientId, siteCode, origin, state }) {
   const normalizedBaseUrl = String(baseUrl || '').trim();
