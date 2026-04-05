@@ -396,6 +396,18 @@ async function ensureToken() {
     }
   }
 
+  // When the user updates IMWEB_REFRESH_TOKEN on Render (e.g. after
+  // re-authorization), the env var will differ from the disk/memory token.
+  // Prefer the env var — it was intentionally replaced.
+  const envRefreshToken = getEnvRefreshToken();
+  if (envRefreshToken && envRefreshToken !== refreshToken) {
+    console.log('[IMWEB] Env var IMWEB_REFRESH_TOKEN differs from current token — using env var (manual update detected)');
+    refreshToken = envRefreshToken;
+    accessToken = null;
+    tokenExpiry = 0;
+    syncAuthState({ tokenSource: 'env', lastError: null });
+  }
+
   if (!accessToken || Date.now() > tokenExpiry - 5 * 60 * 1000) {
     await refreshAccessTokenWithFallback();
   }
