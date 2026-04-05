@@ -359,6 +359,47 @@ async function seedRefreshToken(candidateRefreshToken) {
   });
 }
 
+async function exchangeAuthorizationCode(code, redirectUri) {
+  const authorizationCode = typeof code === 'string' ? code.trim() : '';
+  const normalizedRedirectUri = typeof redirectUri === 'string' ? redirectUri.trim() : '';
+
+  if (!authorizationCode) {
+    throw new Error('authorization code is required');
+  }
+  if (!normalizedRedirectUri) {
+    throw new Error('redirectUri is required');
+  }
+  if (!hasImwebClientCredentials()) {
+    throw new Error('Imweb client credentials are missing');
+  }
+
+  const params = new URLSearchParams();
+  params.append('grantType', 'authorization_code');
+  params.append('clientId', config.imweb.clientId);
+  params.append('clientSecret', config.imweb.clientSecret);
+  params.append('redirectUri', normalizedRedirectUri);
+  params.append('code', authorizationCode);
+
+  let res;
+  try {
+    res = await fetch(`${config.imweb.baseUrl}/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+  } catch (networkErr) {
+    const msg = `Imweb authorization-code exchange network error: ${networkErr.message}`;
+    console.error(`[IMWEB] ${msg}`);
+    syncAuthState({ lastError: msg, tokenSource: 'oauth_callback' });
+    throw new Error(msg, { cause: networkErr });
+  }
+
+  const data = await readImwebResponse(res, 'Imweb authorization-code exchange');
+  saveTokens(data, { source: 'seed' });
+  console.log('[IMWEB] Authorization code exchanged successfully');
+  return true;
+}
+
 /**
  * Pre-load tokens into memory.  Called once at scheduler startup.
  * Does NOT refresh — just loads so getAuthState() is populated early.
@@ -604,6 +645,7 @@ module.exports = {
   loadTokens,
   refreshAccessToken,
   seedRefreshToken,
+  exchangeAuthorizationCode,
   getAuthState,
   getAllOrders,
   getOrder,

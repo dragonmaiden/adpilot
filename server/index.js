@@ -118,6 +118,26 @@ function buildImwebPollingModePage() {
   });
 }
 
+function getPublicRequestOrigin(req) {
+  const forwardedProto = String(req.get('x-forwarded-proto') || req.protocol || 'https')
+    .split(',')[0]
+    .trim();
+  const host = String(req.get('host') || '').trim();
+  return `${forwardedProto || 'https'}://${host}`;
+}
+
+function buildImwebOAuthResultPage({ title, body, statusCode = 200 }) {
+  return renderImwebInstallPage({
+    title,
+    statusCode,
+    body: `
+      <h1>${escapeHtml(title)}</h1>
+      <p>${body}</p>
+      <a class="cta" href="/">Open AdPilot</a>
+    `,
+  });
+}
+
 // ── Validate required env vars on startup ──
 const REQUIRED_ENV = ['META_ACCESS_TOKEN', 'IMWEB_CLIENT_ID', 'IMWEB_CLIENT_SECRET', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'];
 const missing = REQUIRED_ENV.filter(key => !process.env[key]);
@@ -226,10 +246,33 @@ app.get('/imweb/install', async (req, res) => {
 });
 
 app.get('/imweb/oauth/callback', async (req, res) => {
-  // When Imweb redirects back with an authorization code, serve the
-  // callback page so the user can copy the code and seed the token.
-  if (req.query.code || req.query.error) {
+  if (req.query.error) {
     return res.sendFile(path.join(__dirname, '..', 'public', 'oauth-callback.html'));
+  }
+
+  const authorizationCode = String(req.query.code || '').trim();
+  if (authorizationCode) {
+    try {
+      const redirectUri = `${getPublicRequestOrigin(req)}${req.path}`;
+      await imweb.exchangeAuthorizationCode(authorizationCode, redirectUri);
+      if (!scheduler.getIsScanning()) {
+        scheduler.runScan(true);
+      }
+
+      const page = buildImwebOAuthResultPage({
+        title: 'Imweb Authorization Complete',
+        body: 'A fresh Imweb token was saved successfully and AdPilot started a new scan. You can close this tab.',
+      });
+      return res.status(page.statusCode).type('html').send(page.html);
+    } catch (err) {
+      console.error('[IMWEB OAUTH CALLBACK] Token exchange failed:', err.message);
+      const page = buildImwebOAuthResultPage({
+        title: 'Imweb Authorization Failed',
+        statusCode: 500,
+        body: `Imweb returned an error while saving the new token: <code>${escapeHtml(err.message)}</code>`,
+      });
+      return res.status(page.statusCode).type('html').send(page.html);
+    }
   }
   const page = buildImwebPollingModePage();
   res.status(page.statusCode).type('html').send(page.html);
