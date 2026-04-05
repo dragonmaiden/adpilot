@@ -179,6 +179,9 @@ const DATA_DIR = runtimePaths.dataDir;
 if (runtimePaths.usedFallback) {
   console.warn(`[INIT] ⚠️  Cannot write to ${runtimePaths.configuredDataDir} (${runtimePaths.fallbackReason.code}) — falling back to ${DATA_DIR}`);
   console.warn('[INIT] Data will NOT persist across deploys. Attach a Render Disk at /data for persistence.');
+} else if (runtimePaths.startupRecovery?.recovered) {
+  console.warn(`[INIT] Recovered ${runtimePaths.configuredDataDir} by pruning ${runtimePaths.startupRecovery.deletedSnapshotSets} old snapshot set${runtimePaths.startupRecovery.deletedSnapshotSets === 1 ? '' : 's'}`);
+  console.log(`[INIT] Data directory ready: ${DATA_DIR}`);
 } else {
   console.log(`[INIT] Data directory ready: ${DATA_DIR}`);
 }

@@ -3,6 +3,15 @@ const path = require('path');
 const runtimePaths = require('../runtime/paths');
 
 const SNAP_DIR = path.join(runtimePaths.dataDir, 'snapshots');
+const DEFAULT_MAX_SCAN_SETS = 72;
+
+function getMaxSnapshotScanSets() {
+  const configured = Number.parseInt(process.env.SNAPSHOT_MAX_SCAN_SETS || '', 10);
+  if (!Number.isFinite(configured) || configured < 1) {
+    return DEFAULT_MAX_SCAN_SETS;
+  }
+  return configured;
+}
 
 function ensureSnapshotDir() {
   if (!fs.existsSync(SNAP_DIR)) {
@@ -16,9 +25,14 @@ function saveSnapshotFile(filename, data) {
   fs.chmodSync(filepath, 0o600);
 }
 
+function listSnapshotFiles() {
+  if (!fs.existsSync(SNAP_DIR)) return [];
+  return fs.readdirSync(SNAP_DIR).filter(f => f.endsWith('.json'));
+}
+
 function cleanupSnapshots(maxScanSets = 240) {
   try {
-    const files = fs.readdirSync(SNAP_DIR).filter(f => f.endsWith('.json'));
+    const files = listSnapshotFiles();
     const scanIds = [...new Set(files.map(f => f.split('_')[0]))].sort();
     if (scanIds.length <= maxScanSets) return;
 
@@ -35,9 +49,7 @@ function cleanupSnapshots(maxScanSets = 240) {
   }
 }
 
-function saveSnapshot(scanId, snapshotData) {
-  ensureSnapshotDir();
-
+function writeSnapshotParts(scanId, snapshotData) {
   if (Array.isArray(snapshotData.campaigns) || Array.isArray(snapshotData.adSets) || Array.isArray(snapshotData.ads)) {
     saveSnapshotFile(`${scanId}_meta_structure.json`, {
       campaigns: snapshotData.campaigns ?? [],
@@ -64,8 +76,27 @@ function saveSnapshot(scanId, snapshotData) {
       timestamp: new Date().toISOString(),
     });
   }
+}
 
-  cleanupSnapshots(240);
+function saveSnapshot(scanId, snapshotData) {
+  ensureSnapshotDir();
+  const maxScanSets = getMaxSnapshotScanSets();
+  cleanupSnapshots(Math.max(1, maxScanSets - 1));
+
+  try {
+    writeSnapshotParts(scanId, snapshotData);
+  } catch (err) {
+    if (err?.code !== 'ENOSPC') {
+      throw err;
+    }
+
+    const retryMaxSets = Math.max(1, Math.floor(maxScanSets / 2));
+    console.warn(`[SCHEDULER] Snapshot disk full — pruning to ${retryMaxSets} scan sets and retrying save`);
+    cleanupSnapshots(retryMaxSets);
+    writeSnapshotParts(scanId, snapshotData);
+  }
+
+  cleanupSnapshots(maxScanSets);
 }
 
 function getSnapshotsList() {
@@ -111,4 +142,6 @@ module.exports = {
   saveSnapshot,
   getSnapshotsList,
   getSnapshot,
+  cleanupSnapshots,
+  getMaxSnapshotScanSets,
 };
