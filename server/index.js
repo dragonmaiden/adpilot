@@ -3,6 +3,7 @@
 // REST API for dashboard + autonomous optimization engine
 // ═══════════════════════════════════════════════════════
 
+const crypto = require('crypto');
 const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -113,6 +114,8 @@ function buildImwebPollingModePage() {
         <p><strong>Mode</strong> <code>scan_polling_primary</code></p>
         <p><strong>Order sync</strong> <code>10-minute Imweb pull + Telegram reconciliation</code></p>
       </div>
+      <a class="cta" href="/imweb/oauth/start">Repair Imweb Token</a>
+      <br />
       <a class="cta" href="/">Open AdPilot</a>
     `,
   });
@@ -126,6 +129,19 @@ function getPublicRequestOrigin(req) {
   return `${forwardedProto || 'https'}://${host}`;
 }
 
+const IMWEB_AUTH_SCOPES = ['site-info:write', 'order:read', 'payment:read'];
+
+function buildImwebAuthorizeUrl(req) {
+  const url = new URL(`${config.imweb.baseUrl}/oauth2/authorize`);
+  url.searchParams.set('responseType', 'code');
+  url.searchParams.set('clientId', config.imweb.clientId);
+  url.searchParams.set('redirectUri', `${getPublicRequestOrigin(req)}/imweb/oauth/callback`);
+  url.searchParams.set('scope', IMWEB_AUTH_SCOPES.join(' '));
+  url.searchParams.set('state', crypto.randomBytes(12).toString('hex'));
+  url.searchParams.set('siteCode', config.imweb.siteCode);
+  return url.toString();
+}
+
 function buildImwebOAuthResultPage({ title, body, statusCode = 200 }) {
   return renderImwebInstallPage({
     title,
@@ -133,6 +149,28 @@ function buildImwebOAuthResultPage({ title, body, statusCode = 200 }) {
     body: `
       <h1>${escapeHtml(title)}</h1>
       <p>${body}</p>
+      <a class="cta" href="/">Open AdPilot</a>
+    `,
+  });
+}
+
+function buildImwebOAuthErrorPage({ errorCode, message }) {
+  const code = String(errorCode || '').trim();
+  const detail = String(message || '').trim() || 'Imweb returned an authorization error before issuing a code.';
+  const scopeHint = detail.includes('site-info:write')
+    ? 'Imweb requires the <code>site-info:write</code> scope when issuing authorization codes.'
+    : null;
+
+  return renderImwebInstallPage({
+    title: 'Imweb Authorization Failed',
+    statusCode: 400,
+    body: `
+      <h1>Imweb Authorization Failed</h1>
+      <p>${escapeHtml(detail)}</p>
+      ${code ? `<div class="meta"><p><strong>Error code</strong> <code>${escapeHtml(code)}</code></p></div>` : ''}
+      ${scopeHint ? `<p>${scopeHint}</p>` : ''}
+      <a class="cta" href="/imweb/oauth/start">Try Again</a>
+      <br />
       <a class="cta" href="/">Open AdPilot</a>
     `,
   });
@@ -245,9 +283,19 @@ app.get('/imweb/install', async (req, res) => {
   res.status(page.statusCode).type('html').send(page.html);
 });
 
+app.get('/imweb/oauth/start', (req, res) => {
+  res.redirect(buildImwebAuthorizeUrl(req));
+});
+
 app.get('/imweb/oauth/callback', async (req, res) => {
-  if (req.query.error) {
-    return res.sendFile(path.join(__dirname, '..', 'public', 'oauth-callback.html'));
+  const oauthErrorCode = String(req.query.errorCode || req.query.error || '').trim();
+  const oauthErrorMessage = String(req.query.message || req.query.error_description || '').trim();
+  if (oauthErrorCode || oauthErrorMessage) {
+    const page = buildImwebOAuthErrorPage({
+      errorCode: oauthErrorCode,
+      message: oauthErrorMessage,
+    });
+    return res.status(page.statusCode).type('html').send(page.html);
   }
 
   const authorizationCode = String(req.query.code || '').trim();
