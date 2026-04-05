@@ -526,4 +526,5 @@ module.exports = {
   saveLatestData,
   saveLatestArtifacts,
   saveLastSuccessfulImwebData,
+  loadLastSuccessfulImwebBackup,
 };

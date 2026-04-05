@@ -169,6 +169,38 @@ function loadTokens() {
   }
 }
 
+// ── Chain age tracking ──
+const CHAIN_MAX_AGE_DAYS = 90;
+const CHAIN_WARNING_DAYS = 75;
+let chainWarningAlertSent = false;
+
+function loadChainStartedAt() {
+  try {
+    if (!fs.existsSync(runtimePaths.imwebTokenFile)) return null;
+    const raw = JSON.parse(fs.readFileSync(runtimePaths.imwebTokenFile, 'utf8'));
+    const stored = (raw.data || raw).chain_started_at;
+    return typeof stored === 'number' ? stored : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function sendChainExpiryWarning(chainAgeDays) {
+  if (chainWarningAlertSent) return;
+  chainWarningAlertSent = true;
+  try {
+    const remaining = Math.max(0, CHAIN_MAX_AGE_DAYS - chainAgeDays);
+    const telegram = require('./telegram');
+    telegram.sendMessage(
+      `⚠️ <b>Imweb Token Chain Expiring</b>\n\n`
+      + `The refresh token chain is ${Math.round(chainAgeDays)} days old.`
+      + ` Imweb tokens expire after ${CHAIN_MAX_AGE_DAYS} days from the original authorization.\n\n`
+      + `<b>~${Math.round(remaining)} days remaining.</b>\n\n`
+      + `Re-authorize the Imweb app and update IMWEB_REFRESH_TOKEN on Render to start a fresh chain.`,
+    ).catch(() => {});
+  } catch (_) { /* telegram not available */ }
+}
+
 // ── Save tokens to disk ──
 function saveTokens(data, { fallbackRefreshToken = null, source = 'disk' } = {}) {
   const payload = data.data || data;
@@ -180,13 +212,28 @@ function saveTokens(data, { fallbackRefreshToken = null, source = 'disk' } = {})
     throw new Error('Imweb token refresh succeeded without an access token');
   }
 
+  const previousRefresh = refreshToken;
+
   // Only overwrite if the API actually returned a value — preserve old otherwise
   if (newAccess) accessToken = newAccess;
   if (newRefresh) refreshToken = newRefresh;
   if (!refreshToken && fallbackRefreshToken) refreshToken = fallbackRefreshToken;
 
+  if (newRefresh && newRefresh !== previousRefresh) {
+    console.log('[IMWEB] Refresh token rotated (new token received from API)');
+  } else if (!newRefresh) {
+    console.warn('[IMWEB] ⚠ API did not return a new refresh token — reusing previous');
+  }
+
   const now = Date.now();
   tokenExpiry = now + expiresIn * 1000;
+
+  // Track when this token chain was first established so we can warn
+  // before the 90-day refresh token lifetime expires.
+  const existingChainStart = loadChainStartedAt();
+  const chainStartedAt = (source === 'seed' || source === 'env' || !existingChainStart)
+    ? now
+    : existingChainStart;
 
   // Persist with absolute timestamps so loadTokens() doesn't guess
   const dir = require('path').dirname(runtimePaths.imwebTokenFile);
@@ -197,9 +244,20 @@ function saveTokens(data, { fallbackRefreshToken = null, source = 'disk' } = {})
     expires_in: expiresIn,
     expires_at: tokenExpiry,
     saved_at: now,
+    chain_started_at: chainStartedAt,
   }, null, 2), { mode: 0o600 });
   fs.chmodSync(runtimePaths.imwebTokenFile, 0o600);
-  console.log(`[IMWEB] Tokens saved (expires_at: ${new Date(tokenExpiry).toISOString()})`);
+
+  const chainAgeDays = (now - chainStartedAt) / (1000 * 60 * 60 * 24);
+  console.log(
+    `[IMWEB] Tokens saved (expires_at: ${new Date(tokenExpiry).toISOString()}, `
+    + `chain age: ${Math.round(chainAgeDays)}d)`
+  );
+
+  if (chainAgeDays >= CHAIN_WARNING_DAYS) {
+    sendChainExpiryWarning(chainAgeDays);
+  }
+
   syncAuthState({
     tokenSource: source,
     lastError: null,
@@ -294,37 +352,21 @@ function seedTokensFromEnv() {
 }
 
 async function refreshAccessTokenWithFallback() {
-  const attempted = new Set();
-  const candidates = [];
+  // Only use the current (most recently rotated) refresh token.
+  // DO NOT fall back to IMWEB_REFRESH_TOKEN env var during runtime:
+  // Imweb rotates refresh tokens on every refresh — presenting a stale
+  // env var token that was already rotated out can trigger reuse detection,
+  // which invalidates the entire token family and kills the working chain.
+  // The env var is only used for initial bootstrap (seedTokensFromEnv).
   const currentRefreshToken = typeof refreshToken === 'string' ? refreshToken.trim() : '';
-  const envRefreshToken = getEnvRefreshToken();
 
   if (currentRefreshToken) {
-    candidates.push({
-      refreshToken: currentRefreshToken,
+    return refreshAccessToken({
+      refreshTokenOverride: currentRefreshToken,
       source: authState.tokenSource === 'none' ? 'disk' : authState.tokenSource,
     });
-    attempted.add(currentRefreshToken);
   }
 
-  if (envRefreshToken && !attempted.has(envRefreshToken)) {
-    candidates.push({ refreshToken: envRefreshToken, source: 'env' });
-    attempted.add(envRefreshToken);
-  }
-
-  let lastError = null;
-  for (const candidate of candidates) {
-    try {
-      return await refreshAccessToken({
-        refreshTokenOverride: candidate.refreshToken,
-        source: candidate.source,
-      });
-    } catch (err) {
-      lastError = err;
-    }
-  }
-
-  if (lastError) throw lastError;
   throw new Error('No Imweb refresh token available');
 }
 

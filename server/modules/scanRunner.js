@@ -381,8 +381,35 @@ async function reconcileClosedOrderNotifications(scanResult, orders) {
   }
 }
 
-async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
-  console.log('[SCHEDULER] Step 3c: Reconciling recent paid Imweb orders into the COGS sheet...');
+async function reconcileRecentImwebOrdersToCogs(scanResult, freshOrders) {
+  // Resolve order data: prefer live Imweb orders, fall back to last
+  // successful backup so COGS autofill keeps running during Imweb outages.
+  let orders = Array.isArray(freshOrders) && freshOrders.length > 0 ? freshOrders : null;
+  let orderSource = 'live';
+
+  if (!orders) {
+    const backup = scanStore.loadLastSuccessfulImwebBackup();
+    if (backup.orders.length > 0) {
+      orders = backup.orders;
+      orderSource = 'backup';
+      console.log(
+        `[SCHEDULER]   ℹ Imweb unavailable — using backup order data`
+        + ` (${backup.orders.length} orders from ${backup.timestamp || 'unknown'})`
+      );
+    }
+  }
+
+  if (!orders || orders.length === 0) {
+    pushStep(scanResult, {
+      step: 'cogs_autofill',
+      status: 'skipped',
+      reason: 'no_orders',
+    });
+    console.log('[SCHEDULER]   → COGS autofill skipped: no order data available (Imweb down, no backup)');
+    return { ok: false, skipped: true, result: null };
+  }
+
+  console.log(`[SCHEDULER] Step 3c: Reconciling recent paid Imweb orders into the COGS sheet (${orderSource} data)...`);
 
   if (!cogsAutofillService.isConfigured()) {
     pushStep(scanResult, {
@@ -395,14 +422,17 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
   }
 
   try {
-    const scanWindowStart = resolveRecentImwebWindowStart(scanStore.getLastScanTime());
-    const result = await cogsAutofillService.syncRecentOrdersToCogs(orders, {
-      sinceTime: scanWindowStart,
-    });
+    // Let the autofill service use its own default lookback window (7 days).
+    // The previous narrow scan-interval window (≈25 min) silently missed
+    // orders placed during Imweb outages, because the window cap was tighter
+    // than the outage duration.  The autofill service already deduplicates
+    // against the sheet, so a wider window costs only cheap in-memory checks.
+    const result = await cogsAutofillService.syncRecentOrdersToCogs(orders);
 
     pushStep(scanResult, {
       step: 'cogs_autofill',
       status: 'ok',
+      orderSource,
       windowStartAt: result.windowStartAt,
       eligibleOrders: result.eligibleOrders,
       appendedOrders: result.appended.length,
@@ -415,7 +445,7 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, orders) {
       + `${result.duplicates.length} duplicates, `
       + `${result.skipped.length} skipped, `
       + `${result.errors.length} failed `
-      + `(${result.eligibleOrders} recent paid order${result.eligibleOrders === 1 ? '' : 's'} checked since ${result.windowStartAt || 'startup'})`
+      + `(${result.eligibleOrders} paid order${result.eligibleOrders === 1 ? '' : 's'} checked, source: ${orderSource})`
     );
 
     for (const failure of result.errors) {
@@ -491,8 +521,11 @@ async function runScan(manual = false) {
     if (imwebResult.ok) {
       await backfillRecentNewOrderNotifications(scanResult, imwebResult.orders);
       await reconcileClosedOrderNotifications(scanResult, imwebResult.orders);
-      await reconcileRecentImwebOrdersToCogs(scanResult, imwebResult.orders);
     }
+
+    // COGS autofill runs independently of Imweb — falls back to backup
+    // order data when Imweb is unavailable so sheets keep updating.
+    await reconcileRecentImwebOrdersToCogs(scanResult, imwebResult.ok ? imwebResult.orders : null);
 
     const cogsResult = await fetchCogs(scanResult);
     sourceStatus.cogs = cogsResult.ok;
