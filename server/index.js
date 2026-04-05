@@ -226,6 +226,11 @@ app.get('/imweb/install', async (req, res) => {
 });
 
 app.get('/imweb/oauth/callback', async (req, res) => {
+  // When Imweb redirects back with an authorization code, serve the
+  // callback page so the user can copy the code and seed the token.
+  if (req.query.code || req.query.error) {
+    return res.sendFile(path.join(__dirname, '..', 'public', 'oauth-callback.html'));
+  }
   const page = buildImwebPollingModePage();
   res.status(page.statusCode).type('html').send(page.html);
 });
