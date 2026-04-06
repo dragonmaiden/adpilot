@@ -87,6 +87,25 @@ function saveState(state) {
   fs.chmodSync(STATE_FILE, 0o600);
 }
 
+// Clear April imported state so orders re-append after column-offset fix.
+// Safe to leave in — only runs once per deploy, finds nothing after first run.
+(function clearAprilImportedState() {
+  try {
+    const state = loadState();
+    let cleared = 0;
+    for (const [orderNo, meta] of Object.entries(state.importedOrders)) {
+      if (meta?.orderDate?.startsWith('2026-04')) {
+        delete state.importedOrders[orderNo];
+        cleared++;
+      }
+    }
+    if (cleared > 0) {
+      saveState(state);
+      console.log(`[COGS AUTOFILL] Cleared ${cleared} April orders from imported state`);
+    }
+  } catch (_) { /* ignore */ }
+})();
+
 function markOrderImported(orderNo, metadata = {}) {
   const normalizedOrderNo = asString(orderNo);
   if (!normalizedOrderNo) return;
