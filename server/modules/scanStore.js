@@ -4,9 +4,7 @@ const runtimePaths = require('../runtime/paths');
 
 const DATA_DIR = runtimePaths.dataDir;
 const SNAPSHOT_DIR = path.join(DATA_DIR, 'snapshots');
-const MAX_OPTIMIZATIONS = 500;
 const MAX_SCAN_HISTORY = 100;
-const ALL_OPTIMIZATIONS_FILE = 'all_optimizations.json';
 const LATEST_SCAN_FILE = 'latest_scan.json';
 const LATEST_DATA_FILE = 'latest_data.json';
 const SCAN_HISTORY_FILE = 'scan_history.json';
@@ -379,7 +377,6 @@ function createState() {
     lastScanTime: parseLastScanTime(lastScanResult, latestData),
     lastScanResult,
     scanHistory: normalizeScanHistory(loadData(SCAN_HISTORY_FILE, []), lastScanResult),
-    allOptimizations: asArray(loadData(ALL_OPTIMIZATIONS_FILE, [])).slice(-MAX_OPTIMIZATIONS),
     latestData,
     isScanning: false,
   };
@@ -518,9 +515,6 @@ module.exports = {
   setLastScanTime,
   getScanHistory,
   addScanHistory,
-  getAllOptimizations,
-  appendOptimizations,
-  updateOptimization,
   getIsScanning,
   setIsScanning,
   saveLatestData,

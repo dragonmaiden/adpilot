@@ -1,7 +1,6 @@
 const config = require('../config');
 const meta = require('./metaClient');
 const imweb = require('./imwebClient');
-const OptimizationEngine = require('./optimizer');
 const scanStore = require('./scanStore');
 const snapshotRepository = require('./snapshotRepository');
 const { validateMetaCampaigns, validateMetaInsights, validateImwebOrders, logValidation } = require('../validation/vendorSchemas');
@@ -10,10 +9,7 @@ const transforms = require('../transforms/charts');
 const { calcROAS } = require('../domain/metrics');
 const { getTodayInTimeZone, shiftDate } = require('../domain/time');
 const runtimeSettings = require('../runtime/runtimeSettings');
-const { filterDuplicateApprovalOptimizations } = require('../services/optimizationDedupService');
-const { arbitrateOptimizations } = require('../services/optimizationArbitrationService');
 const { buildEconomicsLedger } = require('../services/economicsLedgerService');
-const { buildDefaultChampionPolicy } = require('../services/budgetPolicyService');
 const cogsAutofillService = require('../services/cogsAutofillService');
 const orderNotificationService = require('../services/orderNotificationService');
 const observabilityService = require('../services/observabilityService');
@@ -586,94 +582,7 @@ async function runScan(manual = false) {
       pushStep(scanResult, { step: 'economics_ledger', status: 'failed' });
     }
 
-    if (sourceStatus.metaStructure && sourceStatus.metaInsights) {
-      console.log('[SCHEDULER] Step 4: Running business decision engine...');
-      const latestData = scanStore.getLatestData();
-      const optimizer = new OptimizationEngine(scanId, {
-        budgetPolicy: buildDefaultChampionPolicy(runtimeSettings.getRules()),
-      });
-      const analyzedOptimizations = await optimizer.analyze(
-        metaStructureResult.campaigns,
-        metaStructureResult.ads,
-        metaInsightsResult.campaignInsights,
-        metaInsightsResult.adInsights,
-        latestData.revenueData,
-        latestData.sources?.imweb || null,
-        latestData.cogsData || null
-      );
-      const arbitrated = arbitrateOptimizations(analyzedOptimizations, {
-        adSets: metaStructureResult.adSets,
-        ads: metaStructureResult.ads,
-      });
-      const deduped = filterDuplicateApprovalOptimizations(
-        arbitrated.optimizations,
-        scanStore.getAllOptimizations()
-      );
-      const optimizations = deduped.optimizations;
-      optimizer.actions = optimizations;
-
-      scanResult.optimizations = optimizations;
-      pushStep(scanResult, {
-        step: 'optimizer',
-        status: 'ok',
-        totalOptimizations: optimizations.length,
-        suppressedArbitratedActions: arbitrated.suppressed.length,
-        suppressedDuplicateApprovals: deduped.suppressed.length,
-      });
-      console.log(
-        `[SCHEDULER]   → ${optimizations.length} optimizations generated`
-        + (arbitrated.suppressed.length > 0
-          ? ` (${arbitrated.suppressed.length} dominated action${arbitrated.suppressed.length === 1 ? '' : 's'} suppressed)`
-          : '')
-        + (deduped.suppressed.length > 0
-          ? ` (${deduped.suppressed.length} duplicate approval${deduped.suppressed.length === 1 ? '' : 's'} suppressed)`
-          : '')
-      );
-
-      scanResult.stats = buildScanStats(latestData, until);
-      // Operator alert messages are now handled by MetaAdsPro (OpenClaw heartbeat).
-      // The engine only sends approval requests with buttons (requestApproval).
-      // await telegram.sendScanSummary(scanResult, latestData);
-
-      const byType = {};
-      const byPriority = {};
-      for (const optimization of optimizations) {
-        byType[optimization.type] = (byType[optimization.type] || 0) + 1;
-        byPriority[optimization.priority] = (byPriority[optimization.priority] || 0) + 1;
-      }
-      console.log(`[SCHEDULER]   Types: ${JSON.stringify(byType)}`);
-      console.log(`[SCHEDULER]   Priority: ${JSON.stringify(byPriority)}`);
-
-      if (runtimeSettings.getRules().autonomousMode) {
-        console.log('[SCHEDULER] Step 5: Processing approval-required optimizations...');
-        const executed = await optimizer.processApprovalQueue();
-        pushStep(scanResult, {
-          step: 'execution',
-          status: 'ok',
-          attempted: executed.length,
-          succeeded: executed.filter(action => action.executed).length,
-          failed: executed.filter(action => !action.executed).length,
-        });
-        console.log(`[SCHEDULER]   → ${executed.filter(action => action.executed).length} executed, ${executed.filter(action => !action.executed).length} failed`);
-      } else {
-        console.log('[SCHEDULER] Step 5: Autonomous mode OFF — suggestions only');
-        pushStep(scanResult, { step: 'execution', status: 'skipped', note: 'Autonomous mode disabled' });
-      }
-
-      scanStore.appendOptimizations(optimizations);
-    } else {
-      console.log('[SCHEDULER] Step 4: Skipping optimizer — Meta refresh incomplete');
-      pushStep(scanResult, {
-        step: 'optimizer',
-        status: 'skipped',
-        note: 'Meta structure and insight refresh are both required before optimization can run',
-      });
-      pushStep(scanResult, {
-        step: 'execution',
-        status: 'skipped',
-        note: 'Optimizer did not run',
-      });
-    }
+    scanResult.stats = buildScanStats(scanStore.getLatestData(), until);
 
     const latestData = scanStore.getLatestData();
     const anySourceUpdated = Object.values(sourceStatus).some(Boolean);

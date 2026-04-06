@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const { getOptimizationStatus } = require('../domain/optimizationSemantics');
 
 const STARTUP_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const ALERT_DUPLICATE_COOLDOWN_MS = 90 * 60 * 1000;
@@ -117,10 +116,7 @@ ${alertLines}${approvalNotice}`;
 function buildScanSummaryPlan(scanResult, latestData, state, now = new Date()) {
   void latestData;
 
-  const optimizations = (scanResult.optimizations || []).map(opt => ({
-    ...opt,
-    status: getOptimizationStatus(opt),
-  }));
+  const optimizations = [];
 
   const actionable = optimizations.filter(opt => opt.status === 'needs_approval' || opt.status === 'awaiting_telegram');
   const operatorAlerts = buildOperatorAlertItems(optimizations);

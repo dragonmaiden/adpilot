@@ -17,8 +17,6 @@ module.exports = {
   getLastScanResult: scanStore.getLastScanResult,
   getLastScanTime: scanStore.getLastScanTime,
   getScanHistory: scanStore.getScanHistory,
-  getAllOptimizations: scanStore.getAllOptimizations,
-  updateOptimization: scanStore.updateOptimization,
   getIsScanning: scanStore.getIsScanning,
   getSnapshotsList: snapshotRepository.getSnapshotsList,
   getSnapshot: snapshotRepository.getSnapshot,

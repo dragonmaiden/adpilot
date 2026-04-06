@@ -775,7 +775,7 @@ async function getCalendarAnalysisResponse(query = {}) {
   const allOperations = buildOperationEvents({
     scanHistory: scheduler.getScanHistory(),
     latestScanResult: scheduler.getLastScanResult(),
-    optimizations: scheduler.getAllOptimizations(),
+    optimizations: [],
     reconciliation: visibleReconciliation,
   });
 

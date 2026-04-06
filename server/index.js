@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════
 // AdPilot — Express Server
-// REST API for dashboard + autonomous optimization engine
+// REST API for dashboard + order monitoring
 // ═══════════════════════════════════════════════════════
 
 const express = require('express');
@@ -19,20 +19,14 @@ const transforms = require('./transforms/charts');
 const overviewService = require('./services/overviewService');
 const campaignService = require('./services/campaignService');
 const postmortemService = require('./services/postmortemService');
-const recommendationQualityService = require('./services/recommendationQualityService');
-const aiOperationsService = require('./services/aiOperationsService');
 const analyticsService = require('./services/analyticsService');
 const livePerformanceService = require('./services/livePerformanceService');
 const calendarService = require('./services/calendarService');
-const optimizationService = require('./services/optimizationService');
 const reconciliationService = require('./services/reconciliationService');
-const operatorSummaryService = require('./services/operatorSummaryService');
-const briefService = require('./services/briefService');
 const cogsAutofillService = require('./services/cogsAutofillService');
 const orderNotificationService = require('./services/orderNotificationService');
 const observabilityService = require('./services/observabilityService');
 const imwebAuthRepairService = require('./services/imwebAuthRepairService');
-const { isExecutableOptimization, requiresApproval } = require('./domain/optimizationSemantics');
 
 function isValidMetaId(id) {
   return /^\d{1,20}$/.test(String(id || ''));
@@ -309,7 +303,6 @@ app.get('/api/health', (req, res) => {
     uptime: process.uptime(),
     lastScan: scheduler.getLastScanTime()?.toISOString() || null,
     isScanning: scheduler.getIsScanning(),
-    autonomousMode: runtimeSettings.getRules().autonomousMode,
     imwebAuth: imweb.getAuthState().status,
     telegram: telegram.getStatus(),
     sources: sourceHealth,
@@ -320,22 +313,6 @@ app.get('/api/health', (req, res) => {
 app.get('/api/overview', async (req, res) => {
   try {
     res.json(await overviewService.getOverviewResponse());
-  } catch (err) {
-    handleInternalError(req, res, err);
-  }
-});
-
-app.get('/api/operator-summary', async (req, res) => {
-  try {
-    res.json(await operatorSummaryService.getOperatorSummaryResponse());
-  } catch (err) {
-    handleInternalError(req, res, err);
-  }
-});
-
-app.get('/api/operator-brief', async (req, res) => {
-  try {
-    res.json(await briefService.getOperatorBriefResponse());
   } catch (err) {
     handleInternalError(req, res, err);
   }
@@ -352,11 +329,6 @@ app.get('/api/live-performance', (req, res) => {
   } catch (err) {
     handleInternalError(req, res, err);
   }
-});
-
-// ── Optimizations log ──
-app.get('/api/optimizations', (req, res) => {
-  res.json(optimizationService.getOptimizationsResponse(req.query));
 });
 
 // ── Scan history ──
@@ -497,89 +469,6 @@ app.post('/api/campaigns/:id/budget', writeLimiter, validateMetaIdParam, async (
   }
 });
 
-// ── Execute specific optimization ──
-app.post('/api/optimizations/:id/execute', writeLimiter, async (req, res) => {
-  try {
-    const opts = scheduler.getAllOptimizations();
-    const opt = opts.find(o => o.id === req.params.id);
-    if (!opt) return res.status(404).json({ error: 'Optimization not found' });
-    if (opt.executed) return res.json({ already: true, optimization: opt });
-    if (!isExecutableOptimization(opt)) {
-      return res.status(400).json({ error: 'Optimization is advisory only and cannot be executed.' });
-    }
-    if (!requiresApproval(opt)) {
-      return res.status(400).json({ error: 'Optimization does not require Telegram approval.' });
-    }
-    if (opt.approvalStatus === 'pending') {
-      return res.json({ success: true, pending: true, alreadyRequested: true, optimization: opt });
-    }
-
-    const OptimizationEngine = require('./modules/optimizer');
-    const engine = new OptimizationEngine();
-    const approvalId = await telegram.requestApproval(opt);
-    if (!approvalId) {
-      const failed = scheduler.updateOptimization(opt.id, {
-        executionResult: 'Failed to send Telegram approval request',
-      }) || opt;
-      return res.status(500).json({ error: 'Failed to send Telegram approval', optimization: failed });
-    }
-
-    const requestedAt = new Date().toISOString();
-    const queued = scheduler.updateOptimization(opt.id, {
-      approvalStatus: 'pending',
-      approvalRequestedAt: requestedAt,
-      executionResult: 'Awaiting Telegram approval',
-    }) || opt;
-
-    res.json({
-      success: true,
-      pending: true,
-      message: 'Approval request sent to Telegram.',
-      optimization: queued,
-    });
-
-    (async () => {
-      try {
-        const response = await telegram.waitForApproval(approvalId, 300000);
-        const liveOpt = scheduler.getAllOptimizations().find(item => item.id === opt.id) || queued;
-
-        if (response.approved) {
-          await engine.executeAction(liveOpt);
-          scheduler.updateOptimization(liveOpt.id, {
-            executed: liveOpt.executed,
-            executionResult: liveOpt.executionResult,
-            approvalStatus: 'approved',
-          });
-
-          const resultEmoji = liveOpt.executed ? '✅' : '❌';
-          await telegram.sendMessage(
-            `${resultEmoji} <b>Execution Result</b>\n\n<b>Action:</b> ${liveOpt.action}\n<b>Result:</b> ${liveOpt.executionResult}`
-          );
-          return;
-        }
-
-        const rejectedStatus = String(response.reason || '').toLowerCase().includes('timeout')
-          ? 'expired'
-          : 'rejected';
-        scheduler.updateOptimization(liveOpt.id, {
-          executed: false,
-          approvalStatus: rejectedStatus,
-          executionResult: `${rejectedStatus === 'expired' ? 'Expired' : 'Rejected'}: ${response.reason}`,
-        });
-      } catch (err) {
-        console.error('[API] Optimization approval flow failed:', err.message);
-        scheduler.updateOptimization(opt.id, {
-          executed: false,
-          approvalStatus: null,
-          executionResult: `Approval flow failed: ${err.message}`,
-        });
-      }
-    })();
-  } catch (err) {
-    handleInternalError(req, res, err);
-  }
-});
-
 // ── Seed Imweb token (one-time, secured by Telegram chat ID) ──
 app.post('/api/seed-token', writeLimiter, async (req, res) => {
   try {
@@ -681,19 +570,6 @@ app.get('/api/postmortem', (req, res) => {
   res.json(postmortemService.getPostmortemResponse(req.query));
 });
 
-app.get('/api/recommendation-quality', (req, res) => {
-  res.json(recommendationQualityService.getRecommendationQualityResponse());
-});
-
-app.get('/api/ai-operations', (req, res) => {
-  res.json(aiOperationsService.getAiOperationsResponse());
-});
-
-// ── Optimization Timeline (for micro-adjustment chart) ──
-app.get('/api/optimizations/timeline', (req, res) => {
-  res.json(optimizationService.getTimelineResponse());
-});
-
 // ── Spend Daily (OHLC candlestick data for the Spend & CAC chart) ──
 app.get('/api/spend-daily', async (req, res) => {
   try {
@@ -763,7 +639,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('  AdPilot Backend Server');
   console.log(`  Port: ${PORT}`);
   console.log(`  Data: ${DATA_DIR}`);
-  console.log(`  Mode: ${runtimeSettings.getRules().autonomousMode ? 'APPROVAL-GATED' : 'ADVISORY ONLY'}`);
   console.log(`  Scan interval: ${schedulerDiagnostics.scanIntervalMinutes} min`);
   if (schedulerDiagnostics.driftDetected) {
     console.log(`  Scheduler drift: live ${schedulerDiagnostics.scanIntervalMinutes} min vs config ${schedulerDiagnostics.configuredScanIntervalMinutes} min`);

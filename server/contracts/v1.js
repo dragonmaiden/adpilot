@@ -213,89 +213,6 @@ function livePerformance(data) {
 }
 
 /**
- * Build /api/optimizations response.
- */
-function optimizations({ total, showing, optimizations: opts, stats }) {
-  return {
-    apiVersion: API_VERSION,
-    total: total ?? 0,
-    showing: showing ?? 0,
-    optimizations: (opts || []).map(o => ({
-      id: o.id ?? '',
-      type: o.type ?? '',
-      level: o.level ?? '',
-      targetId: o.targetId ?? '',
-      priority: o.priority ?? 'low',
-      action: o.action ?? '',
-      reason: o.reason ?? '',
-      impact: o.impact ?? '',
-      targetName: o.targetName ?? '',
-      executed: o.executed ?? false,
-      executionResult: o.executionResult ?? null,
-      approvalStatus: o.approvalStatus ?? null,
-      approvalRequestedAt: o.approvalRequestedAt ?? null,
-      actionable: o.actionable ?? false,
-      status: o.status ?? 'unknown',
-      timestamp: o.timestamp ?? null,
-      scanId: o.scanId ?? null,
-      controlSurface: o.controlSurface ?? null,
-      decisionKind: o.decisionKind ?? null,
-      decisionDomain: o.decisionDomain ?? null,
-    })),
-    stats: {
-      byType: stats?.byType ?? {},
-      byPriority: stats?.byPriority ?? {},
-      executed: stats?.executed ?? 0,
-      pending: stats?.pending ?? 0,
-      actionable: stats?.actionable ?? 0,
-      awaitingTelegram: stats?.awaitingTelegram ?? 0,
-      advisory: stats?.advisory ?? 0,
-    },
-  };
-}
-
-/**
- * Build /api/recommendation-quality response.
- */
-function recommendationQuality({ generatedAt, windowHours, summary, duplicateApprovalTargets, recentScaleRecommendations }) {
-  return {
-    apiVersion: API_VERSION,
-    generatedAt: generatedAt ?? null,
-    windowHours: windowHours ?? 72,
-    summary: summary ?? {},
-    duplicateApprovalTargets: duplicateApprovalTargets ?? [],
-    recentScaleRecommendations: recentScaleRecommendations ?? [],
-  };
-}
-
-/**
- * Build /api/ai-operations response.
- */
-function aiOperations({ generatedAt, windowHours, latestScanId, summary, quality, systemChatter, queue, activity, decisionMarkers, clusters }) {
-  return {
-    apiVersion: API_VERSION,
-    generatedAt: generatedAt ?? null,
-    windowHours: windowHours ?? 72,
-    latestScanId: latestScanId ?? null,
-    summary: summary ?? {},
-    quality: quality ?? {},
-    systemChatter: systemChatter ?? {},
-    queue: {
-      immediate: queue?.immediate ?? [],
-      fixInputs: queue?.fixInputs ?? [],
-      hold: queue?.hold ?? [],
-      portfolioGuidance: queue?.portfolioGuidance ?? [],
-      cleanup: queue?.cleanup ?? [],
-      research: queue?.research ?? [],
-      backlog: queue?.backlog ?? [],
-    },
-    activity: activity ?? [],
-    decisionMarkers: decisionMarkers ?? [],
-    clusters: clusters ?? [],
-  };
-}
-
-/**
  * Build /api/scans response.
  */
 function scans({ history, lastScan, isScanning, nextScan }) {
@@ -362,19 +279,6 @@ function postmortem({ active, inactive, noData, lessonsSummary, totals, windowKe
 }
 
 /**
- * Build /api/optimizations/timeline response.
- */
-function optimizationTimeline({ timeline, scanTimeline, totalOptimizations, totalScans }) {
-  return {
-    apiVersion: API_VERSION,
-    timeline: timeline ?? [],
-    scanTimeline: scanTimeline ?? [],
-    totalOptimizations: totalOptimizations ?? 0,
-    totalScans: totalScans ?? 0,
-  };
-}
-
-/**
  * Build /api/settings response.
  */
 function settings({ rules, scheduler, meta, imweb, telegram, sources, currency, cogs }) {
@@ -411,26 +315,6 @@ function snapshotDetail(data) {
   };
 }
 
-/**
- * Build /api/operator-summary response.
- */
-function operatorSummary(data) {
-  return {
-    apiVersion: API_VERSION,
-    ...data,
-  };
-}
-
-/**
- * Build /api/operator-brief response.
- */
-function operatorBrief(data) {
-  return {
-    apiVersion: API_VERSION,
-    ...data,
-  };
-}
-
 module.exports = {
   API_VERSION,
   overview,
@@ -439,17 +323,11 @@ module.exports = {
   calendarAnalysis,
   campaigns,
   livePerformance,
-  optimizations,
-  recommendationQuality,
-  aiOperations,
   scans,
   spendDaily,
   reconciliation,
   postmortem,
-  optimizationTimeline,
   settings,
   snapshotsList,
   snapshotDetail,
-  operatorSummary,
-  operatorBrief,
 };

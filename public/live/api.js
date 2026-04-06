@@ -114,14 +114,6 @@
     return data && data.ready ? data : null;
   }
 
-  function fetchOptimizations(limit = 50) {
-    return api(`/optimizations?limit=${limit}`);
-  }
-
-  function fetchAiOperations() {
-    return api('/ai-operations');
-  }
-
   function fetchAnalytics() {
     return api('/analytics');
   }
@@ -176,16 +168,10 @@
     return api(`/campaigns/${campaignId}/status`, 'POST', { status });
   }
 
-  function executeOptimization(optId) {
-    return api(`/optimizations/${optId}/execute`, 'POST');
-  }
-
   live.api = {
     api,
     checkBackendAvailable,
     fetchOverview,
-    fetchOptimizations,
-    fetchAiOperations,
     fetchAnalytics,
     fetchCalendarAnalysis,
     fetchCampaigns,
@@ -197,6 +183,5 @@
     fetchSpendDaily,
     triggerScan,
     updateCampaignStatus,
-    executeOptimization,
   };
 })();

@@ -162,7 +162,7 @@ test('scan summary plan stays silent for medium-priority performance summaries',
   assert.equal(plan.reason, 'no-high-signal-content');
 });
 
-test('scan summary plan sends focused operator alerts for high-priority advisory actions', () => {
+test('scan summary plan stays silent when optimizations are passed (optimizer removed)', () => {
   const plan = buildScanSummaryPlan({
     optimizations: [
       {
@@ -172,7 +172,7 @@ test('scan summary plan sends focused operator alerts for high-priority advisory
         targetId: 'ad-warning',
         targetName: 'Support Creative',
         action: 'Ad fatigued — pause & replace creative',
-        reason: 'Last 7d: frequency 4.8, CTR down 42% from peak (2.40% → 1.39%)',
+        reason: 'Last 7d: frequency 4.8, CTR down 42% from peak',
         impact: 'Replacing creative typically restores CTR within 3-5 days',
         priority: 'high',
         executed: false,
@@ -180,67 +180,6 @@ test('scan summary plan sends focused operator alerts for high-priority advisory
     ],
   }, buildLatestData(), { summary: { fingerprint: null, sentAt: null } }, REFERENCE_NOW);
 
-  assert.equal(plan.shouldSend, true);
-  assert.equal(plan.category, 'alert');
-  assert.match(plan.text, /AdPilot Action Alert/i);
-  assert.match(plan.text, /Ad fatigued — pause & replace creative/i);
-  assert.match(plan.text, /Target: Support Creative/i);
-  assert.doesNotMatch(plan.text, /spent \(7d\)|Refund rate|Best next moves|active campaigns/i);
-});
-
-test('scan summary plan stays silent when only approval requests exist', () => {
-  const plan = buildScanSummaryPlan({
-    optimizations: [
-      {
-        id: 'opt3',
-        type: 'budget',
-        level: 'campaign',
-        targetId: 'c1',
-        targetName: 'Test Campaign',
-        action: 'Increase daily budget by $24.00 (20%)',
-        reason: 'Last 7d CPA is $11.80 with 16 Meta-attributed purchases.',
-        impact: 'Potential 2 additional Meta-attributed purchases/day',
-        priority: 'medium',
-        executed: false,
-      },
-    ],
-  }, buildLatestData(), { summary: { fingerprint: null, sentAt: null } }, REFERENCE_NOW);
-
   assert.equal(plan.shouldSend, false);
   assert.equal(plan.category, 'silent');
-});
-
-test('operator alerts mention that approval requests were sent separately', () => {
-  const plan = buildScanSummaryPlan({
-    optimizations: [
-      {
-        id: 'opt4',
-        type: 'budget',
-        level: 'campaign',
-        targetId: 'c1',
-        targetName: 'Test Campaign',
-        action: 'Increase daily budget by $24.00 (20%)',
-        reason: 'Last 7d CPA is $11.80 with 16 Meta-attributed purchases.',
-        impact: 'Potential 2 additional Meta-attributed purchases/day',
-        priority: 'medium',
-        executed: false,
-      },
-      {
-        id: 'opt5',
-        type: 'creative',
-        level: 'ad',
-        targetId: 'ad-warning',
-        targetName: 'Support Creative',
-        action: 'Refresh creatives — CTR declining 34%',
-        reason: 'CTR dropped from 2.10% to 1.39% over the last 7d.',
-        impact: 'Introduce a fresh variant before efficiency slips further',
-        priority: 'high',
-        executed: false,
-      },
-    ],
-  }, buildLatestData(), { summary: { fingerprint: null, sentAt: null } }, REFERENCE_NOW);
-
-  assert.equal(plan.shouldSend, true);
-  assert.match(plan.text, /1 approval request sent separately/i);
-  assert.match(plan.text, /Refresh creatives — CTR declining 34%/i);
 });
