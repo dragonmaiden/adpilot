@@ -88,6 +88,25 @@ function saveState(state) {
   fs.chmodSync(STATE_FILE, 0o600);
 }
 
+// One-time migration: clear April orders from imported state so they
+// re-append correctly after the column-offset fix (2026-04-06).
+(function migrateAprilImportedState() {
+  try {
+    const state = loadState();
+    let cleared = 0;
+    for (const [orderNo, meta] of Object.entries(state.importedOrders)) {
+      if (meta?.orderDate?.startsWith('2026-04')) {
+        delete state.importedOrders[orderNo];
+        cleared++;
+      }
+    }
+    if (cleared > 0) {
+      saveState(state);
+      console.log(`[COGS AUTOFILL] Migration: cleared ${cleared} April orders from imported state`);
+    }
+  } catch (_) { /* ignore */ }
+})();
+
 function markOrderImported(orderNo, metadata = {}) {
   const normalizedOrderNo = asString(orderNo);
   if (!normalizedOrderNo) return;
@@ -551,12 +570,29 @@ function buildSheetTitle(target) {
 }
 
 async function ensureSheetInitialized(target, rows) {
-  const hasDataRows = Array.isArray(rows) && rows.some(row =>
-    Array.isArray(row) && row.some(cell => asString(cell))
-  );
-  if (hasDataRows) return { initialized: false };
+  // Skip initialization if the sheet already has meaningful data in the first
+  // few columns (title row, header row, or order data starting at column A).
+  const firstRow = Array.isArray(rows?.[0]) ? rows[0] : [];
+  const hasContentInPrimaryColumns = firstRow.slice(0, 7).some(cell => asString(cell));
+  if (hasContentInPrimaryColumns) return { initialized: false };
 
   const escapedSheetName = String(target.sheetName || target.label || '').replace(/'/g, "''");
+
+  // Clear any misaligned data before writing headers
+  const hasAnyContent = Array.isArray(rows) && rows.some(row =>
+    Array.isArray(row) && row.some(cell => asString(cell))
+  );
+  if (hasAnyContent) {
+    const token = await getGoogleAccessToken();
+    const clearUrl = `${SHEETS_API_BASE}/${encodeURIComponent(config.cogs.spreadsheetId)}/values/'${escapedSheetName}':clear`;
+    await fetch(clearUrl, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    console.log(`[COGS AUTOFILL] Cleared misaligned data from "${target.sheetName}"`);
+  }
+
   const titleRow = [buildSheetTitle(target)];
   await updateSheetValues([
     {
