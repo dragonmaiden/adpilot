@@ -492,17 +492,11 @@ function setRowsForTarget(target, rows, sheetCache) {
 }
 
 function getNextSequenceNumber(rows) {
-  // Scan every cell, not just column 0 — the Google Sheets append API
-  // may place data at a column offset (e.g. column M) when the sheet
-  // has pre-existing data that doesn't start at column A.
   return (Array.isArray(rows) ? rows : []).reduce((max, row) => {
     if (!Array.isArray(row)) return max;
-    for (const cell of row) {
-      const candidate = Number.parseInt(asString(cell), 10);
-      if (Number.isFinite(candidate) && candidate > max) {
-        max = candidate;
-        break; // sequence is always the first non-empty cell
-      }
+    const candidate = Number.parseInt(asString(row[COL.NO]), 10);
+    if (Number.isFinite(candidate) && candidate > max) {
+      max = candidate;
     }
     return max;
   }, 0) + 1;
