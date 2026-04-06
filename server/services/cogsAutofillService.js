@@ -536,7 +536,49 @@ async function updateSheetValues(ranges) {
   return payload;
 }
 
+const SHEET_TITLE_PREFIX = 'SHUE';
+const SHEET_HEADER_ROW = [
+  'No', 'date', 'name', 'order number', 'products urk', 'seller no',
+  'product name', 'Cost', 'Shipping cost', 'payment', 'delivery', 'note',
+  COMPACT_DETAIL_HEADER_LABEL,
+];
+const KOREAN_MONTH_NAMES = ['', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+
+function buildSheetTitle(target) {
+  const month = extractMonthNumber(target?.label || target?.sheetName);
+  const monthLabel = month ? KOREAN_MONTH_NAMES[month] : asString(target?.label || target?.sheetName);
+  return `${SHEET_TITLE_PREFIX} ${monthLabel} 주문`;
+}
+
+async function ensureSheetInitialized(target, rows) {
+  const hasDataRows = Array.isArray(rows) && rows.some(row =>
+    Array.isArray(row) && row.some(cell => asString(cell))
+  );
+  if (hasDataRows) return { initialized: false };
+
+  const escapedSheetName = String(target.sheetName || target.label || '').replace(/'/g, "''");
+  const titleRow = [buildSheetTitle(target)];
+  await updateSheetValues([
+    {
+      range: `'${escapedSheetName}'!A1`,
+      majorDimension: 'ROWS',
+      values: [titleRow, SHEET_HEADER_ROW],
+    },
+  ]);
+
+  if (Array.isArray(rows)) {
+    rows.length = 0;
+    rows.push(titleRow, SHEET_HEADER_ROW);
+  }
+
+  console.log(`[COGS AUTOFILL] Initialized sheet "${target.sheetName}" with title and headers`);
+  return { initialized: true };
+}
+
 async function ensureOptionalHeaders(target, rows) {
+  const init = await ensureSheetInitialized(target, rows);
+  if (init.initialized) return { updated: true, count: 1 };
+
   const headerRow = Array.isArray(rows?.[0]) ? [...rows[0]] : [];
   const updates = [];
   const currentHeader = asString(headerRow[COMPACT_DETAIL_COLUMN_INDEX]);
