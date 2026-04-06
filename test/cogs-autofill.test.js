@@ -188,8 +188,8 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
       assert.deepEqual(updatedRanges, ["'3월 주문'!M1"]);
 
       const [firstRow, secondRow] = appendRequest.body.values;
-      assert.deepEqual(firstRow.slice(0, 7), ['102', '2026-03-13', '홍신희', '20260313225187', '', '', '실크 모노그램 방도']);
-      assert.deepEqual(secondRow.slice(0, 7), ['102', '2026-03-13', '홍신희', '20260313225187', '', '', '에르 스카프']);
+      assert.deepEqual(firstRow.slice(0, 7), ['102', "'2026-03-13", '홍신희', '20260313225187', '', '', '실크 모노그램 방도']);
+      assert.deepEqual(secondRow.slice(0, 7), ['102', "'2026-03-13", '홍신희', '20260313225187', '', '', '에르 스카프']);
       assert.equal(firstRow[11], '');
       assert.equal(
         firstRow[12],
@@ -507,7 +507,7 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
         fetchSheetCSV: async () => [
           ['번호', '날짜', '이름', '주문번호'],
           [],
-          ['101', '2026-03-13', '홍신희', '20260313225187'],
+          ['101', "'2026-03-13", '홍신희', '20260313225187'],
         ],
       },
       imwebClient: {

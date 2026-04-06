@@ -1165,7 +1165,7 @@ function buildRowsForOrder(order, nextSequenceNo) {
   return productNames.map(productName => {
     const row = new Array(COL.DETAIL + 1).fill('');
     row[COL.NO] = String(nextSequenceNo);
-    row[COL.DATE] = orderDate;
+    row[COL.DATE] = orderDate ? `'${orderDate}` : '';
     row[COL.NAME] = customerName;
     row[COL.ORDER_NO] = orderNo;
     row[COL.PRODUCT] = productName;
