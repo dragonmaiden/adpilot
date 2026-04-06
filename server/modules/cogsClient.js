@@ -121,22 +121,37 @@ function parseWorkbookSheets(zip) {
   }).filter(sheet => sheet.path);
 }
 
+const ENGLISH_MONTH_MAP = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+  apr: 4, april: 4, may: 5, jun: 6, june: 6,
+  jul: 7, july: 7, aug: 8, august: 8, sep: 9, september: 9,
+  oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+};
+
 function normalizeSheetLabel(value) {
   return String(value || '').trim();
 }
 
+function parseMonthNumber(label) {
+  const normalized = normalizeSheetLabel(label);
+  const koreanMatch = normalized.match(/(\d{1,2})\s*월/);
+  if (koreanMatch) return Number.parseInt(koreanMatch[1], 10);
+  const englishMonth = ENGLISH_MONTH_MAP[normalized.toLowerCase().replace(/[^a-z]/g, '')];
+  if (englishMonth) return englishMonth;
+  return null;
+}
+
 function getMonthSortKey(label) {
-  const match = normalizeSheetLabel(label).match(/(\d{1,2})\s*월/);
-  return match ? Number.parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+  return parseMonthNumber(label) ?? Number.MAX_SAFE_INTEGER;
 }
 
 function getMonthIdentity(label) {
-  const match = normalizeSheetLabel(label).match(/(\d{1,2}\s*월)/);
-  return match ? match[1].replace(/\s+/g, '') : normalizeSheetLabel(label);
+  const month = parseMonthNumber(label);
+  return month ? `${month}월` : normalizeSheetLabel(label);
 }
 
 function isMonthlySheetLabel(label) {
-  return MONTH_SHEET_RE.test(normalizeSheetLabel(label));
+  return parseMonthNumber(label) != null;
 }
 
 function buildSheetTargets(workbookSheets = []) {

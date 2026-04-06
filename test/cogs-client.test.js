@@ -92,7 +92,7 @@ test('buildSheetTargets merges configured month labels with workbook-discovered 
     [
       { label: '2월', sheetName: '2월 주문', discovered: false },
       { label: '3월', sheetName: '3월 주문', discovered: false },
-      { label: '4월', sheetName: '4월 주문', discovered: true },
+      { label: '4월', sheetName: '4월 주문', discovered: false },
     ]
   );
 });
