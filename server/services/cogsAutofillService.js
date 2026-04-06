@@ -1341,6 +1341,13 @@ async function syncOrderToCogsSheet(order, options = {}) {
 
   const importedMetadata = getImportedOrderMetadata(normalizedOrderNo);
   const target = await canonicalizeTargetSheet(options.target || await resolveTargetSheet(summary.orderDate));
+
+  // Guard: order date month must match target tab month
+  const orderMonth = Number.parseInt(summary.orderDate.slice(5, 7), 10);
+  const targetMonth = extractMonthNumber(target?.label || target?.sheetName);
+  if (targetMonth && orderMonth !== targetMonth) {
+    throw new Error(`Order ${normalizedOrderNo} date ${summary.orderDate} (month ${orderMonth}) routed to "${target.sheetName}" (month ${targetMonth}) — month mismatch`);
+  }
   return withSheetSyncLock(target, async () => {
     const existingRows = options.existingRows || await getRowsForTarget(target, options.sheetCache);
     await ensureOptionalHeaders(target, existingRows);
