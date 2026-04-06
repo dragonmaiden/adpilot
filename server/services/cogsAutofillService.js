@@ -1078,35 +1078,24 @@ function isEligibleRecentOrder(order, options = {}) {
     return false;
   }
 
-  const orderDate = order?.wtime ? formatDateInTimeZone(order.wtime) : '';
   const orderStatus = asString(order?.orderStatus).toUpperCase();
-  const sections = getOrderSections(order);
-  const sectionStatuses = sections.map(s => asString(s?.orderSectionStatus || s?.status).toUpperCase());
-  const hasPreparedSection = sectionStatuses.includes('PRODUCT_PREPARATION');
+  const hasPreparedSection = getOrderSections(order).some(section => (
+    asString(section?.orderSectionStatus || section?.status).toUpperCase() === 'PRODUCT_PREPARATION'
+  ));
   const hasCompletedPayment = normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
   const isOperationallyEligible = hasPreparedSection || (orderStatus === 'OPEN' && hasCompletedPayment);
 
   if (!isOperationallyEligible) {
-    if (orderDate.startsWith('2026-04')) {
-      console.log(`[COGS AUTOFILL] April order ${orderNo} ineligible: status=${orderStatus} sections=[${sectionStatuses.join(',')}] paid=${hasCompletedPayment}`);
-    }
     return false;
   }
 
   const cashTotals = getOrderCashTotals(order);
   if (!cashTotals.approvedAmount && !hasCompletedPayment) {
-    if (orderDate.startsWith('2026-04')) {
-      console.log(`[COGS AUTOFILL] April order ${orderNo} ineligible: no cash (approved=${cashTotals.approvedAmount})`);
-    }
     return false;
   }
 
   const effectiveTimestamp = getOrderAutofillTimestamp(order);
-  const recent = isRecentEnough(effectiveTimestamp, resolveWindowStart(options));
-  if (!recent && orderDate.startsWith('2026-04')) {
-    console.log(`[COGS AUTOFILL] April order ${orderNo} ineligible: too old (ts=${effectiveTimestamp?.toISOString?.()})`);
-  }
-  return recent;
+  return isRecentEnough(effectiveTimestamp, resolveWindowStart(options));
 }
 
 function buildRowsForOrder(order, nextSequenceNo) {
