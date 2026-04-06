@@ -21,7 +21,6 @@ const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const MAX_NEW_ORDER_BACKFILL_HOURS = 1;
 const BIG_FISH_THRESHOLD_KRW = 200000;
-const COMPACT_DETAIL_COLUMN_INDEX = 12;
 const COMPACT_DETAIL_HEADER_LABEL = 'delivery note';
 const MONTH_ONLY_SHEET_RE = /^\s*\d{1,2}\s*월\s*$/;
 const TERMINAL_ORDER_STATUS_TOKENS = [
@@ -87,25 +86,6 @@ function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
   fs.chmodSync(STATE_FILE, 0o600);
 }
-
-// One-time migration: clear April orders from imported state so they
-// re-append correctly after the column-offset fix (2026-04-06).
-(function migrateAprilImportedState() {
-  try {
-    const state = loadState();
-    let cleared = 0;
-    for (const [orderNo, meta] of Object.entries(state.importedOrders)) {
-      if (meta?.orderDate?.startsWith('2026-04')) {
-        delete state.importedOrders[orderNo];
-        cleared++;
-      }
-    }
-    if (cleared > 0) {
-      saveState(state);
-      console.log(`[COGS AUTOFILL] Migration: cleared ${cleared} April orders from imported state`);
-    }
-  } catch (_) { /* ignore */ }
-})();
 
 function markOrderImported(orderNo, metadata = {}) {
   const normalizedOrderNo = asString(orderNo);
@@ -556,11 +536,23 @@ async function updateSheetValues(ranges) {
 }
 
 const SHEET_TITLE_PREFIX = 'SHUE';
-const SHEET_HEADER_ROW = [
-  'No', 'date', 'name', 'order number', 'products urk', 'seller no',
-  'product name', 'Cost', 'Shipping cost', 'payment', 'delivery', 'note',
-  COMPACT_DETAIL_HEADER_LABEL,
-];
+// Column schema — single source of truth for header row and row builder.
+// Index:  0     1      2      3              4             5          6              7      8               9         10         11     12
+const COL = { NO: 0, DATE: 1, NAME: 2, ORDER_NO: 3, PRODUCT_URL: 4, SELLER: 5, PRODUCT: 6, COST: 7, SHIPPING: 8, PAYMENT: 9, DELIVERY: 10, NOTE: 11, DETAIL: 12 };
+const SHEET_HEADER_ROW = [];
+SHEET_HEADER_ROW[COL.NO] = 'No';
+SHEET_HEADER_ROW[COL.DATE] = 'date';
+SHEET_HEADER_ROW[COL.NAME] = 'name';
+SHEET_HEADER_ROW[COL.ORDER_NO] = 'order number';
+SHEET_HEADER_ROW[COL.PRODUCT_URL] = 'products urk';
+SHEET_HEADER_ROW[COL.SELLER] = 'seller no';
+SHEET_HEADER_ROW[COL.PRODUCT] = 'product name';
+SHEET_HEADER_ROW[COL.COST] = 'Cost';
+SHEET_HEADER_ROW[COL.SHIPPING] = 'Shipping cost';
+SHEET_HEADER_ROW[COL.PAYMENT] = 'payment';
+SHEET_HEADER_ROW[COL.DELIVERY] = 'delivery';
+SHEET_HEADER_ROW[COL.NOTE] = 'note';
+SHEET_HEADER_ROW[COL.DETAIL] = COMPACT_DETAIL_HEADER_LABEL;
 const KOREAN_MONTH_NAMES = ['', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 
 function buildSheetTitle(target) {
@@ -617,18 +609,18 @@ async function ensureOptionalHeaders(target, rows) {
 
   const headerRow = Array.isArray(rows?.[0]) ? [...rows[0]] : [];
   const updates = [];
-  const currentHeader = asString(headerRow[COMPACT_DETAIL_COLUMN_INDEX]);
+  const currentHeader = asString(headerRow[COL.DETAIL]);
   const shouldSetCompactHeader = !currentHeader
     || LEGACY_OPTIONAL_HEADER_LABELS.has(currentHeader)
     || currentHeader.toLowerCase() === COMPACT_DETAIL_HEADER_LABEL;
 
   if (shouldSetCompactHeader && currentHeader !== COMPACT_DETAIL_HEADER_LABEL) {
     updates.push({
-      range: `'${String(target.sheetName || target.label || '').replace(/'/g, "''")}'!${toColumnLabel(COMPACT_DETAIL_COLUMN_INDEX + 1)}1`,
+      range: `'${String(target.sheetName || target.label || '').replace(/'/g, "''")}'!${toColumnLabel(COL.DETAIL + 1)}1`,
       majorDimension: 'ROWS',
       values: [[COMPACT_DETAIL_HEADER_LABEL]],
     });
-    headerRow[COMPACT_DETAIL_COLUMN_INDEX] = COMPACT_DETAIL_HEADER_LABEL;
+    headerRow[COL.DETAIL] = COMPACT_DETAIL_HEADER_LABEL;
   }
 
   if (updates.length === 0) {
@@ -641,7 +633,7 @@ async function ensureOptionalHeaders(target, rows) {
     if (!Array.isArray(rows[0])) {
       rows[0] = [];
     }
-    rows[0][COMPACT_DETAIL_COLUMN_INDEX] = COMPACT_DETAIL_HEADER_LABEL;
+    rows[0][COL.DETAIL] = COMPACT_DETAIL_HEADER_LABEL;
   }
 
   return { updated: true, count: updates.length };
@@ -1157,25 +1149,18 @@ function buildRowsForOrder(order, nextSequenceNo) {
     address,
   });
 
-  return productNames.map(productName => ([
-    String(nextSequenceNo),
-    orderDate,
-    customerName,
-    orderNo,
-    '',
-    '',
-    productName,
-    '',
-    '',
-    'FALSE',
-    'FALSE',
-    '',
-    compactDeliveryDetails,
-    '',
-    '',
-    '',
-    '',
-  ]));
+  return productNames.map(productName => {
+    const row = new Array(COL.DETAIL + 1).fill('');
+    row[COL.NO] = String(nextSequenceNo);
+    row[COL.DATE] = orderDate;
+    row[COL.NAME] = customerName;
+    row[COL.ORDER_NO] = orderNo;
+    row[COL.PRODUCT] = productName;
+    row[COL.PAYMENT] = 'FALSE';
+    row[COL.DELIVERY] = 'FALSE';
+    row[COL.DETAIL] = compactDeliveryDetails;
+    return row;
+  });
 }
 
 async function appendRowsToSheet(target, rows) {
@@ -1185,7 +1170,8 @@ async function appendRowsToSheet(target, rows) {
 
   const token = await getGoogleAccessToken();
   const escapedSheetName = String(target.sheetName || target.label || '').replace(/'/g, "''");
-  const range = encodeURIComponent(`'${escapedSheetName}'!A:Q`);
+  const lastCol = toColumnLabel(COL.DETAIL + 1);
+  const range = encodeURIComponent(`'${escapedSheetName}'!A:${lastCol}`);
   const url = `${SHEETS_API_BASE}/${encodeURIComponent(config.cogs.spreadsheetId)}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   const response = await fetch(url, {
     method: 'POST',

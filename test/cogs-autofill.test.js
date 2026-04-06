@@ -181,7 +181,7 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
 
       const appendRequest = appendRequests[0];
       assert.match(appendRequest.url, /insertDataOption=INSERT_ROWS/);
-      assert.match(appendRequest.url, /'3%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AQ:append/);
+      assert.match(appendRequest.url, /'3%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AM:append/);
 
       const headerUpdate = batchUpdateRequests[0];
       const updatedRanges = headerUpdate.body.data.map(entry => entry.range);
@@ -296,7 +296,7 @@ test('syncOrderToCogsSheet canonicalizes stale month-only sheet titles before ap
         batchUpdateRequests[0].body.data.map(entry => entry.range),
         ["'4월 주문'!M1"]
       );
-      assert.match(appendRequests[0].url, /'4%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AQ:append/);
+      assert.match(appendRequests[0].url, /'4%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AM:append/);
     });
   } finally {
     global.fetch = originalFetch;
