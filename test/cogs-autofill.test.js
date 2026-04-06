@@ -236,6 +236,10 @@ test('syncOrderToCogsSheet canonicalizes stale month-only sheet titles before ap
       };
     }
 
+    if (textUrl.includes(':batchUpdate')) {
+      return { ok: true, json: async () => ({ replies: [] }) };
+    }
+
     appendRequests.push({
       url: textUrl,
       body: JSON.parse(options.body),

@@ -564,13 +564,14 @@ function buildSheetTitle(target) {
   return `${SHEET_TITLE_PREFIX} ${monthLabel} 주문`;
 }
 
-async function applyCheckboxValidation(sheetGid, ...columnIndices) {
+async function applyCheckboxValidation(sheetGid, startRow, rowCount, ...columnIndices) {
   const token = await getGoogleAccessToken();
   const requests = columnIndices.map(colIndex => ({
     setDataValidation: {
       range: {
         sheetId: Number(sheetGid),
-        startRowIndex: 2,
+        startRowIndex: startRow,
+        endRowIndex: startRow + rowCount,
         startColumnIndex: colIndex,
         endColumnIndex: colIndex + 1,
       },
@@ -626,11 +627,6 @@ async function ensureSheetInitialized(target, rows) {
       values: [titleRow, SHEET_HEADER_ROW],
     },
   ]);
-
-  // Apply checkbox data validation to payment and delivery columns
-  if (target?.gid) {
-    await applyCheckboxValidation(target.gid, COL.PAYMENT, COL.DELIVERY);
-  }
 
   if (Array.isArray(rows)) {
     rows.length = 0;
@@ -1362,7 +1358,11 @@ async function syncOrderToCogsSheet(order, options = {}) {
 
     const nextSequenceNo = getNextSequenceNumber(existingRows);
     const rows = buildRowsForOrder(order, nextSequenceNo);
+    const startRow = existingRows.length;
     await appendRowsToSheet(target, rows);
+    if (target?.gid) {
+      await applyCheckboxValidation(target.gid, startRow, rows.length, COL.PAYMENT, COL.DELIVERY);
+    }
     setRowsForTarget(target, existingRows.concat(rows), options.sheetCache);
     markOrderImported(normalizedOrderNo, {
       source: importedMetadata ? 'recovered_append' : 'append',
