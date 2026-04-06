@@ -564,6 +564,36 @@ function buildSheetTitle(target) {
   return `${SHEET_TITLE_PREFIX} ${monthLabel} 주문`;
 }
 
+async function applyCheckboxValidation(sheetGid, ...columnIndices) {
+  const token = await getGoogleAccessToken();
+  const requests = columnIndices.map(colIndex => ({
+    setDataValidation: {
+      range: {
+        sheetId: Number(sheetGid),
+        startRowIndex: 2,
+        startColumnIndex: colIndex,
+        endColumnIndex: colIndex + 1,
+      },
+      rule: {
+        condition: { type: 'BOOLEAN' },
+        showCustomUi: true,
+      },
+    },
+  }));
+
+  const url = `${SHEETS_API_BASE}/${encodeURIComponent(config.cogs.spreadsheetId)}:batchUpdate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests }),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    console.warn(`[COGS AUTOFILL] Checkbox validation failed: ${payload?.error?.message || response.status}`);
+  }
+}
+
 async function ensureSheetInitialized(target, rows) {
   // Skip initialization if the sheet already has meaningful data in the first
   // few columns (title row, header row, or order data starting at column A).
@@ -596,6 +626,11 @@ async function ensureSheetInitialized(target, rows) {
       values: [titleRow, SHEET_HEADER_ROW],
     },
   ]);
+
+  // Apply checkbox data validation to payment and delivery columns
+  if (target?.gid) {
+    await applyCheckboxValidation(target.gid, COL.PAYMENT, COL.DELIVERY);
+  }
 
   if (Array.isArray(rows)) {
     rows.length = 0;
