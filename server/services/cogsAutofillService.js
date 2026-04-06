@@ -21,7 +21,6 @@ const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const MAX_NEW_ORDER_BACKFILL_HOURS = 1;
 const BIG_FISH_THRESHOLD_KRW = 200000;
-const COMPACT_DETAIL_HEADER_LABEL = 'delivery note';
 const MONTH_ONLY_SHEET_RE = /^\s*\d{1,2}\s*월\s*$/;
 const TERMINAL_ORDER_STATUS_TOKENS = [
   'CANCEL',
@@ -30,14 +29,6 @@ const TERMINAL_ORDER_STATUS_TOKENS = [
   'REFUND',
   'CLOSED',
 ];
-const LEGACY_OPTIONAL_HEADER_LABELS = new Set([
-  '배송메모',
-  '주문자 연락처',
-  '수령인 이름',
-  '수령인 연락처',
-  '우편번호',
-  '주소',
-]);
 
 let googleAccessToken = null;
 let googleAccessTokenExpiry = 0;
@@ -550,8 +541,8 @@ async function updateSheetValues(ranges) {
 
 const SHEET_TITLE_PREFIX = 'SHUE';
 // Column schema — single source of truth for header row and row builder.
-// Index:  0     1      2      3              4             5          6              7      8               9         10         11     12
-const COL = { NO: 0, DATE: 1, NAME: 2, ORDER_NO: 3, PRODUCT_URL: 4, SELLER: 5, PRODUCT: 6, COST: 7, SHIPPING: 8, PAYMENT: 9, DELIVERY: 10, NOTE: 11, DETAIL: 12 };
+// Index:  0     1      2      3              4             5          6              7      8               9         10         11
+const COL = { NO: 0, DATE: 1, NAME: 2, ORDER_NO: 3, PRODUCT_URL: 4, SELLER: 5, PRODUCT: 6, COST: 7, SHIPPING: 8, PAYMENT: 9, DELIVERY: 10, DETAIL: 11 };
 const SHEET_HEADER_ROW = [];
 SHEET_HEADER_ROW[COL.NO] = 'No';
 SHEET_HEADER_ROW[COL.DATE] = 'date';
@@ -564,8 +555,7 @@ SHEET_HEADER_ROW[COL.COST] = 'Cost';
 SHEET_HEADER_ROW[COL.SHIPPING] = 'Shipping cost';
 SHEET_HEADER_ROW[COL.PAYMENT] = 'payment';
 SHEET_HEADER_ROW[COL.DELIVERY] = 'delivery';
-SHEET_HEADER_ROW[COL.NOTE] = 'note';
-SHEET_HEADER_ROW[COL.DETAIL] = COMPACT_DETAIL_HEADER_LABEL;
+SHEET_HEADER_ROW[COL.DETAIL] = 'note';
 const KOREAN_MONTH_NAMES = ['', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 
 function buildSheetTitle(target) {
@@ -617,39 +607,7 @@ async function ensureSheetInitialized(target, rows) {
 }
 
 async function ensureOptionalHeaders(target, rows) {
-  const init = await ensureSheetInitialized(target, rows);
-  if (init.initialized) return { updated: true, count: 1 };
-
-  const headerRow = Array.isArray(rows?.[0]) ? [...rows[0]] : [];
-  const updates = [];
-  const currentHeader = asString(headerRow[COL.DETAIL]);
-  const shouldSetCompactHeader = !currentHeader
-    || LEGACY_OPTIONAL_HEADER_LABELS.has(currentHeader)
-    || currentHeader.toLowerCase() === COMPACT_DETAIL_HEADER_LABEL;
-
-  if (shouldSetCompactHeader && currentHeader !== COMPACT_DETAIL_HEADER_LABEL) {
-    updates.push({
-      range: `'${String(target.sheetName || target.label || '').replace(/'/g, "''")}'!${toColumnLabel(COL.DETAIL + 1)}1`,
-      majorDimension: 'ROWS',
-      values: [[COMPACT_DETAIL_HEADER_LABEL]],
-    });
-    headerRow[COL.DETAIL] = COMPACT_DETAIL_HEADER_LABEL;
-  }
-
-  if (updates.length === 0) {
-    return { updated: false, count: 0 };
-  }
-
-  await updateSheetValues(updates);
-
-  if (Array.isArray(rows)) {
-    if (!Array.isArray(rows[0])) {
-      rows[0] = [];
-    }
-    rows[0][COL.DETAIL] = COMPACT_DETAIL_HEADER_LABEL;
-  }
-
-  return { updated: true, count: updates.length };
+  return ensureSheetInitialized(target, rows);
 }
 
 function hasOrderNumber(rows, orderNo) {

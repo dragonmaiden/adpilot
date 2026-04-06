@@ -177,26 +177,21 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
       assert.equal(result.netRevenue, 111000);
       assert.equal(result.approvedAmount, 111000);
       assert.equal(appendRequests.length, 1);
-      assert.equal(batchUpdateRequests.length, 1);
+      assert.equal(batchUpdateRequests.length, 0);
 
       const appendRequest = appendRequests[0];
       assert.match(appendRequest.url, /insertDataOption=INSERT_ROWS/);
-      assert.match(appendRequest.url, /'3%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AM:append/);
-
-      const headerUpdate = batchUpdateRequests[0];
-      const updatedRanges = headerUpdate.body.data.map(entry => entry.range);
-      assert.deepEqual(updatedRanges, ["'3월 주문'!M1"]);
+      assert.match(appendRequest.url, /'3%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AL:append/);
 
       const [firstRow, secondRow] = appendRequest.body.values;
       assert.deepEqual(firstRow.slice(0, 7), ['102', "'2026-03-13", '홍신희', '20260313225187', '', '', '실크 모노그램 방도']);
       assert.deepEqual(secondRow.slice(0, 7), ['102', "'2026-03-13", '홍신희', '20260313225187', '', '', '에르 스카프']);
-      assert.equal(firstRow[11], '');
       assert.equal(
-        firstRow[12],
+        firstRow[11],
         'receiver: 홍신희 | phone: 01012341234 | address: 06236 서울 강남구 테헤란로 123 5층 | delivery note: 문 앞에 놓아주세요'
       );
       assert.equal(
-        secondRow[12],
+        secondRow[11],
         'receiver: 홍신희 | phone: 01012341234 | address: 06236 서울 강남구 테헤란로 123 5층 | delivery note: 문 앞에 놓아주세요'
       );
       assert.equal(firstRow[9], 'FALSE');
@@ -290,13 +285,9 @@ test('syncOrderToCogsSheet canonicalizes stale month-only sheet titles before ap
 
       assert.equal(result.status, 'appended');
       assert.equal(result.sheetName, '4월 주문');
-      assert.equal(batchUpdateRequests.length, 1);
+      assert.equal(batchUpdateRequests.length, 0);
       assert.equal(appendRequests.length, 1);
-      assert.deepEqual(
-        batchUpdateRequests[0].body.data.map(entry => entry.range),
-        ["'4월 주문'!M1"]
-      );
-      assert.match(appendRequests[0].url, /'4%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AM:append/);
+      assert.match(appendRequests[0].url, /'4%EC%9B%94%20%EC%A3%BC%EB%AC%B8'!A%3AL:append/);
     });
   } finally {
     global.fetch = originalFetch;
@@ -523,7 +514,7 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
       assert.equal(result.customerName, '홍신희');
       assert.deepEqual(result.productNames, ['실크 모노그램 방도', '에르 스카프']);
       assert.equal(appendCount, 0);
-      assert.equal(headerUpdateCount, 1);
+      assert.equal(headerUpdateCount, 0);
     });
   } finally {
     global.fetch = originalFetch;
@@ -536,7 +527,7 @@ test('syncOrderToCogsSheet serializes same-month appends so sequence numbers sta
   const originalFetch = global.fetch;
   const appendRequests = [];
   const sheetRows = [
-    ['번호', '날짜', '이름', '주문번호', '', '', '', '', '', '', '', '', 'delivery note'],
+    ['번호', '날짜', '이름', '주문번호', '', '', '', '', '', '', '', 'note'],
     [],
     ['101', '2026-03-12', '기존 고객', '20260312001'],
   ];
@@ -689,7 +680,7 @@ test('syncOrderToCogsSheet recovers when imported state exists but the sheet row
       assert.equal(result.status, 'appended');
       assert.equal(result.orderNo, '20260313225187');
       assert.equal(appendCount, 1);
-      assert.equal(headerUpdateCount, 1);
+      assert.equal(headerUpdateCount, 0);
 
       const state = JSON.parse(fs.readFileSync(path.join(dataDir, 'cogs_autofill_state.json'), 'utf8'));
       assert.equal(state.importedOrders['20260313225187'].source, 'recovered_append');
@@ -778,7 +769,7 @@ test('syncOrderToCogsSheet marks paid appends that were already alerted in Teleg
       assert.equal(result.status, 'appended');
       assert.equal(result.alreadyNotified, true);
       assert.equal(appendCount, 1);
-      assert.equal(headerUpdateCount, 1);
+      assert.equal(headerUpdateCount, 0);
     });
   } finally {
     global.fetch = originalFetch;
@@ -1320,7 +1311,7 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
       assert.equal(result.appended[0].orderNo, '20260313001');
       assert.equal(result.duplicates[0].orderNo, '20260313002');
       assert.equal(appendCount, 1);
-      assert.equal(headerUpdateCount, 1);
+      assert.equal(headerUpdateCount, 0);
     });
   } finally {
     global.fetch = originalFetch;
@@ -1422,7 +1413,7 @@ test('syncRecentOrdersToCogs respects an explicit scan window start and skips ol
       assert.equal(result.appended.length, 1);
       assert.equal(result.appended[0].orderNo, '20260313022');
       assert.equal(appendCount, 1);
-      assert.equal(headerUpdateCount, 1);
+      assert.equal(headerUpdateCount, 0);
     });
   } finally {
     global.fetch = originalFetch;
@@ -1533,7 +1524,7 @@ test('syncRecentOrdersToCogs keeps processing after one eligible order fails to 
       assert.equal(result.appended.length, 1);
       assert.equal(result.appended[0].orderNo, '20260313012');
       assert.equal(appendRequests, 2);
-      assert.equal(headerUpdateRequests, 1);
+      assert.equal(headerUpdateRequests, 0);
       assert.equal(tokenRequests, 1);
     });
   } finally {
