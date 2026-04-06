@@ -57,7 +57,6 @@ const config = {
     roasMinimum: 1.5,
     minDataDays: 3,
     budgetReallocationEnabled: true,
-    autonomousMode: true,
   },
 
   // Scheduler

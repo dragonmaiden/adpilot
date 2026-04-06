@@ -7,7 +7,6 @@ const emitter = new EventEmitter();
 const SETTINGS_SCHEMA_VERSION = 2;
 
 const MUTABLE_RULE_KEYS = [
-  'autonomousMode',
   'maxBudgetChangePercent',
   'cpaPauseThreshold',
   'budgetReallocationEnabled',
@@ -45,9 +44,6 @@ const runtimeMetadata = {
 function validateSettingsPatch(updates) {
   const errors = [];
 
-  if (updates.autonomousMode !== undefined && typeof updates.autonomousMode !== 'boolean') {
-    errors.push('autonomousMode must be a boolean');
-  }
   if (updates.maxBudgetChangePercent !== undefined && (!Number.isFinite(updates.maxBudgetChangePercent) || updates.maxBudgetChangePercent < 1 || updates.maxBudgetChangePercent > 100)) {
     errors.push('maxBudgetChangePercent must be a number between 1 and 100');
   }
@@ -92,7 +88,6 @@ function loadState() {
     let shouldPersistMigration = false;
     let migratedLegacyScheduler = false;
     const persisted = {
-      autonomousMode: raw.rules?.autonomousMode,
       maxBudgetChangePercent: raw.rules?.maxBudgetChangePercent,
       cpaPauseThreshold: raw.rules?.cpaPauseThreshold,
       budgetReallocationEnabled: raw.rules?.budgetReallocationEnabled,

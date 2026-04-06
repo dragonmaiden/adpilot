@@ -1,7 +1,7 @@
 (function () {
   const live = window.AdPilotLive;
   const { esc, timeSince, tr, getLocale, localizeOptimizationText } = live.shared;
-  const { fetchCampaigns, fetchAnalytics, fetchOptimizations } = live.api;
+  const { fetchCampaigns, fetchAnalytics } = live.api;
 
   function formatOptimizationScope(level) {
     const labels = {
@@ -116,23 +116,9 @@
         budgetPaceChart.update();
       }
 
-      const optData = await fetchOptimizations(20);
       const budgetHistoryEl = document.getElementById('budgetHistory');
-      if (budgetHistoryEl && optData && optData.optimizations) {
-        const budgetOpts = optData.optimizations.filter(opt => opt.type === 'budget');
-        if (budgetOpts.length === 0) {
-          budgetHistoryEl.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No budget changes yet.', '아직 예산 변경 이력이 없습니다.'))}</td></tr>`;
-        } else {
-          budgetHistoryEl.innerHTML = budgetOpts.map(opt => `
-            <tr>
-              <td class="cell-fit cell-nowrap">${timeSince(new Date(opt.timestamp))}</td>
-              <td class="cell-primary cell-wrap">${esc(opt.targetName || '—')}</td>
-              <td class="cell-fit cell-nowrap">${esc(formatOptimizationScope(opt.level))}</td>
-              <td class="cell-wrap">${esc(localizeOptimizationText(opt.action || '—'))}</td>
-              <td class="cell-reason cell-wrap" style="color:var(--color-text-muted)">${esc(localizeOptimizationText(opt.reason || '—'))}</td>
-            </tr>
-          `).join('');
-        }
+      if (budgetHistoryEl) {
+        budgetHistoryEl.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('Budget history not available.', '예산 변경 이력을 사용할 수 없습니다.'))}</td></tr>`;
       }
     } catch (e) {
       console.warn('[LIVE] refreshBudgetPage error:', e.message);

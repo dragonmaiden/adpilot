@@ -451,38 +451,6 @@ function addScanHistory(entry) {
   return state.scanHistory;
 }
 
-function getAllOptimizations() {
-  return state.allOptimizations.slice();
-}
-
-function appendOptimizations(optimizations) {
-  if (!Array.isArray(optimizations) || optimizations.length === 0) {
-    return state.allOptimizations;
-  }
-
-  state.allOptimizations.push(...optimizations);
-  if (state.allOptimizations.length > MAX_OPTIMIZATIONS) {
-    state.allOptimizations = state.allOptimizations.slice(-MAX_OPTIMIZATIONS);
-  }
-  saveData(ALL_OPTIMIZATIONS_FILE, state.allOptimizations);
-  return state.allOptimizations;
-}
-
-function updateOptimization(id, patch) {
-  if (!id) return null;
-  const optimization = state.allOptimizations.find(entry => entry.id === id);
-  if (!optimization) return null;
-
-  const nextPatch = typeof patch === 'function' ? patch({ ...optimization }) : patch;
-  if (!nextPatch || typeof nextPatch !== 'object') {
-    return optimization;
-  }
-
-  Object.assign(optimization, nextPatch);
-  saveData(ALL_OPTIMIZATIONS_FILE, state.allOptimizations);
-  return optimization;
-}
-
 function getIsScanning() {
   return state.isScanning;
 }
