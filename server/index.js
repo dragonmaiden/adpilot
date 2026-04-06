@@ -103,25 +103,6 @@ function renderImwebInstallPage({ title, body, statusCode = 200 }) {
   };
 }
 
-function buildImwebPollingModePage() {
-  return renderImwebInstallPage({
-    title: 'Imweb Integration Mode',
-    statusCode: 410,
-    body: `
-      <h1>Imweb Order Sync Uses Scheduled Polling</h1>
-      <p>AdPilot no longer uses the legacy Imweb webhook/app-install flow for order sync. Revenue sync still relies on Imweb OAuth tokens, and token repair remains available here when the refresh-token chain expires.</p>
-      <div class="meta">
-        <p><strong>Mode</strong> <code>scan_polling_primary</code></p>
-        <p><strong>Order sync</strong> <code>10-minute Imweb pull + Telegram reconciliation</code></p>
-        <p><strong>Token repair</strong> <code>${imwebAuthRepairService.IMWEB_AUTH_REPAIR_PATH}</code></p>
-      </div>
-      <a class="cta" href="${imwebAuthRepairService.IMWEB_AUTH_REPAIR_PATH}">Repair Imweb Token</a>
-      <br />
-      <a class="cta" href="/">Open AdPilot</a>
-    `,
-  });
-}
-
 function getPublicRequestOrigin(req) {
   const forwardedProto = String(req.get('x-forwarded-proto') || req.protocol || 'https')
     .split(',')[0]
@@ -261,19 +242,6 @@ app.use((req, res, next) => {
   next();
 });
 
-app.post('/webhooks/imweb', writeLimiter, async (req, res) => {
-  res.status(202).json({
-    ok: true,
-    status: 'ignored',
-    reason: 'imweb_webhooks_sunset_scan_polling_primary',
-  });
-});
-
-app.get('/imweb/install', async (req, res) => {
-  const page = buildImwebPollingModePage();
-  res.status(page.statusCode).type('html').send(page.html);
-});
-
 app.get('/imweb/oauth/start', (req, res) => {
   res.redirect(imwebAuthRepairService.buildAuthorizeUrl({
     baseUrl: config.imweb.baseUrl,
@@ -317,8 +285,7 @@ app.get('/imweb/oauth/callback', async (req, res) => {
       return res.status(page.statusCode).type('html').send(page.html);
     }
   }
-  const page = buildImwebPollingModePage();
-  res.status(page.statusCode).type('html').send(page.html);
+  res.redirect(imwebAuthRepairService.IMWEB_AUTH_REPAIR_PATH);
 });
 
 app.use('/api', apiLimiter);
@@ -660,15 +627,7 @@ app.get('/api/settings', (req, res) => {
       siteCode: config.imweb.siteCode,
       unitCode: config.imweb.unitCode,
       scopes: imwebRecovery.scopes,
-      app: {
-        mode: 'scan_polling_primary',
-        installFlow: 'retired',
-        serviceUrl: null,
-        redirectUri: imwebRecovery.callbackPath,
-        installScope: imwebRecovery.scopes.join(' '),
-        installedSite: null,
-        authRepairPath: imwebRecovery.path,
-      },
+      authRepairPath: imwebRecovery.path,
       recovery: imwebRecovery,
       auth: imwebAuth,
       data: sourceHealth.imweb || {},

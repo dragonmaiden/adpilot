@@ -327,7 +327,6 @@ const I18N = {
   'settings.emailOnly':         { en: 'Email Only', kr: '이메일만' },
   'settings.inAppOnly':         { en: 'In-App Only', kr: '인앱만' },
   'settings.slack':             { en: 'Slack', kr: 'Slack' },
-  'settings.webhook':           { en: 'Webhook', kr: 'Webhook' },
   'settings.low':               { en: 'Low',    kr: '낮음' },
   'settings.medium':            { en: 'Medium', kr: '보통' },
   'settings.high':              { en: 'High',   kr: '높음' },

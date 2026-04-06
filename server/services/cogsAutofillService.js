@@ -168,7 +168,7 @@ function buildNotificationBehaviorInference(metadata) {
   const source = asString(metadata.source);
   const stage = asString(metadata.notificationStage);
   const hasMessageId = Number.isFinite(Number(metadata.messageId));
-  const isInitialAlertSource = source === 'webhook_new_order' || source === 'scan_backstop';
+  const isInitialAlertSource = source === 'scan_backstop';
   const isFallbackSource = source === 'cogs_autofill_fallback' || !source;
 
   if (stage === 'delivery_pending') {

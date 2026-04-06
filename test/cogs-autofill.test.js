@@ -712,7 +712,7 @@ test('syncOrderToCogsSheet marks paid appends that were already alerted in Teleg
       '20260313225187': {
         orderNo: '20260313225187',
         notifiedAt: '2026-03-13T00:00:00.000Z',
-        source: 'webhook_new_order',
+        source: 'scan_backstop',
       },
     },
   }, null, 2));
@@ -796,13 +796,13 @@ test('collectRecentNewOrderNotifications backfills only bounded-recent unpaid or
       '20260313002': {
         orderNo: '20260313002',
         notifiedAt: new Date(now - (8 * 60 * 1000)).toISOString(),
-        source: 'webhook_new_order',
+        source: 'scan_backstop',
         notificationStage: 'delivery_pending',
       },
       '20260313003': {
         orderNo: '20260313003',
         notifiedAt: new Date(now - (7 * 60 * 1000)).toISOString(),
-        source: 'webhook_new_order',
+        source: 'scan_backstop',
         notificationStage: 'payment_pending',
         messageId: 4321,
       },
@@ -1054,7 +1054,7 @@ test('getOrderNotificationDiagnostics reports when an initial bell card was sent
       '20260313011': {
         orderNo: '20260313011',
         notifiedAt: '2026-03-15T07:58:00.000Z',
-        source: 'webhook_new_order',
+        source: 'scan_backstop',
         notificationStage: 'payment_confirmed',
         paymentConfirmedAt: '2026-03-15T08:03:23.489Z',
         paymentState: 'paid',
@@ -1082,7 +1082,7 @@ test('getOrderNotificationDiagnostics reports when an initial bell card was sent
     const diagnostics = service.getOrderNotificationDiagnostics('20260313011');
 
     assert.equal(diagnostics.notificationRecorded, true);
-    assert.equal(diagnostics.notification.source, 'webhook_new_order');
+    assert.equal(diagnostics.notification.source, 'scan_backstop');
     assert.equal(diagnostics.inference.initialBellCardLikelySent, true);
     assert.equal(diagnostics.inference.completedCardLikelyEditedInPlace, true);
     assert.equal(diagnostics.inference.completedFallbackLikelyUsed, false);
