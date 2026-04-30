@@ -12,6 +12,7 @@ export default [
       'node_modules/**',
       'server/data/**',
       'docs/**',
+      '.claude/**',
     ],
   },
   js.configs.recommended,

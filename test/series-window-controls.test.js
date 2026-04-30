@@ -8,9 +8,7 @@ const indexHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 
 const EXPECTED_GROUP_OPTIONS = ['7d', '14d', '30d', 'all'];
 const EXPECTED_DEFAULTS = {
-  overview: '30d',
-  campaigns: '7d',
-  'profit-structure': '30d',
+  'profit-structure': 'all',
   'media-profitability': '30d',
   'revenue-quality': 'all',
 };

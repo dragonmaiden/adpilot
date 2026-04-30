@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { timeSince, tr, getLocale, localizeSystemText } = live.shared;
+  const { timeSince, tr, getLocale, localizeSystemText, formatKstTimestamp } = live.shared;
   const { fetchOverview } = live.api;
   const { sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
   let cachedOverviewData = null;
@@ -135,24 +135,6 @@
     };
   }
 
-  function updateSourceBadge(badgeId, stateId, source, labels) {
-    const badgeEl = document.getElementById(badgeId);
-    const stateEl = document.getElementById(stateId);
-    const badgeMeta = getSourceBadgeMeta(source, labels);
-
-    if (badgeEl) {
-      badgeEl.classList.remove('is-success', 'is-warning', 'is-error');
-      if (badgeMeta.badgeClass) badgeEl.classList.add(badgeMeta.badgeClass);
-      badgeEl.title = badgeMeta.title;
-    }
-
-    if (stateEl) {
-      stateEl.textContent = badgeMeta.stateText;
-    }
-
-    return badgeMeta;
-  }
-
   function setHeaderNotice(noticeEl, text, isError = false) {
     if (!noticeEl) return;
     noticeEl.classList.toggle('is-error', Boolean(isError));
@@ -164,15 +146,15 @@
   function updateHeaderSourceIndicators(dataSources) {
     const noticeEl = document.getElementById('dataFreshnessNotice');
     const metaSource = combineMetaSourceHealth(dataSources);
-    const metaStatus = updateSourceBadge('metaConnectedBadge', 'metaConnectedState', metaSource, {
+    const metaStatus = getSourceBadgeMeta(metaSource, {
       short: 'Meta Ads',
       krShort: 'Meta 광고',
     });
-    const imwebStatus = updateSourceBadge('imwebConnectedBadge', 'imwebConnectedState', dataSources?.imweb || null, {
+    const imwebStatus = getSourceBadgeMeta(dataSources?.imweb || null, {
       short: 'Imweb',
       krShort: 'Imweb',
     });
-    const cogsStatus = updateSourceBadge('cogsConnectedBadge', 'cogsConnectedState', dataSources?.cogs || null, {
+    const cogsStatus = getSourceBadgeMeta(dataSources?.cogs || null, {
       short: 'Google Sheets',
       krShort: 'Google Sheets',
     });
@@ -331,27 +313,8 @@
       }
 
       if (data.lastScan) {
-        const ago = timeSince(new Date(data.lastScan));
         const lastScanEl = document.getElementById('lastScan');
-        if (lastScanEl) lastScanEl.textContent = ago;
-      }
-      const scanBtn = document.getElementById('runScanBtn');
-      if (scanBtn) {
-        const label = scanBtn.querySelector('span');
-        if (data.isScanning) {
-          if (label) label.textContent = tr('Scanning...', '스캔 중...');
-          scanBtn.disabled = true;
-        } else {
-          if (label) label.textContent = typeof window.t === 'function' ? window.t('header.runScan') : tr('Run Scan Now', '스캔 실행');
-          scanBtn.disabled = false;
-        }
-      }
-      const liveDot = document.getElementById('liveDot');
-      if (liveDot) {
-        liveDot.classList.add('pulse');
-        setTimeout(() => {
-          liveDot.classList.remove('pulse');
-        }, 1000);
+        if (lastScanEl) lastScanEl.textContent = formatKstTimestamp(data.lastScan);
       }
 
       const dailyMerged = sliceRowsByWindow((data.charts && data.charts.dailyMerged) || [], 'overview');

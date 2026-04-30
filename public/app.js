@@ -1,80 +1,11 @@
 /* ============================================
-   AdPilot — Meta Ads AI Agent Dashboard
+   AdPilot — Profit Dashboard
    Application Logic
    ============================================ */
-
-// ── Theme Toggle ──
-(function(){
-  const t = document.querySelector('[data-theme-toggle]');
-  const r = document.documentElement;
-  let d = 'light';
-  r.setAttribute('data-theme', d);
-  updateThemeIcon();
-
-  if (t) {
-    t.addEventListener('click', () => {
-      d = d === 'dark' ? 'light' : 'dark';
-      r.setAttribute('data-theme', d);
-      updateThemeIcon();
-      updateChartColors();
-    });
-  }
-
-  function updateThemeIcon() {
-    if (!t) return;
-    t.innerHTML = d === 'dark'
-      ? '<i data-lucide="sun"></i>'
-      : '<i data-lucide="moon"></i>';
-    lucide.createIcons({ nodes: [t] });
-  }
-})();
-
-// ── Mobile Menu ──
-const menuBtn = document.getElementById('menuBtn');
-const sidebar = document.getElementById('sidebar');
-const overlay = document.getElementById('sidebarOverlay');
-
-if (menuBtn) {
-  menuBtn.addEventListener('click', () => {
-    sidebar.classList.toggle('open');
-    overlay.classList.toggle('active');
-  });
-}
-
-if (overlay) {
-  overlay.addEventListener('click', () => {
-    sidebar.classList.remove('open');
-    overlay.classList.remove('active');
-  });
-}
 
 // ── Page Navigation ──
 const navItems = document.querySelectorAll('.nav-item');
 const pages = document.querySelectorAll('.page');
-const pageTitle = document.getElementById('pageTitle');
-
-const pageTitleKeys = {
-  overview: 'page.overview',
-  analytics: 'page.analytics',
-  calendar: 'page.calendar',
-  campaigns: 'page.campaigns',
-  optimizations: 'page.optimizations',
-  fatigue: 'page.fatigue',
-  budget: 'page.budget',
-  settings: 'page.settings'
-};
-
-// Fallback for when i18n hasn't loaded yet
-const pageTitles = {
-  overview: 'Executive Summary',
-  analytics: 'Profit Analytics',
-  calendar: 'Calendar Analysis',
-  campaigns: 'Live Performance',
-  optimizations: 'Decision Center',
-  fatigue: 'Creative Health',
-  budget: 'Spend Pacing',
-  settings: 'Guardrails'
-};
 
 navItems.forEach(item => {
   item.addEventListener('click', (e) => {
@@ -88,41 +19,13 @@ navItems.forEach(item => {
     const targetPage = document.querySelector(`.page[data-page="${target}"]`);
     if (targetPage) targetPage.classList.add('active');
 
-    if (pageTitle) {
-      pageTitle.textContent = (typeof t === 'function' && pageTitleKeys[target])
-        ? t(pageTitleKeys[target])
-        : (pageTitles[target] || target);
-    }
-
-    sidebar.classList.remove('open');
-    overlay.classList.remove('active');
-
     if (target === 'analytics' && !analyticsChartsInitialized) initAnalyticsCharts();
     if (target === 'analytics' && !profitChartsInitialized) initProfitCharts();
-    if (target === 'fatigue' && !fatigueChartInitialized) initFatigueChart();
-    if (target === 'budget' && !budgetChartsInitialized) initBudgetCharts();
-    if (target === 'optimizations' && !optTimelineInitialized) initOptTimeline();
-
     if (window.AdPilotLive) {
       window.AdPilotLive.handlePageActivated(target);
     }
   });
 });
-
-// ── Countdown Timer ──
-let countdownMinutes = 47;
-function renderCountdown() {
-  const el = document.getElementById('countdown');
-  if (!el) return;
-  const lang = typeof window.getCurrentLang === 'function' ? window.getCurrentLang() : 'en';
-  el.textContent = lang === 'kr' ? `${countdownMinutes}분` : `${countdownMinutes}m`;
-}
-window.renderCountdown = renderCountdown;
-renderCountdown();
-setInterval(() => {
-  countdownMinutes = countdownMinutes <= 0 ? 60 : countdownMinutes - 1;
-  renderCountdown();
-}, 60000);
 
 // ── KPI Number Animation ──
 function animateKPIs() {
@@ -179,17 +82,13 @@ Chart.defaults.plugins.legend.display = false;
 Chart.defaults.responsive = true;
 Chart.defaults.maintainAspectRatio = false;
 
-let spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart, hourChartInstance;
-let optTimelineChart, optTypeChart, optPriorityChart;
+let spendRevenueChart, impactChart, roasChart, brandChart, hourChartInstance;
 let profitWaterfallChart;
-let fatigueChartInitialized = false;
-let budgetChartsInitialized = false;
-let optTimelineInitialized = false;
 let profitChartsInitialized = false;
 
 function updateChartColors() {
   const c = getChartColors();
-  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, fatigueChart, budgetPieChart, budgetPaceChart, hourChartInstance, optTimelineChart, optTypeChart, optPriorityChart, profitWaterfallChart];
+  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, hourChartInstance, profitWaterfallChart];
   allCharts.forEach(chart => {
     if (!chart) return;
     if (chart.options.scales) {
@@ -480,528 +379,6 @@ function initCharts() {
   }
 }
 
-const optTypeFilter = document.getElementById('optTypeFilter');
-if (optTypeFilter) {
-  optTypeFilter.addEventListener('change', () => {
-    if (window.AdPilotLive) {
-      window.AdPilotLive.refresh('optimizations');
-    }
-  });
-}
-
-function initFatigueChart() {
-  const c = getChartColors();
-  const ctx = document.getElementById('fatigueChart');
-  if (!ctx) return;
-
-  fatigueChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [
-        {
-          label: 'Avg CTR (%)',
-          data: [],
-          borderColor: '#4ade80',
-          backgroundColor: 'rgba(74,222,128,0.1)',
-          fill: true,
-          tension: 0.4,
-          yAxisID: 'y',
-        },
-        {
-          label: 'Avg Frequency',
-          data: [],
-          borderColor: c.gold,
-          borderDash: [5, 3],
-          tension: 0.4,
-          yAxisID: 'y1',
-        }
-      ]
-    },
-    options: {
-      plugins: {
-        legend: {
-          display: true,
-          position: 'top',
-          labels: { color: c.textFaint, usePointStyle: true, padding: 16 }
-        }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: c.textFaint } },
-        y: {
-          position: 'left',
-          grid: { color: c.grid },
-          ticks: { color: c.textFaint, callback: v => v + '%' },
-          title: { display: true, text: 'CTR', color: c.textFaint }
-        },
-        y1: {
-          position: 'right',
-          grid: { display: false },
-          ticks: { color: c.textFaint },
-          title: { display: true, text: 'Frequency', color: c.textFaint }
-        }
-      }
-    }
-  });
-
-  fatigueChartInitialized = true;
-}
-
-// ── Budget Charts — initialize with empty data ──
-function initBudgetCharts() {
-  const c = getChartColors();
-
-  // Pie Chart — spend allocation by campaign (empty)
-  const ctx1 = document.getElementById('budgetPieChart');
-  if (ctx1) {
-    budgetPieChart = new Chart(ctx1, {
-      type: 'doughnut',
-      data: {
-        labels: [],
-        datasets: [{
-          data: [],
-          backgroundColor: ['#20808D', '#FFC553', '#A84B2F', '#944454'],
-          borderWidth: 0,
-        }]
-      },
-      options: {
-        plugins: {
-          legend: {
-            display: true,
-            position: 'right',
-            labels: {
-              color: c.textFaint,
-              usePointStyle: true,
-              padding: 12,
-              font: { size: 11 }
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return context.label + ': $' + context.raw.toFixed(2);
-              }
-            }
-          }
-        },
-        cutout: '65%',
-      }
-    });
-  }
-
-  // Pace Chart — cumulative daily spend (empty)
-  const ctx2 = document.getElementById('budgetPaceChart');
-  if (ctx2) {
-    budgetPaceChart = new Chart(ctx2, {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets: [
-          {
-            label: 'Target Pace',
-            data: [],
-            borderColor: c.textFaint,
-            borderDash: [5, 3],
-            pointRadius: 0,
-            borderWidth: 1.5,
-          },
-          {
-            label: 'Actual Spend',
-            data: [],
-            borderColor: c.primary,
-            backgroundColor: c.primary + '20',
-            fill: true,
-            pointRadius: 0,
-            borderWidth: 2,
-            tension: 0.3,
-          }
-        ]
-      },
-      options: {
-        plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: { color: c.textFaint, usePointStyle: true, padding: 16 }
-          }
-        },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: { color: c.textFaint, maxTicksLimit: 10, maxRotation: 45 },
-          },
-          y: {
-            grid: { color: c.grid },
-            ticks: {
-              color: c.textFaint,
-              callback: v => '$' + (v / 1000).toFixed(1) + 'k'
-            }
-          }
-        }
-      }
-    });
-  }
-
-  budgetChartsInitialized = true;
-}
-
-// ═══════════════════════════════════════════════════════
-// ── OPTIMIZATION TIMELINE PAGE ──
-// ═══════════════════════════════════════════════════════
-
-// ── Candlestick drawing via Chart.js plugin ──
-// Stores OHLC data externally so plugin can draw candles independently of datasets
-let _candlestickOHLC = [];
-
-const candlestickPlugin = {
-  id: 'candlestick',
-  afterDatasetsDraw(chart) {
-    if (!_candlestickOHLC.length) return;
-    // Only draw on the candlestick chart (optTimelineChart)
-    if (chart.canvas.id !== 'optTimelineChart') return;
-    const xScale = chart.scales.x;
-    const yScale = chart.scales.y;
-    if (!xScale || !yScale) return;
-
-    const ctx = chart.ctx;
-    const chartArea = chart.chartArea;
-    const totalBars = _candlestickOHLC.length;
-    // Calculate bar width from chart area
-    const availableWidth = chartArea.right - chartArea.left;
-    const barW = Math.max(Math.floor((availableWidth / totalBars) * 0.45), 4);
-    const halfW = barW / 2;
-
-    _candlestickOHLC.forEach((d, i) => {
-      if (!d || d.o == null) return;
-      // Get the x pixel from the category scale
-      const x = xScale.getPixelForValue(i);
-      const oY = yScale.getPixelForValue(d.o);
-      const cY = yScale.getPixelForValue(d.c);
-      const hY = yScale.getPixelForValue(d.h);
-      const lY = yScale.getPixelForValue(d.l);
-      const isUp = d.c >= d.o;
-      const color = isUp ? '#4ade80' : '#ef6461';
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.moveTo(x, hY);
-      ctx.lineTo(x, lY);
-      ctx.stroke();
-
-      const top = Math.min(oY, cY);
-      const bodyH = Math.max(Math.abs(oY - cY), 2);
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.85;
-      ctx.fillRect(x - halfW, top, barW, bodyH);
-      ctx.globalAlpha = 1;
-      ctx.restore();
-    });
-
-    // Draw Target CPA label pill
-    const y1Scale = chart.scales.y1;
-    if (y1Scale) {
-      const targetDs = chart.data.datasets[2];
-      if (targetDs && targetDs.data && targetDs.data.length) {
-        const targetVal = targetDs.data[0];
-        const yPos = y1Scale.getPixelForValue(targetVal);
-        ctx.save();
-        const labelText = 'Target CAC ' + formatKRW(targetVal);
-        ctx.font = "11px 'JetBrains Mono', monospace";
-        const textW = ctx.measureText(labelText).width;
-        const pillX = chartArea.right - textW - 16;
-        const pillY = yPos - 10;
-        ctx.fillStyle = 'rgba(239, 100, 97, 0.2)';
-        if (ctx.roundRect) {
-          ctx.beginPath();
-          ctx.roundRect(pillX - 4, pillY - 2, textW + 12, 16, 3);
-          ctx.fill();
-        } else {
-          ctx.fillRect(pillX - 4, pillY - 2, textW + 12, 16);
-        }
-        ctx.fillStyle = '#ef6461';
-        ctx.fillText(labelText, pillX + 2, pillY + 10);
-        ctx.restore();
-      }
-    }
-  }
-};
-Chart.register(candlestickPlugin);
-
-// Shared ref for tooltip data so closures can access updated data
-let _candlestickData = [];
-let _candlestickChanges = [];
-let _candlestickEventMarkers = [];
-
-async function initOptTimeline() {
-  optTimelineInitialized = true;
-  const c = getChartColors();
-  const targetCPA = 45000; // KRW
-  const budgetLine = 90000; // KRW
-  const data = [];
-  const labels = [];
-  const yMin = 0;
-  const yMax = budgetLine * 1.5;
-
-  _candlestickData = data;
-  _candlestickOHLC = [];
-  _candlestickChanges = [];
-  _candlestickEventMarkers = [];
-
-  const tlCtx = document.getElementById('optTimelineChart');
-  if (tlCtx) {
-    optTimelineChart = new Chart(tlCtx, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            // Hidden dataset just for Spend tooltip — candles drawn by plugin
-            label: 'Spend',
-            data: data.map(d => d.c),
-            borderColor: 'transparent',
-            backgroundColor: 'transparent',
-            pointRadius: 0,
-            pointHitRadius: 15,
-            yAxisID: 'y',
-            fill: false,
-          },
-          {
-            label: 'CAC',
-            data: data.map(d => d.cac),
-            borderColor: '#38bdf8',
-            backgroundColor: 'rgba(56, 189, 248, 0.08)',
-            pointBackgroundColor: '#38bdf8',
-            pointBorderColor: '#38bdf8',
-            pointRadius: 4,
-            pointHoverRadius: 6,
-            borderWidth: 2,
-            tension: 0.3,
-            fill: false,
-            yAxisID: 'y1',
-          },
-          {
-            label: 'Target CPA',
-            data: data.map(() => targetCPA),
-            borderColor: '#ef6461',
-            borderDash: [6, 4],
-            borderWidth: 1.5,
-            pointRadius: 0,
-            pointHoverRadius: 0,
-            fill: false,
-            yAxisID: 'y1',
-          },
-          {
-            label: 'Budget',
-            data: data.map(() => budgetLine),
-            borderColor: '#d4a44a',
-            borderDash: [6, 4],
-            borderWidth: 1.5,
-            pointRadius: 0,
-            pointHoverRadius: 0,
-            fill: false,
-            yAxisID: 'y',
-          },
-          {
-            label: 'Decision markers',
-            data: data.map(() => null),
-            borderColor: '#20808D',
-            backgroundColor: '#20808D',
-            pointBackgroundColor: [],
-            pointBorderColor: [],
-            pointRadius: [],
-            pointHoverRadius: [],
-            pointStyle: [],
-            showLine: false,
-            yAxisID: 'y',
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: {
-          mode: 'index',
-          intersect: false,
-          axis: 'x',
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: 'rgba(15, 15, 17, 0.95)',
-            borderColor: 'rgba(255,255,255,0.12)',
-            borderWidth: 1,
-            titleFont: { size: 13, weight: 'bold', family: "'DM Sans', sans-serif" },
-            bodyFont: { size: 12, family: "'JetBrains Mono', monospace" },
-            bodySpacing: 6,
-            padding: 14,
-            cornerRadius: 6,
-            displayColors: true,
-            callbacks: {
-              title: function(items) {
-                const idx = items[0].dataIndex;
-                if (!_candlestickData[idx]) return '';
-                const dt = new Date(_candlestickData[idx].date);
-                return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-              },
-              label: function(ctx) {
-                const idx = ctx.dataIndex;
-                const d = _candlestickData[idx];
-                if (!d) return '';
-                const ch = _candlestickChanges[idx] || { pct: 0, dir: '' };
-                if (ctx.datasetIndex === 0) {
-                  const lines = [];
-                  lines.push('Spend:   ' + formatKRW(d.spend));
-                  if (ch.dir) lines.push('Change:  ' + ch.dir + ' ' + ch.pct + '% vs prev day');
-                  lines.push('Orders:  ' + d.orders);
-                  lines.push('CAC:     ' + formatKRW(d.cac));
-                  return lines;
-                }
-                if (ctx.datasetIndex === 1) return 'CAC: ' + formatKRW(d.cac);
-                if (ctx.datasetIndex === 2) return 'Target CPA: ' + formatKRW(targetCPA);
-                if (ctx.datasetIndex === 3) return 'Budget: ' + formatKRW(budgetLine);
-                if (ctx.datasetIndex === 4) {
-                  const event = _candlestickEventMarkers[idx];
-                  if (!event) return '';
-                  const lines = [event.title || 'Decision marker'];
-                  if (event.count > 1) {
-                    lines.push('Events: ' + event.count);
-                  }
-                  if (event.detail) {
-                    lines.push(event.detail);
-                  }
-                  return lines;
-                }
-                return '';
-              },
-              labelColor: function(ctx) {
-                if (ctx.datasetIndex === 0) return { borderColor: '#8b8b94', backgroundColor: '#8b8b94' };
-                if (ctx.datasetIndex === 1) return { borderColor: '#38bdf8', backgroundColor: '#38bdf8' };
-                if (ctx.datasetIndex === 2) return { borderColor: '#ef6461', backgroundColor: '#ef6461' };
-                if (ctx.datasetIndex === 3) return { borderColor: '#d4a44a', backgroundColor: '#d4a44a' };
-                if (ctx.datasetIndex === 4) return { borderColor: '#20808D', backgroundColor: '#20808D' };
-                return { borderColor: '#fff', backgroundColor: '#fff' };
-              },
-            },
-          },
-        },
-        scales: {
-          x: {
-            grid: {
-              display: true,
-              color: c.grid,
-              lineWidth: 0.6,
-              borderDash: [2, 6],
-              drawTicks: false,
-            },
-            ticks: {
-              color: c.textFaint,
-              font: { size: 10, family: "'JetBrains Mono', monospace" },
-              maxRotation: 0,
-            },
-            border: { display: false },
-          },
-          y: {
-            position: 'left',
-            grid: {
-              color: c.grid,
-              lineWidth: 0.8,
-              borderDash: [3, 5],
-              drawBorder: false,
-              drawTicks: false,
-            },
-            ticks: {
-              color: c.textFaint,
-              font: { size: 10, family: "'JetBrains Mono', monospace" },
-              callback: v => formatKRW(v),
-            },
-            border: { display: false },
-            min: yMin,
-            max: yMax,
-          },
-          y1: {
-            position: 'right',
-            grid: { display: false, drawTicks: false },
-            ticks: {
-              color: c.textFaint,
-              font: { size: 10, family: "'JetBrains Mono', monospace" },
-              callback: v => formatKRW(v),
-            },
-            border: { display: false },
-          },
-        },
-      },
-    });
-  }
-
-  const typeCtx = document.getElementById('optTypeChart');
-  if (typeCtx) {
-    optTypeChart = new Chart(typeCtx, {
-      type: 'doughnut',
-      data: {
-        labels: [],
-        datasets: [{
-          data: [],
-          backgroundColor: [
-            '#20808D', // budget
-            '#fb923c', // creative
-            '#ef4444', // status
-            '#94a3b8', // legacy
-            '#CBD5E1', // overflow 1
-            '#E2E8F0', // overflow 2
-          ],
-          borderWidth: 0,
-        }],
-      },
-      options: {
-        plugins: {
-          legend: {
-            display: true,
-            position: 'right',
-            labels: { color: c.textFaint, usePointStyle: true, padding: 10, font: { size: 11 } },
-          },
-        },
-        cutout: '60%',
-      },
-    });
-  }
-
-  // ── Priority breakdown donut (empty until live data arrives) ──
-  const prioCtx = document.getElementById('optPriorityChart');
-  if (prioCtx) {
-    const prioColors = {
-      critical: '#ef4444',
-      high: '#fb923c',
-      medium: '#20808D',
-      low: '#64748b',
-    };
-    optPriorityChart = new Chart(prioCtx, {
-      type: 'doughnut',
-      data: {
-        labels: [],
-        datasets: [{
-          data: [],
-          backgroundColor: [],
-          borderWidth: 0,
-        }],
-      },
-      options: {
-        plugins: {
-          legend: {
-            display: true,
-            position: 'right',
-            labels: { color: c.textFaint, usePointStyle: true, padding: 10, font: { size: 11 } },
-          },
-        },
-        cutout: '60%',
-      },
-    });
-    // Store prioColors on chart so the live runtime can reuse them.
-    optPriorityChart._prioColors = prioColors;
-  }
-}
-
 // ═══════════════════════════════════════════════════════
 // ── PROFIT ANALYSIS PAGE ──
 // ═══════════════════════════════════════════════════════
@@ -1020,54 +397,48 @@ function initProfitCharts() {
           {
             label: 'Gross Revenue',
             data: [],
-            backgroundColor: 'rgba(74, 222, 128, 0.75)',
+            backgroundColor: 'rgba(22, 101, 52, 0.72)',
             borderRadius: 3,
             stack: 'costs',
             order: 2,
+            legendRank: 1,
+            pointStyle: 'rectRounded',
           },
           {
             label: 'Refunds',
             data: [],
-            backgroundColor: 'rgba(239, 68, 68, 0.65)',
+            backgroundColor: 'rgba(248, 113, 113, 0.52)',
             borderRadius: 3,
             stack: 'deductions',
             order: 2,
+            legendRank: 2,
+            pointStyle: 'rectRounded',
           },
           {
-            label: 'COGS',
+            label: 'Total Costs',
             data: [],
-            backgroundColor: 'rgba(251, 146, 60, 0.65)',
+            backgroundColor: 'rgba(185, 28, 28, 0.58)',
             borderRadius: 3,
             stack: 'deductions',
             order: 2,
+            legendRank: 3,
+            pointStyle: 'rectRounded',
           },
           {
-            label: 'Ad Spend',
-            data: [],
-            backgroundColor: 'rgba(56, 189, 248, 0.65)',
-            borderRadius: 3,
-            stack: 'deductions',
-            order: 2,
-          },
-          {
-            label: 'Payment Fees',
-            data: [],
-            backgroundColor: 'rgba(139, 139, 148, 0.5)',
-            borderRadius: 3,
-            stack: 'deductions',
-            order: 2,
-          },
-          {
-            label: 'Net Profit',
+            label: 'True Net Profit',
             data: [],
             type: 'line',
-            borderColor: c.gold || '#FFC553',
+            borderColor: c.teal || '#1B474D',
             backgroundColor: 'transparent',
             borderWidth: 2.5,
             pointRadius: 3,
             pointBackgroundColor: [],
+            pointBorderColor: '#fff',
+            pointBorderWidth: 1,
+            pointStyle: 'line',
             tension: 0.3,
             order: 1,
+            legendRank: 4,
           }
         ]
       },
@@ -1077,13 +448,33 @@ function initProfitCharts() {
           legend: {
             display: true,
             position: 'top',
-            labels: { color: c.text, boxWidth: 12, padding: 12, font: { size: 11 } }
+            labels: {
+              color: c.text,
+              boxWidth: 12,
+              padding: 12,
+              usePointStyle: true,
+              pointStyleWidth: 16,
+              font: { size: 11 },
+              sort: (a, b, data) => {
+                const rankA = data.datasets[a.datasetIndex]?.legendRank || a.datasetIndex;
+                const rankB = data.datasets[b.datasetIndex]?.legendRank || b.datasetIndex;
+                return rankA - rankB;
+              }
+            }
           },
           tooltip: {
             callbacks: {
               label: function(ctx) {
                 const val = ctx.parsed.y;
                 return ctx.dataset.label + ': \u20a9' + (val || 0).toLocaleString();
+              },
+              afterBody: function(items) {
+                const item = items?.[0];
+                if (!item?.chart) return '';
+                const revenue = Number(item.chart.data.datasets?.[0]?.data?.[item.dataIndex] || 0);
+                const refunded = Math.abs(Number(item.chart.data.datasets?.[1]?.data?.[item.dataIndex] || 0));
+                if (revenue <= 0) return '';
+                return `Refund rate: ${((refunded / revenue) * 100).toFixed(1)}%`;
               }
             }
           }
@@ -1112,7 +503,7 @@ function initProfitCharts() {
 // ═══════════════════════════════════════════════════════
 
 let analyticsChartsInitialized = false;
-let profitTrendChart, weeklyProfitChart, weekdayChartInstance, weeklyCpaChartInstance, refundChartInstance;
+let weekdayChartInstance, refundChartInstance;
 
 function initAnalyticsCharts() {
   analyticsChartsInitialized = true;
@@ -1145,82 +536,6 @@ function initAnalyticsCharts() {
       ctx.restore();
     },
   };
-
-  // ── Daily Profit Trend (empty) ──
-  const profitCtx = document.getElementById('profitTrendChart');
-  if (profitCtx) {
-    profitTrendChart = new Chart(profitCtx, {
-      type: 'bar',
-      data: {
-        labels: [],
-        datasets: [
-          {
-            label: 'Daily Profit (\u20a9)',
-            data: [],
-            backgroundColor: [],
-            borderRadius: 3,
-            order: 2,
-          },
-          {
-            label: 'Cumulative Profit (\u20a9)',
-            data: [],
-            type: 'line',
-            borderColor: c.gold,
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            pointRadius: 0,
-            tension: 0.3,
-            order: 1,
-            yAxisID: 'y1',
-          }
-        ]
-      },
-      options: {
-        plugins: {
-          legend: { display: true, position: 'top', labels: { color: c.text, boxWidth: 12, padding: 16 } },
-          tooltip: {
-            callbacks: {
-              label: function(ctx) {
-                return ctx.dataset.label + ': \u20a9' + ctx.parsed.y.toLocaleString();
-              }
-            }
-          }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: c.textFaint, maxRotation: 45, font: { size: 10 } } },
-          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => formatChartKrwTick(v) } },
-          y1: { position: 'right', grid: { display: false }, ticks: { color: c.gold, callback: v => formatChartKrwTick(v) } },
-        }
-      }
-    });
-  }
-
-  // ── Weekly Profit (empty) ──
-  const wpCtx = document.getElementById('weeklyProfitChart');
-  if (wpCtx) {
-    weeklyProfitChart = new Chart(wpCtx, {
-      type: 'bar',
-      data: {
-        labels: [],
-        datasets: [{
-          label: 'Weekly Profit (\u20a9)',
-          data: [],
-          backgroundColor: [],
-          borderRadius: 6,
-        }]
-      },
-      options: {
-        plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: ctx => '\u20a9' + ctx.parsed.y.toLocaleString() } }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: c.textFaint, font: { size: 10 } } },
-          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => formatChartKrwTick(v) } },
-        }
-      }
-    });
-  }
 
   // ── Weekday Ad Performance (empty) ──
   const wdCtx = document.getElementById('weekdayChart');
@@ -1259,50 +574,6 @@ function initAnalyticsCharts() {
           x: { grid: { display: false }, ticks: { color: c.textFaint } },
           y: { title: { display: true, text: 'Purchases', color: c.textFaint }, grid: { color: c.grid }, ticks: { color: c.textFaint } },
           y1: { position: 'right', title: { display: true, text: 'CPA ($)', color: c.textFaint }, grid: { display: false }, ticks: { color: c.secondary, callback: v => '$' + v } },
-        }
-      }
-    });
-  }
-
-  // ── Weekly CPA Trend (empty) ──
-  const cpaCtx = document.getElementById('weeklyCpaChart');
-  if (cpaCtx) {
-    weeklyCpaChartInstance = new Chart(cpaCtx, {
-      type: 'line',
-      data: {
-        labels: [],
-        datasets: [
-          {
-            label: 'CPA ($)',
-            data: [],
-            borderColor: c.primary,
-            backgroundColor: 'rgba(32, 128, 141, 0.1)',
-            fill: true,
-            borderWidth: 2.5,
-            pointRadius: 6,
-            pointBackgroundColor: [],
-            tension: 0.3,
-            yAxisID: 'y',
-          },
-          {
-            label: 'Purchases',
-            data: [],
-            type: 'bar',
-            backgroundColor: 'rgba(74, 222, 128, 0.4)',
-            borderRadius: 4,
-            yAxisID: 'y1',
-            order: 2,
-          }
-        ]
-      },
-      options: {
-        plugins: {
-          legend: { display: true, position: 'top', labels: { color: c.text, boxWidth: 12, padding: 16 } },
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: c.textFaint } },
-          y: { title: { display: true, text: 'CPA ($)', color: c.textFaint }, grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => '$' + v } },
-          y1: { position: 'right', title: { display: true, text: 'Purchases', color: c.textFaint }, grid: { display: false }, ticks: { color: c.textFaint } },
         }
       }
     });
@@ -1372,4 +643,9 @@ document.addEventListener('DOMContentLoaded', () => {
   lucide.createIcons();
   animateKPIs();
   initCharts();
+  const activePage = document.querySelector('.page.active')?.dataset.page;
+  if (activePage === 'analytics') {
+    if (!analyticsChartsInitialized) initAnalyticsCharts();
+    if (!profitChartsInitialized) initProfitCharts();
+  }
 });

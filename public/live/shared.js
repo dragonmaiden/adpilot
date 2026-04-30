@@ -5,7 +5,6 @@
     throw new Error('AdPilotLive core must load before shared helpers.');
   }
 
-  const SAFE_OPT_TYPES = new Set(['budget', 'creative', 'status', 'legacy']);
   const SAFE_CONFIDENCE_LEVELS = new Set(['high', 'medium', 'low']);
 
   function esc(str) {
@@ -16,10 +15,6 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#x27;');
-  }
-
-  function safeOptType(type) {
-    return SAFE_OPT_TYPES.has(type) ? type : 'legacy';
   }
 
   function safeConfidenceLevel(level) {
@@ -85,48 +80,23 @@
     return amount.toLocaleString();
   }
 
+  function formatKstTimestamp(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (!Number.isFinite(date.getTime())) return '—';
+
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(date).replace(':', '.').replace(/\s/g, '').toLowerCase();
+  }
+
   function humanizeEnum(value) {
     return String(value || '—')
       .toLowerCase()
       .replace(/_/g, ' ')
       .replace(/\b\w/g, char => char.toUpperCase());
-  }
-
-  function localizeOptimizationText(value) {
-    const text = String(value || '');
-    if (!isKorean()) return text;
-
-    let match = text.match(/^Increase daily budget by (\$[\d.,]+) \((\d+)%\)$/);
-    if (match) return `일일 예산 ${match[1]} (${match[2]}%) 증액`;
-
-    match = text.match(/^Potential ([\d,]+) additional purchases\/day$/);
-    if (match) return `하루 추가 구매 잠재 ${match[1]}건`;
-
-    match = text.match(/^(\d+) optimizations · (\d+) errors$/);
-    if (match) return `최적화 ${Number(match[1]).toLocaleString(getLocale())}건 · 오류 ${Number(match[2]).toLocaleString(getLocale())}건`;
-
-    match = text.match(/^Last 7d CPA is (\$[\d.,]+) with ([\d,]+) purchases, while account true net profit is (₩[\d,]+) at ([\d.]+)% margin$/);
-    if (match) return `최근 7일 CPA는 ${match[1]}, 구매 ${match[2]}건, 계정 실질 순이익은 ${match[3]}, 마진은 ${match[4]}%입니다`;
-
-    match = text.match(/^Last 7d CPA is (\$[\d.,]+) with ([\d,]+) purchases — room to scale$/);
-    if (match) return `최근 7일 CPA는 ${match[1]}, 구매 ${match[2]}건으로 확장 여지가 있습니다`;
-
-    if (text === 'Failed to send Telegram approval request') {
-      return '텔레그램 승인 요청 전송 실패';
-    }
-    if (text === 'Approval request sent to Telegram') {
-      return '텔레그램으로 승인 요청 전송됨';
-    }
-    if (text === 'Already awaiting Telegram response') {
-      return '이미 텔레그램 응답 대기 중';
-    }
-    if (text === 'Approved in Telegram') {
-      return '텔레그램에서 승인됨';
-    }
-    if (text === 'Rejected in Telegram') {
-      return '텔레그램에서 거절됨';
-    }
-    return text;
   }
 
   function localizeSystemText(value) {
@@ -147,43 +117,6 @@
     return text;
   }
 
-  function localizeCreativeText(value) {
-    const text = String(value || '');
-    if (!isKorean()) return text;
-
-    let match = text.match(/^CTR is down ([\d.]+)% from peak\.?$/);
-    if (match) return `CTR이 최고점 대비 ${match[1]}% 하락했습니다.`;
-
-    match = text.match(/^CTR is down ([\d.]+)% from peak\. Recent CTR ([\d.]+)%\.$/);
-    if (match) return `CTR이 최고점 대비 ${match[1]}% 하락했습니다. 최근 CTR은 ${match[2]}%입니다.`;
-
-    match = text.match(/^Spent (\$[\d.,]+) with ([\d,]+) Meta-attributed purchases — manually paused or replaced by better creative$/);
-    if (match) return `${match[1]}를 지출했고 메타 귀속 구매 ${match[2]}건이 발생했으며, 수동 중지되었거나 더 나은 크리에이티브로 교체되었습니다`;
-
-    match = text.match(/^Spent (\$[\d.,]+) with zero Meta-attributed purchases — the creative or offer did not convert$/);
-    if (match) return `${match[1]}를 지출했지만 메타 귀속 구매가 없었습니다. 크리에이티브나 오퍼가 전환되지 않았습니다`;
-
-    match = text.match(/^Good CTR \(([\d.]+)%\) but no Meta-attributed purchases — landing page or pricing may be the issue$/);
-    if (match) return `CTR은 좋았지만(${match[1]}%) 메타 귀속 구매가 없었습니다. 랜딩 페이지 또는 가격 문제가 원인일 수 있습니다`;
-
-    match = text.match(/^CPA of (\$[\d.,]+) was too high — creative, offer, or landing efficiency lagged$/);
-    if (match) return `CPA ${match[1]}가 너무 높았습니다. 크리에이티브, 오퍼, 또는 랜딩 효율이 뒤처졌습니다`;
-
-    match = text.match(/^CTR dropped ([\d.]+)% from peak \(([\d.]+)% → ([\d.]+)%\) — the creative angle fatigued$/);
-    if (match) return `CTR이 최고점 대비 ${match[1]}% 하락했습니다 (${match[2]}% → ${match[3]}%). 크리에이티브 각도가 피로해졌을 수 있습니다`;
-
-    match = text.match(/^Frequency reached ([\d.]+) — creative supply may be too shallow for more spend$/);
-    if (match) return `빈도 ${match[1]}에 도달했습니다. 더 많은 지출을 받기엔 크리에이티브 공급이 얕을 수 있습니다`;
-
-    match = text.match(/^Stable delivery — CTR ([\d.]+)%, frequency ([\d.]+)\.$/);
-    if (match) return `안정적 집행 — CTR ${match[1]}%, 빈도 ${match[2]}`;
-
-    match = text.match(/^Recent CTR ([\d.]+)%\.$/);
-    if (match) return `최근 CTR ${match[1]}%입니다.`;
-
-    return text;
-  }
-
   function timeSince(date) {
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
     if (seconds < 60) return tr('just now', '방금 전');
@@ -194,7 +127,6 @@
 
   live.shared = {
     esc,
-    safeOptType,
     safeConfidenceLevel,
     isKorean,
     getLocale,
@@ -206,10 +138,9 @@
     formatUsd,
     formatPercent,
     formatCount,
+    formatKstTimestamp,
     humanizeEnum,
-    localizeOptimizationText,
     localizeSystemText,
-    localizeCreativeText,
     timeSince,
   };
 })();

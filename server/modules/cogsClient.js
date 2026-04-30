@@ -15,7 +15,6 @@ const SHEET_GIDS = config.cogs.sheetGids;
 const PRIMARY_REFUND_COLUMNS = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L']);
 const REFUND_NOTE_KEYWORDS = ['취소', '환불', '반환'];
 const PENDING_RECOVERY_NOTE_KEYWORDS = ['환급대기', '환불대기', '회수대기', '정산대기', '잔액추적', '중간상', '보류'];
-const MONTH_SHEET_RE = /^\s*\d{1,2}\s*월(?:\s|$)/;
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,

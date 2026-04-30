@@ -5,6 +5,7 @@
   const { getSeriesWindowMeta, sliceRowsByWindow } = live.seriesWindows;
   let cachedAnalyticsData = null;
   let cachedReconciliation;
+  let profitWaterfallGranularity = 'day';
 
   function formatRateMetricDetail(metric, fallback) {
     if (!metric || metric.numerator == null || metric.denominator == null) {
@@ -41,6 +42,218 @@
   function toFiniteNumber(value) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function formatNullablePercent(value, digits = 1) {
+    if (!hasNumericValue(value)) return '—';
+    return formatPercent(Number(value), digits);
+  }
+
+  function formatNullableRoas(value) {
+    if (!hasNumericValue(value)) return '—';
+    return `${Number(value).toFixed(2)}x`;
+  }
+
+  function hasNumericValue(value) {
+    return value !== null && value !== undefined && Number.isFinite(Number(value));
+  }
+
+  function formatNullableKrw(value) {
+    return hasNumericValue(value) ? formatKrw(Number(value)) : '—';
+  }
+
+  function formatNullableSignedKrw(value) {
+    return hasNumericValue(value) ? formatSignedKrw(Number(value)) : '—';
+  }
+
+  function formatNullableCount(value) {
+    return hasNumericValue(value) ? formatCount(Number(value)) : '—';
+  }
+
+  function emptyCoverage() {
+    return {
+      totalDays: 0,
+      daysWithCOGS: 0,
+      daysWithPartialCOGS: 0,
+      daysWithPendingRecovery: 0,
+      coverageRatio: 0,
+      cogsCoveredRange: {},
+      missingRanges: [],
+      confidence: { level: 'low', label: tr('Waiting for data', '데이터 대기 중') },
+    };
+  }
+
+  function getProfitWindowSummary(profitAnalysis, windowKey) {
+    const summaries = profitAnalysis?.windowSummaries || {};
+    return summaries[windowKey] || summaries.all || {
+      daysShown: 0,
+      totalProfit: null,
+      totalGrossRevenue: null,
+      totalRefunded: null,
+      totalOrders: null,
+      totalCosts: null,
+      blendedMargin: null,
+      trueRoas: null,
+      refundRate: null,
+      costsShare: null,
+      coverage: profitAnalysis?.coverage || emptyCoverage(),
+    };
+  }
+
+  function parseDateKey(dateKey) {
+    const [year, month, day] = String(dateKey || '').split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  function formatDateKey(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatShortDateLabel(dateKey) {
+    const date = parseDateKey(dateKey);
+    if (!date) return dateKey || '';
+    return new Intl.DateTimeFormat(getLocale(), { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(date);
+  }
+
+  function formatMonthLabel(monthKey) {
+    const date = parseDateKey(`${monthKey}-01`);
+    if (!date) return monthKey || '';
+    return new Intl.DateTimeFormat(getLocale(), { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
+  }
+
+  function getWeekStartKey(dateKey) {
+    const date = parseDateKey(dateKey);
+    if (!date) return dateKey || '';
+    const mondayOffset = (date.getUTCDay() + 6) % 7;
+    date.setUTCDate(date.getUTCDate() - mondayOffset);
+    return formatDateKey(date);
+  }
+
+  function getProfitWaterfallBucket(row, granularity) {
+    if (granularity === 'month') {
+      const key = String(row?.date || '').slice(0, 7);
+      return { key, label: formatMonthLabel(key) };
+    }
+
+    if (granularity === 'week') {
+      const key = getWeekStartKey(row?.date);
+      return {
+        key,
+        label: tr(`Week of ${formatShortDateLabel(key)}`, `${formatShortDateLabel(key)} 주`),
+      };
+    }
+
+    return { key: row?.date || '', label: row?.date || '' };
+  }
+
+  function aggregateProfitWaterfallRows(rows, granularity) {
+    const selectedGranularity = ['day', 'week', 'month'].includes(granularity) ? granularity : 'day';
+    if (selectedGranularity === 'day') {
+      return (Array.isArray(rows) ? rows : []).map(row => ({
+        ...row,
+        label: row.date,
+        revenue: toFiniteNumber(row.revenue),
+        refunded: toFiniteNumber(row.refunded),
+        cogs: toFiniteNumber(row.cogs),
+        cogsShipping: toFiniteNumber(row.cogsShipping ?? row.shipping),
+        adSpendKRW: toFiniteNumber(row.adSpendKRW),
+        paymentFees: toFiniteNumber(row.paymentFees),
+        trueNetProfit: toFiniteNumber(row.trueNetProfit),
+      }));
+    }
+
+    const buckets = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(row => {
+      const { key, label } = getProfitWaterfallBucket(row, selectedGranularity);
+      if (!key) return;
+
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          date: key,
+          label,
+          revenue: 0,
+          refunded: 0,
+          cogs: 0,
+          cogsShipping: 0,
+          adSpendKRW: 0,
+          paymentFees: 0,
+          trueNetProfit: 0,
+          days: 0,
+          fullCogsDays: 0,
+          hasPartialCOGS: false,
+          hasPendingRecovery: false,
+        });
+      }
+
+      const bucket = buckets.get(key);
+      bucket.revenue += toFiniteNumber(row.revenue);
+      bucket.refunded += toFiniteNumber(row.refunded);
+      bucket.cogs += toFiniteNumber(row.cogs);
+      bucket.cogsShipping += toFiniteNumber(row.cogsShipping ?? row.shipping);
+      bucket.adSpendKRW += toFiniteNumber(row.adSpendKRW);
+      bucket.paymentFees += toFiniteNumber(row.paymentFees);
+      bucket.trueNetProfit += toFiniteNumber(row.trueNetProfit);
+      bucket.days += 1;
+      bucket.hasPartialCOGS = bucket.hasPartialCOGS || Boolean(row.hasPartialCOGS);
+      bucket.hasPendingRecovery = bucket.hasPendingRecovery || Boolean(row.hasPendingRecovery);
+      if (row.hasCOGS && !row.hasPartialCOGS && !row.hasPendingRecovery) {
+        bucket.fullCogsDays += 1;
+      }
+    });
+
+    return Array.from(buckets.values()).map(bucket => ({
+      ...bucket,
+      hasCOGS: bucket.days > 0 && bucket.fullCogsDays === bucket.days,
+    }));
+  }
+
+  function syncProfitWaterfallGranularityControls() {
+    document.querySelectorAll('[data-profit-waterfall-granularity]').forEach(button => {
+      const isActive = button.dataset.profitWaterfallGranularity === profitWaterfallGranularity;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', String(isActive));
+    });
+  }
+
+  function updateProfitInputCard(key, value, detail, tone = 'neutral') {
+    const card = document.querySelector(`[data-profit-source-kpi="${key}"]`);
+    if (!card) return;
+
+    const valueEl = card.querySelector('.kpi-value');
+    const detailEl = card.querySelector('.kpi-delta span');
+    const detailWrap = card.querySelector('.kpi-delta');
+
+    if (valueEl) valueEl.textContent = value;
+    if (detailEl) detailEl.textContent = detail;
+    if (detailWrap) {
+      detailWrap.classList.remove('positive', 'negative', 'neutral');
+      detailWrap.classList.add(tone);
+    }
+  }
+
+  function renderCampaignSummaryCard(label, value, detail, tone = 'neutral', icon = 'bar-chart-3') {
+    return `
+      <div class="kpi-card">
+        <div class="kpi-label">${esc(label)}</div>
+        <div class="kpi-value">${esc(value)}</div>
+        <div class="kpi-delta ${esc(tone)}"><i data-lucide="${esc(icon)}"></i><span>${esc(detail)}</span></div>
+      </div>
+    `;
+  }
+
+  function renderMediaEfficiencyChip(label, value, detail = '') {
+    return `
+      <span class="media-efficiency-chip">
+        <span>${esc(label)}</span>
+        <strong>${esc(value)}</strong>
+        ${detail ? `<span>${esc(detail)}</span>` : ''}
+      </span>
+    `;
   }
 
   function buildWeekdayPerformance(rows) {
@@ -117,8 +330,16 @@
 
     const pa = data.profitAnalysis;
     const waterfall = sliceRowsByWindow(pa.waterfall || [], 'profit-structure');
-    const campaignProfit = pa.campaignProfit || [];
-    const coverage = pa.coverage || {
+    const windowMeta = getSeriesWindowMeta('profit-structure');
+    const windowSummary = getProfitWindowSummary(pa, windowMeta.key);
+    const windowCoverage = windowSummary.coverage || emptyCoverage();
+    const mediaWindowMeta = getSeriesWindowMeta('media-profitability');
+    const campaignProfitWindow = pa.campaignProfitWindows?.[mediaWindowMeta.key]
+      || pa.campaignProfitWindows?.all
+      || { campaigns: pa.campaignProfit || [], summary: {} };
+    const campaignProfit = Array.isArray(campaignProfitWindow.campaigns) ? campaignProfitWindow.campaigns : [];
+    const campaignSummary = campaignProfitWindow.summary || {};
+    const overallCoverage = pa.coverage || {
       totalDays: waterfall.length,
       daysWithCOGS: 0,
       daysWithPartialCOGS: 0,
@@ -127,15 +348,19 @@
       missingRanges: [],
       confidence: { level: 'low', label: tr('Waiting for data', '데이터 대기 중') },
     };
+    const coverage = windowCoverage.totalDays > 0 ? windowCoverage : overallCoverage;
     const todaySummary = pa.todaySummary;
     const runRate = pa.runRate;
-    const totalProfit = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.trueNetProfit), 0);
-    const totalNetRev = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.netRevenue), 0);
-    const totalAdSpend = waterfall.reduce((sum, row) => sum + toFiniteNumber(row.adSpendKRW), 0);
-    const blendedMargin = totalNetRev > 0 ? (totalProfit / totalNetRev * 100) : 0;
-    const trueRoas = totalAdSpend > 0 ? totalNetRev / totalAdSpend : 0;
-    const windowMeta = getSeriesWindowMeta('profit-structure');
+    const totalProfit = windowSummary.totalProfit;
+    const totalGrossRevenue = windowSummary.totalGrossRevenue;
+    const totalRefunded = windowSummary.totalRefunded;
+    const totalOrders = windowSummary.totalOrders;
+    const totalCosts = windowSummary.totalCosts;
+    const blendedMargin = windowSummary.blendedMargin;
+    const trueRoas = windowSummary.trueRoas;
     const windowLabel = windowMeta?.label || tr('Selected', '선택');
+    const refundRate = windowSummary.refundRate;
+    const costsShare = windowSummary.costsShare;
 
     const heroEl = document.getElementById('profitHero');
     const heroKickerEl = document.getElementById('profitHeroKicker');
@@ -157,7 +382,7 @@
       const isNegative = totalProfit < 0;
       verdictEl.textContent = isPositive ? tr('Profitable period', '수익 구간') : isNegative ? tr('Unprofitable period', '적자 구간') : tr('Break-even period', '손익분기 구간');
       verdictEl.className = 'profit-verdict ' + (isPositive ? 'verdict-positive' : isNegative ? 'verdict-negative' : '');
-      amountEl.textContent = formatSignedKrw(totalProfit);
+      amountEl.textContent = formatNullableSignedKrw(totalProfit);
       amountEl.className = 'profit-amount ' + (isPositive ? 'verdict-positive' : isNegative ? 'verdict-negative' : '');
       if (heroEl) heroEl.className = 'profit-hero ' + (isPositive ? 'hero-positive' : isNegative ? 'hero-negative' : '');
     }
@@ -180,13 +405,13 @@
         ? tr(` · ${coverage.daysWithPendingRecovery} recovery-pending`, ` · 환급 대기 ${coverage.daysWithPendingRecovery.toLocaleString(getLocale())}일`)
         : '';
       heroSubEl.textContent = tr(
-        `${windowLabel} time frame · ${waterfall.length} days shown · ${coverage.daysWithCOGS} fully covered of ${coverage.totalDays} (${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage)${partialNote}${pendingNote}`,
-        `${windowLabel} 기준 · ${waterfall.length.toLocaleString(getLocale())}일 표시 · ${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 완전 커버 (${(coverage.coverageRatio * 100).toFixed(0)}% 가중 커버)${partialNote}${pendingNote}`
+        `${windowLabel} time frame · ${toFiniteNumber(windowSummary.daysShown || waterfall.length)} days shown · ${coverage.daysWithCOGS} fully covered of ${coverage.totalDays} (${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage)${partialNote}${pendingNote}`,
+        `${windowLabel} 기준 · ${toFiniteNumber(windowSummary.daysShown || waterfall.length).toLocaleString(getLocale())}일 표시 · ${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 완전 커버 (${(coverage.coverageRatio * 100).toFixed(0)}% 가중 커버)${partialNote}${pendingNote}`
       );
     }
 
-    if (heroMarginEl) heroMarginEl.textContent = formatPercent(blendedMargin, 1);
-    if (heroRoasEl) heroRoasEl.textContent = `${trueRoas.toFixed(2)}x`;
+    if (heroMarginEl) heroMarginEl.textContent = formatNullablePercent(blendedMargin, 1);
+    if (heroRoasEl) heroRoasEl.textContent = formatNullableRoas(trueRoas);
     if (heroRunRateEl) heroRunRateEl.textContent = runRate ? formatSignedCompactKrw(runRate.projectedMonthlyNetProfit) : '—';
 
     if (latestSignalEl) {
@@ -201,6 +426,31 @@
         latestSignalEl.textContent = tr('Latest completed day: waiting for covered profit data.', '최신 완료일: 원가 포함 수익 데이터 대기 중');
       }
     }
+
+    updateProfitInputCard(
+      'grossRevenue',
+      formatNullableKrw(totalGrossRevenue),
+      tr(`${formatNullableCount(totalOrders)} orders · ${formatNullableKrw(totalRefunded)} refunded`, `${formatNullableCount(totalOrders)}건 주문 · 환불 ${formatNullableKrw(totalRefunded)}`),
+      totalGrossRevenue > 0 ? 'positive' : 'neutral'
+    );
+    updateProfitInputCard(
+      'refunds',
+      formatNullableKrw(totalRefunded),
+      tr(`${formatNullablePercent(refundRate)} of gross revenue`, `총매출 대비 ${formatNullablePercent(refundRate)}`),
+      totalRefunded > 0 ? 'negative' : 'neutral'
+    );
+    updateProfitInputCard(
+      'totalCosts',
+      formatNullableKrw(totalCosts),
+      tr(`${formatNullablePercent(costsShare)} of net revenue`, `순매출 대비 ${formatNullablePercent(costsShare)}`),
+      totalCosts > 0 ? 'negative' : 'neutral'
+    );
+    updateProfitInputCard(
+      'trueNetProfit',
+      formatNullableSignedKrw(totalProfit),
+      tr(`${formatNullablePercent(blendedMargin, 1)} margin`, `마진 ${formatNullablePercent(blendedMargin, 1)}`),
+      totalProfit > 0 ? 'positive' : totalProfit < 0 ? 'negative' : 'neutral'
+    );
 
     const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
     if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';
@@ -219,12 +469,12 @@
     }
 
     const marginKpi = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-value');
-    if (marginKpi) marginKpi.textContent = blendedMargin.toFixed(1) + '%';
+    if (marginKpi) marginKpi.textContent = formatNullablePercent(blendedMargin, 1);
     const marginSub = document.querySelector('[data-profit-kpi="blendedMargin"] .kpi-delta span');
     if (marginSub) marginSub.textContent = totalProfit >= 0 ? tr('Profitable', '수익') : tr('Unprofitable', '적자');
 
     const roasKpi = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-value');
-    if (roasKpi) roasKpi.textContent = trueRoas.toFixed(2) + 'x';
+    if (roasKpi) roasKpi.textContent = formatNullableRoas(trueRoas);
     const roasSub = document.querySelector('[data-profit-kpi="trueRoas"] .kpi-delta span');
     if (roasSub) roasSub.textContent = tr('Net Revenue / Ad Spend', '순매출 / 광고비');
 
@@ -249,34 +499,104 @@
       }
     }
 
-    if (waterfall.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
-      profitWaterfallChart.data.labels = waterfall.map(row => row.date);
-      profitWaterfallChart.data.datasets[0].data = waterfall.map(row => row.revenue);
-      profitWaterfallChart.data.datasets[1].data = waterfall.map(row => -row.refunded);
-      profitWaterfallChart.data.datasets[2].data = waterfall.map(row => -(row.cogs + row.cogsShipping));
-      profitWaterfallChart.data.datasets[3].data = waterfall.map(row => -row.adSpendKRW);
-      profitWaterfallChart.data.datasets[4].data = waterfall.map(row => -row.paymentFees);
-      profitWaterfallChart.data.datasets[5].data = waterfall.map(row => row.trueNetProfit);
-      profitWaterfallChart.data.datasets[5].pointBackgroundColor = waterfall.map(row =>
+    syncProfitWaterfallGranularityControls();
+    const waterfallBuckets = aggregateProfitWaterfallRows(waterfall, profitWaterfallGranularity);
+
+    if (waterfallBuckets.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
+      profitWaterfallChart.data.labels = waterfallBuckets.map(row => row.label);
+      profitWaterfallChart.data.datasets[0].data = waterfallBuckets.map(row => row.revenue);
+      profitWaterfallChart.data.datasets[1].data = waterfallBuckets.map(row => -row.refunded);
+      profitWaterfallChart.data.datasets[2].data = waterfallBuckets.map(row =>
+        -(row.cogs + row.cogsShipping + row.adSpendKRW + row.paymentFees)
+      );
+      profitWaterfallChart.data.datasets[3].data = waterfallBuckets.map(row => row.trueNetProfit);
+      profitWaterfallChart.data.datasets[3].pointBackgroundColor = waterfallBuckets.map(row =>
         row.trueNetProfit >= 0 ? '#4ade80' : '#f87171'
       );
-      profitWaterfallChart.data.datasets[0].backgroundColor = waterfall.map(row =>
-        row.hasPartialCOGS
-          ? 'rgba(251, 191, 36, 0.65)'
-          : row.hasPendingRecovery
-            ? 'rgba(249, 115, 22, 0.72)'
-            : row.hasCOGS
-              ? 'rgba(74, 222, 128, 0.75)'
-              : 'rgba(74, 222, 128, 0.35)'
-      );
+      profitWaterfallChart.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
+      profitWaterfallChart.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
       profitWaterfallChart.update();
     }
 
     const tbody = document.getElementById('campaignProfitBody');
+    const summaryEl = document.getElementById('campaignProfitSummary');
+    const contextEl = document.getElementById('campaignProfitContext');
+    const noteEl = document.getElementById('campaignProfitWindowNote');
+    const estimatedProfit = Number(campaignSummary.estimatedProfit || 0);
+    const estimatedRevenue = Number(campaignSummary.estimatedMetaRevenue || 0);
+    const campaignSpendKRW = Number(campaignSummary.spendKRW || 0);
+    const totalMetaPurchases = Number(campaignSummary.totalMetaPurchases || 0);
+    const attributedShare = Number(campaignSummary.attributableRevenueShare || 0) * 100;
+    const campaignRowsForTable = campaignProfit
+      .filter(campaign => {
+        const status = String(campaign.status || '').toUpperCase();
+        return status === 'ACTIVE'
+          || Number(campaign.spend || 0) > 0
+          || Number(campaign.metaPurchases || 0) > 0
+          || Number(campaign.estimatedRevenue || 0) > 0
+          || Number(campaign.grossProfit || 0) !== 0;
+      })
+      .sort((left, right) => {
+        const leftActive = String(left.status || '').toUpperCase() === 'ACTIVE';
+        const rightActive = String(right.status || '').toUpperCase() === 'ACTIVE';
+        if (leftActive !== rightActive) return leftActive ? -1 : 1;
+        return Number(right.grossProfit || 0) - Number(left.grossProfit || 0);
+      });
+
+    if (noteEl) {
+      noteEl.textContent = tr(
+        `Revenue estimated (pixel-attributed) · ${mediaWindowMeta.label} time frame`,
+        `매출은 픽셀 귀속 기준 추정 · ${mediaWindowMeta.label} 기준`
+      );
+    }
+
+    if (summaryEl) {
+      const profitTone = estimatedProfit > 0 ? 'positive' : estimatedProfit < 0 ? 'negative' : 'neutral';
+      summaryEl.innerHTML = [
+        renderCampaignSummaryCard(
+          tr('Campaign Spend', '캠페인 지출'),
+          formatKrw(campaignSpendKRW),
+          formatUsd(campaignSummary.spend || 0, 2),
+          campaignSpendKRW > 0 ? 'negative' : 'neutral',
+          'credit-card'
+        ),
+        renderCampaignSummaryCard(
+          tr('Meta Purchases', '메타 구매'),
+          formatCount(totalMetaPurchases),
+          tr(`${formatCount(campaignSummary.activeCampaigns || 0)} active campaigns`, `집행중 캠페인 ${formatCount(campaignSummary.activeCampaigns || 0)}개`),
+          totalMetaPurchases > 0 ? 'positive' : 'neutral',
+          'mouse-pointer-2'
+        ),
+        renderCampaignSummaryCard(
+          tr('Est. Revenue', '추정 매출'),
+          formatKrw(estimatedRevenue),
+          tr(`${formatPercent(attributedShare, 0)} of net revenue model`, `순매출 모델의 ${formatPercent(attributedShare, 0)}`),
+          estimatedRevenue > 0 ? 'positive' : 'neutral',
+          'receipt'
+        ),
+        renderCampaignSummaryCard(
+          tr('Est. Profit', '추정 이익'),
+          formatSignedKrw(estimatedProfit),
+          tr(`${formatCount(campaignSummary.profitableCampaigns || 0)} profitable campaigns`, `수익 캠페인 ${formatCount(campaignSummary.profitableCampaigns || 0)}개`),
+          profitTone,
+          'trending-up'
+        ),
+      ].join('');
+    }
+
+    if (contextEl) {
+      const confidence = campaignSummary.confidenceLabel || campaignSummary.confidence || tr('estimate', '추정');
+      contextEl.textContent = tr(
+        `${mediaWindowMeta.label} estimate · ${campaignSummary.windowStart || '—'} to ${campaignSummary.windowEnd || '—'} · ${confidence}`,
+        `${mediaWindowMeta.label} 추정 · ${campaignSummary.windowStart || '—'} ~ ${campaignSummary.windowEnd || '—'} · ${confidence}`
+      );
+    }
+
     if (tbody) {
-      tbody.innerHTML = campaignProfit.map(campaign => {
+      tbody.innerHTML = campaignRowsForTable.length > 0 ? campaignRowsForTable.map(campaign => {
         const statusClass = campaign.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral';
         const profitColor = campaign.grossProfit >= 0 ? 'var(--color-success)' : 'var(--color-error)';
+        const estimatedRoas = Number(campaign.estimatedRoas || 0);
         return `<tr>
           <td class="cell-primary cell-wrap" title="${esc(campaign.campaignId)}">${esc(campaign.campaignName)}</td>
           <td class="cell-fit cell-nowrap"><span class="badge ${statusClass}">${esc(campaign.status === 'ACTIVE' ? tr('ACTIVE', '집행중') : campaign.status === 'PAUSED' ? tr('PAUSED', '중지') : (campaign.status || '—'))}</span></td>
@@ -285,25 +605,38 @@
           <td class="cell-fit cell-nowrap">₩${campaign.estimatedRevenue.toLocaleString()}</td>
           <td class="cell-fit cell-nowrap">₩${campaign.allocatedCOGS.toLocaleString()}</td>
           <td class="cell-fit cell-nowrap" style="color:${profitColor};font-weight:600">₩${campaign.grossProfit.toLocaleString()}</td>
+          <td class="cell-fit cell-nowrap" style="color:${estimatedRoas >= 1 ? 'var(--color-success)' : 'var(--color-error)'}">${estimatedRoas.toFixed(2)}x</td>
           <td class="cell-fit cell-nowrap" style="color:${profitColor}">${campaign.margin.toFixed(1)}%</td>
         </tr>`;
-      }).join('');
+      }).join('') : `<tr><td colspan="9" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No campaign estimates in this time frame.', '이 기간에는 캠페인 추정치가 없습니다.'))}</td></tr>`;
     }
 
-    const coverageContent = document.getElementById('dataCoverageContent');
-    if (coverageContent && coverage.confidence) {
+    const profitMovementFootnote = document.getElementById('profitMovementFootnote');
+    if (profitMovementFootnote && coverage.confidence) {
       const conf = coverage.confidence;
-      const confLevel = safeConfidenceLevel(conf.level);
       const coveredRange = coverage.cogsCoveredRange || {};
       const missing = coverage.missingRanges || [];
-      coverageContent.innerHTML = `
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-          <span class="confidence-badge confidence-${confLevel}">${esc(conf.label)}</span>
-          <span style="font-size:0.85rem;color:var(--color-text-muted)">${tr(`${coverage.daysWithCOGS} fully covered days · ${coverage.daysWithPartialCOGS || 0} incomplete · ${coverage.daysWithPendingRecovery || 0} recovery-pending · ${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage`, `완전 커버 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 · 미완성 ${(coverage.daysWithPartialCOGS || 0).toLocaleString(getLocale())}일 · 환급 대기 ${(coverage.daysWithPendingRecovery || 0).toLocaleString(getLocale())}일 · 가중 커버 ${(coverage.coverageRatio * 100).toFixed(0)}%`)}</span>
-        </div>
-        ${coveredRange.from ? `<p style="font-size:0.85rem;color:var(--color-text-muted);margin:4px 0">${esc(tr('Covered', '커버 구간'))}: <strong>${esc(coveredRange.from)}</strong> ${esc(tr('to', '부터'))} <strong>${esc(coveredRange.to)}</strong></p>` : ''}
-        ${missing.length > 0 ? `<p style="font-size:0.85rem;color:var(--color-text-faint);margin:4px 0">${esc(tr('Missing', '누락'))}: ${missing.map(item => esc(item)).join(', ')}</p>` : ''}
-        <p style="font-size:0.78rem;color:var(--color-text-faint);margin-top:8px">${esc(tr('Yellow means true missing cost entry. Orange means canceled orders still waiting on supplier-side recovery. Dimmed days have no COGS rows yet.', '노란색은 실제 원가 미입력, 주황색은 취소 후 공급처 환급 대기, 흐린 날짜는 COGS 행이 아직 없는 상태입니다.'))}</p>
+      const granularityLabel = profitWaterfallGranularity === 'month'
+        ? tr('Monthly view', '월별 보기')
+        : profitWaterfallGranularity === 'week'
+        ? tr('Weekly view', '주별 보기')
+        : tr('Daily view', '일별 보기');
+      const coverageLabel = tr(
+        `${coverage.daysWithCOGS}/${coverage.totalDays} days covered · ${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage`,
+        `${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 커버 · 가중 커버 ${(coverage.coverageRatio * 100).toFixed(0)}%`
+      );
+      const rangeLabel = coveredRange.from
+        ? tr(`COGS ${coveredRange.from} to ${coveredRange.to}`, `COGS ${coveredRange.from} ~ ${coveredRange.to}`)
+        : '';
+      const missingLabel = missing.length > 0
+        ? tr(`Missing ${missing.join(', ')}`, `누락 ${missing.join(', ')}`)
+        : '';
+
+      profitMovementFootnote.innerHTML = `
+        <span><strong>${esc(granularityLabel)} refund rate:</strong> ${esc(formatNullablePercent(windowSummary.refundRate, 1))}</span>
+        <span><strong>${esc(conf.label)}:</strong> ${esc(coverageLabel)}</span>
+        ${rangeLabel ? `<span>${esc(rangeLabel)}</span>` : ''}
+        ${missingLabel ? `<span>${esc(missingLabel)}</span>` : ''}
       `;
     }
   }
@@ -415,6 +748,14 @@
 
   async function refreshAnalyticsPage(options = {}) {
     try {
+      if (
+        typeof initProfitCharts === 'function'
+        && typeof profitChartsInitialized !== 'undefined'
+        && !profitChartsInitialized
+      ) {
+        initProfitCharts();
+      }
+
       let data = cachedAnalyticsData;
       let reconciliation = cachedReconciliation;
       const shouldReuseCache = Boolean(
@@ -432,9 +773,6 @@
         cachedReconciliation = reconciliation || null;
       }
       if (!data) return;
-
-      const colors = typeof getChartColors === 'function' ? getChartColors() : {};
-      const primary = colors.primary || '#20808D';
 
       const refundRateEl = document.querySelector('[data-kpi-analytics="refundRate"] .kpi-value');
       if (refundRateEl && data.refundRate != null) {
@@ -487,14 +825,6 @@
 
       const charts = data.charts || {};
       const allDailyMerged = charts.dailyMerged || [];
-      const allProfitWaterfall = data.profitAnalysis?.waterfall || [];
-      const profitDaily = sliceRowsByWindow(allDailyMerged, 'profit-structure');
-      const profitWaterfall = sliceRowsByWindow(allProfitWaterfall, 'profit-structure');
-      const dailyProfit = profitWaterfall.length > 0
-        ? profitWaterfall.map(row => ({ date: row.date, profit: row.trueNetProfit || 0 }))
-        : sliceRowsByWindow(charts.dailyProfit || [], 'profit-structure');
-      const profitCutoff = profitDaily[0]?.date || '';
-      const profitWeeklyAgg = (charts.weeklyAgg || []).filter(week => week.week >= profitCutoff);
       const mediaDaily = sliceRowsByWindow(allDailyMerged, 'media-profitability');
       const mediaCutoff = mediaDaily[0]?.date || '';
       const mediaWeeklyAgg = (charts.weeklyAgg || []).filter(week => week.week >= mediaCutoff);
@@ -503,15 +833,38 @@
       const monthlyRefunds = (charts.monthlyRefunds || []).filter(month => month.month >= qualityCutoff.slice(0, 7));
       const imwebSource = data.dataSources?.imweb || null;
       const analyticsNoticeEl = document.getElementById('analyticsFreshnessNotice');
-      const weekdayChartWindowEl = document.getElementById('weekdayChartWindowNote');
+      const mediaEfficiencyWindowEl = document.getElementById('mediaEfficiencyWindowNote');
+      const mediaEfficiencySummaryEl = document.getElementById('mediaEfficiencySummary');
       const weekdayTableWindowEl = document.getElementById('weekdayTableWindowNote');
       const mediaWindowMeta = getSeriesWindowMeta('media-profitability');
 
-      if (weekdayChartWindowEl) {
-        weekdayChartWindowEl.textContent = tr(`${mediaWindowMeta.label} time frame`, `${mediaWindowMeta.label} 기준`);
+      if (mediaEfficiencyWindowEl) {
+        mediaEfficiencyWindowEl.textContent = tr(`${mediaWindowMeta.label} time frame`, `${mediaWindowMeta.label} 기준`);
       }
       if (weekdayTableWindowEl) {
         weekdayTableWindowEl.textContent = tr(`Net revenue, ad spend, and CPA by weekday · ${mediaWindowMeta.label} time frame`, `요일별 순매출, 광고비, CPA · ${mediaWindowMeta.label} 기준`);
+      }
+      if (mediaEfficiencySummaryEl) {
+        const cpaDays = weekdayPerf.filter(day => Number(day.cpa || 0) > 0);
+        const bestCpaDay = cpaDays.reduce((best, day) => !best || day.cpa < best.cpa ? day : best, null);
+        const peakPurchaseDay = weekdayPerf.reduce((best, day) => !best || (day.purchases || 0) > (best.purchases || 0) ? day : best, null);
+        const latestWeek = mediaWeeklyAgg[mediaWeeklyAgg.length - 1] || null;
+        const previousWeek = mediaWeeklyAgg[mediaWeeklyAgg.length - 2] || null;
+        const latestCpa = Number(latestWeek?.cpa || 0);
+        const previousCpa = Number(previousWeek?.cpa || 0);
+        const latestDelta = latestCpa > 0 && previousCpa > 0
+          ? latestCpa - previousCpa
+          : 0;
+        const latestDetail = latestWeek
+          ? (previousCpa > 0
+            ? tr(`${latestDelta >= 0 ? '+' : '-'}$${Math.abs(latestDelta).toFixed(2)} vs prior week`, `${latestDelta >= 0 ? '+' : '-'}$${Math.abs(latestDelta).toFixed(2)} 전주 대비`)
+            : tr(`${formatCount(latestWeek.purchases || 0)} purchases`, `구매 ${formatCount(latestWeek.purchases || 0)}건`))
+          : '';
+        mediaEfficiencySummaryEl.innerHTML = [
+          bestCpaDay ? renderMediaEfficiencyChip(tr('Best weekday CPA', '최저 요일 CPA'), bestCpaDay.day, formatUsd(bestCpaDay.cpa, 2)) : '',
+          peakPurchaseDay ? renderMediaEfficiencyChip(tr('Peak purchase day', '구매 피크 요일'), peakPurchaseDay.day, tr(`${formatCount(peakPurchaseDay.purchases || 0)} purchases`, `구매 ${formatCount(peakPurchaseDay.purchases || 0)}건`)) : '',
+          latestWeek ? renderMediaEfficiencyChip(tr('Latest weekly CPA', '최근 주간 CPA'), formatUsd(latestCpa, 2), latestDetail) : '',
+        ].filter(Boolean).join('');
       }
       if (analyticsNoticeEl) {
         if (imwebSource?.stale) {
@@ -527,41 +880,6 @@
       }
 
       renderProfitAnalysisSection(data);
-
-      if (dailyProfit.length > 0 && typeof profitTrendChart !== 'undefined' && profitTrendChart) {
-        let cumProfit = 0;
-        const cumData = dailyProfit.map(day => {
-          cumProfit += (day.profit || 0);
-          return cumProfit;
-        });
-
-        profitTrendChart.data.labels = dailyProfit.map(day => day.date);
-        profitTrendChart.data.datasets[0].data = dailyProfit.map(day => day.profit || 0);
-        profitTrendChart.data.datasets[0].backgroundColor = dailyProfit.map(day =>
-          (day.profit || 0) >= 0 ? 'rgba(74, 222, 128, 0.7)' : 'rgba(239, 68, 68, 0.6)'
-        );
-        profitTrendChart.data.datasets[1].data = cumData;
-        profitTrendChart.update();
-      }
-
-      if (profitWeeklyAgg.length > 0 && typeof weeklyProfitChart !== 'undefined' && weeklyProfitChart) {
-        weeklyProfitChart.data.labels = profitWeeklyAgg.map(week => week.week);
-        weeklyProfitChart.data.datasets[0].data = profitWeeklyAgg.map(week => week.profit || 0);
-        weeklyProfitChart.data.datasets[0].backgroundColor = profitWeeklyAgg.map(week =>
-          (week.profit || 0) >= 0 ? 'rgba(32, 128, 141, 0.8)' : 'rgba(239, 68, 68, 0.6)'
-        );
-        weeklyProfitChart.update();
-      }
-
-      if (mediaWeeklyAgg.length > 0 && typeof weeklyCpaChartInstance !== 'undefined' && weeklyCpaChartInstance) {
-        weeklyCpaChartInstance.data.labels = mediaWeeklyAgg.map(week => week.week);
-        weeklyCpaChartInstance.data.datasets[0].data = mediaWeeklyAgg.map(week => week.cpa || 0);
-        weeklyCpaChartInstance.data.datasets[0].pointBackgroundColor = mediaWeeklyAgg.map(week =>
-          (week.cpa || 0) > 20 ? 'rgba(239, 68, 68, 0.9)' : primary
-        );
-        weeklyCpaChartInstance.data.datasets[1].data = mediaWeeklyAgg.map(week => week.purchases || 0);
-        weeklyCpaChartInstance.update();
-      }
 
       if (weekdayPerf.length > 0 && typeof weekdayChartInstance !== 'undefined' && weekdayChartInstance) {
         weekdayChartInstance.data.labels = weekdayPerf.map(day => day.day);
@@ -607,6 +925,22 @@
       console.warn('[LIVE] refreshAnalyticsPage error:', e.message);
     }
   }
+
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-profit-waterfall-granularity]');
+    if (!button) return;
+
+    const nextGranularity = button.dataset.profitWaterfallGranularity;
+    if (!['day', 'week', 'month'].includes(nextGranularity) || nextGranularity === profitWaterfallGranularity) {
+      return;
+    }
+
+    profitWaterfallGranularity = nextGranularity;
+    syncProfitWaterfallGranularityControls();
+    if (cachedAnalyticsData) {
+      renderProfitAnalysisSection(cachedAnalyticsData);
+    }
+  });
 
   live.registerPage('analytics', {
     refresh: refreshAnalyticsPage,

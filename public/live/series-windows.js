@@ -13,15 +13,11 @@
   });
 
   const DEFAULT_SERIES_WINDOWS = Object.freeze({
-    overview: '30d',
-    campaigns: '7d',
-    'profit-structure': '30d',
+    'profit-structure': 'all',
     'media-profitability': '30d',
     'revenue-quality': 'all',
   });
   const SERIES_WINDOW_GROUP_CONTEXT = Object.freeze({
-    overview: { page: 'overview' },
-    campaigns: { page: 'campaigns' },
     'profit-structure': { page: 'analytics' },
     'media-profitability': { page: 'analytics' },
     'revenue-quality': { page: 'analytics' },

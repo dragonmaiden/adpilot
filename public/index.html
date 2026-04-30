@@ -17,290 +17,70 @@
 <link rel="author" href="https://www.perplexity.ai/computer">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AdPilot — Autonomous Meta Ads Agent</title>
+<title>AdPilot — Profit Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <link rel="stylesheet" href="./base.css">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
 <div class="dashboard">
-  <!-- Sidebar -->
+  <!-- Top Menu -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
       <img src="./shue-mascot.svg" width="30" height="30" alt="Shue mascot" class="sidebar-logo-mark">
       <span class="logo-text">Shue</span>
     </div>
     <nav class="sidebar-nav">
-      <a href="#" class="nav-item active" data-page="overview">
-        <i data-lucide="layout-dashboard"></i>
-        <span data-i18n="nav.overview">Executive Summary</span>
-      </a>
-      <a href="#" class="nav-item" data-page="campaigns">
-        <i data-lucide="megaphone"></i>
-        <span data-i18n="nav.campaigns">Live Performance</span>
-      </a>
-      <a href="#" class="nav-item" data-page="analytics">
-        <i data-lucide="bar-chart-3"></i>
-        <span data-i18n="nav.analytics">Profit Analytics</span>
-      </a>
       <a href="#" class="nav-item" data-page="calendar">
         <i data-lucide="calendar-range"></i>
-        <span data-i18n="nav.calendar">Calendar Analysis</span>
+        <span data-i18n="nav.calendar">Calendar</span>
       </a>
-      <a href="#" class="nav-item" data-page="fatigue">
-        <i data-lucide="activity"></i>
-        <span data-i18n="nav.fatigue">Creative Health</span>
-      </a>
-      <a href="#" class="nav-item" data-page="budget">
-        <i data-lucide="wallet"></i>
-        <span data-i18n="nav.budget">Spend Pacing</span>
+      <a href="#" class="nav-item active" data-page="analytics">
+        <i data-lucide="bar-chart-3"></i>
+        <span data-i18n="nav.analytics">Profit Summary</span>
       </a>
       <a href="#" class="nav-item" data-page="settings">
-        <i data-lucide="settings"></i>
-        <span data-i18n="nav.settings">Guardrails</span>
+        <i data-lucide="shield-check"></i>
+        <span data-i18n="nav.settings">Status</span>
       </a>
     </nav>
-    <div class="sidebar-footer">
-      <div class="agent-status">
-        <span class="status-dot active"></span>
-        <span class="status-label" data-i18n="header.agentActive">Agent Active</span>
+    <div class="topbar-status">
+      <div class="topbar-sync">
+        <span class="last-scan"><span data-i18n="header.lastScan">Last sync:</span> <span id="lastScan">—</span></span>
       </div>
-      <div class="scan-info"><span data-i18n="header.nextScan">Next scan in</span> <span id="countdown">47m</span></div>
-    </div>
-  </aside>
-
-  <!-- Header -->
-  <header class="header">
-    <div class="header-left">
-      <button class="mobile-menu-btn" id="menuBtn" aria-label="Toggle menu" data-i18n-aria-label="misc.toggleMenu">
-        <i data-lucide="menu"></i>
-      </button>
-      <div class="page-title">
-        <h1 id="pageTitle">Executive Summary</h1>
-        <div class="page-meta">
-          <span class="last-scan"><span data-i18n="header.lastScan">Last scan:</span> <span id="lastScan">—</span></span>
-          <span class="last-scan-warning" id="dataFreshnessNotice" hidden></span>
-        </div>
-      </div>
-    </div>
-    <div class="header-right">
-      <div class="source-status-log" id="sourceStatusLog" aria-label="Source status">
-        <div class="connected-badge" id="metaConnectedBadge">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="8" cy="8" r="7" stroke="#1877F2" stroke-width="1.5"/>
-            <text x="8" y="11" text-anchor="middle" font-size="9" font-weight="700" fill="#1877F2">f</text>
-          </svg>
-          <span class="source-badge-name" data-i18n="header.metaAds">Meta Ads</span>
-          <span class="source-badge-state" id="metaConnectedState" data-i18n="misc.waiting">Waiting</span>
-        </div>
-        <div class="connected-badge" id="imwebConnectedBadge">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect x="1" y="1" width="14" height="14" rx="3" stroke="#4ade80" stroke-width="1.5"/>
-            <text x="8" y="11.5" text-anchor="middle" font-size="8" font-weight="700" fill="#4ade80">iw</text>
-          </svg>
-          <span class="source-badge-name" data-i18n="header.imweb">Imweb</span>
-          <span class="source-badge-state" id="imwebConnectedState" data-i18n="misc.waiting">Waiting</span>
-        </div>
-        <div class="connected-badge" id="cogsConnectedBadge">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <rect x="2" y="1.5" width="12" height="13" rx="2.5" stroke="#f59e0b" stroke-width="1.3"/>
-            <path d="M5 4.5H11" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/>
-            <path d="M5 7.5H11" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/>
-            <path d="M5 10.5H9" stroke="#f59e0b" stroke-width="1.3" stroke-linecap="round"/>
-          </svg>
-          <span class="source-badge-name" data-i18n="header.googleSheets">Google Sheets</span>
-          <span class="source-badge-state" id="cogsConnectedState" data-i18n="misc.waiting">Waiting</span>
-        </div>
-      </div>
-      <button class="btn btn-primary header-scan-btn" id="runScanBtn">
-        <span data-i18n="header.runScan">Run Scan</span>
-      </button>
       <div class="lang-toggle" id="langToggle">
         <button class="lang-btn active" id="langEn">EN</button>
         <button class="lang-btn" id="langKr">KR</button>
       </div>
-      <button data-theme-toggle aria-label="Toggle theme" data-i18n-aria-label="misc.toggleTheme">
-        <i data-lucide="moon"></i>
-      </button>
     </div>
-  </header>
+  </aside>
 
   <!-- Main Content -->
   <main class="main" id="mainContent">
 
-    <!-- Overview Page -->
-    <section class="page active" data-page="overview">
-      <!-- KPI Row 1: Revenue & Profitability -->
-      <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card" data-kpi="revenue">
-          <div class="kpi-label" data-i18n="kpi.revenue">Revenue (Imweb)</div>
-          <div class="kpi-value" data-target="0" data-prefix="₩">—</div>
-          <div class="kpi-delta positive">
-            <i data-lucide="trending-up"></i>
-            <span data-i18n="overview.placeholderRevenue">— orders · — AOV</span>
-          </div>
-          <div class="kpi-spark" id="sparkRevenue"></div>
-        </div>
-        <div class="kpi-card" data-kpi="cogs">
-          <div class="kpi-label" data-i18n="kpi.cogs">COGS</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral">
-            <i data-lucide="package"></i>
-            <span>—</span>
-          </div>
-          <div class="kpi-spark" id="sparkCogs"></div>
-        </div>
-        <div class="kpi-card" data-kpi="adspend">
-          <div class="kpi-label" data-i18n="kpi.adspend">Ad Spend (Meta)</div>
-          <div class="kpi-value" data-target="0" data-prefix="₩">—</div>
-          <div class="kpi-delta neutral">
-            <i data-lucide="calendar"></i>
-            <span>—</span>
-          </div>
-          <div class="kpi-spark" id="sparkSpend"></div>
-        </div>
-        <div class="kpi-card highlight" data-kpi="profit">
-          <div class="kpi-label" data-i18n="kpi.profit">Gross Profit</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral">
-            <i data-lucide="info"></i>
-            <span data-i18n="overview.placeholderMargin">— margin</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- KPI Row 2: Performance Metrics -->
-      <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card" data-kpi="roas">
-          <div class="kpi-label" data-i18n="kpi.roas">ROAS</div>
-          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="x">—</div>
-          <div class="kpi-delta positive">
-            <i data-lucide="trending-up"></i>
-            <span>—</span>
-          </div>
-          <div class="kpi-spark" id="sparkRoas"></div>
-        </div>
-        <div class="kpi-card" data-kpi="purchases">
-          <div class="kpi-label" data-i18n="kpi.purchases">Purchases (COGS)</div>
-          <div class="kpi-value" data-target="0" data-prefix="">—</div>
-          <div class="kpi-delta positive">
-            <i data-lucide="trending-up"></i>
-            <span data-i18n="overview.placeholderAvgDay">— avg/day</span>
-          </div>
-          <div class="kpi-spark" id="sparkPurchases"></div>
-        </div>
-        <div class="kpi-card" data-kpi="ctr">
-          <div class="kpi-label" data-i18n="kpi.ctr">CTR</div>
-          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
-          <div class="kpi-delta positive">
-            <i data-lucide="trending-up"></i>
-            <span>—</span>
-          </div>
-          <div class="kpi-spark" id="sparkCtr"></div>
-        </div>
-        <div class="kpi-card" data-kpi="cpa">
-          <div class="kpi-label" data-i18n="kpi.cpa">Cost per Purchase</div>
-          <div class="kpi-value" data-target="0" data-prefix="$">—</div>
-          <div class="kpi-delta neutral">
-            <i data-lucide="target"></i>
-            <span>—</span>
-          </div>
-          <div class="kpi-spark" id="sparkCpa"></div>
-        </div>
-      </div>
-
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="overview.trendsKicker">Overview Trends</div>
-          <h2 data-i18n="overview.trendsTitle">Daily revenue and efficiency</h2>
-        </div>
-        <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="overview.window">Time frame</span>
-          <div class="range-switch" data-series-window-group="overview" role="group" aria-label="Overview trend time frame" data-i18n-aria-label="overview.windowAria">
-            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Charts Row -->
-      <div class="charts-grid">
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2><span data-i18n="chart.revenueVsSpend">Revenue vs Ad Spend</span> <span class="chart-days" data-series-window-badge="overview">(14d)</span></h2>
-          </div>
-          <div class="chart-container">
-            <canvas id="spendRevenueChart"></canvas>
-          </div>
-        </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2><span data-i18n="chart.dailyRoas">Daily ROAS</span> <span class="chart-days" data-series-window-badge="overview">(14d)</span></h2>
-          </div>
-          <div class="chart-container">
-            <canvas id="roasChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <!-- Second Charts Row -->
-      <div class="charts-grid">
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2><span data-i18n="chart.ctrCpc">CTR & CPC Trend</span> <span class="chart-days" data-series-window-badge="overview">(14d)</span></h2>
-          </div>
-          <div class="chart-container">
-            <canvas id="impactChart"></canvas>
-          </div>
-        </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.dailyProfit">Daily Profit Trend</h2>
-          </div>
-          <div class="chart-container">
-            <canvas id="brandChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="card chart-card">
-        <div class="card-header">
-          <div>
-            <h2 data-i18n="chart.hourVolume">Order Timing Distribution (KST)</h2>
-            <span style="font-size:0.75rem;color:var(--color-text-faint)" data-i18n="overview.hourSubtitle">All synced Imweb orders</span>
-          </div>
-          <span class="badge badge-neutral" data-i18n="overview.hourSource">Source: Imweb</span>
-        </div>
-        <div class="chart-container" style="height:300px">
-          <canvas id="hourChart"></canvas>
-        </div>
-      </div>
-
-    </section>
-
-    <!-- Profit Analytics Page -->
-    <section class="page" data-page="analytics">
+    <!-- Profit Page -->
+    <section class="page active" data-page="analytics">
       <div class="section-head section-head-with-toolbar">
         <div class="section-head-copy">
           <div>
-            <div class="section-kicker" data-i18n="analytics.sectionKicker">Profit Analytics</div>
-            <h2 data-i18n="analytics.sectionTitle">Deep-dive margin diagnostics</h2>
+            <div class="section-kicker" data-i18n="analytics.sectionKicker">Profit Summary</div>
+            <h2 data-i18n="analytics.sectionTitle">True profit and cost summary</h2>
           </div>
-          <p class="section-note" data-i18n="analytics.sectionNote">Trend shape, refund drag, campaign efficiency, and settlement validation live together here.</p>
+          <p class="section-note" data-i18n="analytics.sectionNote">Revenue, costs, media spend, and true net profit in one place.</p>
         </div>
         <div class="range-toolbar section-head-toolbar">
           <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
           <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure time frame" data-i18n-aria-label="analytics.windowStructureAria">
             <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
             <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="all" data-i18n="misc.all">All</button>
           </div>
         </div>
       </div>
@@ -336,25 +116,56 @@
       </div>
 
       <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card" data-profit-kpi="cogsCoverage">
-          <div class="kpi-label" data-i18n="analytics.kpi.cogsCoverage">COGS Coverage</div>
+        <div class="kpi-card" data-profit-source-kpi="grossRevenue">
+          <div class="kpi-label" data-i18n="analytics.kpi.grossRevenue">Gross Revenue</div>
           <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="database"></i><span>—</span></div>
+          <div class="kpi-delta neutral"><i data-lucide="receipt"></i><span>—</span></div>
         </div>
-        <div class="kpi-card" data-profit-kpi="blendedMargin">
-          <div class="kpi-label" data-i18n="analytics.kpi.blendedMargin">Blended Margin</div>
+        <div class="kpi-card" data-profit-source-kpi="refunds">
+          <div class="kpi-label" data-i18n="analytics.kpi.refunds">Refunds</div>
           <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="percent"></i><span>—</span></div>
+          <div class="kpi-delta neutral"><i data-lucide="rotate-ccw"></i><span>—</span></div>
         </div>
-        <div class="kpi-card" data-profit-kpi="trueRoas">
-          <div class="kpi-label" data-i18n="analytics.kpi.trueRoas">True ROAS</div>
+        <div class="kpi-card" data-profit-source-kpi="totalCosts">
+          <div class="kpi-label" data-i18n="analytics.kpi.totalCosts">Total Costs</div>
+          <div class="kpi-value">—</div>
+          <div class="kpi-delta neutral"><i data-lucide="package"></i><span>—</span></div>
+        </div>
+        <div class="kpi-card" data-profit-source-kpi="trueNetProfit">
+          <div class="kpi-label" data-i18n="analytics.kpi.trueNetProfit">True Net Profit</div>
           <div class="kpi-value">—</div>
           <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
         </div>
-        <div class="kpi-card" data-profit-kpi="runRate30d">
-          <div class="kpi-label" data-i18n="analytics.kpi.runRate30d">30d Profit Run Rate</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="calendar-range"></i><span>—</span></div>
+      </div>
+
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker" data-i18n="analytics.structureKicker">Profit Structure</div>
+          <h2 data-i18n="analytics.structureTitle">Revenue and cost movement</h2>
+        </div>
+      </div>
+
+      <div class="card chart-card">
+        <div class="card-header">
+          <h2 data-i18n="analytics.waterfallTitle">Profit Movement</h2>
+          <div class="range-switch profit-waterfall-granularity-switch" role="group" aria-label="Profit movement granularity" data-i18n-aria-label="analytics.waterfallGranularityAria">
+            <button type="button" class="range-switch-btn is-active" data-profit-waterfall-granularity="day" aria-pressed="true" data-i18n="misc.day">Day</button>
+            <button type="button" class="range-switch-btn" data-profit-waterfall-granularity="week" aria-pressed="false" data-i18n="misc.week">Week</button>
+            <button type="button" class="range-switch-btn" data-profit-waterfall-granularity="month" aria-pressed="false" data-i18n="misc.month">Month</button>
+          </div>
+        </div>
+        <div class="chart-container" style="height:380px">
+          <canvas id="profitWaterfallChart"></canvas>
+        </div>
+        <div class="chart-footnote profit-movement-footnote" id="profitMovementFootnote">
+          <span data-i18n="analytics.coverageWaiting">Waiting for data...</span>
+        </div>
+      </div>
+
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker" data-i18n="analytics.operationsKicker">Operations Summary</div>
+          <h2 data-i18n="analytics.operationsTitle">Refund and order quality</h2>
         </div>
       </div>
 
@@ -395,68 +206,6 @@
 
       <div class="section-head section-head-compact">
         <div>
-          <div class="section-kicker" data-i18n="analytics.structureKicker">Profit Structure</div>
-          <h2 data-i18n="analytics.structureTitle">How net profit is formed over time</h2>
-        </div>
-      </div>
-
-      <div class="charts-grid">
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.dailyProfit">Daily Profit Trend</h2>
-          </div>
-          <div class="chart-container" style="height:320px">
-            <canvas id="profitTrendChart"></canvas>
-          </div>
-        </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.weeklyProfit">Weekly Profit</h2>
-          </div>
-          <div class="chart-container" style="height:320px">
-            <canvas id="weeklyProfitChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="card chart-card">
-        <div class="card-header">
-          <h2 data-i18n="analytics.waterfallTitle">Daily Profit Waterfall</h2>
-        </div>
-        <div class="chart-container" style="height:380px">
-          <canvas id="profitWaterfallChart"></canvas>
-        </div>
-        <div class="chart-legend waterfall-coverage-legend" id="profitWaterfallLegend">
-          <span class="legend-item">
-            <span class="dot waterfall-dot-full"></span>
-            <span data-i18n="analytics.waterfall.fullCoverage">Full COGS coverage</span>
-          </span>
-          <span class="legend-item">
-            <span class="dot waterfall-dot-partial"></span>
-            <span data-i18n="analytics.waterfall.partialCoverage">Partial COGS coverage</span>
-          </span>
-          <span class="legend-item">
-            <span class="dot waterfall-dot-pending"></span>
-            <span data-i18n="analytics.waterfall.pendingRecovery">Canceled / recovery pending</span>
-          </span>
-          <span class="legend-item">
-            <span class="dot waterfall-dot-missing"></span>
-            <span data-i18n="analytics.waterfall.missingCoverage">Missing COGS coverage</span>
-          </span>
-        </div>
-      </div>
-
-      <div class="card" id="dataCoverageCard">
-        <div class="card-header">
-          <h2 data-i18n="analytics.coverageTitle">Data Coverage & Confidence</h2>
-        </div>
-        <div id="dataCoverageContent">
-          <p style="color:var(--color-text-faint)" data-i18n="analytics.coverageWaiting">Waiting for data...</p>
-        </div>
-      </div>
-
-      <div class="section-head section-head-compact">
-        <div>
           <div class="section-kicker" data-i18n="analytics.mediaKicker">Media Profitability</div>
           <h2 data-i18n="analytics.mediaTitle">Which traffic patterns and campaigns create profit</h2>
         </div>
@@ -472,21 +221,14 @@
       </div>
 
       <div class="charts-grid">
-        <div class="card chart-card">
+        <div class="card chart-card media-efficiency-card">
           <div class="card-header">
-            <h2 data-i18n="chart.weekdayPerf">Ad Performance by Weekday</h2>
-            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="weekdayChartWindowNote">30D time frame</span>
+            <h2 data-i18n="chart.mediaEfficiency">Media Efficiency</h2>
+            <span class="card-header-note" id="mediaEfficiencyWindowNote">30D time frame</span>
           </div>
+          <div class="media-efficiency-summary" id="mediaEfficiencySummary"></div>
           <div class="chart-container" style="height:320px">
             <canvas id="weekdayChart"></canvas>
-          </div>
-        </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.weeklyCpa">Main Campaign Weekly CPA</h2>
-          </div>
-          <div class="chart-container" style="height:300px">
-            <canvas id="weeklyCpaChart"></canvas>
           </div>
         </div>
       </div>
@@ -494,7 +236,13 @@
       <div class="card">
         <div class="card-header">
           <h2 data-i18n="analytics.leaderboardTitle">Campaign Profit Leaderboard</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)" data-i18n="analytics.leaderboardNote">Revenue estimated (pixel-attributed) · all available data</span>
+          <span class="card-header-note" id="campaignProfitWindowNote" data-i18n="analytics.leaderboardNote">Revenue estimated (pixel-attributed) · 30D time frame</span>
+        </div>
+        <div class="kpi-grid small campaign-profit-summary" id="campaignProfitSummary"></div>
+        <div class="campaign-profit-context" id="campaignProfitContext"></div>
+        <div class="card-header card-header-subtle">
+          <h3 data-i18n="analytics.leaderboardTableTitle">Campaign estimates</h3>
+          <span class="card-header-note" data-i18n="analytics.leaderboardTableNote">Revenue model, spend, estimated ROAS, and margin.</span>
         </div>
         <div class="table-wrapper">
           <table class="data-table" id="campaignProfitTable">
@@ -507,6 +255,7 @@
                 <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.estRevenue">Est. Revenue</th>
                 <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.estCogs">Est. COGS</th>
                 <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.grossProfit">Gross Profit</th>
+                <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.estRoas">Est. ROAS</th>
                 <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.margin">Margin %</th>
               </tr>
             </thead>
@@ -621,11 +370,11 @@
       </div>
     </section>
 
-    <!-- Calendar Analysis Page -->
+    <!-- Calendar Page -->
     <section class="page" data-page="calendar">
       <div class="section-head section-head-inline-note">
         <div>
-          <div class="section-kicker" data-i18n="calendar.sectionKicker">Calendar Analysis</div>
+          <div class="section-kicker" data-i18n="calendar.sectionKicker">Calendar</div>
           <h2 data-i18n="calendar.sectionTitle">Zoom into any day or date range</h2>
         </div>
         <p class="section-head-note" data-i18n="calendar.sectionNote">Revenue heatmap · click or drag dates · KST</p>
@@ -665,526 +414,14 @@
       </div>
     </section>
 
-    <!-- Campaigns Page -->
-    <section class="page" data-page="campaigns">
-      <div class="section-head section-head-with-toolbar section-head-compact live-performance-head">
-        <div class="section-head-copy">
-          <div class="section-kicker" data-i18n="campaigns.sectionKicker">Live Performance</div>
-          <h2 data-i18n="campaigns.sectionTitle">Act on what needs attention now</h2>
-          <p class="section-note" id="campaignWindowNote">Last 7 days · active delivery, pacing, burn risk, and budget guardrails in one place.</p>
-        </div>
-        <div class="range-toolbar section-head-toolbar">
-          <span class="range-toolbar-label" data-i18n="campaigns.window">Time frame</span>
-          <div class="range-switch" data-series-window-group="campaigns" role="group" aria-label="Campaign performance time frame" data-i18n-aria-label="campaigns.windowAria">
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="7d">7D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="kpi-grid small">
-        <div class="kpi-card" data-live-kpi="activeCampaigns">
-          <div class="kpi-label" data-i18n="campaigns.kpi.activeCampaigns">Active Campaigns</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="megaphone"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-live-kpi="profitConfidence">
-          <div class="kpi-label" data-i18n="campaigns.kpi.profitConfidence">Profit Confidence</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="shield-check"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-live-kpi="strongestCampaign">
-          <div class="kpi-label" data-i18n="campaigns.kpi.strongestCampaign">Strongest Campaign</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-live-kpi="spendPace">
-          <div class="kpi-label" data-i18n="campaigns.kpi.spendPace">Spend Pace Today</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="gauge"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-live-kpi="burnRisk">
-          <div class="kpi-label" data-i18n="campaigns.kpi.burnRisk">Spend Without Sales</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="flame"></i><span>—</span></div>
-        </div>
-      </div>
-
-      <div class="card live-active-priority-card" id="activeCampaignsCard">
-        <div class="card-header">
-          <div>
-            <div class="section-kicker" data-i18n="campaigns.topAdsKicker">Top Active Ads</div>
-            <h2><span data-i18n="campaigns.liveAds">Top Active Ads</span></h2>
-          </div>
-          <span class="card-header-meta" id="activeCount"></span>
-        </div>
-        <div class="live-active-priority-body" id="activeAdsContainer">
-          <div class="empty-state" data-i18n="misc.loading">Loading live ad data...</div>
-        </div>
-      </div>
-
-      <div class="card live-intraday-card">
-        <div class="card-header live-intraday-header">
-          <div>
-            <div class="section-kicker" data-i18n="campaigns.intradayKicker">Intraday Pace</div>
-            <h2 data-i18n="campaigns.intradayTitle">Is today’s spend turning into real profit yet?</h2>
-            <p class="card-desc" data-i18n="campaigns.intradayDesc">Spend, revenue, and profit share one money scale here. Profit means revenue after product costs, fees, and ad spend.</p>
-          </div>
-          <div class="live-intraday-asof" id="liveIntradayAsOf">—</div>
-        </div>
-
-        <div class="live-intraday-takeaway" id="liveIntradayTakeaway" data-tone="neutral">
-          <div class="live-intraday-takeaway-main">
-            <span class="live-intraday-pill" id="liveIntradayTakeawayPill">Loading</span>
-            <strong id="liveIntradayTakeawayHeadline">Loading today’s pace...</strong>
-            <p id="liveIntradayTakeawayDetail">This card will explain whether the day is pacing cleanly, spending too early, or still too noisy to trust.</p>
-          </div>
-          <div class="live-intraday-takeaway-side">
-            <span class="live-intraday-side-label" data-i18n="campaigns.intradayConfidence">Profit data confidence</span>
-            <strong id="liveIntradayConfidence">—</strong>
-            <p id="liveIntradayConfidenceDetail">—</p>
-          </div>
-        </div>
-
-        <div class="chart-container live-intraday-chart-shell">
-          <canvas id="liveIntradayChart"></canvas>
-        </div>
-
-        <div class="live-intraday-metrics" id="liveIntradayMetrics">
-          <div class="empty-state" data-i18n="campaigns.intradayLoading">Loading intraday pace...</div>
-        </div>
-
-        <div class="live-intraday-highlights" id="liveIntradayHighlights">
-          <div class="empty-state" data-i18n="campaigns.intradayLoading">Loading intraday pace...</div>
-        </div>
-      </div>
-
-      <div class="card chart-card live-daily-context-card" id="liveDailyContextCard" data-loading="false">
-        <div class="card-header">
-          <div>
-            <div class="section-kicker" data-i18n="campaigns.dailyContextKicker">Recent Days</div>
-            <h2 data-i18n="campaigns.dailyContextTitle">Recent spend and CAC trend</h2>
-            <p class="card-desc" data-i18n="campaigns.dailyContextDesc">Use recent days as the backdrop for whether today’s pace looks normal, strong, or off-shape.</p>
-          </div>
-        </div>
-        <div class="live-daily-context-body" id="liveDailyContextBody">
-          <div class="chart-container live-daily-context-chart-shell" style="height:320px">
-            <canvas id="liveDailyContextChart"></canvas>
-          </div>
-          <div class="live-daily-context-stats" id="liveDailyContextStats">
-            <div class="empty-state" data-i18n="campaigns.dailyContextLoading">Loading daily context...</div>
-          </div>
-          <div class="live-daily-context-loader" id="liveDailyContextLoader" aria-hidden="true">
-            <div class="live-daily-context-spinner"></div>
-            <span data-i18n="campaigns.dailyContextRefreshing">Refreshing recent trend...</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <div>
-            <div class="section-kicker" data-i18n="campaigns.signalsKicker">Live Read</div>
-            <h2 data-i18n="campaigns.signalsTitle">What needs watching right now</h2>
-          </div>
-        </div>
-        <div class="operator-signal-grid" id="operatorSignalGrid">
-          <div class="empty-state" data-i18n="campaigns.signalsLoading">Loading live signals...</div>
-        </div>
-      </div>
-
-      <!-- Campaign Overview -->
-      <div class="card" id="campaignOverviewCard">
-        <div class="card-header">
-          <h2 data-i18n="campaigns.overview">Campaign Control Table</h2>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table" id="campaignTable">
-            <thead>
-              <tr>
-                <th class="cell-primary cell-wrap" data-i18n="th.campaign">Campaign</th>
-                <th class="cell-fit cell-nowrap" data-i18n="th.status">Status</th>
-                <th class="cell-fit cell-wrap" data-i18n="th.dailyBudget">Daily Budget</th>
-                <th class="cell-fit cell-nowrap" data-i18n="th.spendWindow">Spend</th>
-                <th class="cell-fit cell-wrap" data-i18n="th.purchasesPixel">Pixel Purchases</th>
-                <th class="cell-fit cell-nowrap" data-i18n="th.cpa">CPA</th>
-                <th class="cell-fit cell-nowrap" data-i18n="th.ctr">CTR</th>
-                <th class="cell-actions cell-nowrap" data-i18n="th.actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="campaignBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-    </section>
-
-    <!-- Optimizations Page -->
-    <section class="page" data-page="optimizations">
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="optimizations.sectionKicker">Decision Center</div>
-          <h2 data-i18n="optimizations.sectionTitle">Business decisions, guardrails, and operating context</h2>
-        </div>
-        <p class="section-note" data-i18n="optimizations.sectionNote">Start at the top. If there is nothing urgent to decide, the next priority is fixing inputs, respecting hold states, or reviewing portfolio guidance.</p>
-      </div>
-      <div class="card ai-ops-focus-card" id="aiOpsFocusCard" data-tone="neutral">
-        <div class="ai-ops-focus-grid">
-          <div class="ai-ops-focus-primary">
-            <div class="section-kicker" data-i18n="optimizations.heroKicker">Owner Focus</div>
-            <h2 id="optHeroTitle" data-i18n="optimizations.heroWaitingTitle">Waiting for AI operations data...</h2>
-            <p class="card-desc ai-ops-focus-copy" id="optHeroBody" data-i18n="optimizations.heroWaitingBody">Once the next refresh lands, this space will tell you what needs a decision, what is just cleanup, and what can safely wait.</p>
-            <div class="ai-ops-focus-tags" id="optHeroTags"></div>
-          </div>
-          <div class="ai-ops-focus-side">
-            <div class="ai-ops-focus-mini">
-              <span class="ai-ops-focus-mini-label" data-i18n="optimizations.heroNextMove">Next move</span>
-              <strong id="optHeroNext">—</strong>
-              <p id="optHeroNextMeta">—</p>
-            </div>
-            <div class="ai-ops-focus-mini">
-              <span class="ai-ops-focus-mini-label" data-i18n="optimizations.heroSafeIgnore">Safe to ignore</span>
-              <strong id="optHeroIgnore">—</strong>
-              <p id="optHeroIgnoreMeta">—</p>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="kpi-grid small ai-ops-summary-grid">
-        <div class="kpi-card ai-ops-kpi ai-ops-kpi-action">
-          <div class="kpi-label" data-i18n="optimizations.kpiActionNow">Action Now</div>
-          <div class="kpi-value" id="optActionNow" data-target="0" data-prefix="">—</div>
-          <div class="kpi-delta neutral"><span id="optActionNowMeta">—</span></div>
-        </div>
-        <div class="kpi-card ai-ops-kpi ai-ops-kpi-backlog">
-          <div class="kpi-label" data-i18n="optimizations.kpiBacklog">Fix Inputs</div>
-          <div class="kpi-value" id="optBacklog" data-target="0" data-prefix="">—</div>
-          <div class="kpi-delta neutral"><span id="optBacklogMeta">—</span></div>
-        </div>
-        <div class="kpi-card ai-ops-kpi ai-ops-kpi-watch">
-          <div class="kpi-label" data-i18n="optimizations.kpiFriction">Hold</div>
-          <div class="kpi-value" id="optFriction" data-target="0" data-prefix="">—</div>
-          <div class="kpi-delta neutral"><span id="optFrictionMeta">—</span></div>
-        </div>
-        <div class="kpi-card ai-ops-kpi ai-ops-kpi-changes">
-          <div class="kpi-label" data-i18n="optimizations.kpiPortfolio">Portfolio Guidance</div>
-          <div class="kpi-value" id="optPortfolio" data-target="0" data-prefix="">—</div>
-          <div class="kpi-delta neutral"><span id="optPortfolioMeta">—</span></div>
-        </div>
-      </div>
-
-      <div class="ai-ops-queue-grid">
-        <div class="card ai-ops-lane ai-ops-lane-primary">
-          <div class="card-header">
-            <div>
-              <div class="section-kicker" data-i18n="optimizations.queueKicker">Action Center</div>
-              <h2 data-i18n="optimizations.queueTitle">Immediate queue</h2>
-            </div>
-            <span id="optQueueStats"></span>
-          </div>
-          <p class="card-desc" data-i18n="optimizations.queueDesc">Latest scan approvals and anything already awaiting a Telegram reply live here.</p>
-          <div class="optimization-log optimization-log-grouped" id="optimizationQueue">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
-        </div>
-        <div class="card ai-ops-lane ai-ops-lane-secondary">
-          <div class="card-header">
-            <div>
-              <div class="section-kicker" data-i18n="optimizations.backlogKicker">Fix Inputs</div>
-              <h2 data-i18n="optimizations.backlogTitle">Inputs or trust to fix first</h2>
-            </div>
-            <span id="optBacklogStats"></span>
-          </div>
-          <p class="card-desc" data-i18n="optimizations.backlogDesc">These are non-delivery fixes: measurement trust, creative supply, and other inputs that should improve before the next budget change.</p>
-          <div class="optimization-log optimization-log-grouped" id="optimizationBacklog">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
-        </div>
-        <div class="card ai-ops-lane ai-ops-lane-tertiary">
-          <div class="card-header">
-            <div>
-              <div class="section-kicker" data-i18n="optimizations.holdKicker">Hold</div>
-              <h2 data-i18n="optimizations.holdTitle">Let Meta keep delivering</h2>
-            </div>
-            <span id="optHoldStats"></span>
-          </div>
-          <p class="card-desc" data-i18n="optimizations.holdDesc">These are explicit no-change states. The right move is to leave delivery alone until the next meaningful shift.</p>
-          <div class="optimization-log optimization-log-grouped" id="optimizationHold">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
-        </div>
-        <div class="card ai-ops-lane ai-ops-lane-tertiary">
-          <div class="card-header">
-            <div>
-              <div class="section-kicker" data-i18n="optimizations.portfolioKicker">Portfolio Guidance</div>
-              <h2 data-i18n="optimizations.portfolioTitle">Macro budget direction for the next pass</h2>
-            </div>
-            <span id="optPortfolioStats"></span>
-          </div>
-          <p class="card-desc" data-i18n="optimizations.portfolioDesc">These are advisory macro moves: portfolio scale, reduce, or reallocation guidance that should shape the next planning pass.</p>
-          <div class="optimization-log optimization-log-grouped" id="optimizationPortfolio">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card ai-ops-lane ai-ops-lane-flow">
-          <div class="card-header">
-            <div>
-            <div class="section-kicker" data-i18n="opt.activityHubKicker">Recent Changes</div>
-            <h2 data-i18n="opt.activityHub">What changed recently</h2>
-            </div>
-            <span id="optActivityStats"></span>
-          </div>
-        <p class="card-desc" data-i18n="opt.activityHubDesc">Only fresh state changes stay here. Audit history and research detail belong further down the page.</p>
-        <div class="ai-ops-flow-grid">
-          <div class="optimization-log optimization-log-grouped" id="optActivityLog">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
-          <div class="ai-ops-system-panel" id="optSystemChatter">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
-        </div>
-      </div>
-
-      <details class="ai-ops-secondary-shell">
-        <summary class="ai-ops-secondary-summary">
-          <div>
-            <div class="section-kicker" data-i18n="optimizations.archiveKicker">Archive & Diagnostics</div>
-            <h2 data-i18n="optimizations.archiveTitle">Audit history and grouped families</h2>
-          </div>
-          <span id="optArchiveSummary">—</span>
-        </summary>
-        <div class="card ai-ops-secondary-card">
-          <div class="card-header">
-            <div>
-              <div class="section-kicker" data-i18n="opt.clusterKicker">Recommendation Clusters</div>
-              <h2 data-i18n="opt.archiveTitle">Deduped decision families</h2>
-            </div>
-            <div class="history-toolbar">
-              <span id="optStats"></span>
-              <div class="filter-group">
-                <select class="select-input" id="optTypeFilter">
-                  <option value="all" data-i18n="opt.allTypes">All Types</option>
-                  <option value="budget" data-i18n="opt.budget">Budget</option>
-                  <option value="creative" data-i18n="opt.creative">Creative</option>
-                  <option value="status" data-i18n="opt.status">Status</option>
-                </select>
-                <select class="select-input" id="optStatusFilter">
-                  <option value="all" data-i18n="opt.allStatuses">All States</option>
-                  <option value="live" data-i18n="opt.openBacklog">Live Decisions</option>
-                  <option value="fix_inputs" data-i18n="opt.awaitingTelegram">Fix Inputs</option>
-                  <option value="hold" data-i18n="opt.advisoryOnly">Hold</option>
-                  <option value="portfolio_guidance" data-i18n="opt.portfolioOnly">Portfolio Guidance</option>
-                  <option value="research" data-i18n="opt.researchOnly">Research</option>
-                  <option value="cleanup" data-i18n="opt.cleanupOnly">Cleanup</option>
-                  <option value="resolved" data-i18n="opt.resolved">Resolved</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          <p class="card-desc" data-i18n="opt.clusterDesc">Grouped by decision family so macro budget calls, fix-input advisories, hold states, and cleanup history stay easy to read.</p>
-          <div class="optimization-log optimization-log-grouped" id="optimizationClusters">
-            <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-          </div>
-          <details class="ai-ops-raw-history">
-            <summary data-i18n="opt.rawHistorySummary">Raw per-scan history</summary>
-            <div class="ai-ops-section ai-ops-raw-history-body">
-              <div class="history-toolbar">
-                <span id="optRawStats"></span>
-              </div>
-              <div class="optimization-log" id="optimizationLog">
-                <div class="empty-state" data-i18n="opt.waiting">Waiting for backend connection and first scan...</div>
-              </div>
-            </div>
-          </details>
-        </div>
-      </details>
-
-    </section>
-
-    <!-- Fatigue Detection Page -->
-    <section class="page" data-page="fatigue">
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="fatigue.sectionKicker">Creative Health</div>
-          <h2 data-i18n="fatigue.sectionTitle">Watch fatigue before it damages performance</h2>
-        </div>
-        <p class="section-note" data-i18n="fatigue.sectionNote">This page owns creative diagnosis: active fatigue signals, pressure trends, and paused-ad learnings.</p>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <h2 data-i18n="fatigue.monitor">Creative Health Monitor</h2>
-          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="fatigueWindowNote" data-i18n="fatigue.windowRecent">Recent 14 day fatigue view</span>
-            <span class="badge badge-warning" data-fatigue-badge>— ads · — healthy</span>
-          </div>
-        </div>
-        <p class="card-desc" data-i18n="fatigue.desc">The agent monitors frequency, CTR decay, and CPM rise to detect ad fatigue before it damages performance.</p>
-        <div class="fatigue-grid" id="fatigueGrid"></div>
-      </div>
-      <div class="card chart-card">
-        <div class="card-header">
-          <h2 data-i18n="fatigue.indicators">Fatigue Indicators Over Time</h2>
-        </div>
-        <div class="chart-container">
-          <canvas id="fatigueChart"></canvas>
-        </div>
-      </div>
-      <div class="card" id="fatigueLearningsCard">
-        <div class="card-header">
-          <div>
-            <div class="section-kicker" data-i18n="fatigue.learnKicker">Creative Learnings</div>
-            <h2 data-i18n="campaigns.pausedLessons">Paused ads and what they taught</h2>
-          </div>
-          <span id="fatigueInactiveCount" style="font-size:0.85rem;color:var(--color-text-muted)"></span>
-        </div>
-        <div id="fatigueLessonsSummary" style="padding:0 20px 16px"></div>
-        <div id="fatigueInactiveAdsContainer" style="padding:0 20px 20px"></div>
-      </div>
-    </section>
-
-    <!-- Budget Manager Page -->
-    <section class="page" data-page="budget">
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="budget.sectionKicker">Spend Pacing</div>
-          <h2 data-i18n="budget.sectionTitle">Track budget headroom and delivery pace</h2>
-        </div>
-        <p class="section-note" data-i18n="budget.sectionNote">This page is for pacing and budget pressure only. Live campaign decisions stay on Live Performance.</p>
-      </div>
-      <div class="kpi-grid small">
-        <div class="kpi-card" data-budget-kpi="daily">
-          <div class="kpi-label" data-i18n="budget.daily">Active Budget Pool</div>
-          <div class="kpi-value">—</div>
-        </div>
-        <div class="kpi-card" data-budget-kpi="periodSpend">
-          <div class="kpi-label" data-i18n="budget.periodSpend">Spend This Window</div>
-          <div class="kpi-value" data-target="0" data-prefix="$">—</div>
-          <div class="budget-bar"><div class="budget-fill" style="width:0%"></div></div>
-        </div>
-        <div class="kpi-card" data-budget-kpi="remaining">
-          <div class="kpi-label" data-i18n="budget.remaining">Budget Headroom</div>
-          <div class="kpi-value">—</div>
-        </div>
-        <div class="kpi-card" data-budget-kpi="pace">
-          <div class="kpi-label" data-i18n="budget.pace">Pace</div>
-          <div class="kpi-value">—</div>
-        </div>
-      </div>
-      <div class="charts-grid">
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.budgetAlloc">Budget Allocation by Campaign</h2>
-          </div>
-          <div class="chart-container">
-            <canvas id="budgetPieChart"></canvas>
-          </div>
-        </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.dailyPace">Daily Spend Pace</h2>
-          </div>
-          <div class="chart-container">
-            <canvas id="budgetPaceChart"></canvas>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <h2 data-i18n="budget.history">Budget Optimization History</h2>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th class="cell-fit cell-nowrap" data-i18n="th.time">Time</th>
-                <th class="cell-primary cell-wrap" data-i18n="th.target">Target</th>
-                <th class="cell-fit cell-nowrap" data-i18n="th.scope">Scope</th>
-                <th class="cell-fit cell-wrap" data-i18n="th.actionTaken">Action</th>
-                <th class="cell-reason cell-wrap" data-i18n="th.reason">Reason</th>
-              </tr>
-            </thead>
-            <tbody id="budgetHistory"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
     <!-- Settings Page -->
     <section class="page" data-page="settings">
-      <div class="card">
-        <div class="card-header">
-          <h2 data-i18n="settings.agentConfig">Operating Guardrails</h2>
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker" data-i18n="settings.sectionKicker">Status</div>
+          <h2 data-i18n="settings.sectionTitle">Data source health</h2>
         </div>
-        <div class="settings-grid">
-          <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.scanFreq">Scan Frequency</label>
-            <select class="select-input" id="settingsScanFrequency">
-              <option value="10" selected data-i18n="settings.every10">Every 10 minutes</option>
-              <option value="15" data-i18n="settings.every15">Every 15 minutes</option>
-              <option value="30" data-i18n="settings.every30">Every 30 minutes</option>
-              <option value="60" data-i18n="settings.everyHour">Every hour</option>
-              <option value="120" data-i18n="settings.every2h">Every 2 hours</option>
-              <option value="240" data-i18n="settings.every4h">Every 4 hours</option>
-            </select>
-            <span class="setting-desc" id="settingsScanFreqDesc" data-i18n="settings.scanFreqDesc">How often the decision engine refreshes campaign, trust, and pacing context</span>
-            <span class="setting-note" id="settingsScanFrequencyNote">Live scheduler status will appear here.</span>
-          </div>
-          <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.maxBudgetChange">Max Daily Budget Change</label>
-            <div class="input-with-unit">
-              <input type="number" class="text-input" value="20" min="1" max="100">
-              <span class="unit">%</span>
-            </div>
-            <span class="setting-desc" data-i18n="settings.maxBudgetDesc">Maximum percentage the engine can move a campaign budget in one scan</span>
-          </div>
-          <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.autoPause">Hard Stop-Loss Threshold (CPA)</label>
-            <div class="input-with-unit">
-              <input type="number" class="text-input" value="15" min="1">
-              <span class="unit">$</span>
-            </div>
-            <span class="setting-desc" data-i18n="settings.autoPauseDesc">Pause a campaign only when CPA breaches this stop-loss threshold over a sustained window</span>
-          </div>
-          <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.fatigueSens">Creative Pressure Sensitivity</label>
-            <select class="select-input">
-              <option data-i18n="settings.low">Low</option>
-              <option selected data-i18n="settings.medium">Medium</option>
-              <option data-i18n="settings.high">High</option>
-            </select>
-            <span class="setting-desc" data-i18n="settings.fatigueSensDesc">How readily the system flags weak creative supply before more budget is added</span>
-          </div>
-          <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.autoMode">Approval-Gated Execution</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="autoMode" checked>
-              <label for="autoMode" class="toggle-track"></label>
-            </div>
-            <span class="setting-desc" data-i18n="settings.autoModeDesc">When enabled, executable campaign budget and stop-loss actions can request approval during scans. When disabled, everything stays advisory-only.</span>
-          </div>
-          <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.budgetRealloc">Portfolio Reallocation Guidance</label>
-            <div class="toggle-switch">
-              <input type="checkbox" id="budgetRealloc" checked>
-              <label for="budgetRealloc" class="toggle-track"></label>
-            </div>
-            <span class="setting-desc" data-i18n="settings.budgetReallocDesc">Allow portfolio-level reallocation advisories when contribution diverges across campaigns</span>
-          </div>
-          <div class="setting-group">
-            <label class="setting-label" data-i18n="settings.notifChannel">Notification Channel</label>
-            <select class="select-input">
-              <option selected data-i18n="settings.emailInApp">Email + In-App</option>
-              <option data-i18n="settings.emailOnly">Email Only</option>
-              <option data-i18n="settings.inAppOnly">In-App Only</option>
-              <option data-i18n="settings.slack">Slack</option>
-            </select>
-            <span class="setting-desc" data-i18n="settings.notifChannelDesc">Where to send alerts about significant changes or issues</span>
-          </div>
-        </div>
+        <p class="section-note" data-i18n="settings.sectionNote">Connection status and freshness for the data sources behind profit reporting.</p>
       </div>
       <div class="card">
         <div class="card-header">
@@ -1334,9 +571,6 @@
   </main>
 </div>
 
-<!-- Mobile overlay -->
-<div class="sidebar-overlay" id="sidebarOverlay"></div>
-
 <script src="./i18n.js"></script>
 <script src="./utils.js"></script>
 <script src="./app.js"></script>
@@ -1345,9 +579,6 @@
 <script src="./live/api.js"></script>
 <script src="./live/series-windows.js"></script>
 <script src="./live/pages/settings.js"></script>
-<script src="./live/pages/fatigue.js"></script>
-<script src="./live/pages/budget.js"></script>
-<script src="./live/pages/campaigns.js"></script>
 <script src="./live/pages/overview.js"></script>
 <script src="./live/pages/analytics.js"></script>
 <script src="./live/pages/calendar.js"></script>

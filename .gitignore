@@ -7,4 +7,5 @@ server/data/logs/
 *.log
 .DS_Store
 .openclaw/
+.claude/
 .tmp-header*.png

@@ -123,49 +123,12 @@
     return api(`/calendar-analysis?${search.toString()}`, 'GET', null, { timeoutMs: 15000 });
   }
 
-  function fetchCampaigns(windowKey) {
-    const search = new URLSearchParams();
-    if (windowKey) search.set('days', windowKey);
-    const suffix = search.toString() ? `?${search.toString()}` : '';
-    return api(`/campaigns${suffix}`);
-  }
-
-  function fetchLivePerformance(windowKey) {
-    const search = new URLSearchParams();
-    if (windowKey) search.set('days', windowKey);
-    const suffix = search.toString() ? `?${search.toString()}` : '';
-    return api(`/live-performance${suffix}`);
-  }
-
-  function fetchPostmortem(windowKey) {
-    const search = new URLSearchParams();
-    if (windowKey) search.set('days', windowKey);
-    const suffix = search.toString() ? `?${search.toString()}` : '';
-    return api(`/postmortem${suffix}`);
-  }
-
   function fetchSettings() {
     return api('/settings');
   }
 
-  function fetchScans() {
-    return api('/scans');
-  }
-
   function fetchReconciliation() {
     return api('/reconciliation');
-  }
-
-  function fetchSpendDaily() {
-    return api('/spend-daily');
-  }
-
-  function triggerScan() {
-    return api('/scan', 'POST');
-  }
-
-  function updateCampaignStatus(campaignId, status) {
-    return api(`/campaigns/${campaignId}/status`, 'POST', { status });
   }
 
   live.api = {
@@ -174,14 +137,7 @@
     fetchOverview,
     fetchAnalytics,
     fetchCalendarAnalysis,
-    fetchCampaigns,
-    fetchLivePerformance,
-    fetchPostmortem,
-    fetchScans,
     fetchSettings,
     fetchReconciliation,
-    fetchSpendDaily,
-    triggerScan,
-    updateCampaignStatus,
   };
 })();

@@ -2,6 +2,7 @@ const config = require('../config');
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const transforms = require('../transforms/charts');
+const { buildProfitWindowSummaries } = require('../domain/profitWindowMetrics');
 const { getTodayInTimeZone } = require('../domain/time');
 const { buildCampaignEconomics } = require('./campaignEconomicsService');
 
@@ -83,6 +84,39 @@ function toCampaignProfitRows(campaignEconomicsContext) {
   }));
 }
 
+function toCampaignProfitWindow(campaignEconomicsContext) {
+  const campaigns = toCampaignProfitRows(campaignEconomicsContext);
+  const summary = campaignEconomicsContext?.summary || {};
+  const spend = campaigns.reduce((sum, campaign) => sum + Number(campaign.spend || 0), 0);
+  const spendKRW = campaigns.reduce((sum, campaign) => sum + Number(campaign.spendKRW || 0), 0);
+  const estimatedProfit = campaigns.reduce((sum, campaign) => sum + Number(campaign.grossProfit || 0), 0);
+  const activeCampaigns = campaigns.filter(campaign => campaign.status === 'ACTIVE').length;
+  const profitableCampaigns = campaigns.filter(campaign => Number(campaign.grossProfit || 0) > 0).length;
+
+  return {
+    summary: {
+      days: summary.days,
+      windowStart: summary.windowStart,
+      windowEnd: summary.windowEnd,
+      netRevenue: summary.netRevenue || 0,
+      estimatedMetaRevenue: summary.estimatedMetaRevenue || 0,
+      attributableRevenueShare: summary.attributableRevenueShare || 0,
+      totalMetaPurchases: summary.totalMetaPurchases || 0,
+      spend: Number(spend.toFixed(2)),
+      spendKRW,
+      estimatedProfit: Math.round(estimatedProfit),
+      campaignCount: campaigns.length,
+      activeCampaigns,
+      profitableCampaigns,
+      confidence: summary.confidence || 'low',
+      confidenceLabel: summary.confidenceLabel || '',
+      confidenceReasons: summary.confidenceReasons || [],
+      basis: summary.basis,
+    },
+    campaigns,
+  };
+}
+
 /**
  * Build the /api/analytics response — charts, refund rates, profit analysis.
  */
@@ -114,23 +148,35 @@ function getAnalyticsResponse() {
   const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged, profitWaterfall);
   const dataCoverage = transforms.buildDataCoverage(dailyMerged, dailyCOGS);
   const profitRunRate = buildProfitRunRate(profitWaterfall, 14);
+  const profitWindowSummaries = buildProfitWindowSummaries(profitWaterfall, dailyMerged);
 
   // Featured summary prefers a fully-covered current day, otherwise the latest completed covered day.
   const todayStr = getTodayInTimeZone();
-  const campaignEconomicsContext = buildCampaignEconomics(
-    data.campaigns || [],
-    data.campaignInsights || [],
-    revenue,
-    cogs,
-    dataSources.imweb,
-    {
-      days: Math.max(dailyMerged.length, 1),
-      referenceDate: todayStr,
-      includeCurrentDay: true,
-      paymentFeeRate: config.fees.paymentFeeRate,
-    }
+  const campaignWindowOptions = {
+    '7d': 7,
+    '14d': 14,
+    '30d': 30,
+    all: Math.max(dailyMerged.length, 1),
+  };
+  const campaignProfitWindows = Object.fromEntries(
+    Object.entries(campaignWindowOptions).map(([key, days]) => {
+      const context = buildCampaignEconomics(
+        data.campaigns || [],
+        data.campaignInsights || [],
+        revenue,
+        cogs,
+        dataSources.imweb,
+        {
+          days,
+          referenceDate: todayStr,
+          includeCurrentDay: true,
+          paymentFeeRate: config.fees.paymentFeeRate,
+        }
+      );
+      return [key, toCampaignProfitWindow(context)];
+    })
   );
-  const campaignProfit = toCampaignProfitRows(campaignEconomicsContext);
+  const campaignProfit = campaignProfitWindows.all?.campaigns || [];
   const todaySummary = buildFeaturedProfitSummary(profitWaterfall, dataCoverage, todayStr);
 
   return contracts.analytics({
@@ -144,7 +190,9 @@ function getAnalyticsResponse() {
     profitAnalysis: {
       waterfall: profitWaterfall,
       campaignProfit,
+      campaignProfitWindows,
       coverage: dataCoverage,
+      windowSummaries: profitWindowSummaries,
       todaySummary,
       runRate: profitRunRate,
     },

@@ -138,7 +138,9 @@ function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, m
     profitAnalysis: {
       waterfall: profitAnalysis?.waterfall ?? [],
       campaignProfit: profitAnalysis?.campaignProfit ?? [],
+      campaignProfitWindows: profitAnalysis?.campaignProfitWindows ?? {},
       coverage: profitAnalysis?.coverage ?? {},
+      windowSummaries: profitAnalysis?.windowSummaries ?? {},
       todaySummary: profitAnalysis?.todaySummary ?? null,
       runRate: profitAnalysis?.runRate ?? null,
     },
