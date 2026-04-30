@@ -86,3 +86,9 @@ test('calendar sankey expands to the available card width before scrolling', () 
   assert.match(calendarJs, /Profit Sankey with product category inflows/);
   assert.match(css, /\.calendar-sankey-canvas\s*\{[\s\S]*width:\s*100%;[\s\S]*min-width:\s*min\(1120px,\s*100%\);[\s\S]*aspect-ratio:\s*1280\s*\/\s*560;/);
 });
+
+test('calendar selection keeps the sankey as the metric owner before the detailed tables', () => {
+  assert.doesNotMatch(calendarJs, /calendar-summary-grid-secondary|summaryCards|renderCalendarSummaryCard/);
+  assert.doesNotMatch(css, /\.calendar-summary-grid/);
+  assert.match(calendarJs, /\$\{renderCalendarSankey\(selection,\s*summary\)\}[\s\S]*<h2>\$\{esc\(tr\('Daily Breakdown'/);
+});

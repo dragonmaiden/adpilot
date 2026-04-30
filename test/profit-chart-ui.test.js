@@ -28,7 +28,7 @@ test('profit movement exposes true net profit as a hoverable line series', () =>
 test('positive bar charts share the deep green profit palette', () => {
   assert.match(appJs, /darkGreenFill:\s*'rgba\(22, 101, 52, 0\.72\)'/);
   assert.match(appJs, /label:\s*'Revenue \(₩\)'[\s\S]*backgroundColor:\s*c\.darkGreenFill/);
-  assert.match(appJs, /label:\s*'Gross Revenue'[\s\S]*backgroundColor:\s*c\.darkGreenFill/);
+  assert.match(appJs, /label:\s*'Net Revenue'[\s\S]*backgroundColor:\s*c\.darkGreenFill/);
   assert.match(appJs, /label:\s*'Orders'[\s\S]*backgroundColor:\s*c\.darkGreenFill/);
 });
 

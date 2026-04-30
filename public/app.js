@@ -98,7 +98,7 @@ let profitChartsInitialized = false;
 
 function updateChartColors() {
   const c = getChartColors();
-  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, hourChartInstance, profitWaterfallChart];
+  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, hourChartInstance, profitWaterfallChart, refundChartInstance];
   allCharts.forEach(chart => {
     if (!chart) return;
     if (chart.options.scales) {
@@ -405,7 +405,7 @@ function initProfitCharts() {
         labels: [],
         datasets: [
           {
-            label: 'Gross Revenue',
+            label: 'Net Revenue',
             data: [],
             backgroundColor: c.darkGreenFill,
             borderRadius: 3,
@@ -415,23 +415,13 @@ function initProfitCharts() {
             pointStyle: 'rectRounded',
           },
           {
-            label: 'Refunds',
-            data: [],
-            backgroundColor: 'rgba(248, 113, 113, 0.52)',
-            borderRadius: 3,
-            stack: 'deductions',
-            order: 2,
-            legendRank: 2,
-            pointStyle: 'rectRounded',
-          },
-          {
             label: 'Total Costs',
             data: [],
             backgroundColor: 'rgba(185, 28, 28, 0.58)',
             borderRadius: 3,
             stack: 'deductions',
             order: 2,
-            legendRank: 3,
+            legendRank: 2,
             pointStyle: 'rectRounded',
           },
           {
@@ -448,7 +438,7 @@ function initProfitCharts() {
             pointStyle: 'line',
             tension: 0.3,
             order: 1,
-            legendRank: 4,
+            legendRank: 3,
           }
         ]
       },
@@ -506,14 +496,6 @@ function initProfitCharts() {
               },
               label: function(ctx) {
                 return `${ctx.dataset.label}: ${formatSignedChartKrw(ctx.parsed.y)}`;
-              },
-              afterBody: function(items) {
-                const item = items?.[0];
-                if (!item?.chart) return '';
-                const revenue = Number(item.chart.data.datasets?.[0]?.data?.[item.dataIndex] || 0);
-                const refunded = Math.abs(Number(item.chart.data.datasets?.[1]?.data?.[item.dataIndex] || 0));
-                if (revenue <= 0) return '';
-                return `Refund rate: ${((refunded / revenue) * 100).toFixed(1)}%`;
               }
             }
           }
@@ -550,9 +532,8 @@ function initAnalyticsCharts() {
   const refundRateLabelPlugin = {
     id: 'refundRateLabelPlugin',
     afterDatasetsDraw(chart) {
-      const revenue = chart.data?.datasets?.[0]?.data || [];
-      const refunded = chart.data?.datasets?.[1]?.data || [];
-      const bars = chart.getDatasetMeta(1)?.data || [];
+      const rates = chart.data?.datasets?.[0]?.data || [];
+      const bars = chart.getDatasetMeta(0)?.data || [];
       if (bars.length === 0) return;
 
       const { ctx, chartArea } = chart;
@@ -563,13 +544,10 @@ function initAnalyticsCharts() {
       ctx.textBaseline = 'bottom';
 
       bars.forEach((bar, index) => {
-        const revenueValue = Number(revenue[index] || 0);
-        if (revenueValue <= 0) return;
-
-        const refundedValue = Number(refunded[index] || 0);
-        const rate = ((refundedValue / revenueValue) * 100).toFixed(1);
+        const rate = Number(rates[index]);
+        if (!Number.isFinite(rate) || rate <= 0) return;
         const y = Math.max(bar.y - 6, chartArea.top + 14);
-        ctx.fillText(`${rate}%`, bar.x, y);
+        ctx.fillText(`${rate.toFixed(1)}%`, bar.x, y);
       });
 
       ctx.restore();
@@ -631,7 +609,7 @@ function initAnalyticsCharts() {
     });
   }
 
-  // ── Monthly Refund Comparison (empty) ──
+  // ── Refund Rate (empty) ──
   const refCtx = document.getElementById('refundChart');
   if (refCtx) {
     refundChartInstance = new Chart(refCtx, {
@@ -641,19 +619,11 @@ function initAnalyticsCharts() {
         labels: [],
         datasets: [
           {
-            label: 'Revenue Collected (\u20a9)',
-            data: [],
-            backgroundColor: 'rgba(32, 128, 141, 0.8)',
-            borderRadius: 4,
-            barPercentage: 0.58,
-            categoryPercentage: 0.72,
-          },
-          {
-            label: 'Refunded (\u20a9)',
+            label: 'Refund Rate (%)',
             data: [],
             backgroundColor: 'rgba(239, 68, 68, 0.7)',
             borderRadius: 4,
-            barPercentage: 0.58,
+            barPercentage: 0.62,
             categoryPercentage: 0.72,
           },
         ]
@@ -665,24 +635,31 @@ function initAnalyticsCharts() {
           intersect: false,
         },
         plugins: {
-          legend: { display: true, position: 'top', labels: { color: c.text, boxWidth: 12, padding: 16 } },
+          legend: { display: false },
           tooltip: {
             callbacks: {
-              label: ctx => `${ctx.dataset.label}: \u20a9${Number(ctx.parsed.y || 0).toLocaleString()}`,
+              label: ctx => `Refund Rate: ${Number(ctx.parsed.y || 0).toFixed(1)}%`,
               afterBody: items => {
                 if (!Array.isArray(items) || items.length === 0) return [];
                 const index = items[0].dataIndex;
-                const revenueValue = Number(items[0].chart.data?.datasets?.[0]?.data?.[index] || 0);
-                const refundedValue = Number(items[0].chart.data?.datasets?.[1]?.data?.[index] || 0);
-                if (revenueValue <= 0) return [];
-                return [`Refund Rate: ${((refundedValue / revenueValue) * 100).toFixed(1)}%`];
+                const dataset = items[0].chart.data?.datasets?.[0] || {};
+                const revenueValue = Number(dataset.revenue?.[index] || 0);
+                const refundedValue = Number(dataset.refunded?.[index] || 0);
+                return [
+                  `Refunded: ${formatChartKrwTick(refundedValue)}`,
+                  `Gross revenue: ${formatChartKrwTick(revenueValue)}`,
+                ];
               },
             }
           }
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: c.textFaint } },
-          y: { grid: { color: c.grid }, ticks: { color: c.textFaint, callback: v => formatChartKrwTick(v) } },
+          y: {
+            beginAtZero: true,
+            grid: { color: c.grid },
+            ticks: { color: c.textFaint, callback: v => `${Number(v).toFixed(0)}%` },
+          },
         }
       }
     });

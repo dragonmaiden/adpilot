@@ -603,19 +603,6 @@
     }).join('');
   }
 
-  function renderCalendarSummaryCard(card) {
-    return `
-      <div class="kpi-card">
-        <div class="kpi-label">${esc(card.label)}</div>
-        <div class="kpi-value">${card.value}</div>
-        <div class="kpi-delta ${card.tone || 'neutral'}">
-          <i data-lucide="${esc(card.icon || 'minus')}"></i>
-          <span>${esc(card.sub || '—')}</span>
-        </div>
-      </div>
-    `;
-  }
-
   function buildSankeyViewModel(selection, baseSummary) {
     const rows = getCalendarWaterfallRows(selection);
     const summary = buildCalendarWaterfallSummary(rows);
@@ -1065,15 +1052,6 @@
     const summary = selection.summary || {};
     const isProfitPositive = (summary.trueNetProfit || 0) >= 0;
 
-    const summaryCards = [
-      { label: tr('Margin', '마진'), value: formatCalendarPercentMetric(summary.margin), sub: tr('True net profit / net revenue', '실질 순이익 / 순매출'), tone: hasCalendarMetric(summary.margin) && Number(summary.margin) >= 0 ? 'positive' : 'negative', icon: 'percent' },
-      { label: 'ROAS', value: formatCalendarRoasMetric(summary.roas), sub: tr('Net revenue / ad spend', '순매출 / 광고비'), tone: hasCalendarMetric(summary.roas) && Number(summary.roas) >= 1 ? 'positive' : 'negative', icon: 'trending-up' },
-      { label: tr('Recognized Orders', '인식 주문'), value: formatCount(summary.recognizedOrders || 0), sub: tr(`${formatCount(summary.refundOrders || 0)} refund orders`, `환불 주문 ${formatCount(summary.refundOrders || 0)}건`), tone: 'neutral', icon: 'receipt' },
-      { label: tr('Refund Rate', '환불률'), value: formatCalendarPercentMetric(summary.refundRate), sub: tr(`${formatKrw(summary.refundedAmount || 0)} refunded`, `${formatKrw(summary.refundedAmount || 0)} 환불`), tone: hasCalendarMetric(summary.refundRate) && Number(summary.refundRate) > 10 ? 'negative' : 'neutral', icon: 'percent' },
-      { label: tr('Return / Cancel Sections', '반품/취소 섹션'), value: formatCount(summary.cancelledSections || 0), sub: tr(`${formatCalendarPercentMetric(summary.cancelRate)} of ${formatCount(summary.totalSections || 0)} sections`, `섹션 ${formatCount(summary.totalSections || 0)}개 중 ${formatCalendarPercentMetric(summary.cancelRate)}`), tone: hasCalendarMetric(summary.cancelRate) && Number(summary.cancelRate) > 10 ? 'negative' : 'neutral', icon: 'x-circle' },
-      { label: tr('Meta Purchases', '메타 구매'), value: formatCount(summary.metaPurchases || 0), sub: tr('Selected-range Meta signal', '선택 범위 메타 신호'), tone: 'neutral', icon: 'mouse-pointer-2' },
-    ];
-
     const dailyRows = Array.isArray(selection.days) ? selection.days : [];
     const orderRows = Array.isArray(selection.orders) ? selection.orders : [];
     const productRows = Array.isArray(selection.products) ? selection.products : [];
@@ -1157,10 +1135,6 @@
       </div>
 
       ${renderCalendarSankey(selection, summary)}
-
-      <div class="calendar-summary-grid calendar-summary-grid-secondary">
-        ${summaryCards.map(renderCalendarSummaryCard).join('')}
-      </div>
 
       <div class="card">
         <div class="card-header">

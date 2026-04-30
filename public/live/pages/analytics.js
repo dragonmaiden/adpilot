@@ -6,30 +6,6 @@
   let cachedAnalyticsData = null;
   let profitWaterfallGranularity = 'day';
 
-  function formatRateMetricDetail(metric, fallback) {
-    if (!metric || metric.numerator == null || metric.denominator == null) {
-      return fallback;
-    }
-
-    if (metric.unit === 'currency') {
-      return tr(
-        `${formatKrw(metric.numerator)} of ${formatKrw(metric.denominator)}`,
-        `${formatKrw(metric.denominator)} 중 ${formatKrw(metric.numerator)}`
-      );
-    }
-
-    if (metric.unit === 'sections') {
-      const denominatorLabel = metric.denominatorLabel || 'sections';
-      const numeratorLabel = metric.numeratorLabel || 'cancelled';
-      return tr(
-        `${metric.numerator} ${numeratorLabel} of ${metric.denominator} ${denominatorLabel}`,
-        `${metric.denominator.toLocaleString(getLocale())}${denominatorLabel === 'sections' ? '개 섹션' : denominatorLabel} 중 ${metric.numerator.toLocaleString(getLocale())}${numeratorLabel === 'cancelled' ? '개 취소' : numeratorLabel}`
-      );
-    }
-
-    return fallback;
-  }
-
   function toFiniteNumber(value) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -203,6 +179,21 @@
     }));
   }
 
+  function buildRefundRateBuckets(waterfallBuckets) {
+    return (Array.isArray(waterfallBuckets) ? waterfallBuckets : []).map(row => {
+      const revenue = toFiniteNumber(row.revenue);
+      const refunded = toFiniteNumber(row.refunded);
+      const rate = revenue > 0 ? Number(((refunded / revenue) * 100).toFixed(1)) : null;
+
+      return {
+        label: row.label || row.date || '',
+        revenue,
+        refunded,
+        rate,
+      };
+    });
+  }
+
   function syncProfitWaterfallGranularityControls() {
     document.querySelectorAll('[data-profit-waterfall-granularity]').forEach(button => {
       const isActive = button.dataset.profitWaterfallGranularity === profitWaterfallGranularity;
@@ -312,6 +303,7 @@
     const heroMarginEl = document.getElementById('profitHeroMargin');
     const heroRoasEl = document.getElementById('profitHeroRoas');
     const heroRunRateEl = document.getElementById('profitHeroRunRate');
+    const refundRateSummaryEl = document.getElementById('refundRateSummary');
 
     if (heroKickerEl) {
       heroKickerEl.textContent = tr(`${windowLabel} time frame true net profit`, `${windowLabel} 기준 실질 순이익`);
@@ -392,6 +384,13 @@
       totalProfit > 0 ? 'positive' : totalProfit < 0 ? 'negative' : 'neutral'
     );
 
+    if (refundRateSummaryEl) {
+      refundRateSummaryEl.innerHTML = `
+        <span><strong>${esc(formatNullableKrw(totalRefunded))}</strong> ${esc(tr('total refunds', '총 환불'))}</span>
+        <span><strong>${esc(formatNullablePercent(refundRate, 1))}</strong> ${esc(tr(`of ${formatNullableKrw(totalGrossRevenue)} gross revenue`, `총매출 ${formatNullableKrw(totalGrossRevenue)} 대비`))}</span>
+      `;
+    }
+
     const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
     if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';
     const cogsSub = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-delta span');
@@ -444,17 +443,28 @@
 
     if (waterfallBuckets.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
       profitWaterfallChart.data.labels = waterfallBuckets.map(row => row.label);
-      profitWaterfallChart.data.datasets[0].data = waterfallBuckets.map(row => row.revenue);
-      profitWaterfallChart.data.datasets[1].data = waterfallBuckets.map(row => -row.refunded);
-      profitWaterfallChart.data.datasets[2].data = waterfallBuckets.map(row =>
+      profitWaterfallChart.data.datasets[0].data = waterfallBuckets.map(row => row.revenue - row.refunded);
+      profitWaterfallChart.data.datasets[1].data = waterfallBuckets.map(row =>
         -(row.cogs + row.cogsShipping + row.adSpendKRW + row.paymentFees)
       );
-      profitWaterfallChart.data.datasets[3].data = waterfallBuckets.map(row => row.trueNetProfit);
-      profitWaterfallChart.data.datasets[3].pointBackgroundColor = '#111827';
-      profitWaterfallChart.data.datasets[3].pointBorderColor = '#111827';
+      profitWaterfallChart.data.datasets[2].data = waterfallBuckets.map(row => row.trueNetProfit);
+      profitWaterfallChart.data.datasets[2].pointBackgroundColor = '#111827';
+      profitWaterfallChart.data.datasets[2].pointBorderColor = '#111827';
       profitWaterfallChart.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
       profitWaterfallChart.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
       profitWaterfallChart.update();
+    }
+
+    const refundRateBuckets = buildRefundRateBuckets(waterfallBuckets);
+    if (typeof refundChartInstance !== 'undefined' && refundChartInstance) {
+      const refundRateDataset = refundChartInstance.data.datasets[0];
+      refundChartInstance.data.labels = refundRateBuckets.map(row => row.label);
+      refundRateDataset.data = refundRateBuckets.map(row => row.rate);
+      refundRateDataset.revenue = refundRateBuckets.map(row => row.revenue);
+      refundRateDataset.refunded = refundRateBuckets.map(row => row.refunded);
+      refundChartInstance.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
+      refundChartInstance.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
+      refundChartInstance.update();
     }
 
     const profitMovementFootnote = document.getElementById('profitMovementFootnote');
@@ -477,9 +487,13 @@
       const missingLabel = missing.length > 0
         ? tr(`Missing ${missing.join(', ')}`, `누락 ${missing.join(', ')}`)
         : '';
+      const periodsShownLabel = tr(
+        `${waterfallBuckets.length.toLocaleString(getLocale())} periods shown`,
+        `${waterfallBuckets.length.toLocaleString(getLocale())}개 구간 표시`
+      );
 
       profitMovementFootnote.innerHTML = `
-        <span><strong>${esc(granularityLabel)} refund rate:</strong> ${esc(formatNullablePercent(windowSummary.refundRate, 1))}</span>
+        <span><strong>${esc(granularityLabel)}:</strong> ${esc(periodsShownLabel)}</span>
         <span><strong>${esc(conf.label)}:</strong> ${esc(coverageLabel)}</span>
         ${rangeLabel ? `<span>${esc(rangeLabel)}</span>` : ''}
         ${missingLabel ? `<span>${esc(missingLabel)}</span>` : ''}
@@ -509,37 +523,6 @@
       }
       if (!data) return;
 
-      const refundRateEl = document.querySelector('[data-kpi-analytics="refundRate"] .kpi-value');
-      if (refundRateEl && data.refundRate != null) {
-        refundRateEl.textContent = data.refundRate.toFixed(1) + '%';
-      }
-      const refundSubEl = document.querySelector('[data-kpi-analytics="refundRate"] .kpi-delta span');
-      if (refundSubEl) {
-        refundSubEl.textContent = formatRateMetricDetail(
-          data.metrics?.refunds,
-          `${formatKrw(data.totalRefunded || 0)} of ${formatKrw(data.totalRevenue || 0)}`
-        );
-      }
-
-      const cancelRateEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-value');
-      if (cancelRateEl && data.cancelRate != null) {
-        cancelRateEl.textContent = formatCount(data.cancelledSections || 0);
-      }
-      const cancelSubEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-delta span');
-      if (cancelSubEl) {
-        const cancelledSections = data.metrics?.cancellations?.numerator ?? data.cancelledSections ?? 0;
-        const totalSections = data.metrics?.cancellations?.denominator ?? data.totalSections ?? 0;
-        const cancelRate = data.metrics?.cancellations?.rate ?? data.cancelRate ?? 0;
-        cancelSubEl.textContent = tr(
-          `${formatPercent(cancelRate)} of ${formatCount(totalSections)} sections`,
-          `${formatCount(totalSections)}개 섹션 중 ${formatPercent(cancelRate)}`
-        );
-        cancelSubEl.setAttribute('title', tr(
-          `${formatCount(cancelledSections)} return/cancel sections out of ${formatCount(totalSections)} total sections`,
-          `총 ${formatCount(totalSections)}개 섹션 중 반품/취소 ${formatCount(cancelledSections)}개`
-        ));
-      }
-
       const charts = data.charts || {};
       const allDailyMerged = charts.dailyMerged || [];
       const orderPatternDaily = sliceRowsByWindow(allDailyMerged, 'order-patterns');
@@ -547,7 +530,6 @@
       const orderPatternWeeklyAgg = (charts.weeklyAgg || []).filter(week => week.week >= orderPatternCutoff);
       const weekdayPerf = buildWeekdayPerformance(orderPatternDaily);
       const hourlyOrders = charts.hourlyOrders || [];
-      const monthlyRefunds = charts.monthlyRefunds || [];
       const imwebSource = data.dataSources?.imweb || null;
       const sourceAudit = data.sourceAudit || null;
       const analyticsNoticeEl = document.getElementById('analyticsFreshnessNotice');
@@ -629,13 +611,6 @@
           peakHours.includes(row.hour) ? 'rgba(22, 101, 52, 0.92)' : 'rgba(22, 101, 52, 0.56)'
         );
         hourChartInstance.update();
-      }
-
-      if (monthlyRefunds.length > 0 && typeof refundChartInstance !== 'undefined' && refundChartInstance) {
-        refundChartInstance.data.labels = monthlyRefunds.map(month => month.month);
-        refundChartInstance.data.datasets[0].data = monthlyRefunds.map(month => month.revenue || 0);
-        refundChartInstance.data.datasets[1].data = monthlyRefunds.map(month => month.refunded || 0);
-        refundChartInstance.update();
       }
 
     } catch (e) {

@@ -65,7 +65,7 @@ const I18N = {
   // ── Analytics Chart Titles ──
   'chart.orderWeekday':     { en: 'Average orders & revenue in the week', kr: '요일별 평균 주문 및 매출' },
   'chart.hourVolume':       { en: 'Order Timing Distribution (KST)', kr: '주문 시간대 분포 (KST)' },
-  'chart.monthlyRefund':    { en: 'Monthly Refund Comparison',  kr: '월별 환불 비교' },
+  'chart.refundRate':       { en: 'Refund Rate', kr: '환불률' },
   'analytics.sectionKicker': { en: 'Profit Summary', kr: '수익 요약' },
   'analytics.sectionTitle':  { en: 'True profit and cost summary', kr: '실질 수익 및 비용 요약' },
   'analytics.sectionNote':   { en: 'Revenue, refunds, total costs, and true net profit in one place.', kr: '매출, 환불, 총비용, 실질 순이익을 한 곳에서 확인합니다.' },
@@ -76,8 +76,6 @@ const I18N = {
   'analytics.hero.latestWaiting': { en: 'Latest completed day: waiting for covered data.', kr: '최신 완료일: 원가 포함 데이터 대기 중.' },
   'analytics.structureKicker': { en: 'Profit Structure', kr: '수익 구조' },
   'analytics.structureTitle':  { en: 'Revenue and cost movement', kr: '매출 및 비용 흐름' },
-  'analytics.operationsKicker': { en: 'Operations Summary', kr: '운영 요약' },
-  'analytics.operationsTitle': { en: 'Refund and order quality', kr: '환불 및 주문 품질' },
   'analytics.orderPatternsKicker': { en: 'Order Patterns', kr: '주문 패턴' },
   'analytics.orderPatternsTitle': { en: 'When orders and revenue happen', kr: '주문과 매출이 발생하는 시간' },
   'analytics.qualityKicker':  { en: 'Revenue Quality', kr: '매출 품질' },

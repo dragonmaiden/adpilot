@@ -162,39 +162,13 @@
         </div>
       </div>
 
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="analytics.operationsKicker">Operations Summary</div>
-          <h2 data-i18n="analytics.operationsTitle">Refund and order quality</h2>
+      <div class="card chart-card refund-rate-card">
+        <div class="card-header">
+          <h2 data-i18n="chart.refundRate">Refund Rate</h2>
         </div>
-      </div>
-
-      <div class="refund-quality-grid">
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.monthlyRefund">Monthly Refund Comparison</h2>
-          </div>
-          <div class="chart-container" style="height:300px">
-            <canvas id="refundChart"></canvas>
-          </div>
-        </div>
-        <div class="refund-quality-kpis">
-          <div class="kpi-card" data-kpi-analytics="refundRate">
-            <div class="kpi-label" data-i18n="kpi.refundRate">Refund Rate (₩)</div>
-            <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
-            <div class="kpi-delta negative">
-              <i data-lucide="alert-triangle"></i>
-              <span>—</span>
-            </div>
-          </div>
-          <div class="kpi-card" data-kpi-analytics="cancelRate">
-            <div class="kpi-label" data-i18n="kpi.cancelRate">Return / Cancel Sections</div>
-            <div class="kpi-value" data-target="0">—</div>
-            <div class="kpi-delta negative">
-              <i data-lucide="x-circle"></i>
-              <span>—</span>
-            </div>
-          </div>
+        <div class="refund-rate-summary" id="refundRateSummary" aria-live="polite"></div>
+        <div class="chart-container" style="height:300px">
+          <canvas id="refundChart"></canvas>
         </div>
       </div>
 

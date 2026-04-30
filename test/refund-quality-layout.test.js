@@ -15,13 +15,28 @@ const css = fs.readFileSync(STYLE_PATH, 'utf8');
 const analyticsServiceJs = fs.readFileSync(ANALYTICS_SERVICE_PATH, 'utf8');
 const contractsJs = fs.readFileSync(CONTRACTS_PATH, 'utf8');
 
-test('operations summary consolidates refund chart and the two core quality cards', () => {
-  assert.match(indexHtml, /<div class="refund-quality-grid">[\s\S]*<canvas id="refundChart"><\/canvas>[\s\S]*data-kpi-analytics="refundRate"[\s\S]*data-kpi-analytics="cancelRate"/);
-  assert.doesNotMatch(indexHtml, /data-kpi-analytics="febRefundRate"/);
-  assert.doesNotMatch(indexHtml, /data-kpi-analytics="marRefundRate"/);
-  assert.match(css, /\.refund-quality-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1\.15fr\)\s*minmax\(320px,\s*0\.85fr\);[\s\S]*align-items:\s*center;/);
-  assert.match(css, /\.refund-quality-kpis\s*\{[\s\S]*grid-template-columns:\s*1fr;/);
-  assert.match(indexHtml, /Return \/ Cancel Sections/);
+test('profit structure shows a full-width refund rate chart under profit movement', () => {
+  assert.match(indexHtml, /<canvas id="profitWaterfallChart"><\/canvas>[\s\S]*<div class="card chart-card refund-rate-card">[\s\S]*id="refundRateSummary"[\s\S]*<canvas id="refundChart"><\/canvas>[\s\S]*data-i18n="analytics.orderPatternsKicker"/);
+  assert.match(indexHtml, /data-i18n="chart.refundRate"/);
+  assert.doesNotMatch(indexHtml, /analytics.operationsKicker|analytics.operationsTitle|refund-quality-grid|refund-quality-kpis/);
+  assert.doesNotMatch(indexHtml, /data-kpi-analytics="refundRate"|data-kpi-analytics="cancelRate"/);
+  assert.doesNotMatch(indexHtml, /data-kpi-analytics="febRefundRate"|data-kpi-analytics="marRefundRate"/);
+  assert.doesNotMatch(css, /\.refund-quality-grid|\.refund-quality-kpis/);
+  assert.match(css, /\.refund-rate-card\s*\{[\s\S]*margin-top:\s*var\(--space-4\);/);
+});
+
+test('refund rate chart follows the profit movement window instead of monthly refunds', () => {
+  assert.match(analyticsJs, /buildRefundRateBuckets\(waterfallBuckets\)/);
+  assert.match(analyticsJs, /sliceRowsByWindow\(pa\.waterfall \|\| \[\], 'profit-structure'\)/);
+  assert.match(analyticsJs, /formatNullableKrw\(totalRefunded\)[\s\S]*formatNullablePercent\(refundRate, 1\)[\s\S]*formatNullableKrw\(totalGrossRevenue\)/);
+  assert.match(analyticsJs, /refundRateDataset\.data = refundRateBuckets\.map\(row => row\.rate\)/);
+  assert.doesNotMatch(analyticsJs, /monthlyRefunds/);
+});
+
+test('profit movement excludes the separate refund series and uses net revenue against total costs', () => {
+  assert.match(analyticsJs, /profitWaterfallChart\.data\.datasets\[0\]\.data = waterfallBuckets\.map\(row => row\.revenue - row\.refunded\)/);
+  assert.match(analyticsJs, /profitWaterfallChart\.data\.datasets\[1\]\.data = waterfallBuckets\.map\(row =>\s*-\(row\.cogs \+ row\.cogsShipping \+ row\.adSpendKRW \+ row\.paymentFees\)/);
+  assert.doesNotMatch(analyticsJs, /Daily view refund rate|granularityLabel\)} refund rate/);
 });
 
 test('profit summary no longer renders or fetches settlement reconciliation UI', () => {

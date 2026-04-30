@@ -619,23 +619,32 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   grid-template-columns: 1fr;
 }
 
-.refund-quality-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-  gap: var(--space-4);
-  align-items: center;
+.refund-rate-card {
+  margin-top: var(--space-4);
 }
 
-.refund-quality-grid > *,
-.refund-quality-kpis > * {
-  min-width: 0;
+.refund-rate-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 20px var(--space-3);
 }
 
-.refund-quality-kpis {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-4);
-  align-self: center;
+.refund-rate-summary span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  background: var(--color-surface-offset);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 5px 10px;
+}
+
+.refund-rate-summary strong {
+  color: var(--color-text);
+  font-weight: 700;
 }
 
 .section-head {
@@ -3251,24 +3260,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   color: var(--color-text-muted);
 }
 
-.calendar-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
-  gap: var(--space-4);
-}
-
-.calendar-summary-grid-secondary {
-  grid-template-columns: repeat(auto-fit, minmax(min(185px, 100%), 1fr));
-}
-
-.calendar-summary-grid .kpi-card {
-  min-height: 0;
-}
-
-.calendar-summary-grid .kpi-value {
-  font-size: 1.3rem;
-}
-
 .calendar-callout {
   display: flex;
   align-items: center;
@@ -3521,7 +3512,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 @media (max-width: 1024px) {
   .charts-grid { grid-template-columns: 1fr; }
-  .refund-quality-grid { grid-template-columns: 1fr; }
   .calendar-viewport { grid-template-columns: 1fr; }
   .live-intraday-takeaway { grid-template-columns: 1fr; }
   .live-intraday-takeaway-side {
@@ -3785,7 +3775,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .kpi-grid { grid-template-columns: 1fr; }
   .kpi-grid.kpi-grid-4 { grid-template-columns: 1fr; }
   .kpi-grid.small { grid-template-columns: 1fr; }
-  .refund-quality-kpis { grid-template-columns: 1fr; }
 
   .topbar-status {
     width: 100%;
