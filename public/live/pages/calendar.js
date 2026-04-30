@@ -226,7 +226,7 @@
           .replace(/[^a-z0-9_-]+/g, '_')
           .replace(/^_+|_+$/g, '');
         return {
-          key: keyBase || `category_${index}`,
+          keyBase: keyBase || `category_${index}`,
           label: String(row?.label || tr('Uncategorized', '미분류')).trim() || tr('Uncategorized', '미분류'),
           revenue: Math.max(0, Math.round(toFiniteNumber(row?.revenue))),
           orderCount: toFiniteNumber(row?.orderCount),
@@ -238,7 +238,7 @@
     const total = normalized.reduce((sum, row) => sum + row.revenue, 0);
     if (total <= 0) {
       normalized = [{
-        key: 'uncategorized',
+        keyBase: 'uncategorized',
         label: tr('Uncategorized', '미분류'),
         revenue: gross,
         orderCount: 0,
@@ -251,7 +251,7 @@
         normalized[0].revenue += delta;
       } else if (delta > 0) {
         normalized.push({
-          key: 'uncategorized',
+          keyBase: 'uncategorized',
           label: tr('Uncategorized', '미분류'),
           revenue: delta,
           orderCount: 0,
@@ -274,10 +274,19 @@
     }
 
     const adjustedTotal = normalized.reduce((sum, row) => sum + row.revenue, 0);
-    return normalized.map(row => ({
-      ...row,
-      share: adjustedTotal > 0 ? row.revenue / adjustedTotal : 0,
-    }));
+    const usedCategoryKeys = new Map();
+    return normalized.map((row, index) => {
+      const { keyBase: rawBaseKey, ...categoryRow } = row;
+      const baseKey = rawBaseKey || `category_${index}`;
+      const duplicateIndex = usedCategoryKeys.get(baseKey) || 0;
+      usedCategoryKeys.set(baseKey, duplicateIndex + 1);
+
+      return {
+        ...categoryRow,
+        key: duplicateIndex === 0 ? baseKey : `${baseKey}_${duplicateIndex + 1}`,
+        share: adjustedTotal > 0 ? row.revenue / adjustedTotal : 0,
+      };
+    });
   }
 
   function getCalendarWaterfallContextLabel() {
