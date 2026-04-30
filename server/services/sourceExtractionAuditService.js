@@ -1,5 +1,6 @@
 const { getOrderCashTotals } = require('../domain/imwebPayments');
 const { formatDateInTimeZone } = require('../domain/time');
+const { getPurchases } = require('../domain/metrics');
 const { buildFinancialProjection } = require('./financialProjectionService');
 
 function asArray(value) {
@@ -21,7 +22,7 @@ function normalizeAmount(value, precision = 0) {
 }
 
 function dateRangeFromKeys(keys) {
-  const dates = asArray(keys).filter(Boolean).sort();
+  const dates = [...new Set(asArray(keys).filter(Boolean))].sort();
   return {
     firstDate: dates[0] || null,
     lastDate: dates[dates.length - 1] || null,
@@ -98,11 +99,13 @@ function summarizeMetaInsights(campaignInsights, adInsights) {
   const adRows = asArray(adInsights);
   const dates = campaignRows.map(row => row?.date_start).filter(Boolean);
   const spendUsd = campaignRows.reduce((sum, row) => sum + toNumber(row?.spend), 0);
+  const attributedPurchases = campaignRows.reduce((sum, row) => sum + getPurchases(row?.actions), 0);
 
   return {
     campaignRows: campaignRows.length,
     adRows: adRows.length,
     spendUsd: Number(spendUsd.toFixed(2)),
+    attributedPurchases: round(attributedPurchases),
     ...dateRangeFromKeys(dates),
   };
 }
@@ -116,6 +119,8 @@ function summarizeCogsData(cogsData) {
     rowCount: asArray(cogsData?.orders).length,
     itemCount: round(cogsData?.itemCount),
     orderCount: round(cogsData?.orderCount),
+    purchaseCount: round(cogsData?.purchaseCount),
+    refundCount: round(cogsData?.refundCount),
     totalCOGS: round(cogsData?.totalCOGS),
     totalShipping: round(cogsData?.totalShipping),
     totalCOGSWithShipping: round(cogsData?.totalCOGSWithShipping),
@@ -157,9 +162,11 @@ function buildProjectionReconciliation(latestData = {}, projection = buildFinanc
     compareAmounts('imweb_orders_to_revenue_gross', orderTotals.grossRevenue, revenueTotals.grossRevenue),
     compareAmounts('imweb_orders_to_revenue_refunds', orderTotals.refundedAmount, revenueTotals.refundedAmount),
     compareAmounts('imweb_orders_to_revenue_net', orderTotals.netRevenue, revenueTotals.netRevenue),
+    compareAmounts('imweb_orders_to_revenue_orders', orderTotals.recognizedOrders, revenueTotals.recognizedOrders),
     compareAmounts('revenue_to_projection_gross', revenueTotals.grossRevenue, sumRows(dailyMerged, row => row.revenue)),
     compareAmounts('revenue_to_projection_refunds', revenueTotals.refundedAmount, sumRows(dailyMerged, row => row.refunded)),
     compareAmounts('revenue_to_projection_net', revenueTotals.netRevenue, sumRows(dailyMerged, row => row.netRevenue)),
+    compareAmounts('revenue_to_projection_orders', revenueTotals.recognizedOrders, sumRows(dailyMerged, row => row.orders)),
     compareAmounts('meta_spend_to_projection_usd', metaTotals.spendUsd, sumRows(dailyMerged, row => row.spend), 0.01, 2),
     compareAmounts('meta_spend_krw_to_waterfall', sumRows(dailyMerged, row => row.spendKrw), sumRows(waterfall, row => row.adSpendKRW)),
     compareAmounts('sheets_cogs_to_waterfall', cogsTotals.totalCOGS, sumRows(waterfall, row => row.cogs)),

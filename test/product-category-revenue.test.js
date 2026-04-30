@@ -96,3 +96,10 @@ test('calendar selection keeps the sankey as the metric owner before the detaile
   assert.doesNotMatch(css, /\.calendar-summary-grid/);
   assert.match(calendarJs, /\$\{renderCalendarSankey\(selection,\s*summary\)\}[\s\S]*<h2>\$\{esc\(tr\('Daily Breakdown'/);
 });
+
+test('calendar drag selection refreshes the same selected-range summary path', () => {
+  assert.match(calendarJs, /viewportEl\.addEventListener\('pointerdown'[\s\S]*calendarState\.dragStart = dayEl\.dataset\.date;/);
+  assert.match(calendarJs, /viewportEl\.addEventListener\('pointerover'[\s\S]*calendarState\.selectionStart = calendarState\.dragStart;[\s\S]*calendarState\.selectionEnd = currentDate;/);
+  assert.match(calendarJs, /document\.addEventListener\('pointerup'[\s\S]*const shouldRefresh = calendarState\.didDrag;[\s\S]*await refreshCalendarPage\(\);/);
+  assert.match(calendarJs, /fetchCalendarAnalysis\(\{[\s\S]*selectionStart:\s*calendarState\.selectionStart,[\s\S]*selectionEnd:\s*calendarState\.selectionEnd,/);
+});

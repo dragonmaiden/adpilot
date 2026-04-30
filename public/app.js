@@ -396,11 +396,55 @@ function initCharts() {
 function initProfitCharts() {
   profitChartsInitialized = true;
   const c = getChartColors();
+  const profitMarginLabelPlugin = {
+    id: 'profitMarginLabelPlugin',
+    afterDatasetsDraw(chart) {
+      const datasetIndex = chart.data?.datasets?.findIndex(dataset => dataset?.label === 'True Net Profit');
+      if (datasetIndex < 0) return;
+
+      const dataset = chart.data.datasets[datasetIndex];
+      const margins = dataset.netProfitMargins || [];
+      const points = chart.getDatasetMeta(datasetIndex)?.data || [];
+      if (points.length === 0 || margins.length === 0) return;
+
+      const ratio = Math.min(1, Math.max(0.1, Number(dataset.netProfitMarginLabelRatio || 0.5)));
+      const labelInterval = Math.max(1, Math.round(1 / ratio));
+      const minGap = points.length > 60 ? 28 : points.length > 30 ? 24 : 0;
+      let lastLabelX = -Infinity;
+
+      const { ctx, chartArea } = chart;
+      ctx.save();
+      ctx.font = '600 10px IBM Plex Sans KR, Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
+
+      points.forEach((point, index) => {
+        const rawMargin = margins[index];
+        if (rawMargin == null) return;
+        const margin = Number(rawMargin);
+        if (!Number.isFinite(margin)) return;
+        if (index % labelInterval !== 0) return;
+        if (point.x - lastLabelX < minGap && index !== points.length - 1) return;
+
+        const label = `${Math.round(margin)}%`;
+        const y = Math.max(point.y - 8, chartArea.top + 12);
+        ctx.fillStyle = c.netProfitLine || '#111827';
+        ctx.strokeText(label, point.x, y);
+        ctx.fillText(label, point.x, y);
+        lastLabelX = point.x;
+      });
+
+      ctx.restore();
+    },
+  };
 
   const ctx = document.getElementById('profitWaterfallChart');
   if (ctx) {
     profitWaterfallChart = new Chart(ctx, {
       type: 'bar',
+      plugins: [profitMarginLabelPlugin],
       data: {
         labels: [],
         datasets: [
@@ -445,7 +489,7 @@ function initProfitCharts() {
       options: {
         maintainAspectRatio: false,
         layout: {
-          padding: { top: 10 },
+          padding: { top: 18 },
         },
         interaction: {
           mode: 'index',

@@ -57,7 +57,6 @@
       totalProfit: null,
       totalGrossRevenue: null,
       totalRefunded: null,
-      totalNetRevenue: null,
       totalOrders: null,
       totalCosts: null,
       blendedMargin: null,
@@ -195,6 +194,14 @@
     });
   }
 
+  function buildNetProfitMarginLabels(waterfallBuckets) {
+    return (Array.isArray(waterfallBuckets) ? waterfallBuckets : []).map(row => {
+      const netRevenue = toFiniteNumber(row.revenue) - toFiniteNumber(row.refunded);
+      const trueNetProfit = toFiniteNumber(row.trueNetProfit);
+      return netRevenue > 0 ? Math.round((trueNetProfit / netRevenue) * 100) : null;
+    });
+  }
+
   function syncProfitWaterfallGranularityControls() {
     document.querySelectorAll('[data-profit-waterfall-granularity]').forEach(button => {
       const isActive = button.dataset.profitWaterfallGranularity === profitWaterfallGranularity;
@@ -286,11 +293,6 @@
     const totalProfit = windowSummary.totalProfit;
     const totalGrossRevenue = windowSummary.totalGrossRevenue;
     const totalRefunded = windowSummary.totalRefunded;
-    const totalNetRevenue = hasNumericValue(windowSummary.totalNetRevenue)
-      ? windowSummary.totalNetRevenue
-      : hasNumericValue(totalGrossRevenue) && hasNumericValue(totalRefunded)
-      ? Number(totalGrossRevenue) - Number(totalRefunded)
-      : null;
     const totalOrders = windowSummary.totalOrders;
     const totalCosts = windowSummary.totalCosts;
     const blendedMargin = windowSummary.blendedMargin;
@@ -309,7 +311,6 @@
     const heroMarginEl = document.getElementById('profitHeroMargin');
     const heroRoasEl = document.getElementById('profitHeroRoas');
     const heroRunRateEl = document.getElementById('profitHeroRunRate');
-    const profitMovementSummaryEl = document.getElementById('profitMovementSummary');
     const refundRateSummaryEl = document.getElementById('refundRateSummary');
 
     if (heroKickerEl) {
@@ -398,16 +399,6 @@
       `;
     }
 
-    if (profitMovementSummaryEl) {
-      const marginTone = hasNumericValue(blendedMargin)
-        ? Number(blendedMargin) >= 0 ? 'positive' : 'negative'
-        : 'neutral';
-      profitMovementSummaryEl.innerHTML = `
-        <span class="${marginTone}"><strong>${esc(formatNullablePercent(blendedMargin, 1))}</strong> ${esc(tr('net profit margin', '순이익률'))}</span>
-        <span><strong>${esc(formatNullableSignedKrw(totalProfit))}</strong> ${esc(tr(`of ${formatNullableKrw(totalNetRevenue)} net revenue`, `순매출 ${formatNullableKrw(totalNetRevenue)} 대비`))}</span>
-      `;
-    }
-
     const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
     if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';
     const cogsSub = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-delta span');
@@ -465,6 +456,8 @@
         -(row.cogs + row.cogsShipping + row.adSpendKRW + row.paymentFees)
       );
       profitWaterfallChart.data.datasets[2].data = waterfallBuckets.map(row => row.trueNetProfit);
+      profitWaterfallChart.data.datasets[2].netProfitMargins = buildNetProfitMarginLabels(waterfallBuckets);
+      profitWaterfallChart.data.datasets[2].netProfitMarginLabelRatio = 0.5;
       profitWaterfallChart.data.datasets[2].pointBackgroundColor = '#111827';
       profitWaterfallChart.data.datasets[2].pointBorderColor = '#111827';
       profitWaterfallChart.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
@@ -511,9 +504,10 @@
       const missingLabel = missing.length > 0
         ? tr(`Missing ${missing.join(', ')}`, `누락 ${missing.join(', ')}`)
         : '';
+      const periodCount = waterfallBuckets.length;
       const periodsShownLabel = tr(
-        `${waterfallBuckets.length.toLocaleString(getLocale())} periods shown`,
-        `${waterfallBuckets.length.toLocaleString(getLocale())}개 구간 표시`
+        `${periodCount.toLocaleString(getLocale())} ${periodCount === 1 ? 'period' : 'periods'} shown`,
+        `${periodCount.toLocaleString(getLocale())}개 구간 표시`
       );
       const windowContextLabel = tr(`${windowLabel} time frame`, `${windowLabel} 기준`);
 

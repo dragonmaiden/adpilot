@@ -36,8 +36,19 @@ test('refund rate chart follows the profit movement window instead of monthly re
 test('profit movement excludes the separate refund series and uses net revenue against total costs', () => {
   assert.match(analyticsJs, /profitWaterfallChart\.data\.datasets\[0\]\.data = waterfallBuckets\.map\(row => row\.revenue - row\.refunded\)/);
   assert.match(analyticsJs, /profitWaterfallChart\.data\.datasets\[1\]\.data = waterfallBuckets\.map\(row =>\s*-\(row\.cogs \+ row\.cogsShipping \+ row\.adSpendKRW \+ row\.paymentFees\)/);
+  assert.match(analyticsJs, /const periodCount = waterfallBuckets\.length;/);
+  assert.match(analyticsJs, /periodCount === 1 \? 'period' : 'periods'/);
   assert.match(analyticsJs, /windowContextLabel[\s\S]*\$\{esc\(granularityLabel\)\}:<\/strong> \$\{esc\(windowContextLabel\)\} · \$\{esc\(periodsShownLabel\)\}/);
   assert.doesNotMatch(analyticsJs, /Daily view refund rate|granularityLabel\)} refund rate/);
+});
+
+test('profit movement data labels show true net margin from the same visible buckets', () => {
+  assert.match(analyticsJs, /function buildNetProfitMarginLabels\(waterfallBuckets\)/);
+  assert.match(analyticsJs, /const netRevenue = toFiniteNumber\(row\.revenue\) - toFiniteNumber\(row\.refunded\);/);
+  assert.match(analyticsJs, /const trueNetProfit = toFiniteNumber\(row\.trueNetProfit\);/);
+  assert.match(analyticsJs, /return netRevenue > 0 \? Math\.round\(\(trueNetProfit \/ netRevenue\) \* 100\) : null;/);
+  assert.match(analyticsJs, /netProfitMargins = buildNetProfitMarginLabels\(waterfallBuckets\)/);
+  assert.match(analyticsJs, /netProfitMarginLabelRatio = 0\.5/);
 });
 
 test('profit summary no longer renders or fetches settlement reconciliation UI', () => {

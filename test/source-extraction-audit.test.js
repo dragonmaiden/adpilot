@@ -61,6 +61,8 @@ function createLatestData(overrides = {}) {
       totalCOGSWithShipping: 35000,
       itemCount: 2,
       orderCount: 2,
+      purchaseCount: 2,
+      refundCount: 0,
       incompletePurchaseCount: 0,
       missingCostItemCount: 0,
       pendingRecoveryItemCount: 0,
@@ -156,8 +158,41 @@ test('source extraction audit reconciles canonical sources to the financial proj
   assert.deepEqual(audit.summary.failedFetches, []);
   assert.equal(audit.reconciliation.sourceTotals.imweb.grossRevenue, 150000);
   assert.equal(audit.reconciliation.sourceTotals.meta.spendUsd, 10.25);
+  assert.equal(audit.reconciliation.sourceTotals.meta.attributedPurchases, 2);
+  assert.equal(audit.reconciliation.sourceTotals.cogs.purchaseCount, 2);
+  assert.equal(audit.reconciliation.sourceTotals.cogs.refundCount, 0);
   assert.equal(audit.reconciliation.projectionTotals.adSpendKRW, 15375);
   assert.equal(audit.reconciliation.projectionTotals.trueNetProfit, 81225);
+});
+
+test('source extraction audit reports distinct source dates instead of source row counts', () => {
+  const latestData = createLatestData({
+    orders: [
+      { orderNo: 'order-1', wtime: '2026-04-30T01:00:00.000Z', totalPaymentPrice: 90000, totalRefundedPrice: 10000 },
+      { orderNo: 'order-2', wtime: '2026-04-30T02:00:00.000Z', totalPaymentPrice: 50000, totalRefundedPrice: 0 },
+    ],
+    revenueData: {
+      totalRevenue: 150000,
+      totalRefunded: 10000,
+      netRevenue: 140000,
+      totalOrders: 2,
+      dailyRevenue: {
+        '2026-04-30': { revenue: 150000, refunded: 10000, orders: 2 },
+      },
+    },
+    campaignInsights: [
+      { campaign_id: 'campaign-1', date_start: '2026-04-30', spend: '10.25', actions: [] },
+      { campaign_id: 'campaign-2', date_start: '2026-04-30', spend: '5.00', actions: [] },
+      { campaign_id: 'campaign-1', date_start: '2026-05-01', spend: '1.00', actions: [] },
+    ],
+  });
+
+  const reconciliation = buildProjectionReconciliation(latestData);
+
+  assert.equal(reconciliation.sourceTotals.imweb.rowCount, 2);
+  assert.equal(reconciliation.sourceTotals.imweb.dayCount, 1);
+  assert.equal(reconciliation.sourceTotals.meta.campaignRows, 3);
+  assert.equal(reconciliation.sourceTotals.meta.dayCount, 2);
 });
 
 test('source extraction audit reconciles Meta spend using daily KRW rounding', () => {
@@ -227,6 +262,30 @@ test('source extraction audit fails loud when Imweb cash totals drift from reven
   assert.equal(reconciliation.status, 'mismatch');
   assert.ok(reconciliation.failedChecks.includes('imweb_orders_to_revenue_gross'));
   assert.ok(reconciliation.failedChecks.includes('imweb_orders_to_revenue_net'));
+});
+
+test('source extraction audit fails loud when recognized order counts drift from projection rows', () => {
+  const latestData = createLatestData({
+    revenueData: {
+      totalRevenue: 150000,
+      totalRefunded: 10000,
+      netRevenue: 140000,
+      totalOrders: 1,
+      dailyRevenue: {
+        '2026-04-30': {
+          revenue: 150000,
+          refunded: 10000,
+          orders: 2,
+        },
+      },
+    },
+  });
+
+  const reconciliation = buildProjectionReconciliation(latestData);
+
+  assert.equal(reconciliation.status, 'mismatch');
+  assert.ok(reconciliation.failedChecks.includes('imweb_orders_to_revenue_orders'));
+  assert.ok(reconciliation.failedChecks.includes('revenue_to_projection_orders'));
 });
 
 test('source extraction audit preserves last-known-good projection but marks failed fetches', () => {

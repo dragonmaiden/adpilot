@@ -44,6 +44,16 @@ test('refund-rate labels use dark text instead of warning yellow', () => {
   assert.match(appJs, /ctx\.fillStyle\s*=\s*c\.netProfitLine\s*\|\|\s*'#111827'/);
 });
 
+test('profit margin data labels use black whole-number labels sampled at half density', () => {
+  assert.match(appJs, /id:\s*'profitMarginLabelPlugin'/);
+  assert.match(appJs, /const rawMargin = margins\[index\];[\s\S]*if \(rawMargin == null\) return;/);
+  assert.match(appJs, /const ratio = Math\.min\(1,\s*Math\.max\(0\.1,\s*Number\(dataset\.netProfitMarginLabelRatio \|\| 0\.5\)\)\);/);
+  assert.match(appJs, /const labelInterval = Math\.max\(1,\s*Math\.round\(1 \/ ratio\)\);/);
+  assert.match(appJs, /if \(index % labelInterval !== 0\) return;/);
+  assert.match(appJs, /const label = `\$\{Math\.round\(margin\)\}%`;/);
+  assert.match(appJs, /ctx\.fillStyle = c\.netProfitLine \|\| '#111827';/);
+});
+
 test('compact section headers stay visually tied to the card below', () => {
   assert.match(
     css,
