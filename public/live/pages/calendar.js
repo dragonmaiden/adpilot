@@ -215,6 +215,88 @@
     return rows.map(day => recalculateCalendarDayForFee(day, feeRate));
   }
 
+  function getCalendarCategoryRevenueRows(selection) {
+    const rows = Array.isArray(selection?.days) ? selection.days : [];
+    const fallbackRows = Array.isArray(selection?.categoryRevenue) ? selection.categoryRevenue : [];
+    const data = calendarState.data || {};
+
+    if (calendarState.waterfallGranularity === 'monthly') {
+      const selectedMonth = String(calendarState.selectionStart || rows[0]?.date || getKstDateKey()).slice(0, 7);
+      const byMonth = data.categoryRevenueByMonth || {};
+      return Array.isArray(byMonth[selectedMonth]) ? byMonth[selectedMonth] : fallbackRows;
+    }
+
+    const selectedDate = calendarState.selectionStart || rows[0]?.date;
+    const byDate = data.categoryRevenueByDate || {};
+    return selectedDate && Array.isArray(byDate[selectedDate]) ? byDate[selectedDate] : fallbackRows;
+  }
+
+  function normalizeSankeyCategoryRows(rows, grossRevenue) {
+    const gross = Math.max(0, Math.round(toFiniteNumber(grossRevenue)));
+    if (gross <= 0) return [];
+
+    let normalized = (Array.isArray(rows) ? rows : [])
+      .map((row, index) => {
+        const keyBase = String(row?.key || row?.label || `category_${index}`)
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '_')
+          .replace(/^_+|_+$/g, '');
+        return {
+          key: keyBase || `category_${index}`,
+          label: String(row?.label || tr('Uncategorized', '미분류')).trim() || tr('Uncategorized', '미분류'),
+          revenue: Math.max(0, Math.round(toFiniteNumber(row?.revenue))),
+          orderCount: toFiniteNumber(row?.orderCount),
+          order: index,
+        };
+      })
+      .filter(row => row.revenue > 0);
+
+    const total = normalized.reduce((sum, row) => sum + row.revenue, 0);
+    if (total <= 0) {
+      normalized = [{
+        key: 'uncategorized',
+        label: tr('Uncategorized', '미분류'),
+        revenue: gross,
+        orderCount: 0,
+        order: 0,
+      }];
+    } else {
+      const delta = gross - total;
+      const tolerance = Math.max(2, Math.round(gross * 0.002));
+      if (Math.abs(delta) <= tolerance && normalized.length > 0) {
+        normalized[0].revenue += delta;
+      } else if (delta > 0) {
+        normalized.push({
+          key: 'uncategorized',
+          label: tr('Uncategorized', '미분류'),
+          revenue: delta,
+          orderCount: 0,
+          order: normalized.length,
+        });
+      } else if (total > gross) {
+        const scale = gross / total;
+        normalized = normalized
+          .map(row => ({
+            ...row,
+            revenue: Math.max(0, Math.round(row.revenue * scale)),
+          }))
+          .filter(row => row.revenue > 0);
+        const scaledTotal = normalized.reduce((sum, row) => sum + row.revenue, 0);
+        const scaledDelta = gross - scaledTotal;
+        if (scaledDelta !== 0 && normalized.length > 0) {
+          normalized[0].revenue += scaledDelta;
+        }
+      }
+    }
+
+    const adjustedTotal = normalized.reduce((sum, row) => sum + row.revenue, 0);
+    return normalized.map(row => ({
+      ...row,
+      share: adjustedTotal > 0 ? row.revenue / adjustedTotal : 0,
+    }));
+  }
+
   function getCalendarWaterfallContextLabel(rows) {
     if (calendarState.waterfallGranularity === 'monthly') {
       const monthKey = String(calendarState.selectionStart || rows[0]?.date || getKstDateKey()).slice(0, 7);
@@ -566,58 +648,80 @@
     const lossV     = Math.max(0, -summary.trueNetProfit);
     const resultV   = isProfitPositive ? profitV : lossV;
     const costsTotal = cogsV + shipV + feesV + adV;
-    const largestValue = Math.max(grossV, refundedV, netV, costsTotal, cogsV, shipV, feesV, adV, resultV, 1);
+    const categoryRows = normalizeSankeyCategoryRows(getCalendarCategoryRevenueRows(selection), grossV);
+    const hasCategoryBreakdown = categoryRows.length > 0;
+    const grossColumn = hasCategoryBreakdown ? 1 : 0;
+    const revenueColumn = hasCategoryBreakdown ? 2 : 1;
+    const costsColumn = hasCategoryBreakdown ? 3 : 2;
+    const terminalColumn = hasCategoryBreakdown ? 4 : 3;
+    const largestCategoryValue = categoryRows.reduce((max, row) => Math.max(max, row.revenue), 0);
+    const largestValue = Math.max(grossV, refundedV, netV, costsTotal, cogsV, shipV, feesV, adV, resultV, largestCategoryValue, 1);
     const minVisualValue = Math.max(largestValue * 0.012, 1);
     const zeroFixedValue = value => value > 0 ? undefined : minVisualValue;
     const netShareLabel = value => netV > 0 ? formatPercent((value / netV) * 100) : '—';
     const costsSub = netV > 0
       ? tr(`${formatPercent((costsTotal / netV) * 100)} of net rev`, `순매출의 ${formatPercent((costsTotal / netV) * 100)}`)
       : tr('Cost split', '비용 분기');
+    const categoryNodes = categoryRows.map(row => ({
+      id: `category:${row.key}`,
+      key: `category:${row.key}`,
+      label: row.label,
+      displayValue: formatKrw(row.revenue),
+      sub: tr(`${formatPercent(row.share * 100, 0)} of gross`, `총매출의 ${formatPercent(row.share * 100, 0)}`),
+      tone: 'positive',
+      column: 0,
+      order: row.order,
+      labelSide: 'left',
+      titleAttr: row.orderCount > 0
+        ? tr(`${formatCount(row.orderCount)} orders`, `주문 ${formatCount(row.orderCount)}건`)
+        : '',
+    }));
 
     const nodes = [
+      ...categoryNodes,
       { id: 'gross', key: 'gross', label: tr('Gross Revenue', '총매출'),
         displayValue: formatKrw(summary.grossRevenue),
         sub: tr(`${formatCount(orderCount)} orders`, `주문 ${formatCount(orderCount)}건`),
-        tone: grossV > 0 ? 'positive' : 'neutral', column: 0, order: 1,
+        tone: grossV > 0 ? 'positive' : 'neutral', column: grossColumn, order: 1,
         fixedValue: zeroFixedValue(grossV) },
       { id: 'refunded', key: 'refunded', label: tr('Refunded', '환불'),
         displayValue: expenseValue(summary.refundedAmount),
         sub: tr(`${formatPercent(summary.refundRate || 0)} refund rate`, `환불률 ${formatPercent(summary.refundRate || 0)}`),
-        tone: refundedV > 0 ? 'negative' : 'neutral', column: 1, order: 0,
+        tone: refundedV > 0 ? 'negative' : 'neutral', column: revenueColumn, order: 0,
         fixedValue: zeroFixedValue(refundedV) },
       { id: 'net', key: 'net', label: tr('Net Revenue', '순매출'),
         displayValue: formatKrw(summary.netRevenue),
         sub: tr(`${formatCount(summary.dayCount || 0)} days`, `${formatCount(summary.dayCount || 0)}일`),
-        tone: netV > 0 ? 'positive' : 'neutral', column: 1, order: 1,
+        tone: netV > 0 ? 'positive' : 'neutral', column: revenueColumn, order: 1,
         fixedValue: zeroFixedValue(netV) },
       { id: 'costs', key: 'costs', label: tr('Costs', '비용'),
         displayValue: expenseValue(costsTotal), sub: costsSub,
-        tone: 'negative', column: 2, order: 1, labelSide: 'left',
+        tone: 'negative', column: costsColumn, order: 1, labelSide: 'left',
         fixedValue: zeroFixedValue(costsTotal + (!isProfitPositive ? lossV : 0)) },
       { id: 'profit', key: 'profit',
         label: isProfitPositive ? tr('True Net Profit', '실질 순이익') : tr('True Net Loss', '실질 순손실'),
         displayValue: formatSignedKrw(summary.trueNetProfit), sub: resultSub,
         tone: isProfitPositive ? 'positive' : 'negative',
-        column: 3, order: isProfitPositive ? 0 : 5, terminal: true,
+        column: terminalColumn, order: isProfitPositive ? 0 : 5, terminal: true,
         fixedValue: zeroFixedValue(resultV) },
       { id: 'cogs', key: 'cogs', label: 'COGS',
         displayValue: expenseValue(summary.cogs),
         sub: netV > 0 ? tr(`${netShareLabel(cogsV)} of net rev`, `순매출의 ${netShareLabel(cogsV)}`) : coverageLabel,
-        tone: cogsV > 0 ? 'negative' : 'neutral', column: 3, order: 1,
+        tone: cogsV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 1,
         fixedValue: zeroFixedValue(cogsV) },
       { id: 'shipping', key: 'shipping', label: tr('Shipping', '배송비'),
         displayValue: expenseValue(summary.shipping),
         sub: netV > 0 ? tr(`${netShareLabel(shipV)} of net rev`, `순매출의 ${netShareLabel(shipV)}`) : shippingSub,
-        tone: shipV > 0 ? 'negative' : 'neutral', column: 3, order: 2,
+        tone: shipV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 2,
         fixedValue: zeroFixedValue(shipV) },
       { id: 'fees', key: 'fees', label: tr('Payment Fees', '결제 수수료'),
         displayValue: expenseValue(summary.paymentFees),
         sub: netV > 0 ? tr(`${netShareLabel(feesV)} of net rev`, `순매출의 ${netShareLabel(feesV)}`) : tr(`${formatCount(orderCount)} transactions`, `거래 ${formatCount(orderCount)}건`),
-        tone: feesV > 0 ? 'negative' : 'neutral', column: 3, order: 3,
+        tone: feesV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 3,
         fixedValue: zeroFixedValue(feesV) },
       { id: 'adSpend', key: 'adSpend', label: tr('Ad Spend', '광고비'),
         displayValue: expenseValue(summary.adSpendKRW), sub: adSpendSub,
-        tone: adV > 0 ? 'negative' : 'neutral', column: 3, order: isProfitPositive ? 5 : 4,
+        tone: adV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: isProfitPositive ? 5 : 4,
         titleAttr: adSpendUsdTitle, fixedValue: zeroFixedValue(adV) },
     ];
 
@@ -635,6 +739,9 @@
       });
     };
 
+    for (const row of categoryRows) {
+      addLink(`category:${row.key}`, 'gross', row.revenue, 'positive', row.order);
+    }
     addLink('gross', 'refunded', refundedV, 'negative', 0);
     if (refundedV <= 0 && grossV > 0) {
       addLink('gross', 'refunded', 0, 'neutral', 0, { guide: true });
@@ -672,7 +779,7 @@
       .nodeSort((a, b) => (a.order || 0) - (b.order || 0))
       .linkSort((a, b) => (a.order || 0) - (b.order || 0))
       .nodeAlign(node => node.column)
-      .extent([[72, 66], [880, 462]]);
+      .extent(hasCategoryBreakdown ? [[170, 74], [1080, 500]] : [[96, 74], [1080, 500]]);
     const graph = layout({
       nodes: nodes.map(node => ({ ...node })),
       links: links.map(link => ({ ...link })),
@@ -696,9 +803,9 @@
       }, new Map());
     labelGroups.forEach(group => {
       const sorted = group.sort((left, right) => (left.order || 0) - (right.order || 0));
-      const minGap = 60;
-      const topBound = 82;
-      const bottomBound = 444;
+      const minGap = group.length > 5 ? 54 : 60;
+      const topBound = 84;
+      const bottomBound = 492;
       let cursor = topBound;
       sorted.forEach(node => {
         const naturalCenter = node.y + node.h / 2;
@@ -751,7 +858,7 @@
       return `<div class="calendar-sankey-missing">${esc(tr('Sankey engine did not load.', 'Sankey 엔진을 불러오지 못했습니다.'))}</div>`;
     }
     return `
-      <svg class="calendar-sankey-svg" viewBox="0 0 1080 520" role="list" aria-label="${esc(tr('Profit Sankey with 8 financial components', '8개 재무 구성 요소 수익 Sankey'))}">
+      <svg class="calendar-sankey-svg" viewBox="0 0 1280 560" role="list" aria-label="${esc(tr('Profit Sankey with product category inflows', '상품 카테고리 유입 포함 수익 Sankey'))}">
         ${viewModel.flows.map(renderSankeyFlow).join('')}
         ${viewModel.nodes.map(renderSankeyNode).join('')}
       </svg>
@@ -789,7 +896,7 @@
           </div>
         </div>
         <div class="calendar-sankey-stage">
-          <div class="calendar-sankey-canvas" role="list" aria-label="${esc(tr('Profit Sankey with 8 financial components', '8개 재무 구성 요소 수익 Sankey'))}">
+          <div class="calendar-sankey-canvas" role="list" aria-label="${esc(tr('Profit Sankey with product category inflows', '상품 카테고리 유입 포함 수익 Sankey'))}">
             ${renderSankeyBodyMarkup(viewModel)}
           </div>
         </div>

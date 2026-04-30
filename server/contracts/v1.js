@@ -148,7 +148,7 @@ function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, m
 /**
  * Build /api/calendar-analysis response.
  */
-function calendarAnalysis({ ready, viewport, calendarDays, selection }) {
+function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, selection }) {
   return {
     apiVersion: API_VERSION,
     ready: ready !== false,
@@ -161,11 +161,14 @@ function calendarAnalysis({ ready, viewport, calendarDays, selection }) {
       months: viewport?.months ?? [],
     },
     calendarDays: calendarDays ?? [],
+    categoryRevenueByDate: categoryRevenueByDate ?? {},
+    categoryRevenueByMonth: categoryRevenueByMonth ?? {},
     selection: {
       label: selection?.label ?? '',
       dayCount: selection?.dayCount ?? 0,
       summary: selection?.summary ?? {},
       days: selection?.days ?? [],
+      categoryRevenue: selection?.categoryRevenue ?? [],
       orders: selection?.orders ?? [],
       products: selection?.products ?? [],
       campaigns: selection?.campaigns ?? [],

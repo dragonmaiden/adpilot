@@ -3288,7 +3288,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   position: relative;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: var(--space-2) 0;
+  padding: var(--space-2) 0 0;
   scrollbar-width: thin;
 }
 
@@ -3311,9 +3311,10 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .calendar-sankey-canvas {
   position: relative;
-  width: 1080px;
-  height: 520px;
-  min-width: 920px;
+  width: 100%;
+  min-width: min(1120px, 100%);
+  min-height: 500px;
+  aspect-ratio: 1280 / 560;
 }
 
 .calendar-sankey-svg {
@@ -3710,9 +3711,9 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   }
 
   .calendar-sankey-canvas {
-    width: 1080px;
-    height: 520px;
-    min-width: 1080px;
+    width: 100%;
+    min-width: 980px;
+    min-height: 480px;
   }
 
   .calendar-day {

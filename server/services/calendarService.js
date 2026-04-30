@@ -11,6 +11,7 @@ const {
   getPurchases,
 } = require('../domain/metrics');
 const { getOrderCashTotals } = require('../domain/imwebPayments');
+const { buildProductCategoryRevenue } = require('../domain/productCategories');
 const {
   KST_TIME_ZONE,
   formatDateInTimeZone,
@@ -800,6 +801,16 @@ async function getCalendarAnalysisResponse(query = {}) {
     month: day.date.slice(0, 7),
     revenueIntensity: maxRevenue > 0 ? Number((day.revenue / maxRevenue).toFixed(3)) : 0,
   }));
+  const categoryRevenueByDate = Object.fromEntries(
+    visibleDates.map(date => [date, buildProductCategoryRevenue(ordersByDate.get(date) || [])])
+  );
+  const categoryRevenueByMonth = Object.fromEntries(
+    (viewport.months || []).map(month => {
+      const monthKey = month?.key || month?.month || String(month?.start || '').slice(0, 7);
+      const monthOrders = visibleOrders.filter(order => String(getOrderDateKey(order) || '').startsWith(`${monthKey}-`));
+      return [monthKey, buildProductCategoryRevenue(monthOrders)];
+    }).filter(([monthKey]) => /^\d{4}-\d{2}$/.test(String(monthKey || '')))
+  );
 
   const selectionDayRows = visibleDayRows.filter(day =>
     compareDateKeys(day.date, viewport.selectionStart) >= 0 && compareDateKeys(day.date, viewport.selectionEnd) <= 0
@@ -819,6 +830,8 @@ async function getCalendarAnalysisResponse(query = {}) {
     ready: true,
     viewport,
     calendarDays,
+    categoryRevenueByDate,
+    categoryRevenueByMonth,
     selection: {
       label: viewport.selectionStart === viewport.selectionEnd
         ? viewport.selectionStart
@@ -826,6 +839,7 @@ async function getCalendarAnalysisResponse(query = {}) {
       dayCount: selectionDates.length,
       summary: selectionSummary,
       days: selectionDayRows,
+      categoryRevenue: buildProductCategoryRevenue(selectionOrders),
       orders: buildOrderLedgerRows(selectionOrders),
       products: buildProductExplorerRows(selectionOrders, cogs.items || []),
       campaigns: buildCampaignRows(selectionInsights, data.campaigns || [], selectionSummary),
