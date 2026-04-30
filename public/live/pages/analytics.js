@@ -57,6 +57,7 @@
       totalProfit: null,
       totalGrossRevenue: null,
       totalRefunded: null,
+      totalNetRevenue: null,
       totalOrders: null,
       totalCosts: null,
       blendedMargin: null,
@@ -285,6 +286,11 @@
     const totalProfit = windowSummary.totalProfit;
     const totalGrossRevenue = windowSummary.totalGrossRevenue;
     const totalRefunded = windowSummary.totalRefunded;
+    const totalNetRevenue = hasNumericValue(windowSummary.totalNetRevenue)
+      ? windowSummary.totalNetRevenue
+      : hasNumericValue(totalGrossRevenue) && hasNumericValue(totalRefunded)
+      ? Number(totalGrossRevenue) - Number(totalRefunded)
+      : null;
     const totalOrders = windowSummary.totalOrders;
     const totalCosts = windowSummary.totalCosts;
     const blendedMargin = windowSummary.blendedMargin;
@@ -303,6 +309,7 @@
     const heroMarginEl = document.getElementById('profitHeroMargin');
     const heroRoasEl = document.getElementById('profitHeroRoas');
     const heroRunRateEl = document.getElementById('profitHeroRunRate');
+    const profitMovementSummaryEl = document.getElementById('profitMovementSummary');
     const refundRateSummaryEl = document.getElementById('refundRateSummary');
 
     if (heroKickerEl) {
@@ -391,6 +398,16 @@
       `;
     }
 
+    if (profitMovementSummaryEl) {
+      const marginTone = hasNumericValue(blendedMargin)
+        ? Number(blendedMargin) >= 0 ? 'positive' : 'negative'
+        : 'neutral';
+      profitMovementSummaryEl.innerHTML = `
+        <span class="${marginTone}"><strong>${esc(formatNullablePercent(blendedMargin, 1))}</strong> ${esc(tr('net profit margin', '순이익률'))}</span>
+        <span><strong>${esc(formatNullableSignedKrw(totalProfit))}</strong> ${esc(tr(`of ${formatNullableKrw(totalNetRevenue)} net revenue`, `순매출 ${formatNullableKrw(totalNetRevenue)} 대비`))}</span>
+      `;
+    }
+
     const cogsKpi = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-value');
     if (cogsKpi) cogsKpi.textContent = (coverage.coverageRatio * 100).toFixed(0) + '%';
     const cogsSub = document.querySelector('[data-profit-kpi="cogsCoverage"] .kpi-delta span');
@@ -462,6 +479,13 @@
       refundRateDataset.data = refundRateBuckets.map(row => row.rate);
       refundRateDataset.revenue = refundRateBuckets.map(row => row.revenue);
       refundRateDataset.refunded = refundRateBuckets.map(row => row.refunded);
+      const maxRefundRate = refundRateBuckets.reduce((max, row) => {
+        const rate = Number(row.rate);
+        return Number.isFinite(rate) ? Math.max(max, rate) : max;
+      }, 0);
+      refundChartInstance.options.scales.y.suggestedMax = maxRefundRate > 0
+        ? Math.max(5, Math.ceil((maxRefundRate * 1.2) / 5) * 5)
+        : 5;
       refundChartInstance.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
       refundChartInstance.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
       refundChartInstance.update();

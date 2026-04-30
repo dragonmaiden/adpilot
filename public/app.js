@@ -444,6 +444,9 @@ function initProfitCharts() {
       },
       options: {
         maintainAspectRatio: false,
+        layout: {
+          padding: { top: 10 },
+        },
         interaction: {
           mode: 'index',
           intersect: false,
