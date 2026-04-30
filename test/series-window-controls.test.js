@@ -9,8 +9,7 @@ const indexHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 const EXPECTED_GROUP_OPTIONS = ['7d', '14d', '30d', 'all'];
 const EXPECTED_DEFAULTS = {
   'profit-structure': 'all',
-  'media-profitability': '30d',
-  'revenue-quality': 'all',
+  'order-patterns': 'all',
 };
 
 function escapeRegExp(value) {

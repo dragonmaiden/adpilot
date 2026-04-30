@@ -1,10 +1,9 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, safeConfidenceLevel, formatSignedKrw, formatSignedCompactKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum, tr, getLocale } = live.shared;
-  const { fetchAnalytics, fetchReconciliation } = live.api;
+  const { esc, safeConfidenceLevel, formatSignedKrw, formatSignedCompactKrw, formatKrw, formatPercent, formatCount, tr, getLocale } = live.shared;
+  const { fetchAnalytics } = live.api;
   const { getSeriesWindowMeta, sliceRowsByWindow } = live.seriesWindows;
   let cachedAnalyticsData = null;
-  let cachedReconciliation;
   let profitWaterfallGranularity = 'day';
 
   function formatRateMetricDetail(metric, fallback) {
@@ -29,14 +28,6 @@
     }
 
     return fallback;
-  }
-
-  function summarizeBy(values, selector) {
-    return (Array.isArray(values) ? values : []).reduce((summary, value) => {
-      const key = selector(value);
-      summary[key] = (summary[key] || 0) + 1;
-      return summary;
-    }, {});
   }
 
   function toFiniteNumber(value) {
@@ -236,19 +227,9 @@
     }
   }
 
-  function renderCampaignSummaryCard(label, value, detail, tone = 'neutral', icon = 'bar-chart-3') {
+  function renderOrderPatternChip(label, value, detail = '') {
     return `
-      <div class="kpi-card">
-        <div class="kpi-label">${esc(label)}</div>
-        <div class="kpi-value">${esc(value)}</div>
-        <div class="kpi-delta ${esc(tone)}"><i data-lucide="${esc(icon)}"></i><span>${esc(detail)}</span></div>
-      </div>
-    `;
-  }
-
-  function renderMediaEfficiencyChip(label, value, detail = '') {
-    return `
-      <span class="media-efficiency-chip">
+      <span class="order-pattern-chip">
         <span>${esc(label)}</span>
         <strong>${esc(value)}</strong>
         ${detail ? `<span>${esc(detail)}</span>` : ''}
@@ -290,41 +271,6 @@
     }));
   }
 
-  function buildReconciliationOverlap(dailyRows, matches, unmatchedSettlements, unmatchedImwebPayments) {
-    const mismatchMatches = matches.filter(match => match.methodMismatch);
-    return {
-      matchedCount: matches.length,
-      netAmount: dailyRows.reduce((sum, day) => sum + toFiniteNumber(day.matched?.netAmount), 0),
-      methodMismatchCount: mismatchMatches.length,
-      methodMismatchAmount: mismatchMatches.reduce((sum, match) => sum + toFiniteNumber(match.amount), 0),
-      confidence: summarizeBy(matches, match => match.confidence || 'low'),
-      unmatchedSettlementCount: unmatchedSettlements.length,
-      unmatchedImwebCount: unmatchedImwebPayments.length,
-    };
-  }
-
-  function buildVisibleReconciliationReport(report, group) {
-    const daily = sliceRowsByWindow(report?.daily || [], group);
-    const visibleDates = new Set(daily.map(day => day.date));
-    const matches = (report?.matches || []).filter(match =>
-      visibleDates.has(match?.settlement?.tradedDate || match?.imwebPayment?.completedDate)
-    );
-    const unmatchedSettlements = (report?.unmatchedSettlements || []).filter(item => visibleDates.has(item?.tradedDate));
-    const unmatchedImwebPayments = (report?.unmatchedImwebPayments || []).filter(item => visibleDates.has(item?.completedDate));
-
-    return {
-      ...report,
-      daily,
-      summary: {
-        ...(report?.summary || {}),
-        overlap: buildReconciliationOverlap(daily, matches, unmatchedSettlements, unmatchedImwebPayments),
-      },
-      matches,
-      unmatchedSettlements,
-      unmatchedImwebPayments,
-    };
-  }
-
   function renderProfitAnalysisSection(data) {
     if (!data || !data.profitAnalysis) return;
 
@@ -333,12 +279,6 @@
     const windowMeta = getSeriesWindowMeta('profit-structure');
     const windowSummary = getProfitWindowSummary(pa, windowMeta.key);
     const windowCoverage = windowSummary.coverage || emptyCoverage();
-    const mediaWindowMeta = getSeriesWindowMeta('media-profitability');
-    const campaignProfitWindow = pa.campaignProfitWindows?.[mediaWindowMeta.key]
-      || pa.campaignProfitWindows?.all
-      || { campaigns: pa.campaignProfit || [], summary: {} };
-    const campaignProfit = Array.isArray(campaignProfitWindow.campaigns) ? campaignProfitWindow.campaigns : [];
-    const campaignSummary = campaignProfitWindow.summary || {};
     const overallCoverage = pa.coverage || {
       totalDays: waterfall.length,
       daysWithCOGS: 0,
@@ -510,105 +450,11 @@
         -(row.cogs + row.cogsShipping + row.adSpendKRW + row.paymentFees)
       );
       profitWaterfallChart.data.datasets[3].data = waterfallBuckets.map(row => row.trueNetProfit);
-      profitWaterfallChart.data.datasets[3].pointBackgroundColor = waterfallBuckets.map(row =>
-        row.trueNetProfit >= 0 ? '#4ade80' : '#f87171'
-      );
+      profitWaterfallChart.data.datasets[3].pointBackgroundColor = '#111827';
+      profitWaterfallChart.data.datasets[3].pointBorderColor = '#111827';
       profitWaterfallChart.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
       profitWaterfallChart.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
       profitWaterfallChart.update();
-    }
-
-    const tbody = document.getElementById('campaignProfitBody');
-    const summaryEl = document.getElementById('campaignProfitSummary');
-    const contextEl = document.getElementById('campaignProfitContext');
-    const noteEl = document.getElementById('campaignProfitWindowNote');
-    const estimatedProfit = Number(campaignSummary.estimatedProfit || 0);
-    const estimatedRevenue = Number(campaignSummary.estimatedMetaRevenue || 0);
-    const campaignSpendKRW = Number(campaignSummary.spendKRW || 0);
-    const totalMetaPurchases = Number(campaignSummary.totalMetaPurchases || 0);
-    const attributedShare = Number(campaignSummary.attributableRevenueShare || 0) * 100;
-    const campaignRowsForTable = campaignProfit
-      .filter(campaign => {
-        const status = String(campaign.status || '').toUpperCase();
-        return status === 'ACTIVE'
-          || Number(campaign.spend || 0) > 0
-          || Number(campaign.metaPurchases || 0) > 0
-          || Number(campaign.estimatedRevenue || 0) > 0
-          || Number(campaign.grossProfit || 0) !== 0;
-      })
-      .sort((left, right) => {
-        const leftActive = String(left.status || '').toUpperCase() === 'ACTIVE';
-        const rightActive = String(right.status || '').toUpperCase() === 'ACTIVE';
-        if (leftActive !== rightActive) return leftActive ? -1 : 1;
-        return Number(right.grossProfit || 0) - Number(left.grossProfit || 0);
-      });
-
-    if (noteEl) {
-      noteEl.textContent = tr(
-        `Revenue estimated (pixel-attributed) · ${mediaWindowMeta.label} time frame`,
-        `매출은 픽셀 귀속 기준 추정 · ${mediaWindowMeta.label} 기준`
-      );
-    }
-
-    if (summaryEl) {
-      const profitTone = estimatedProfit > 0 ? 'positive' : estimatedProfit < 0 ? 'negative' : 'neutral';
-      summaryEl.innerHTML = [
-        renderCampaignSummaryCard(
-          tr('Campaign Spend', '캠페인 지출'),
-          formatKrw(campaignSpendKRW),
-          formatUsd(campaignSummary.spend || 0, 2),
-          campaignSpendKRW > 0 ? 'negative' : 'neutral',
-          'credit-card'
-        ),
-        renderCampaignSummaryCard(
-          tr('Meta Purchases', '메타 구매'),
-          formatCount(totalMetaPurchases),
-          tr(`${formatCount(campaignSummary.activeCampaigns || 0)} active campaigns`, `집행중 캠페인 ${formatCount(campaignSummary.activeCampaigns || 0)}개`),
-          totalMetaPurchases > 0 ? 'positive' : 'neutral',
-          'mouse-pointer-2'
-        ),
-        renderCampaignSummaryCard(
-          tr('Est. Revenue', '추정 매출'),
-          formatKrw(estimatedRevenue),
-          tr(`${formatPercent(attributedShare, 0)} of net revenue model`, `순매출 모델의 ${formatPercent(attributedShare, 0)}`),
-          estimatedRevenue > 0 ? 'positive' : 'neutral',
-          'receipt'
-        ),
-        renderCampaignSummaryCard(
-          tr('Est. Profit', '추정 이익'),
-          formatSignedKrw(estimatedProfit),
-          tr(`${formatCount(campaignSummary.profitableCampaigns || 0)} profitable campaigns`, `수익 캠페인 ${formatCount(campaignSummary.profitableCampaigns || 0)}개`),
-          profitTone,
-          'trending-up'
-        ),
-      ].join('');
-    }
-
-    if (contextEl) {
-      const confidence = campaignSummary.confidenceLabel || campaignSummary.confidence || tr('estimate', '추정');
-      contextEl.textContent = tr(
-        `${mediaWindowMeta.label} estimate · ${campaignSummary.windowStart || '—'} to ${campaignSummary.windowEnd || '—'} · ${confidence}`,
-        `${mediaWindowMeta.label} 추정 · ${campaignSummary.windowStart || '—'} ~ ${campaignSummary.windowEnd || '—'} · ${confidence}`
-      );
-    }
-
-    if (tbody) {
-      tbody.innerHTML = campaignRowsForTable.length > 0 ? campaignRowsForTable.map(campaign => {
-        const statusClass = campaign.status === 'ACTIVE' ? 'badge-success' : 'badge-neutral';
-        const profitColor = campaign.grossProfit >= 0 ? 'var(--color-success)' : 'var(--color-error)';
-        const estimatedRoas = Number(campaign.estimatedRoas || 0);
-        return `<tr>
-          <td class="cell-primary cell-wrap" title="${esc(campaign.campaignId)}">${esc(campaign.campaignName)}</td>
-          <td class="cell-fit cell-nowrap"><span class="badge ${statusClass}">${esc(campaign.status === 'ACTIVE' ? tr('ACTIVE', '집행중') : campaign.status === 'PAUSED' ? tr('PAUSED', '중지') : (campaign.status || '—'))}</span></td>
-          <td class="cell-fit cell-nowrap">$${campaign.spend.toFixed(2)}<br><span style="font-size:0.7rem;color:var(--color-text-faint)">₩${campaign.spendKRW.toLocaleString()}</span></td>
-          <td class="cell-fit cell-nowrap">${Number(campaign.metaPurchases || 0).toLocaleString(getLocale())}</td>
-          <td class="cell-fit cell-nowrap">₩${campaign.estimatedRevenue.toLocaleString()}</td>
-          <td class="cell-fit cell-nowrap">₩${campaign.allocatedCOGS.toLocaleString()}</td>
-          <td class="cell-fit cell-nowrap" style="color:${profitColor};font-weight:600">₩${campaign.grossProfit.toLocaleString()}</td>
-          <td class="cell-fit cell-nowrap" style="color:${estimatedRoas >= 1 ? 'var(--color-success)' : 'var(--color-error)'}">${estimatedRoas.toFixed(2)}x</td>
-          <td class="cell-fit cell-nowrap" style="color:${profitColor}">${campaign.margin.toFixed(1)}%</td>
-        </tr>`;
-      }).join('') : `<tr><td colspan="9" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No campaign estimates in this time frame.', '이 기간에는 캠페인 추정치가 없습니다.'))}</td></tr>`;
     }
 
     const profitMovementFootnote = document.getElementById('profitMovementFootnote');
@@ -641,111 +487,6 @@
     }
   }
 
-  function updateReconciliationSection(report) {
-    const statusEl = document.getElementById('reconciliationStatus');
-    const noteEl = document.getElementById('reconciliationNote');
-    const windowEl = document.getElementById('reconciliationWindow');
-    const bodyEl = document.getElementById('reconciliationBody');
-    const visibleReport = report && report.ready !== false
-      ? buildVisibleReconciliationReport(report, 'revenue-quality')
-      : report;
-    const rangeMeta = getSeriesWindowMeta('revenue-quality');
-
-    if (windowEl) {
-      windowEl.textContent = report?.matchWindowMinutes
-        ? tr(`Match time frame ${report.matchWindowMinutes}m · ${rangeMeta.label} view`, `매칭 범위 ${report.matchWindowMinutes}분 · ${rangeMeta.label} 보기`)
-        : tr(`${rangeMeta.label} view`, `${rangeMeta.label} 보기`);
-    }
-
-    if (!report || report.ready === false) {
-      if (statusEl) {
-        statusEl.className = 'badge badge-neutral';
-        statusEl.textContent = tr('Unavailable', '사용 불가');
-      }
-      if (noteEl) {
-        noteEl.textContent = tr('Settlement reconciliation is unavailable because no settlement source is configured.', '정산 소스가 설정되지 않아 정산 대사가 불가능합니다.');
-      }
-      if (bodyEl) {
-        bodyEl.innerHTML = `<tr><td colspan="6" style="color:var(--color-text-faint)">${esc(tr('Settlement reconciliation is unavailable.', '정산 대사를 사용할 수 없습니다.'))}</td></tr>`;
-      }
-      return;
-    }
-
-    const overlap = visibleReport.summary?.overlap || {};
-    const matchedNet = overlap.netAmount || 0;
-    const unmatchedSettlementCount = overlap.unmatchedSettlementCount || 0;
-    const unmatchedImwebCount = overlap.unmatchedImwebCount || 0;
-    const methodMismatchCount = overlap.methodMismatchCount || 0;
-    const methodMismatchAmount = overlap.methodMismatchAmount || 0;
-
-    if (statusEl) {
-      if (methodMismatchCount > 0) {
-        statusEl.className = 'badge badge-warning';
-        statusEl.textContent = tr('Check Mapping', '매핑 확인');
-      } else if (unmatchedSettlementCount > 0 || unmatchedImwebCount > 0) {
-        statusEl.className = 'badge badge-neutral';
-        statusEl.textContent = tr('Partial Match', '부분 일치');
-      } else {
-        statusEl.className = 'badge badge-success';
-        statusEl.textContent = tr('Aligned', '일치');
-      }
-    }
-
-    const reconKpis = {
-      matchedNet: {
-        value: formatSignedKrw(matchedNet),
-        sub: tr(`${overlap.matchedCount || 0} matched events`, `일치 이벤트 ${Number(overlap.matchedCount || 0).toLocaleString(getLocale())}건`),
-      },
-      unmatchedSettlement: {
-        value: String(unmatchedSettlementCount),
-        sub: tr(`${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))} settlement gap`, `정산 차이 ${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedSettlement?.netAmount || 0), 0))}`),
-      },
-      unmatchedImweb: {
-        value: String(unmatchedImwebCount),
-        sub: tr(`${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))} imweb gap`, `Imweb 차이 ${formatSignedKrw((visibleReport.daily || []).reduce((sum, day) => sum + (day.unmatchedImweb?.netAmount || 0), 0))}`),
-      },
-      methodMismatch: {
-        value: String(methodMismatchCount),
-        sub: methodMismatchCount > 0 ? tr(`${formatSignedKrw(methodMismatchAmount)} flagged`, `${formatSignedKrw(methodMismatchAmount)} 표시됨`) : tr('No method drift', '결제 방식 차이 없음'),
-      },
-    };
-
-    Object.entries(reconKpis).forEach(([key, meta]) => {
-      const valueEl = document.querySelector(`[data-recon-kpi="${key}"] .kpi-value`);
-      const subEl = document.querySelector(`[data-recon-kpi="${key}"] .kpi-delta span`);
-      if (valueEl) valueEl.textContent = meta.value;
-      if (subEl) subEl.textContent = meta.sub;
-    });
-
-    if (noteEl) {
-      const confidence = overlap.confidence || {};
-      const high = confidence.high || 0;
-      const medium = confidence.medium || 0;
-      const low = confidence.low || 0;
-      noteEl.textContent = visibleReport.daily.length === 0
-        ? tr('No reconciliation rows fall inside the selected time frame.', '선택한 기간에 해당하는 대사 행이 없습니다.')
-        : methodMismatchCount > 0
-        ? tr(`${high} high / ${medium} medium / ${low} low-confidence matches. Matched settlement rows are currently colliding with non-card IMWEB payment labels, so treat this as a validation signal rather than a direct payment-method map.`, `높음 ${high}건 / 중간 ${medium}건 / 낮음 ${low}건 일치입니다. 현재 카드 외 IMWEB 결제 라벨과 일부 충돌하므로 직접적인 결제수단 매핑이 아니라 검증 신호로 해석하세요.`)
-        : tr(`${high} high / ${medium} medium / ${low} low-confidence matches across the selected settlement time frame.`, `선택한 정산 기간 기준 높음 ${high}건 / 중간 ${medium}건 / 낮음 ${low}건 일치입니다.`);
-    }
-
-    if (bodyEl) {
-      const rows = (visibleReport.daily || []).slice().reverse();
-      bodyEl.innerHTML = rows.length > 0
-        ? rows.map(day => `
-            <tr>
-              <td style="font-weight:600">${esc(day.date)}</td>
-              <td>${formatSignedKrw(day.settlement?.netAmount || 0)}</td>
-              <td>${formatSignedKrw(day.imweb?.netAmount || 0)}</td>
-              <td style="color:var(--color-success)">${formatSignedKrw(day.matched?.netAmount || 0)}</td>
-              <td style="color:${(day.unmatchedSettlement?.netAmount || 0) === 0 ? 'var(--color-text)' : 'var(--color-warning)'}">${formatSignedKrw(day.unmatchedSettlement?.netAmount || 0)}</td>
-              <td style="color:${(day.unmatchedImweb?.netAmount || 0) === 0 ? 'var(--color-text)' : 'var(--color-warning)'}">${formatSignedKrw(day.unmatchedImweb?.netAmount || 0)}</td>
-            </tr>
-          `).join('')
-        : `<tr><td colspan="6" style="color:var(--color-text-faint)">${esc(tr('No reconciliation rows available.', '대사 행이 없습니다.'))}</td></tr>`;
-    }
-  }
-
   async function refreshAnalyticsPage(options = {}) {
     try {
       if (
@@ -757,20 +498,14 @@
       }
 
       let data = cachedAnalyticsData;
-      let reconciliation = cachedReconciliation;
       const shouldReuseCache = Boolean(
         options?.preferCached
         && cachedAnalyticsData
-        && cachedReconciliation !== undefined
       );
       if (!shouldReuseCache) {
-        [data, reconciliation] = await Promise.all([
-          fetchAnalytics(),
-          fetchReconciliation(),
-        ]);
+        data = await fetchAnalytics();
         if (!data) return;
         cachedAnalyticsData = data;
-        cachedReconciliation = reconciliation || null;
       }
       if (!data) return;
 
@@ -788,82 +523,60 @@
 
       const cancelRateEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-value');
       if (cancelRateEl && data.cancelRate != null) {
-        cancelRateEl.textContent = data.cancelRate.toFixed(1) + '%';
+        cancelRateEl.textContent = formatCount(data.cancelledSections || 0);
       }
       const cancelSubEl = document.querySelector('[data-kpi-analytics="cancelRate"] .kpi-delta span');
       if (cancelSubEl) {
-        cancelSubEl.textContent = formatRateMetricDetail(
-          data.metrics?.cancellations,
-          tr(
-            `${data.cancelledSections || 0} cancelled of ${data.totalSections || 0} sections`,
-            `${(data.totalSections || 0).toLocaleString(getLocale())}개 섹션 중 ${(data.cancelledSections || 0).toLocaleString(getLocale())}개 취소`
-          )
+        const cancelledSections = data.metrics?.cancellations?.numerator ?? data.cancelledSections ?? 0;
+        const totalSections = data.metrics?.cancellations?.denominator ?? data.totalSections ?? 0;
+        const cancelRate = data.metrics?.cancellations?.rate ?? data.cancelRate ?? 0;
+        cancelSubEl.textContent = tr(
+          `${formatPercent(cancelRate)} of ${formatCount(totalSections)} sections`,
+          `${formatCount(totalSections)}개 섹션 중 ${formatPercent(cancelRate)}`
         );
-      }
-
-      const febRate = data.monthlyRates?.['2026-02'] ?? null;
-      const febRefundEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-value');
-      if (febRefundEl && febRate != null) {
-        febRefundEl.textContent = febRate.toFixed(1) + '%';
-      }
-      const febSubEl = document.querySelector('[data-kpi-analytics="febRefundRate"] .kpi-delta span');
-      if (febSubEl) {
-        const febData = (data.charts?.monthlyRefunds || []).find(month => month.month === '2026-02');
-        if (febData) febSubEl.textContent = tr(`${formatKrw(febData.refunded || 0)} refunded of ${formatKrw(febData.revenue || 0)}`, `${formatKrw(febData.revenue || 0)} 중 ${formatKrw(febData.refunded || 0)} 환불`);
-      }
-
-      const marRate = data.monthlyRates?.['2026-03'] ?? null;
-      const marRefundEl = document.querySelector('[data-kpi-analytics="marRefundRate"] .kpi-value');
-      if (marRefundEl && marRate != null) {
-        marRefundEl.textContent = marRate.toFixed(1) + '%';
-      }
-      const marSubEl = document.querySelector('[data-kpi-analytics="marRefundRate"] .kpi-delta span');
-      if (marSubEl) {
-        const marData = (data.charts?.monthlyRefunds || []).find(month => month.month === '2026-03');
-        if (marData) marSubEl.textContent = tr(`${formatKrw(marData.refunded || 0)} refunded of ${formatKrw(marData.revenue || 0)}`, `${formatKrw(marData.revenue || 0)} 중 ${formatKrw(marData.refunded || 0)} 환불`);
+        cancelSubEl.setAttribute('title', tr(
+          `${formatCount(cancelledSections)} return/cancel sections out of ${formatCount(totalSections)} total sections`,
+          `총 ${formatCount(totalSections)}개 섹션 중 반품/취소 ${formatCount(cancelledSections)}개`
+        ));
       }
 
       const charts = data.charts || {};
       const allDailyMerged = charts.dailyMerged || [];
-      const mediaDaily = sliceRowsByWindow(allDailyMerged, 'media-profitability');
-      const mediaCutoff = mediaDaily[0]?.date || '';
-      const mediaWeeklyAgg = (charts.weeklyAgg || []).filter(week => week.week >= mediaCutoff);
-      const weekdayPerf = buildWeekdayPerformance(mediaDaily);
-      const qualityCutoff = sliceRowsByWindow(allDailyMerged, 'revenue-quality')[0]?.date || '';
-      const monthlyRefunds = (charts.monthlyRefunds || []).filter(month => month.month >= qualityCutoff.slice(0, 7));
+      const orderPatternDaily = sliceRowsByWindow(allDailyMerged, 'order-patterns');
+      const orderPatternCutoff = orderPatternDaily[0]?.date || '';
+      const orderPatternWeeklyAgg = (charts.weeklyAgg || []).filter(week => week.week >= orderPatternCutoff);
+      const weekdayPerf = buildWeekdayPerformance(orderPatternDaily);
+      const hourlyOrders = charts.hourlyOrders || [];
+      const monthlyRefunds = charts.monthlyRefunds || [];
       const imwebSource = data.dataSources?.imweb || null;
       const analyticsNoticeEl = document.getElementById('analyticsFreshnessNotice');
-      const mediaEfficiencyWindowEl = document.getElementById('mediaEfficiencyWindowNote');
-      const mediaEfficiencySummaryEl = document.getElementById('mediaEfficiencySummary');
-      const weekdayTableWindowEl = document.getElementById('weekdayTableWindowNote');
-      const mediaWindowMeta = getSeriesWindowMeta('media-profitability');
+      const orderPatternWindowEl = document.getElementById('orderPatternWindowNote');
+      const orderPatternSummaryEl = document.getElementById('orderPatternSummary');
+      const orderPatternWindowMeta = getSeriesWindowMeta('order-patterns');
 
-      if (mediaEfficiencyWindowEl) {
-        mediaEfficiencyWindowEl.textContent = tr(`${mediaWindowMeta.label} time frame`, `${mediaWindowMeta.label} 기준`);
+      if (orderPatternWindowEl) {
+        orderPatternWindowEl.textContent = tr(`${orderPatternWindowMeta.label} time frame`, `${orderPatternWindowMeta.label} 기준`);
       }
-      if (weekdayTableWindowEl) {
-        weekdayTableWindowEl.textContent = tr(`Net revenue, ad spend, and CPA by weekday · ${mediaWindowMeta.label} time frame`, `요일별 순매출, 광고비, CPA · ${mediaWindowMeta.label} 기준`);
-      }
-      if (mediaEfficiencySummaryEl) {
-        const cpaDays = weekdayPerf.filter(day => Number(day.cpa || 0) > 0);
-        const bestCpaDay = cpaDays.reduce((best, day) => !best || day.cpa < best.cpa ? day : best, null);
-        const peakPurchaseDay = weekdayPerf.reduce((best, day) => !best || (day.purchases || 0) > (best.purchases || 0) ? day : best, null);
-        const latestWeek = mediaWeeklyAgg[mediaWeeklyAgg.length - 1] || null;
-        const previousWeek = mediaWeeklyAgg[mediaWeeklyAgg.length - 2] || null;
-        const latestCpa = Number(latestWeek?.cpa || 0);
-        const previousCpa = Number(previousWeek?.cpa || 0);
-        const latestDelta = latestCpa > 0 && previousCpa > 0
-          ? latestCpa - previousCpa
+      if (orderPatternSummaryEl) {
+        const revenueDays = weekdayPerf.filter(day => Number(day.net || 0) > 0);
+        const bestRevenueDay = revenueDays.reduce((best, day) => !best || day.net > best.net ? day : best, null);
+        const peakOrderDay = weekdayPerf.reduce((best, day) => !best || (day.orders || 0) > (best.orders || 0) ? day : best, null);
+        const latestWeek = orderPatternWeeklyAgg[orderPatternWeeklyAgg.length - 1] || null;
+        const previousWeek = orderPatternWeeklyAgg[orderPatternWeeklyAgg.length - 2] || null;
+        const latestRevenue = Number(latestWeek?.revenue || 0) - Number(latestWeek?.refunded || 0);
+        const previousRevenue = Number(previousWeek?.revenue || 0) - Number(previousWeek?.refunded || 0);
+        const latestDelta = latestWeek && previousWeek
+          ? latestRevenue - previousRevenue
           : 0;
         const latestDetail = latestWeek
-          ? (previousCpa > 0
-            ? tr(`${latestDelta >= 0 ? '+' : '-'}$${Math.abs(latestDelta).toFixed(2)} vs prior week`, `${latestDelta >= 0 ? '+' : '-'}$${Math.abs(latestDelta).toFixed(2)} 전주 대비`)
-            : tr(`${formatCount(latestWeek.purchases || 0)} purchases`, `구매 ${formatCount(latestWeek.purchases || 0)}건`))
+          ? (previousWeek
+            ? tr(`${latestDelta >= 0 ? '+' : '-'}${formatKrw(Math.abs(latestDelta))} vs prior week`, `${latestDelta >= 0 ? '+' : '-'}${formatKrw(Math.abs(latestDelta))} 전주 대비`)
+            : '')
           : '';
-        mediaEfficiencySummaryEl.innerHTML = [
-          bestCpaDay ? renderMediaEfficiencyChip(tr('Best weekday CPA', '최저 요일 CPA'), bestCpaDay.day, formatUsd(bestCpaDay.cpa, 2)) : '',
-          peakPurchaseDay ? renderMediaEfficiencyChip(tr('Peak purchase day', '구매 피크 요일'), peakPurchaseDay.day, tr(`${formatCount(peakPurchaseDay.purchases || 0)} purchases`, `구매 ${formatCount(peakPurchaseDay.purchases || 0)}건`)) : '',
-          latestWeek ? renderMediaEfficiencyChip(tr('Latest weekly CPA', '최근 주간 CPA'), formatUsd(latestCpa, 2), latestDetail) : '',
+        orderPatternSummaryEl.innerHTML = [
+          bestRevenueDay ? renderOrderPatternChip(tr('Best revenue day', '최고 매출 요일'), bestRevenueDay.day, formatKrw(bestRevenueDay.net || 0)) : '',
+          peakOrderDay ? renderOrderPatternChip(tr('Peak order day', '주문 피크 요일'), peakOrderDay.day, tr(`${formatCount(peakOrderDay.orders || 0)} orders`, `주문 ${formatCount(peakOrderDay.orders || 0)}건`)) : '',
+          latestWeek && (latestRevenue > 0 || previousRevenue > 0) ? renderOrderPatternChip(tr('Latest weekly revenue', '최근 주간 매출'), formatKrw(latestRevenue), latestDetail) : '',
         ].filter(Boolean).join('');
       }
       if (analyticsNoticeEl) {
@@ -883,9 +596,24 @@
 
       if (weekdayPerf.length > 0 && typeof weekdayChartInstance !== 'undefined' && weekdayChartInstance) {
         weekdayChartInstance.data.labels = weekdayPerf.map(day => day.day);
-        weekdayChartInstance.data.datasets[0].data = weekdayPerf.map(day => day.purchases || 0);
-        weekdayChartInstance.data.datasets[1].data = weekdayPerf.map(day => day.cpa || 0);
+        weekdayChartInstance.data.datasets[0].data = weekdayPerf.map(day => day.orders || 0);
+        weekdayChartInstance.data.datasets[1].data = weekdayPerf.map(day => day.net || 0);
         weekdayChartInstance.update();
+      }
+
+      if (hourlyOrders.length > 0 && typeof hourChartInstance !== 'undefined' && hourChartInstance) {
+        const peakHours = hourlyOrders
+          .slice()
+          .sort((left, right) => (right.orders || 0) - (left.orders || 0))
+          .slice(0, 3)
+          .map(row => row.hour);
+
+        hourChartInstance.data.labels = hourlyOrders.map(row => `${row.hour}:00`);
+        hourChartInstance.data.datasets[0].data = hourlyOrders.map(row => row.orders || 0);
+        hourChartInstance.data.datasets[0].backgroundColor = hourlyOrders.map(row =>
+          peakHours.includes(row.hour) ? 'rgba(22, 101, 52, 0.92)' : 'rgba(22, 101, 52, 0.56)'
+        );
+        hourChartInstance.update();
       }
 
       if (monthlyRefunds.length > 0 && typeof refundChartInstance !== 'undefined' && refundChartInstance) {
@@ -895,32 +623,6 @@
         refundChartInstance.update();
       }
 
-      if (weekdayPerf.length > 0) {
-        const body = document.getElementById('weekdayBody');
-        if (body) {
-          const bestCpa = Math.min(...weekdayPerf.filter(row => row.cpa > 0).map(row => row.cpa));
-          const worstCpa = Math.max(...weekdayPerf.map(row => row.cpa || 0));
-
-          body.innerHTML = weekdayPerf.map(day => {
-            const cpa = day.cpa || 0;
-            const cpaBadge = cpa > 0 && cpa <= bestCpa + 3 ? 'badge-success' : cpa >= worstCpa - 3 ? 'badge-danger' : '';
-            return `<tr>
-              <td style="font-weight:600">${esc(day.day)}</td>
-              <td>${day.orders || 0}</td>
-              <td>₩${Math.round(day.paid || 0).toLocaleString()}</td>
-              <td style="color:var(--color-danger)">₩${Math.round(day.refunded || 0).toLocaleString()}</td>
-              <td style="font-weight:600">₩${Math.round(day.net || 0).toLocaleString()}</td>
-              <td>$${(day.spend || 0).toFixed(0)}</td>
-              <td>${day.purchases || 0}</td>
-              <td><span class="badge ${cpaBadge}">$${cpa.toFixed(2)}</span></td>
-            </tr>`;
-          }).join('');
-        }
-      }
-
-      if (reconciliation) {
-        updateReconciliationSection(reconciliation);
-      }
     } catch (e) {
       console.warn('[LIVE] refreshAnalyticsPage error:', e.message);
     }

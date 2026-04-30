@@ -579,14 +579,14 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   font-weight: 600;
 }
 
-.media-efficiency-summary {
+.order-pattern-summary {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
 
-.media-efficiency-chip {
+.order-pattern-chip {
   display: inline-flex;
   align-items: baseline;
   gap: var(--space-1);
@@ -598,7 +598,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   padding: 5px 10px;
 }
 
-.media-efficiency-chip strong {
+.order-pattern-chip strong {
   color: var(--color-text);
   font-weight: 700;
 }
@@ -607,6 +607,29 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
   gap: var(--space-4);
+}
+
+.order-patterns-grid {
+  grid-template-columns: 1fr;
+}
+
+.refund-quality-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.refund-quality-grid > *,
+.refund-quality-kpis > * {
+  min-width: 0;
+}
+
+.refund-quality-kpis {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  align-self: center;
 }
 
 .section-head {
@@ -656,6 +679,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .section-head-compact {
   margin-top: var(--space-5);
+  margin-bottom: var(--space-3);
 }
 
 .section-kicker {
@@ -687,8 +711,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   margin-bottom: 0;
 }
 
-.section-note,
-.reconciliation-note {
+.section-note {
   max-width: 720px;
   font-size: var(--text-sm);
   color: var(--color-text-muted);
@@ -838,12 +861,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   margin-top: 0;
   margin-bottom: 0;
   max-width: min(58rem, 100%);
-}
-
-.reconciliation-note {
-  margin-top: var(--space-4);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border);
 }
 
 /* ============================================
@@ -3497,6 +3514,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 @media (max-width: 1024px) {
   .charts-grid { grid-template-columns: 1fr; }
+  .refund-quality-grid { grid-template-columns: 1fr; }
   .calendar-viewport { grid-template-columns: 1fr; }
   .live-intraday-takeaway { grid-template-columns: 1fr; }
   .live-intraday-takeaway-side {
@@ -3760,6 +3778,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .kpi-grid { grid-template-columns: 1fr; }
   .kpi-grid.kpi-grid-4 { grid-template-columns: 1fr; }
   .kpi-grid.small { grid-template-columns: 1fr; }
+  .refund-quality-kpis { grid-template-columns: 1fr; }
 
   .topbar-status {
     width: 100%;

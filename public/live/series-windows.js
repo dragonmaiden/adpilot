@@ -14,13 +14,11 @@
 
   const DEFAULT_SERIES_WINDOWS = Object.freeze({
     'profit-structure': 'all',
-    'media-profitability': '30d',
-    'revenue-quality': 'all',
+    'order-patterns': 'all',
   });
   const SERIES_WINDOW_GROUP_CONTEXT = Object.freeze({
     'profit-structure': { page: 'analytics' },
-    'media-profitability': { page: 'analytics' },
-    'revenue-quality': { page: 'analytics' },
+    'order-patterns': { page: 'analytics' },
   });
 
   const seriesWindowState = { ...DEFAULT_SERIES_WINDOWS };

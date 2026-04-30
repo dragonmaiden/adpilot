@@ -108,8 +108,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     live.setPageActivatedHandler(handlePageActivated);
     registerSeriesWindowRefresher('profit-structure', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
-    registerSeriesWindowRefresher('media-profitability', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
-    registerSeriesWindowRefresher('revenue-quality', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
+    registerSeriesWindowRefresher('order-patterns', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
     initSeriesWindowControls();
 
     startLiveMode();

@@ -72,7 +72,7 @@
             <div class="section-kicker" data-i18n="analytics.sectionKicker">Profit Summary</div>
             <h2 data-i18n="analytics.sectionTitle">True profit and cost summary</h2>
           </div>
-          <p class="section-note" data-i18n="analytics.sectionNote">Revenue, costs, media spend, and true net profit in one place.</p>
+          <p class="section-note" data-i18n="analytics.sectionNote">Revenue, refunds, total costs, and true net profit in one place.</p>
         </div>
         <div class="range-toolbar section-head-toolbar">
           <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
@@ -169,142 +169,7 @@
         </div>
       </div>
 
-      <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card" data-kpi-analytics="refundRate">
-          <div class="kpi-label" data-i18n="kpi.refundRate">Refund Rate (₩)</div>
-          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
-          <div class="kpi-delta negative">
-            <i data-lucide="alert-triangle"></i>
-            <span>—</span>
-          </div>
-        </div>
-        <div class="kpi-card" data-kpi-analytics="cancelRate">
-          <div class="kpi-label" data-i18n="kpi.cancelRate">Cancel Rate (Sections)</div>
-          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
-          <div class="kpi-delta negative">
-            <i data-lucide="x-circle"></i>
-            <span>—</span>
-          </div>
-        </div>
-        <div class="kpi-card" data-kpi-analytics="febRefundRate">
-          <div class="kpi-label" data-i18n="kpi.febRefund">Feb Refund Rate</div>
-          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
-          <div class="kpi-delta negative">
-            <i data-lucide="trending-down"></i>
-            <span>—</span>
-          </div>
-        </div>
-        <div class="kpi-card" data-kpi-analytics="marRefundRate">
-          <div class="kpi-label" data-i18n="kpi.marRefund">Mar Refund Rate</div>
-          <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
-          <div class="kpi-delta positive">
-            <i data-lucide="trending-down"></i>
-            <span>—</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="analytics.mediaKicker">Media Profitability</div>
-          <h2 data-i18n="analytics.mediaTitle">Which traffic patterns and campaigns create profit</h2>
-        </div>
-        <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
-          <div class="range-switch" data-series-window-group="media-profitability" role="group" aria-label="Media profitability time frame" data-i18n-aria-label="analytics.windowMediaAria">
-            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="all" data-i18n="misc.all">All</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="charts-grid">
-        <div class="card chart-card media-efficiency-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.mediaEfficiency">Media Efficiency</h2>
-            <span class="card-header-note" id="mediaEfficiencyWindowNote">30D time frame</span>
-          </div>
-          <div class="media-efficiency-summary" id="mediaEfficiencySummary"></div>
-          <div class="chart-container" style="height:320px">
-            <canvas id="weekdayChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2 data-i18n="analytics.leaderboardTitle">Campaign Profit Leaderboard</h2>
-          <span class="card-header-note" id="campaignProfitWindowNote" data-i18n="analytics.leaderboardNote">Revenue estimated (pixel-attributed) · 30D time frame</span>
-        </div>
-        <div class="kpi-grid small campaign-profit-summary" id="campaignProfitSummary"></div>
-        <div class="campaign-profit-context" id="campaignProfitContext"></div>
-        <div class="card-header card-header-subtle">
-          <h3 data-i18n="analytics.leaderboardTableTitle">Campaign estimates</h3>
-          <span class="card-header-note" data-i18n="analytics.leaderboardTableNote">Revenue model, spend, estimated ROAS, and margin.</span>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table" id="campaignProfitTable">
-            <thead>
-              <tr>
-                <th class="cell-primary cell-wrap" data-i18n="th.campaign">Campaign</th>
-                <th class="cell-fit cell-nowrap" data-i18n="th.status">Status</th>
-                <th class="cell-fit cell-nowrap" data-i18n="th.adSpend">Ad Spend</th>
-                <th class="cell-fit cell-wrap" data-i18n="th.purchasesPixel">Meta Purchases</th>
-                <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.estRevenue">Est. Revenue</th>
-                <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.estCogs">Est. COGS</th>
-                <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.grossProfit">Gross Profit</th>
-                <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.estRoas">Est. ROAS</th>
-                <th class="cell-fit cell-nowrap" data-i18n="analytics.leaderboard.margin">Margin %</th>
-              </tr>
-            </thead>
-            <tbody id="campaignProfitBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2 data-i18n="chart.weekdayRevenue">Revenue by Day of Week</h2>
-          <span style="font-size:0.75rem;color:var(--color-text-faint)" id="weekdayTableWindowNote">Net revenue, ad spend, and CPA by weekday</span>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table" id="weekdayTable">
-            <thead>
-              <tr>
-                <th data-i18n="th.day">Day</th>
-                <th data-i18n="th.orders">Orders</th>
-                <th data-i18n="th.revenuePaid">Revenue (Paid)</th>
-                <th data-i18n="th.refunded">Refunded</th>
-                <th data-i18n="th.netRevenue">Net Revenue</th>
-                <th data-i18n="th.adSpend">Ad Spend</th>
-                <th data-i18n="th.purchases">Purchases</th>
-                <th data-i18n="th.cpa">CPA</th>
-              </tr>
-            </thead>
-            <tbody id="weekdayBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="analytics.qualityKicker">Revenue Quality</div>
-          <h2 data-i18n="analytics.qualityTitle">Refund pressure and settlement validation</h2>
-        </div>
-        <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
-          <div class="range-switch" data-series-window-group="revenue-quality" role="group" aria-label="Revenue quality time frame" data-i18n-aria-label="analytics.windowQualityAria">
-            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="all" data-i18n="misc.all">All</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="charts-grid">
+      <div class="refund-quality-grid">
         <div class="card chart-card">
           <div class="card-header">
             <h2 data-i18n="chart.monthlyRefund">Monthly Refund Comparison</h2>
@@ -313,61 +178,64 @@
             <canvas id="refundChart"></canvas>
           </div>
         </div>
-        <div class="card" id="reconciliationSummaryCard">
-          <div class="card-header">
-            <h2 data-i18n="analytics.reconciliationTitle">Settlement Reconciliation</h2>
-            <span class="badge badge-neutral" id="reconciliationStatus" data-i18n="misc.waiting">Waiting</span>
-          </div>
-          <p class="card-desc" data-i18n="analytics.reconciliationDesc">Card settlement rows are treated as validation only. They are not added into revenue totals.</p>
-          <div class="kpi-grid small">
-            <div class="kpi-card" data-recon-kpi="matchedNet">
-              <div class="kpi-label" data-i18n="analytics.recon.matchedNet">Matched Net</div>
-              <div class="kpi-value">—</div>
-              <div class="kpi-delta neutral"><i data-lucide="link"></i><span>—</span></div>
-            </div>
-            <div class="kpi-card" data-recon-kpi="unmatchedSettlement">
-              <div class="kpi-label" data-i18n="analytics.recon.unmatchedSettlement">Unmatched Settlement</div>
-              <div class="kpi-value">—</div>
-              <div class="kpi-delta neutral"><i data-lucide="receipt"></i><span>—</span></div>
-            </div>
-            <div class="kpi-card" data-recon-kpi="unmatchedImweb">
-              <div class="kpi-label" data-i18n="analytics.recon.unmatchedImweb">Unmatched Imweb</div>
-              <div class="kpi-value">—</div>
-              <div class="kpi-delta neutral"><i data-lucide="shopping-bag"></i><span>—</span></div>
-            </div>
-            <div class="kpi-card" data-recon-kpi="methodMismatch">
-              <div class="kpi-label" data-i18n="analytics.recon.methodMismatch">Method Mismatch</div>
-              <div class="kpi-value">—</div>
-              <div class="kpi-delta neutral"><i data-lucide="shield-alert"></i><span>—</span></div>
+        <div class="refund-quality-kpis">
+          <div class="kpi-card" data-kpi-analytics="refundRate">
+            <div class="kpi-label" data-i18n="kpi.refundRate">Refund Rate (₩)</div>
+            <div class="kpi-value" data-target="0" data-prefix="" data-suffix="%">—</div>
+            <div class="kpi-delta negative">
+              <i data-lucide="alert-triangle"></i>
+              <span>—</span>
             </div>
           </div>
-          <div id="reconciliationNote" class="reconciliation-note" data-i18n="analytics.reconciliationWaiting">Waiting for reconciliation data...</div>
+          <div class="kpi-card" data-kpi-analytics="cancelRate">
+            <div class="kpi-label" data-i18n="kpi.cancelRate">Return / Cancel Sections</div>
+            <div class="kpi-value" data-target="0">—</div>
+            <div class="kpi-delta negative">
+              <i data-lucide="x-circle"></i>
+              <span>—</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="card" id="reconciliationCard">
-        <div class="card-header">
-          <h2 data-i18n="analytics.reconciliationRollupTitle">Daily Reconciliation Rollup</h2>
-            <span style="font-size:0.75rem;color:var(--color-text-faint)" id="reconciliationWindow" data-i18n="analytics.reconciliationWindowDefault">Match time frame —</span>
+      <div class="section-head section-head-compact">
+        <div>
+          <div class="section-kicker" data-i18n="analytics.orderPatternsKicker">Order Patterns</div>
+          <h2 data-i18n="analytics.orderPatternsTitle">When orders and revenue happen</h2>
         </div>
-        <div class="table-wrapper">
-          <table class="data-table" id="reconciliationTable">
-            <thead>
-              <tr>
-                <th data-i18n="calendar.date">Date</th>
-                <th data-i18n="calendar.settlementNet">Settlement Net</th>
-                <th data-i18n="calendar.imwebNet">Imweb Net</th>
-                <th data-i18n="analytics.recon.matchedNet">Matched Net</th>
-                <th data-i18n="calendar.settlementGap">Settlement Gap</th>
-                <th data-i18n="calendar.imwebGap">Imweb Gap</th>
-              </tr>
-            </thead>
-            <tbody id="reconciliationBody">
-              <tr><td colspan="6" style="color:var(--color-text-faint)" data-i18n="analytics.reconciliationWaiting">Waiting for reconciliation data...</td></tr>
-            </tbody>
-          </table>
+        <div class="range-toolbar">
+          <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
+          <div class="range-switch" data-series-window-group="order-patterns" role="group" aria-label="Order and revenue pattern time frame" data-i18n-aria-label="analytics.windowOrderPatternsAria">
+            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
+            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+            <button type="button" class="range-switch-btn is-active" data-series-window-value="all" data-i18n="misc.all">All</button>
+          </div>
         </div>
       </div>
+
+      <div class="charts-grid order-patterns-grid">
+        <div class="card chart-card order-pattern-card">
+          <div class="card-header">
+            <h2 data-i18n="chart.orderWeekday">Average orders & revenue in the week</h2>
+            <span class="card-header-note" id="orderPatternWindowNote">All time frame</span>
+          </div>
+          <div class="order-pattern-summary" id="orderPatternSummary"></div>
+          <div class="chart-container" style="height:320px">
+            <canvas id="weekdayChart"></canvas>
+          </div>
+        </div>
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2 data-i18n="chart.hourVolume">Order Timing Distribution (KST)</h2>
+            <span class="card-header-note" data-i18n="overview.hourSubtitle">All synced Imweb orders</span>
+          </div>
+          <div class="chart-container" style="height:260px">
+            <canvas id="hourChart"></canvas>
+          </div>
+        </div>
+      </div>
+
     </section>
 
     <!-- Calendar Page -->

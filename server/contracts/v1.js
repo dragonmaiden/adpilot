@@ -130,15 +130,13 @@ function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, m
     totalShipping: cogsData?.totalShipping ?? 0,
     cogsItems: cogsData?.itemCount ?? 0,
     cogsOrders: cogsData?.orderCount ?? 0,
-    // Raw insight rows (campaigns may still need them for tables)
+    // Raw insight rows remain available for non-UI diagnostics.
     dailyInsights: dailyInsights ?? [],
     adInsights: adInsights ?? [],
     dataSources: dataSources ?? {},
     // Profit Analysis
     profitAnalysis: {
       waterfall: profitAnalysis?.waterfall ?? [],
-      campaignProfit: profitAnalysis?.campaignProfit ?? [],
-      campaignProfitWindows: profitAnalysis?.campaignProfitWindows ?? {},
       coverage: profitAnalysis?.coverage ?? {},
       windowSummaries: profitAnalysis?.windowSummaries ?? {},
       todaySummary: profitAnalysis?.todaySummary ?? null,

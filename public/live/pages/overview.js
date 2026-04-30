@@ -390,7 +390,7 @@
         hourChartInstance.data.labels = hourlyOrders.map(row => row.hour + ':00');
         hourChartInstance.data.datasets[0].data = hourlyOrders.map(row => row.orders || 0);
         hourChartInstance.data.datasets[0].backgroundColor = hourlyOrders.map(row =>
-          peakHours.includes(row.hour) ? 'rgba(255, 197, 83, 0.9)' : 'rgba(32, 128, 141, 0.6)'
+          peakHours.includes(row.hour) ? 'rgba(22, 101, 52, 0.92)' : 'rgba(22, 101, 52, 0.56)'
         );
         hourChartInstance.update();
       }

@@ -60,6 +60,13 @@ function formatChartKrwTick(value) {
   return '₩' + (Number.isFinite(amount) ? Math.round(amount).toLocaleString('en-US') : '0');
 }
 
+function formatSignedChartKrw(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount === 0) return '₩0';
+  const rounded = Math.round(amount);
+  return `${rounded < 0 ? '-₩' : '₩'}${Math.abs(rounded).toLocaleString('en-US')}`;
+}
+
 // ── Chart.js Defaults ──
 function getChartColors() {
   const style = getComputedStyle(document.documentElement);
@@ -71,7 +78,10 @@ function getChartColors() {
     primary: '#20808D',
     secondary: '#A84B2F',
     success: '#4ade80',
+    darkGreen: '#166534',
+    darkGreenFill: 'rgba(22, 101, 52, 0.72)',
     teal: '#1B474D',
+    netProfitLine: '#111827',
     gold: '#FFC553',
   };
 }
@@ -149,7 +159,7 @@ function initCharts() {
           {
             label: 'Revenue (₩)',
             data: [],
-            backgroundColor: '#4ade80',
+            backgroundColor: c.darkGreenFill,
             borderRadius: 4,
             barPercentage: 0.7,
             categoryPercentage: 0.6,
@@ -397,7 +407,7 @@ function initProfitCharts() {
           {
             label: 'Gross Revenue',
             data: [],
-            backgroundColor: 'rgba(22, 101, 52, 0.72)',
+            backgroundColor: c.darkGreenFill,
             borderRadius: 3,
             stack: 'costs',
             order: 2,
@@ -428,12 +438,12 @@ function initProfitCharts() {
             label: 'True Net Profit',
             data: [],
             type: 'line',
-            borderColor: c.teal || '#1B474D',
-            backgroundColor: 'transparent',
+            borderColor: c.netProfitLine,
+            backgroundColor: c.netProfitLine,
             borderWidth: 2.5,
             pointRadius: 3,
-            pointBackgroundColor: [],
-            pointBorderColor: '#fff',
+            pointBackgroundColor: c.netProfitLine,
+            pointBorderColor: c.netProfitLine,
             pointBorderWidth: 1,
             pointStyle: 'line',
             tension: 0.3,
@@ -444,6 +454,10 @@ function initProfitCharts() {
       },
       options: {
         maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
         plugins: {
           legend: {
             display: true,
@@ -455,6 +469,20 @@ function initProfitCharts() {
               usePointStyle: true,
               pointStyleWidth: 16,
               font: { size: 11 },
+              generateLabels: chart => {
+                const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+                return labels.map(label => {
+                  const dataset = chart.data.datasets[label.datasetIndex];
+                  if (dataset?.label !== 'True Net Profit') return label;
+                  return {
+                    ...label,
+                    fillStyle: dataset.borderColor,
+                    strokeStyle: dataset.borderColor,
+                    lineWidth: dataset.borderWidth || 2.5,
+                    pointStyle: 'line',
+                  };
+                });
+              },
               sort: (a, b, data) => {
                 const rankA = data.datasets[a.datasetIndex]?.legendRank || a.datasetIndex;
                 const rankB = data.datasets[b.datasetIndex]?.legendRank || b.datasetIndex;
@@ -463,10 +491,21 @@ function initProfitCharts() {
             }
           },
           tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: '#111827',
+            titleColor: '#ffffff',
+            bodyColor: '#ffffff',
+            borderColor: 'rgba(255, 255, 255, 0.18)',
+            borderWidth: 1,
+            padding: 10,
+            displayColors: true,
             callbacks: {
+              title: function(items) {
+                return items?.[0]?.label || '';
+              },
               label: function(ctx) {
-                const val = ctx.parsed.y;
-                return ctx.dataset.label + ': \u20a9' + (val || 0).toLocaleString();
+                return `${ctx.dataset.label}: ${formatSignedChartKrw(ctx.parsed.y)}`;
               },
               afterBody: function(items) {
                 const item = items?.[0];
@@ -518,7 +557,7 @@ function initAnalyticsCharts() {
 
       const { ctx, chartArea } = chart;
       ctx.save();
-      ctx.fillStyle = c.gold || '#FFC553';
+      ctx.fillStyle = c.netProfitLine || '#111827';
       ctx.font = '600 11px IBM Plex Sans KR, Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
@@ -537,7 +576,7 @@ function initAnalyticsCharts() {
     },
   };
 
-  // ── Weekday Ad Performance (empty) ──
+  // ── Weekday Orders and Revenue (empty) ──
   const wdCtx = document.getElementById('weekdayChart');
   if (wdCtx) {
     weekdayChartInstance = new Chart(wdCtx, {
@@ -546,34 +585,47 @@ function initAnalyticsCharts() {
         labels: [],
         datasets: [
           {
-            label: 'Purchases',
+            label: 'Orders',
             data: [],
-            backgroundColor: 'rgba(74, 222, 128, 0.75)',
+            backgroundColor: c.darkGreenFill,
             borderRadius: 4,
             yAxisID: 'y',
           },
           {
-            label: 'CPA ($)',
+            label: 'Revenue (\u20a9)',
             data: [],
             type: 'line',
-            borderColor: c.secondary,
+            borderColor: c.netProfitLine,
             backgroundColor: 'transparent',
             borderWidth: 2.5,
             pointRadius: 5,
-            pointBackgroundColor: c.secondary,
+            pointBackgroundColor: c.netProfitLine,
             tension: 0.3,
             yAxisID: 'y1',
           }
         ]
       },
       options: {
+        interaction: {
+          mode: 'index',
+          intersect: false,
+        },
         plugins: {
           legend: { display: true, position: 'top', labels: { color: c.text, boxWidth: 12, padding: 16 } },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            callbacks: {
+              label: ctx => ctx.dataset.type === 'line'
+                ? `${ctx.dataset.label}: ${formatChartKrwTick(ctx.parsed.y)}`
+                : `${ctx.dataset.label}: ${Number(ctx.parsed.y || 0).toLocaleString()}`,
+            },
+          },
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: c.textFaint } },
-          y: { title: { display: true, text: 'Purchases', color: c.textFaint }, grid: { color: c.grid }, ticks: { color: c.textFaint } },
-          y1: { position: 'right', title: { display: true, text: 'CPA ($)', color: c.textFaint }, grid: { display: false }, ticks: { color: c.secondary, callback: v => '$' + v } },
+          y: { title: { display: true, text: 'Orders', color: c.textFaint }, grid: { color: c.grid }, ticks: { color: c.textFaint } },
+          y1: { position: 'right', title: { display: true, text: 'Revenue (\u20a9)', color: c.textFaint }, grid: { display: false }, ticks: { color: c.netProfitLine, callback: v => formatChartKrwTick(v) } },
         }
       }
     });
