@@ -536,23 +536,8 @@
     const profitMarginLabel = formatPercent(summary.margin || 0);
     const profitSub = tr(`${profitMarginLabel} margin`, `마진 ${profitMarginLabel}`);
 
-    const maxFlow = Math.max(
-      Math.abs(summary.grossRevenue),
-      Math.abs(summary.refundedAmount),
-      Math.abs(summary.netRevenue),
-      Math.abs(summary.cogs),
-      Math.abs(summary.shipping),
-      Math.abs(summary.paymentFees),
-      Math.abs(summary.adSpendKRW),
-      Math.abs(summary.trueNetProfit),
-      1
-    );
-
-    // Income-statement Sankey topology (4 columns).
-    //   Col 1: Gross Revenue
-    //   Col 2: Refunded (top, red branch) + Net Revenue (spine)
-    //   Col 3: True Net Profit (top, green continuation) + Costs aggregator (bottom, red)
-    //   Col 4: COGS, Shipping, Fees, Ad Spend (sub-split from Costs)
+    // Income-statement Sankey topology. Positive periods split Net Revenue into
+    // profit and costs; loss periods route True Net Profit as the deficit input.
     // The "Costs" node is a visual aggregator — sum of the 4 cost values,
     // not a new data metric. All 8 user-defined components remain present.
     const grossV    = Math.max(0, summary.grossRevenue);
@@ -563,39 +548,62 @@
     const feesV     = Math.max(0, summary.paymentFees);
     const adV       = Math.max(0, summary.adSpendKRW);
     const profitV   = Math.max(0, summary.trueNetProfit);
+    const lossV     = Math.max(0, -summary.trueNetProfit);
+    const hasLoss   = lossV > 0;
     const costsTotal = cogsV + shipV + feesV + adV;
-    const netSplit  = profitV + costsTotal;
 
     const grossCard    = { x: 24,  y: 140, w: 160, h: 200 };
     const refundedCard = { x: 234, y: 56,  w: 160, h: 64  };
     const netCard      = { x: 234, y: 140, w: 160, h: 200 };
 
-    // Column 3 heights proportional to Net's split (profit vs total costs).
-    const PROFIT_MIN_H = 80;
-    const COSTS_MIN_H  = 100;
-    const COL3_GAP     = 16;
-    const col3Total    = 360 - COL3_GAP;
-    const profitCardH = netSplit > 0
-      ? Math.max(PROFIT_MIN_H, (profitV   / netSplit) * col3Total)
-      : PROFIT_MIN_H;
-    const costsCardH  = netSplit > 0
-      ? Math.max(COSTS_MIN_H,  (costsTotal / netSplit) * col3Total)
-      : COSTS_MIN_H;
+    let profitCard;
+    let costsCard;
+    let sinkCards;
 
-    const profitCard = { x: 460, y: 24, w: 170, h: profitCardH };
-    const costsCard  = { x: 460, y: 24 + profitCardH + COL3_GAP, w: 160, h: costsCardH };
+    if (hasLoss) {
+      const costsInputTotal = Math.max(netV + lossV, 1);
+      const costsCardH = 260;
+      const lossCardH = Math.max(72, (lossV / costsInputTotal) * costsCardH);
+      profitCard = { x: 460, y: 56, w: 170, h: lossCardH };
+      costsCard  = { x: 690, y: 124, w: 160, h: costsCardH };
 
-    // Column 4: 4 cost destinations, uniform stacked.
-    const sinkW = 180;
-    const sinkH = 64;
-    const sinkGap = 12;
-    const sinkY0 = 140;
-    const sinkCards = {
-      cogs:     { x: 690, y: sinkY0,                       w: sinkW, h: sinkH },
-      shipping: { x: 690, y: sinkY0 + 1 * (sinkH + sinkGap), w: sinkW, h: sinkH },
-      fees:     { x: 690, y: sinkY0 + 2 * (sinkH + sinkGap), w: sinkW, h: sinkH },
-      adSpend:  { x: 690, y: sinkY0 + 3 * (sinkH + sinkGap), w: sinkW, h: sinkH },
-    };
+      const sinkW = 160;
+      const sinkH = 64;
+      const sinkGap = 12;
+      const sinkY0 = 56;
+      sinkCards = {
+        cogs:     { x: 900, y: sinkY0,                       w: sinkW, h: sinkH },
+        shipping: { x: 900, y: sinkY0 + 1 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+        fees:     { x: 900, y: sinkY0 + 2 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+        adSpend:  { x: 900, y: sinkY0 + 3 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+      };
+    } else {
+      const netSplit = profitV + costsTotal;
+      const PROFIT_MIN_H = 80;
+      const COSTS_MIN_H  = 100;
+      const COL3_GAP     = 16;
+      const col3Total    = 360 - COL3_GAP;
+      const profitCardH = netSplit > 0
+        ? Math.max(PROFIT_MIN_H, (profitV   / netSplit) * col3Total)
+        : PROFIT_MIN_H;
+      const costsCardH  = netSplit > 0
+        ? Math.max(COSTS_MIN_H,  (costsTotal / netSplit) * col3Total)
+        : COSTS_MIN_H;
+
+      profitCard = { x: 460, y: 24, w: 170, h: profitCardH };
+      costsCard  = { x: 460, y: 24 + profitCardH + COL3_GAP, w: 160, h: costsCardH };
+
+      const sinkW = 180;
+      const sinkH = 64;
+      const sinkGap = 12;
+      const sinkY0 = 140;
+      sinkCards = {
+        cogs:     { x: 690, y: sinkY0,                       w: sinkW, h: sinkH },
+        shipping: { x: 690, y: sinkY0 + 1 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+        fees:     { x: 690, y: sinkY0 + 2 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+        adSpend:  { x: 690, y: sinkY0 + 3 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+      };
+    }
 
     const costsSub = netV > 0
       ? tr(`${formatPercent((costsTotal / netV) * 100)} of net rev`, `순매출의 ${formatPercent((costsTotal / netV) * 100)}`)
@@ -646,20 +654,38 @@
       x: grossEdgeX, top: grossRefundedSeg.bot, bot: grossCard.y + grossCard.h,
     };
 
-    // Net right edge: profit segment on top (green), costs segment below (red).
     const netEdgeX = netCard.x + netCard.w;
-    const profitSegH = netSplit > 0 ? (profitV   / netSplit) * netCard.h : 0;
-    const costsSegH  = netSplit > 0 ? (costsTotal / netSplit) * netCard.h : 0;
+    const netSplit = profitV + costsTotal;
+    const profitSegH = !hasLoss && netSplit > 0 ? (profitV   / netSplit) * netCard.h : 0;
+    const costsSegH  = !hasLoss && netSplit > 0 ? (costsTotal / netSplit) * netCard.h : 0;
     const netToProfitSeg = { x: netEdgeX, top: netCard.y, bot: netCard.y + profitSegH };
-    const netToCostsSeg  = { x: netEdgeX, top: netCard.y + profitSegH, bot: netCard.y + profitSegH + costsSegH };
+    let netToCostsSeg;
+    let costsLeftSeg;
+    let lossToCostsSeg = null;
+    let lossSourceSeg = null;
 
-    // Costs left edge: receives the Net→Costs ribbon centered.
-    const costsCenter = costsCard.y + costsCard.h / 2;
-    const costsLeftSeg = {
-      x: costsCard.x,
-      top: costsCenter - costsSegH / 2,
-      bot: costsCenter + costsSegH / 2,
-    };
+    if (hasLoss) {
+      const costsInputTotal = Math.max(netV + lossV, 1);
+      const lossInputH = (lossV / costsInputTotal) * costsCard.h;
+      const netInputH = (netV / costsInputTotal) * costsCard.h;
+      const costsInputTop = costsCard.y + Math.max(0, (costsCard.h - lossInputH - netInputH) / 2);
+      lossToCostsSeg = { x: costsCard.x, top: costsInputTop, bot: costsInputTop + lossInputH };
+      costsLeftSeg = { x: costsCard.x, top: lossToCostsSeg.bot, bot: lossToCostsSeg.bot + netInputH };
+      netToCostsSeg = { x: netEdgeX, top: netCard.y, bot: netCard.y + netCard.h };
+      lossSourceSeg = {
+        x: profitCard.x + profitCard.w,
+        top: profitCard.y,
+        bot: profitCard.y + profitCard.h,
+      };
+    } else {
+      netToCostsSeg = { x: netEdgeX, top: netCard.y + profitSegH, bot: netCard.y + profitSegH + costsSegH };
+      const costsCenter = costsCard.y + costsCard.h / 2;
+      costsLeftSeg = {
+        x: costsCard.x,
+        top: costsCenter - costsSegH / 2,
+        bot: costsCenter + costsSegH / 2,
+      };
+    }
 
     // Costs right edge: 4 segments fanning out to the destinations.
     let costsCursor = costsCard.y;
@@ -690,11 +716,14 @@
       flows.push({ tone: 'positive', src: grossNetSeg,
         dst: { x: netCard.x, top: netCard.y, bot: netCard.y + netCard.h } });
     }
-    if (profitV > 0) {
+    if (hasLoss && lossV > 0 && lossSourceSeg && lossToCostsSeg) {
+      flows.push({ tone: 'negative', src: lossSourceSeg, dst: lossToCostsSeg });
+    }
+    if (!hasLoss && profitV > 0) {
       flows.push({ tone: isProfitPositive ? 'positive' : 'negative',
         src: netToProfitSeg, dst: dstSeg(profitCard, netToProfitSeg) });
     }
-    if (costsTotal > 0) {
+    if (costsTotal > 0 && (!hasLoss || netV > 0)) {
       flows.push({ tone: 'negative', src: netToCostsSeg, dst: costsLeftSeg });
     }
     if (cogsV > 0) flows.push({ tone: 'negative', src: costsToCogsSeg, dst: dstSeg(sinkCards.cogs, costsToCogsSeg) });
@@ -768,7 +797,7 @@
             <label class="payment-fee-control ${hasCustomFee ? 'has-custom-fee' : ''}" for="calendarPaymentFeeRateInput">
               <span>${esc(tr('Payment fee', '결제 수수료'))}</span>
               <div class="input-with-unit">
-                <input id="calendarPaymentFeeRateInput" class="text-input payment-fee-input" type="number" min="0" max="100" step="0.1" inputmode="decimal" placeholder="${DEFAULT_PAYMENT_FEE_PERCENT}" value="${customFeeValue}" aria-label="${esc(tr('Payment fee percentage', '결제 수수료율'))}">
+                <input id="calendarPaymentFeeRateInput" class="text-input payment-fee-input" type="number" min="0" step="0.1" inputmode="decimal" placeholder="${DEFAULT_PAYMENT_FEE_PERCENT}" value="${customFeeValue}" aria-label="${esc(tr('Payment fee percentage', '결제 수수료율'))}">
                 <span class="unit">%</span>
                 <button type="button" class="payment-fee-reset" data-calendar-payment-fee-reset aria-label="${esc(tr('Reset to default', '기본값으로'))}" title="${esc(tr('Reset to default', '기본값으로'))}">×</button>
               </div>
