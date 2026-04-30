@@ -71,7 +71,7 @@ test('product classifier recognizes Shue category language', () => {
   assert.equal(classifyProductCategory('cashmere cardigan knit').label, 'Apparel');
 });
 
-test('calendar payload and sankey consume category inflows by date and month', () => {
+test('calendar payload exposes category inflows and sankey consumes selected-range inflows', () => {
   assert.match(contractsJs, /categoryRevenueByDate:\s*categoryRevenueByDate\s*\?\?\s*\{\}/);
   assert.match(contractsJs, /categoryRevenueByMonth:\s*categoryRevenueByMonth\s*\?\?\s*\{\}/);
   assert.match(calendarServiceJs, /const monthKey = month\?\.key \|\| month\?\.month \|\| String\(month\?\.start \|\| ''\)\.slice\(0,\s*7\);/);
@@ -79,6 +79,10 @@ test('calendar payload and sankey consume category inflows by date and month', (
   assert.match(calendarJs, /function getCalendarCategoryRevenueRows\(selection\)/);
   assert.match(calendarJs, /normalizeSankeyCategoryRows\(getCalendarCategoryRevenueRows\(selection\),\s*grossV\)/);
   assert.match(calendarJs, /addLink\(`category:\$\{row\.key\}`,\s*'gross',\s*row\.revenue,\s*'positive'/);
+  assert.match(calendarJs, /data-calendar-sankey-meta/);
+  assert.match(calendarJs, /formatCalendarSankeyMeta\(viewModel\)/);
+  assert.doesNotMatch(calendarJs, /waterfallGranularity|data-calendar-waterfall-granularity|calendar-sankey-mode-switch/);
+  assert.doesNotMatch(css, /\.calendar-sankey-mode-switch/);
 });
 
 test('calendar sankey expands to the available card width before scrolling', () => {

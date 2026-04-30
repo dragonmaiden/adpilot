@@ -160,6 +160,51 @@ test('source extraction audit reconciles canonical sources to the financial proj
   assert.equal(audit.reconciliation.projectionTotals.trueNetProfit, 81225);
 });
 
+test('source extraction audit reconciles Meta spend using daily KRW rounding', () => {
+  const latestData = createLatestData({
+    orders: [],
+    revenueData: {
+      totalRevenue: 0,
+      totalRefunded: 0,
+      netRevenue: 0,
+      totalOrders: 0,
+      dailyRevenue: {},
+    },
+    campaignInsights: [
+      { campaign_id: 'campaign-1', date_start: '2026-04-29', spend: '0.01', actions: [] },
+      { campaign_id: 'campaign-1', date_start: '2026-04-30', spend: '0.01', actions: [] },
+    ],
+    adInsights: [],
+    cogsData: {
+      totalCOGS: 0,
+      totalShipping: 0,
+      totalCOGSWithShipping: 0,
+      itemCount: 0,
+      orderCount: 0,
+      incompletePurchaseCount: 0,
+      missingCostItemCount: 0,
+      pendingRecoveryItemCount: 0,
+      orders: [],
+      dailyCOGS: {},
+    },
+    fx: {
+      base: 'USD',
+      quote: 'KRW',
+      source: 'test-rate',
+      usdToKrwRate: 1450,
+      rateDate: '2026-04-30',
+      fetchedAt: '2026-04-30T00:00:00.000Z',
+      stale: false,
+    },
+  });
+
+  const reconciliation = buildProjectionReconciliation(latestData);
+
+  assert.equal(reconciliation.status, 'reconciled');
+  assert.equal(reconciliation.projectionTotals.adSpendKRW, 30);
+  assert.ok(!reconciliation.failedChecks.includes('meta_spend_krw_to_waterfall'));
+});
+
 test('source extraction audit fails loud when Imweb cash totals drift from revenue input', () => {
   const latestData = createLatestData({
     revenueData: {

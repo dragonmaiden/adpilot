@@ -17,7 +17,6 @@
     dragging: false,
     dragStart: null,
     didDrag: false,
-    waterfallGranularity: 'daily',
     paymentFeePercent: null,
   };
 
@@ -162,12 +161,7 @@
     if (abs === 0) return formatKrw(0);
 
     const sign = signed && numeric < 0 ? '-' : signed && numeric > 0 ? '+' : '';
-    const compact = abs >= 1_000_000
-      ? `${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2).replace(/\.?0+$/, '')}M`
-      : abs >= 1_000
-        ? `${Math.round(abs / 1_000).toLocaleString()}k`
-        : abs.toLocaleString();
-    return `${sign}₩${compact}`;
+    return `${sign}₩${abs.toLocaleString()}`;
   }
 
   function getCalendarPaymentFeePercent() {
@@ -211,41 +205,13 @@
 
   function getCalendarWaterfallRows(selection) {
     const feeRate = getCalendarPaymentFeePercent() / 100;
-    let rows = Array.isArray(selection?.days) ? selection.days : [];
-
-    if (calendarState.waterfallGranularity === 'monthly') {
-      const selectedMonth = String(calendarState.selectionStart || rows[0]?.date || getKstDateKey()).slice(0, 7);
-      const today = getKstDateKey();
-      const monthRows = (calendarState.data?.calendarDays || []).filter(day =>
-        String(day?.date || '').startsWith(`${selectedMonth}-`) &&
-        compareDateKeys(day.date, today) <= 0
-      );
-      rows = monthRows.length > 0 ? monthRows : rows;
-    } else {
-      const selectedDate = calendarState.selectionStart || rows[0]?.date;
-      const availableRows = rows.length > 0 ? rows : (calendarState.data?.calendarDays || []);
-      rows = selectedDate
-        ? availableRows.filter(day => day?.date === selectedDate)
-        : availableRows.slice(0, 1);
-    }
+    const rows = Array.isArray(selection?.days) ? selection.days : [];
 
     return rows.map(day => recalculateCalendarDayForFee(day, feeRate));
   }
 
   function getCalendarCategoryRevenueRows(selection) {
-    const rows = Array.isArray(selection?.days) ? selection.days : [];
-    const fallbackRows = Array.isArray(selection?.categoryRevenue) ? selection.categoryRevenue : [];
-    const data = calendarState.data || {};
-
-    if (calendarState.waterfallGranularity === 'monthly') {
-      const selectedMonth = String(calendarState.selectionStart || rows[0]?.date || getKstDateKey()).slice(0, 7);
-      const byMonth = data.categoryRevenueByMonth || {};
-      return Array.isArray(byMonth[selectedMonth]) ? byMonth[selectedMonth] : fallbackRows;
-    }
-
-    const selectedDate = calendarState.selectionStart || rows[0]?.date;
-    const byDate = data.categoryRevenueByDate || {};
-    return selectedDate && Array.isArray(byDate[selectedDate]) ? byDate[selectedDate] : fallbackRows;
+    return Array.isArray(selection?.categoryRevenue) ? selection.categoryRevenue : [];
   }
 
   function normalizeSankeyCategoryRows(rows, grossRevenue) {
@@ -314,19 +280,8 @@
     }));
   }
 
-  function getCalendarWaterfallContextLabel(rows) {
-    if (calendarState.waterfallGranularity === 'monthly') {
-      const monthKey = String(calendarState.selectionStart || rows[0]?.date || getKstDateKey()).slice(0, 7);
-      const monthStart = `${monthKey}-01`;
-      const monthLabel = formatUtcDate(monthStart, { month: 'long', year: 'numeric' });
-      return monthKey === getKstDateKey().slice(0, 7)
-        ? tr(`${monthLabel} month-to-date`, `${monthLabel} 월 누계`)
-        : monthLabel;
-    }
-
-    return calendarState.selectionStart
-      ? formatUtcDate(calendarState.selectionStart, { month: 'long', day: 'numeric', year: 'numeric' })
-      : formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd);
+  function getCalendarWaterfallContextLabel() {
+    return formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd);
   }
 
   function buildCalendarWaterfallSummary(rows) {
@@ -607,6 +562,7 @@
     const rows = getCalendarWaterfallRows(selection);
     const summary = buildCalendarWaterfallSummary(rows);
     const feePercent = formatFeePercentLabel(getCalendarPaymentFeePercent());
+    const contextLabel = getCalendarWaterfallContextLabel();
     const isProfitPositive = summary.trueNetProfit >= 0;
     const orderCount = summary.recognizedOrders || baseSummary?.recognizedOrders || 0;
 
@@ -773,7 +729,7 @@
 
     const d3Sankey = window.d3 && typeof window.d3.sankey === 'function' ? window.d3 : null;
     if (!d3Sankey) {
-      return { nodes, flows: [], summary, feePercent, isProfitPositive, missingSankeyEngine: true };
+      return { nodes, flows: [], summary, feePercent, contextLabel, isProfitPositive, missingSankeyEngine: true };
     }
 
     const layout = d3Sankey.sankey()
@@ -830,7 +786,11 @@
       d: linkPath(link),
     }));
 
-    return { nodes: laidOutNodes, flows, summary, feePercent, isProfitPositive };
+    return { nodes: laidOutNodes, flows, summary, feePercent, contextLabel, isProfitPositive };
+  }
+
+  function formatCalendarSankeyMeta(viewModel) {
+    return viewModel.contextLabel || tr('Selected range', '선택한 범위');
   }
 
   function renderSankeyNode(node) {
@@ -874,7 +834,6 @@
     const customFeeValue = calendarState.paymentFeePercent == null
       ? ''
       : esc(String(calendarState.paymentFeePercent));
-    const activeMode = calendarState.waterfallGranularity;
     const hasCustomFee = calendarState.paymentFeePercent != null;
 
     return `
@@ -882,13 +841,9 @@
         <div class="card-header calendar-sankey-header">
           <div>
             <h2>${esc(tr('Profit Sankey', '수익 Sankey'))}</h2>
-            <span class="card-header-meta">${esc(tr(`${viewModel.feePercent}% payment fee`, `결제 수수료 ${viewModel.feePercent}%`))}</span>
+            <span class="card-header-meta" data-calendar-sankey-meta>${esc(formatCalendarSankeyMeta(viewModel))}</span>
           </div>
           <div class="calendar-sankey-controls">
-            <div class="range-switch calendar-sankey-mode-switch" role="group" aria-label="${esc(tr('Profit Sankey view', '수익 Sankey 보기'))}">
-              <button type="button" class="range-switch-btn ${activeMode === 'daily' ? 'is-active' : ''}" data-calendar-waterfall-granularity="daily" aria-pressed="${activeMode === 'daily'}">${esc(tr('Daily', '일별'))}</button>
-              <button type="button" class="range-switch-btn ${activeMode === 'monthly' ? 'is-active' : ''}" data-calendar-waterfall-granularity="monthly" aria-pressed="${activeMode === 'monthly'}">${esc(tr('Monthly', '월별'))}</button>
-            </div>
             <label class="payment-fee-control ${hasCustomFee ? 'has-custom-fee' : ''}" for="calendarPaymentFeeRateInput">
               <span>${esc(tr('Payment fee', '결제 수수료'))}</span>
               <div class="input-with-unit">
@@ -918,18 +873,12 @@
     const selection = calendarState.data?.selection || {};
     const baseSummary = selection.summary || {};
     const viewModel = buildSankeyViewModel(selection, baseSummary);
+    const metaEl = card.querySelector('[data-calendar-sankey-meta]');
+    if (metaEl) metaEl.textContent = formatCalendarSankeyMeta(viewModel);
 
     canvas.innerHTML = renderSankeyBodyMarkup(viewModel);
     if (window.lucide) {
       lucide.createIcons({ nodes: [canvas] });
-    }
-
-    const meta = card.querySelector('.card-header-meta');
-    if (meta) {
-      meta.textContent = tr(
-        `${viewModel.feePercent}% payment fee`,
-        `결제 수수료 ${viewModel.feePercent}%`
-      );
     }
 
     syncPaymentFeeControlState();
@@ -1357,18 +1306,6 @@
 
     if (selectionDeckEl) {
       selectionDeckEl.addEventListener('click', event => {
-        const modeButton = event.target.closest('[data-calendar-waterfall-granularity]');
-        if (modeButton) {
-          calendarState.waterfallGranularity = modeButton.dataset.calendarWaterfallGranularity || 'daily';
-          document.querySelectorAll('[data-calendar-waterfall-granularity]').forEach(btn => {
-            const isActive = btn.dataset.calendarWaterfallGranularity === calendarState.waterfallGranularity;
-            btn.classList.toggle('is-active', isActive);
-            btn.setAttribute('aria-pressed', String(isActive));
-          });
-          updateCalendarSankeyBody();
-          return;
-        }
-
         const resetButton = event.target.closest('[data-calendar-payment-fee-reset]');
         if (resetButton) {
           calendarState.paymentFeePercent = null;

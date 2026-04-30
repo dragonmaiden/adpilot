@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, safeConfidenceLevel, formatSignedKrw, formatSignedCompactKrw, formatKrw, formatPercent, formatCount, tr, getLocale } = live.shared;
+  const { esc, safeConfidenceLevel, formatSignedKrw, formatKrw, formatPercent, formatCount, tr, getLocale } = live.shared;
   const { fetchAnalytics } = live.api;
   const { getSeriesWindowMeta, sliceRowsByWindow } = live.seriesWindows;
   let cachedAnalyticsData = null;
@@ -344,7 +344,7 @@
 
     if (heroMarginEl) heroMarginEl.textContent = formatNullablePercent(blendedMargin, 1);
     if (heroRoasEl) heroRoasEl.textContent = formatNullableRoas(trueRoas);
-    if (heroRunRateEl) heroRunRateEl.textContent = runRate ? formatSignedCompactKrw(runRate.projectedMonthlyNetProfit) : '—';
+    if (heroRunRateEl) heroRunRateEl.textContent = runRate ? formatSignedKrw(runRate.projectedMonthlyNetProfit) : '—';
 
     if (latestSignalEl) {
       if (todaySummary) {
@@ -491,9 +491,10 @@
         `${waterfallBuckets.length.toLocaleString(getLocale())} periods shown`,
         `${waterfallBuckets.length.toLocaleString(getLocale())}개 구간 표시`
       );
+      const windowContextLabel = tr(`${windowLabel} time frame`, `${windowLabel} 기준`);
 
       profitMovementFootnote.innerHTML = `
-        <span><strong>${esc(granularityLabel)}:</strong> ${esc(periodsShownLabel)}</span>
+        <span><strong>${esc(granularityLabel)}:</strong> ${esc(windowContextLabel)} · ${esc(periodsShownLabel)}</span>
         <span><strong>${esc(conf.label)}:</strong> ${esc(coverageLabel)}</span>
         ${rangeLabel ? `<span>${esc(rangeLabel)}</span>` : ''}
         ${missingLabel ? `<span>${esc(missingLabel)}</span>` : ''}

@@ -36,6 +36,7 @@ test('refund rate chart follows the profit movement window instead of monthly re
 test('profit movement excludes the separate refund series and uses net revenue against total costs', () => {
   assert.match(analyticsJs, /profitWaterfallChart\.data\.datasets\[0\]\.data = waterfallBuckets\.map\(row => row\.revenue - row\.refunded\)/);
   assert.match(analyticsJs, /profitWaterfallChart\.data\.datasets\[1\]\.data = waterfallBuckets\.map\(row =>\s*-\(row\.cogs \+ row\.cogsShipping \+ row\.adSpendKRW \+ row\.paymentFees\)/);
+  assert.match(analyticsJs, /windowContextLabel[\s\S]*\$\{esc\(granularityLabel\)\}:<\/strong> \$\{esc\(windowContextLabel\)\} · \$\{esc\(periodsShownLabel\)\}/);
   assert.doesNotMatch(analyticsJs, /Daily view refund rate|granularityLabel\)} refund rate/);
 });
 

@@ -393,8 +393,6 @@ function buildHighlights({ spendSoFarKrw, revenueSoFarKrw, profitKrw, orderCount
 
 function formatCompactKrw(value) {
   const amount = Math.abs(roundMoney(value));
-  if (amount >= 1000000) return `₩${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 1000) return `₩${Math.round(amount / 1000)}K`;
   return `₩${amount.toLocaleString('en-US')}`;
 }
 

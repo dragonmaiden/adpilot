@@ -331,9 +331,12 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate, options = 
     const hasPartialCOGS = hasAnyCOGS && coverageRatio < 1;
     const cogs = hasAnyCOGS ? (cogsEntry.cost || cogsEntry.cogs || 0) : 0;
     const cogsShipping = hasAnyCOGS ? (cogsEntry.shipping || 0) : 0;
-    const adSpendKRW = convertUsdToKrw(day.spend || 0, usdToKrwRate);
-    const paymentFees = netRevenue * feeRate;
-    const trueNetProfit = calcGrossProfit(netRevenue, cogs + cogsShipping + paymentFees, day.spend || 0, usdToKrwRate);
+    const canonicalSpendKrw = Number(day.spendKrw);
+    const adSpendKRW = day.spendKrw != null && Number.isFinite(canonicalSpendKrw)
+      ? Math.round(canonicalSpendKrw)
+      : Math.round(convertUsdToKrw(day.spend || 0, usdToKrwRate));
+    const paymentFees = Math.round(netRevenue * feeRate);
+    const trueNetProfit = netRevenue - cogs - cogsShipping - paymentFees - adSpendKRW;
 
     return {
       date: day.date,
@@ -343,8 +346,8 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate, options = 
       cogs,
       cogsShipping,
       adSpendKRW,
-      paymentFees: Math.round(paymentFees),
-      trueNetProfit: Math.round(trueNetProfit),
+      paymentFees,
+      trueNetProfit,
       hasCOGS,
       hasPartialCOGS,
       hasPendingRecovery,
