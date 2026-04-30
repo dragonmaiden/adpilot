@@ -6,6 +6,7 @@
 const config = require('../config');
 const telegramState = require('./telegramState');
 const { buildScanSummaryPlan } = require('../services/telegramDigestService');
+const { buildDailySummaryReportPlan } = require('../services/dailyTelegramReportService');
 
 const BOT_TOKEN = typeof config.telegram.botToken === 'string'
   ? config.telegram.botToken.trim()
@@ -320,6 +321,27 @@ async function sendScanSummary(scanResult, latestData = null) {
   return result;
 }
 
+// ── Send daily financial summary report ──
+async function sendDailySummaryReport(latestData = null, options = {}) {
+  const plan = buildDailySummaryReportPlan(
+    latestData || {},
+    telegramState.getState(),
+    options.now || new Date()
+  );
+  if (!plan.shouldSend || !plan.text) {
+    return { skipped: true, reason: plan.reason, reportDate: plan.reportDate };
+  }
+
+  const result = await sendMessage(plan.text);
+  if (result?.ok) {
+    telegramState.markDailyReportSent({
+      reportDate: plan.reportDate,
+      sentAt: options.sentAt || new Date().toISOString(),
+    });
+  }
+  return result;
+}
+
 let statusTimer = null;
 
 function startStatusChecks() {
@@ -353,6 +375,7 @@ module.exports = {
   sendPrivateMessage,
   editMessageText,
   sendScanSummary,
+  sendDailySummaryReport,
   getStatus,
   getPrivateDeliveryError,
   probeConnection,

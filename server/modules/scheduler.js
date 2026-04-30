@@ -4,7 +4,9 @@ const schedulerLoop = require('./schedulerLoop');
 const snapshotRepository = require('./snapshotRepository');
 
 function startScheduler() {
-  return schedulerLoop.startScheduler(scanRunner.runScan);
+  return schedulerLoop.startScheduler(scanRunner.runScan, {
+    getLatestData: scanStore.getLatestData,
+  });
 }
 
 module.exports = {

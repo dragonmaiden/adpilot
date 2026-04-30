@@ -145,6 +145,30 @@ function compareAmounts(name, sourceValue, projectionValue, tolerance = 0, preci
   };
 }
 
+function formatDateRange(range) {
+  if (!range?.firstDate || !range?.lastDate) return 'none';
+  return `${range.firstDate}..${range.lastDate}`;
+}
+
+function compareDateCoverage(name, coveringRange, requiredRange) {
+  const requiredHasDates = Number(requiredRange?.dayCount || 0) > 0;
+  const coversRequiredRange = !requiredHasDates || (
+    coveringRange?.firstDate
+    && coveringRange?.lastDate
+    && coveringRange.firstDate <= requiredRange.firstDate
+    && coveringRange.lastDate >= requiredRange.lastDate
+  );
+
+  return {
+    name,
+    status: coversRequiredRange ? 'pass' : 'fail',
+    source: formatDateRange(coveringRange),
+    projection: formatDateRange(requiredRange),
+    delta: coversRequiredRange ? 0 : 1,
+    tolerance: 0,
+  };
+}
+
 function sumRows(rows, selector) {
   return asArray(rows).reduce((sum, row) => sum + toNumber(selector(row)), 0);
 }
@@ -172,6 +196,10 @@ function buildProjectionReconciliation(latestData = {}, projection = buildFinanc
     compareAmounts('sheets_cogs_to_waterfall', cogsTotals.totalCOGS, sumRows(waterfall, row => row.cogs)),
     compareAmounts('sheets_shipping_to_waterfall', cogsTotals.totalShipping, sumRows(waterfall, row => row.cogsShipping)),
   ];
+
+  if (cogsTotals.purchaseCount > 0 || cogsTotals.orderCount > 0) {
+    checks.push(compareDateCoverage('revenue_date_range_covers_cogs', revenueTotals, cogsTotals));
+  }
 
   const projectionNet = sumRows(waterfall, row => row.netRevenue);
   const projectionCosts = sumRows(waterfall, row =>

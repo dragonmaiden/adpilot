@@ -288,6 +288,58 @@ test('source extraction audit fails loud when recognized order counts drift from
   assert.ok(reconciliation.failedChecks.includes('revenue_to_projection_orders'));
 });
 
+test('source extraction audit fails loud when revenue date range does not cover COGS', () => {
+  const latestData = createLatestData({
+    orders: [
+      {
+        orderNo: 'order-1',
+        wtime: '2026-04-29T01:00:00.000Z',
+        totalPaymentPrice: 150000,
+        totalRefundedPrice: 0,
+      },
+    ],
+    revenueData: {
+      totalRevenue: 150000,
+      totalRefunded: 0,
+      netRevenue: 150000,
+      totalOrders: 1,
+      dailyRevenue: {
+        '2026-04-29': {
+          revenue: 150000,
+          refunded: 0,
+          orders: 1,
+        },
+      },
+    },
+    cogsData: {
+      totalCOGS: 30000,
+      totalShipping: 5000,
+      totalCOGSWithShipping: 35000,
+      itemCount: 1,
+      orderCount: 1,
+      purchaseCount: 1,
+      refundCount: 0,
+      incompletePurchaseCount: 0,
+      missingCostItemCount: 0,
+      pendingRecoveryItemCount: 0,
+      orders: [{ orderNo: 'order-2' }],
+      dailyCOGS: {
+        '2026-04-30': {
+          cost: 30000,
+          shipping: 5000,
+          purchases: 1,
+          costCoverageRatio: 1,
+        },
+      },
+    },
+  });
+
+  const reconciliation = buildProjectionReconciliation(latestData);
+
+  assert.equal(reconciliation.status, 'mismatch');
+  assert.ok(reconciliation.failedChecks.includes('revenue_date_range_covers_cogs'));
+});
+
 test('source extraction audit preserves last-known-good projection but marks failed fetches', () => {
   const latestData = createLatestData({
     sources: {

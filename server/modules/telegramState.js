@@ -11,6 +11,17 @@ function createState() {
       sentAt: null,
       category: null,
     },
+    dailyReport: {
+      reportDate: null,
+      sentAt: null,
+    },
+  };
+}
+
+function normalizeDailyReportState(raw) {
+  return {
+    reportDate: typeof raw?.dailyReport?.reportDate === 'string' ? raw.dailyReport.reportDate : null,
+    sentAt: typeof raw?.dailyReport?.sentAt === 'string' ? raw.dailyReport.sentAt : null,
   };
 }
 
@@ -27,6 +38,7 @@ function loadState() {
         sentAt: typeof raw?.summary?.sentAt === 'string' ? raw.summary.sentAt : null,
         category: typeof raw?.summary?.category === 'string' ? raw.summary.category : null,
       },
+      dailyReport: normalizeDailyReportState(raw),
     };
   } catch (err) {
     console.warn(`[TELEGRAM STATE] Failed to load state: ${err.message}`);
@@ -52,7 +64,16 @@ function markSummarySent({ fingerprint, category, sentAt = new Date().toISOStrin
   return state;
 }
 
+function markDailyReportSent({ reportDate, sentAt = new Date().toISOString() }) {
+  const state = loadState();
+  state.dailyReport.reportDate = reportDate || null;
+  state.dailyReport.sentAt = sentAt;
+  saveState(state);
+  return state;
+}
+
 module.exports = {
   getState,
+  markDailyReportSent,
   markSummarySent,
 };
