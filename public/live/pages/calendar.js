@@ -501,12 +501,6 @@
     `;
   }
 
-  function getSankeyFlowWidth(value, maxFlow) {
-    const magnitude = Math.abs(toFiniteNumber(value));
-    if (magnitude <= 0 || maxFlow <= 0) return 2;
-    return Math.max(3, Math.min(54, Math.sqrt(magnitude / maxFlow) * 54));
-  }
-
   function buildSankeyViewModel(selection, baseSummary) {
     const rows = getCalendarWaterfallRows(selection);
     const summary = buildCalendarWaterfallSummary(rows);
@@ -554,132 +548,169 @@
       1
     );
 
-    // Coordinate space matches the SVG viewBox 1080 × 440.
-    // Columns: gross @24 → mid @286 → costs @566 → profit @780.
-    // Cost-column pitch raised from 86 → 100px (un-jam stacked cards).
-    // Refunded moved from y=48 → y=100 to sit just above Net Revenue.
+    // Income-statement Sankey topology (4 columns).
+    //   Col 1: Gross Revenue
+    //   Col 2: Refunded (top, red branch) + Net Revenue (spine)
+    //   Col 3: True Net Profit (top, green continuation) + Costs aggregator (bottom, red)
+    //   Col 4: COGS, Shipping, Fees, Ad Spend (sub-split from Costs)
+    // The "Costs" node is a visual aggregator — sum of the 4 cost values,
+    // not a new data metric. All 8 user-defined components remain present.
+    const grossV    = Math.max(0, summary.grossRevenue);
+    const refundedV = Math.max(0, summary.refundedAmount);
+    const netV      = Math.max(0, summary.netRevenue);
+    const cogsV     = Math.max(0, summary.cogs);
+    const shipV     = Math.max(0, summary.shipping);
+    const feesV     = Math.max(0, summary.paymentFees);
+    const adV       = Math.max(0, summary.adSpendKRW);
+    const profitV   = Math.max(0, summary.trueNetProfit);
+    const costsTotal = cogsV + shipV + feesV + adV;
+    const netSplit  = profitV + costsTotal;
+
+    const grossCard    = { x: 24,  y: 140, w: 160, h: 200 };
+    const refundedCard = { x: 234, y: 56,  w: 160, h: 64  };
+    const netCard      = { x: 234, y: 140, w: 160, h: 200 };
+
+    // Column 3 heights proportional to Net's split (profit vs total costs).
+    const PROFIT_MIN_H = 80;
+    const COSTS_MIN_H  = 100;
+    const COL3_GAP     = 16;
+    const col3Total    = 360 - COL3_GAP;
+    const profitCardH = netSplit > 0
+      ? Math.max(PROFIT_MIN_H, (profitV   / netSplit) * col3Total)
+      : PROFIT_MIN_H;
+    const costsCardH  = netSplit > 0
+      ? Math.max(COSTS_MIN_H,  (costsTotal / netSplit) * col3Total)
+      : COSTS_MIN_H;
+
+    const profitCard = { x: 460, y: 24, w: 170, h: profitCardH };
+    const costsCard  = { x: 460, y: 24 + profitCardH + COL3_GAP, w: 160, h: costsCardH };
+
+    // Column 4: 4 cost destinations, uniform stacked.
+    const sinkW = 180;
+    const sinkH = 64;
+    const sinkGap = 12;
+    const sinkY0 = 140;
+    const sinkCards = {
+      cogs:     { x: 690, y: sinkY0,                       w: sinkW, h: sinkH },
+      shipping: { x: 690, y: sinkY0 + 1 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+      fees:     { x: 690, y: sinkY0 + 2 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+      adSpend:  { x: 690, y: sinkY0 + 3 * (sinkH + sinkGap), w: sinkW, h: sinkH },
+    };
+
+    const costsSub = netV > 0
+      ? tr(`${formatPercent((costsTotal / netV) * 100)} of net rev`, `순매출의 ${formatPercent((costsTotal / netV) * 100)}`)
+      : tr('Total deductions', '총 차감액');
+
     const nodes = [
-      {
-        key: 'gross',
-        label: tr('Gross Revenue', '총매출'),
+      { key: 'gross',    label: tr('Gross Revenue', '총매출'),
         value: formatKrw(summary.grossRevenue),
         sub: tr(`${formatCount(orderCount)} orders`, `주문 ${formatCount(orderCount)}건`),
-        tone: 'positive',
-        icon: 'shopping-bag',
-        x: 24, y: 192, w: 178,
-        ports: 'out',
-      },
-      {
-        key: 'refunded',
-        label: tr('Refunded', '환불'),
+        tone: 'positive', icon: 'shopping-bag', ...grossCard },
+      { key: 'refunded', label: tr('Refunded', '환불'),
         value: formatSignedKrw(-summary.refundedAmount),
         sub: tr(`${formatPercent(summary.refundRate || 0)} refund rate`, `환불률 ${formatPercent(summary.refundRate || 0)}`),
-        tone: summary.refundedAmount > 0 ? 'negative' : 'neutral',
-        icon: 'rotate-ccw',
-        x: 286, y: 100, w: 176,
-        ports: 'in',
-      },
-      {
-        key: 'net',
-        label: tr('Net Revenue', '순매출'),
+        tone: summary.refundedAmount > 0 ? 'negative' : 'neutral', icon: 'rotate-ccw', ...refundedCard },
+      { key: 'net',      label: tr('Net Revenue', '순매출'),
         value: formatKrw(summary.netRevenue),
         sub: tr(`${formatCount(summary.dayCount || 0)} days`, `${formatCount(summary.dayCount || 0)}일`),
-        tone: 'positive',
-        icon: 'wallet',
-        x: 286, y: 252, w: 176,
-        ports: 'both',
-      },
-      {
-        key: 'cogs',
-        label: 'COGS',
-        value: formatSignedKrw(-summary.cogs),
-        sub: coverageLabel,
-        tone: 'negative',
-        icon: 'package',
-        x: 566, y: 24, w: 188,
-        ports: 'in',
-      },
-      {
-        key: 'shipping',
-        label: tr('Shipping', '배송비'),
-        value: formatSignedKrw(-summary.shipping),
-        sub: shippingSub,
-        tone: 'negative',
-        icon: 'truck',
-        x: 566, y: 124, w: 188,
-        ports: 'in',
-      },
-      {
-        key: 'fees',
-        label: tr('Payment Fees', '결제 수수료'),
+        tone: 'positive', icon: 'wallet', ...netCard },
+      { key: 'profit',   label: tr('True Net Profit', '실질 순이익'),
+        value: formatSignedKrw(summary.trueNetProfit), sub: profitSub,
+        tone: isProfitPositive ? 'positive' : 'negative',
+        icon: 'coins', terminal: true, ...profitCard },
+      { key: 'costs',    label: tr('Costs', '비용'),
+        value: formatSignedKrw(-costsTotal), sub: costsSub,
+        tone: 'negative', icon: 'minus-circle', ...costsCard },
+      { key: 'cogs',     label: 'COGS',
+        value: formatSignedKrw(-summary.cogs), sub: coverageLabel,
+        tone: 'negative', icon: 'package', ...sinkCards.cogs },
+      { key: 'shipping', label: tr('Shipping', '배송비'),
+        value: formatSignedKrw(-summary.shipping), sub: shippingSub,
+        tone: 'negative', icon: 'truck', ...sinkCards.shipping },
+      { key: 'fees',     label: tr('Payment Fees', '결제 수수료'),
         value: formatSignedKrw(-summary.paymentFees),
         sub: tr(`${formatCount(orderCount)} transactions`, `거래 ${formatCount(orderCount)}건`),
-        tone: 'negative',
-        icon: 'credit-card',
-        x: 566, y: 224, w: 188,
-        ports: 'in',
-      },
-      {
-        key: 'adSpend',
-        label: tr('Ad Spend', '광고비'),
-        value: formatSignedKrw(-summary.adSpendKRW),
-        sub: adSpendSub,
-        tone: 'negative',
-        icon: 'megaphone',
-        x: 566, y: 324, w: 188,
-        ports: 'in',
-        titleAttr: adSpendUsdTitle,
-      },
-      {
-        key: 'profit',
-        label: tr('True Net Profit', '실질 순이익'),
-        value: formatSignedKrw(summary.trueNetProfit),
-        sub: profitSub,
-        tone: isProfitPositive ? 'positive' : 'negative',
-        icon: 'coins',
-        x: 780, y: 230, w: 220,
-        ports: 'in',
-        terminal: true,
-      },
+        tone: 'negative', icon: 'credit-card', ...sinkCards.fees },
+      { key: 'adSpend',  label: tr('Ad Spend', '광고비'),
+        value: formatSignedKrw(-summary.adSpendKRW), sub: adSpendSub,
+        tone: 'negative', icon: 'megaphone', titleAttr: adSpendUsdTitle, ...sinkCards.adSpend },
     ];
 
-    // Endpoints land on the flat portion of each card edge (port rails),
-    // so butt-cap strokes render cleanly without floating into rounded corners.
-    const flows = [
-      // Gross → Refunded (upper fork)
-      { value: summary.refundedAmount, tone: 'negative',
-        path: 'M 202 218 C 244 218 244 130 286 130' },
-      // Gross → Net (lower fork; main spine)
-      { value: summary.netRevenue, tone: 'positive',
-        path: 'M 202 232 C 244 232 244 282 286 282' },
-      // Net → cost cards (4 stacked deductions)
-      { value: summary.cogs,        tone: 'negative',
-        path: 'M 462 260 C 514 260 514  68 566  68' },
-      { value: summary.shipping,    tone: 'negative',
-        path: 'M 462 268 C 514 268 514 168 566 168' },
-      { value: summary.paymentFees, tone: 'negative',
-        path: 'M 462 280 C 514 280 514 268 566 268' },
-      { value: summary.adSpendKRW,  tone: 'negative',
-        path: 'M 462 292 C 514 292 514 368 566 368' },
-      // Net → True Net Profit (skips cost column)
-      { value: Math.abs(summary.trueNetProfit),
-        tone: isProfitPositive ? 'positive' : 'negative',
-        path: 'M 462 300 C 620 300 660 274 780 274' },
-    ];
+    // Gross right edge: refunded segment on top, net segment below.
+    const grossEdgeX  = grossCard.x + grossCard.w;
+    const refundShare = grossV > 0 ? refundedV / grossV : 0;
+    const grossRefundedSeg = {
+      x: grossEdgeX, top: grossCard.y, bot: grossCard.y + refundShare * grossCard.h,
+    };
+    const grossNetSeg = {
+      x: grossEdgeX, top: grossRefundedSeg.bot, bot: grossCard.y + grossCard.h,
+    };
 
-    return { nodes, flows, maxFlow, summary, feePercent, isProfitPositive };
+    // Net right edge: profit segment on top (green), costs segment below (red).
+    const netEdgeX = netCard.x + netCard.w;
+    const profitSegH = netSplit > 0 ? (profitV   / netSplit) * netCard.h : 0;
+    const costsSegH  = netSplit > 0 ? (costsTotal / netSplit) * netCard.h : 0;
+    const netToProfitSeg = { x: netEdgeX, top: netCard.y, bot: netCard.y + profitSegH };
+    const netToCostsSeg  = { x: netEdgeX, top: netCard.y + profitSegH, bot: netCard.y + profitSegH + costsSegH };
+
+    // Costs left edge: receives the Net→Costs ribbon centered.
+    const costsCenter = costsCard.y + costsCard.h / 2;
+    const costsLeftSeg = {
+      x: costsCard.x,
+      top: costsCenter - costsSegH / 2,
+      bot: costsCenter + costsSegH / 2,
+    };
+
+    // Costs right edge: 4 segments fanning out to the destinations.
+    let costsCursor = costsCard.y;
+    const costsRightSeg = (value) => {
+      const segH = costsTotal > 0 ? (value / costsTotal) * costsCard.h : 0;
+      const seg = { x: costsCard.x + costsCard.w, top: costsCursor, bot: costsCursor + segH };
+      costsCursor += segH;
+      return seg;
+    };
+    const costsToCogsSeg = costsRightSeg(cogsV);
+    const costsToShipSeg = costsRightSeg(shipV);
+    const costsToFeesSeg = costsRightSeg(feesV);
+    const costsToAdSeg   = costsRightSeg(adV);
+
+    // Each cost-destination card centers its inbound ribbon on its left edge.
+    const dstSeg = (card, srcSeg) => {
+      const w = srcSeg.bot - srcSeg.top;
+      const center = card.y + card.h / 2;
+      return { x: card.x, top: center - w / 2, bot: center + w / 2 };
+    };
+
+    const flows = [];
+    if (refundedV > 0) {
+      flows.push({ tone: 'negative', src: grossRefundedSeg,
+        dst: { x: refundedCard.x, top: refundedCard.y, bot: refundedCard.y + refundedCard.h } });
+    }
+    if (netV > 0) {
+      flows.push({ tone: 'positive', src: grossNetSeg,
+        dst: { x: netCard.x, top: netCard.y, bot: netCard.y + netCard.h } });
+    }
+    if (profitV > 0) {
+      flows.push({ tone: isProfitPositive ? 'positive' : 'negative',
+        src: netToProfitSeg, dst: dstSeg(profitCard, netToProfitSeg) });
+    }
+    if (costsTotal > 0) {
+      flows.push({ tone: 'negative', src: netToCostsSeg, dst: costsLeftSeg });
+    }
+    if (cogsV > 0) flows.push({ tone: 'negative', src: costsToCogsSeg, dst: dstSeg(sinkCards.cogs, costsToCogsSeg) });
+    if (shipV > 0) flows.push({ tone: 'negative', src: costsToShipSeg, dst: dstSeg(sinkCards.shipping, costsToShipSeg) });
+    if (feesV > 0) flows.push({ tone: 'negative', src: costsToFeesSeg, dst: dstSeg(sinkCards.fees, costsToFeesSeg) });
+    if (adV > 0)   flows.push({ tone: 'negative', src: costsToAdSeg,   dst: dstSeg(sinkCards.adSpend, costsToAdSeg) });
+
+    return { nodes, flows, summary, feePercent, isProfitPositive };
   }
 
   function renderSankeyNode(node) {
-    const portClass = node.ports === 'out'  ? 'has-port-out'
-                    : node.ports === 'in'   ? 'has-port-in'
-                    : node.ports === 'both' ? 'has-port-both'
-                    : '';
     const terminalClass = node.terminal ? ' is-terminal' : '';
     const titleAttr = node.titleAttr ? ` title="${esc(node.titleAttr)}"` : '';
-    const style = `--node-x:${node.x}px;--node-y:${node.y}px;--node-w:${node.w}px`;
+    const style = `--node-x:${node.x}px;--node-y:${node.y}px;--node-w:${node.w}px;--node-h:${node.h}px`;
     return `
-      <div class="calendar-sankey-node ${esc(node.tone || 'neutral')} ${portClass}${terminalClass}" style="${style}" role="listitem"${titleAttr}>
+      <div class="calendar-sankey-node ${esc(node.tone || 'neutral')}${terminalClass}" style="${style}" role="listitem"${titleAttr}>
         <div class="calendar-sankey-node-label">
           <i data-lucide="${esc(node.icon || 'circle')}"></i>
           <span>${esc(node.label)}</span>
@@ -690,16 +721,25 @@
     `;
   }
 
-  function renderSankeyFlow(flow, maxFlow) {
-    const width = getSankeyFlowWidth(flow.value, maxFlow);
-    const opacity = Math.abs(toFiniteNumber(flow.value)) > 0 ? 0.7 : 0.16;
-    return `<path class="calendar-sankey-flow ${esc(flow.tone || 'neutral')}" d="${esc(flow.path)}" style="stroke-width:${width.toFixed(1)}px;opacity:${opacity}"></path>`;
+  function renderSankeyFlow(flow) {
+    // Closed-polygon ribbon: top edge curves source→dest, bottom edge curves dest→source.
+    // Cubic Bezier control points share the source/dest y so curves enter horizontally.
+    const { src, dst } = flow;
+    const midX = (src.x + dst.x) / 2;
+    const d = [
+      `M ${src.x} ${src.top}`,
+      `C ${midX} ${src.top} ${midX} ${dst.top} ${dst.x} ${dst.top}`,
+      `L ${dst.x} ${dst.bot}`,
+      `C ${midX} ${dst.bot} ${midX} ${src.bot} ${src.x} ${src.bot}`,
+      'Z',
+    ].join(' ');
+    return `<path class="calendar-sankey-flow ${esc(flow.tone || 'neutral')}" d="${d}"></path>`;
   }
 
   function renderSankeyBodyMarkup(viewModel) {
     return `
-      <svg class="calendar-sankey-svg" viewBox="0 0 1080 440" aria-hidden="true">
-        ${viewModel.flows.map(flow => renderSankeyFlow(flow, viewModel.maxFlow)).join('')}
+      <svg class="calendar-sankey-svg" viewBox="0 0 1080 480" aria-hidden="true">
+        ${viewModel.flows.map(renderSankeyFlow).join('')}
       </svg>
       ${viewModel.nodes.map(renderSankeyNode).join('')}
     `;

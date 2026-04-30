@@ -3236,7 +3236,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .calendar-sankey-canvas {
   position: relative;
   width: 1080px;
-  height: 440px;
+  height: 480px;
   min-width: 920px;
 }
 
@@ -3249,20 +3249,20 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .calendar-sankey-flow {
-  fill: none;
-  stroke-linecap: butt;
+  stroke: none;
+  fill-rule: nonzero;
 }
 
 .calendar-sankey-flow.positive {
-  stroke: color-mix(in srgb, var(--color-success) 60%, transparent);
+  fill: color-mix(in srgb, var(--color-success) 62%, transparent);
 }
 
 .calendar-sankey-flow.negative {
-  stroke: color-mix(in srgb, var(--color-error) 52%, transparent);
+  fill: color-mix(in srgb, var(--color-error) 48%, transparent);
 }
 
 .calendar-sankey-flow.neutral {
-  stroke: color-mix(in srgb, var(--color-text-faint) 38%, transparent);
+  fill: color-mix(in srgb, var(--color-text-faint) 28%, transparent);
 }
 
 .calendar-sankey-node {
@@ -3270,16 +3270,17 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   left: var(--node-x);
   top: var(--node-y);
   width: var(--node-w);
-  min-height: 76px;
+  height: var(--node-h);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-surface) 94%, transparent);
   box-shadow: var(--shadow-sm);
-  --port-color: var(--color-text-faint);
+  overflow: hidden;
 }
 
 .calendar-sankey-node.positive {
@@ -3287,7 +3288,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--color-success-subtle) 36%, transparent), transparent 70%),
     var(--color-surface);
-  --port-color: var(--color-success);
 }
 
 .calendar-sankey-node.negative {
@@ -3295,38 +3295,10 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--color-error-subtle) 36%, transparent), transparent 70%),
     var(--color-surface);
-  --port-color: var(--color-error);
-}
-
-.calendar-sankey-node.has-port-in::before,
-.calendar-sankey-node.has-port-both::before {
-  content: "";
-  position: absolute;
-  top: 12px;
-  bottom: 12px;
-  left: -2px;
-  width: 4px;
-  border-radius: 2px;
-  background: var(--port-color);
-  opacity: 0.55;
-}
-
-.calendar-sankey-node.has-port-out::after,
-.calendar-sankey-node.has-port-both::after {
-  content: "";
-  position: absolute;
-  top: 12px;
-  bottom: 12px;
-  right: -2px;
-  width: 4px;
-  border-radius: 2px;
-  background: var(--port-color);
-  opacity: 0.55;
 }
 
 .calendar-sankey-node.is-terminal {
-  min-height: 100px;
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4);
 }
 
 .calendar-sankey-node-label {
@@ -3648,7 +3620,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
   .calendar-sankey-canvas {
     width: 1080px;
-    height: 440px;
+    height: 480px;
     min-width: 1080px;
   }
 
