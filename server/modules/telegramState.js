@@ -6,9 +6,6 @@ const STATE_FILE = path.join(runtimePaths.dataDir, 'telegram_state.json');
 
 function createState() {
   return {
-    startup: {
-      sentAt: null,
-    },
     summary: {
       fingerprint: null,
       sentAt: null,
@@ -25,9 +22,6 @@ function loadState() {
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     return {
-      startup: {
-        sentAt: typeof raw?.startup?.sentAt === 'string' ? raw.startup.sentAt : null,
-      },
       summary: {
         fingerprint: typeof raw?.summary?.fingerprint === 'string' ? raw.summary.fingerprint : null,
         sentAt: typeof raw?.summary?.sentAt === 'string' ? raw.summary.sentAt : null,
@@ -49,13 +43,6 @@ function getState() {
   return loadState();
 }
 
-function markStartupSent(timestamp = new Date().toISOString()) {
-  const state = loadState();
-  state.startup.sentAt = timestamp;
-  saveState(state);
-  return state;
-}
-
 function markSummarySent({ fingerprint, category, sentAt = new Date().toISOString() }) {
   const state = loadState();
   state.summary.fingerprint = fingerprint || null;
@@ -67,6 +54,5 @@ function markSummarySent({ fingerprint, category, sentAt = new Date().toISOStrin
 
 module.exports = {
   getState,
-  markStartupSent,
   markSummarySent,
 };

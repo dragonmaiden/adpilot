@@ -44,6 +44,7 @@ async function withMockedOrderNotificationService(overrides, run) {
 
 test('deliverNewOrderNotification stores the public Telegram message id for later checklist updates', async () => {
   const sentMessages = [];
+  const privateMessages = [];
   const recordedDeliveries = [];
 
   await withMockedOrderNotificationService({
@@ -54,6 +55,10 @@ test('deliverNewOrderNotification stores the public Telegram message id for late
           return { ok: true, result: { message_id: 4321 } };
         }
         return { ok: true, result: { message_id: 4322 } };
+      },
+      sendPrivateMessage: async (text, parseMode = 'HTML', options = {}) => {
+        privateMessages.push({ text, parseMode, options });
+        return { ok: true, result: { message_id: 5321 } };
       },
     },
     cogsAutofillService: {
@@ -73,7 +78,8 @@ test('deliverNewOrderNotification stores the public Telegram message id for late
     });
 
     assert.equal(result.messageId, 4321);
-    assert.equal(sentMessages.length, 2);
+    assert.equal(sentMessages.length, 1);
+    assert.equal(privateMessages.length, 1);
     assert.deepEqual(recordedDeliveries, [
       {
         orderNo: '202603150001',
@@ -86,7 +92,7 @@ test('deliverNewOrderNotification stores the public Telegram message id for late
         },
       },
     ]);
-    assert.equal(sentMessages[1].options.protectContent, true);
+    assert.equal(privateMessages[0].text, 'private:202603150001');
   });
 });
 
@@ -211,6 +217,7 @@ test('deliverPaidOrderNotification stays silent when the order was already marke
 
 test('deliverPaidOrderNotification still falls back to a completed card when no prior order alert exists', async () => {
   const sentMessages = [];
+  const privateMessages = [];
   const completionMarks = [];
 
   await withMockedOrderNotificationService({
@@ -218,6 +225,10 @@ test('deliverPaidOrderNotification still falls back to a completed card when no 
       sendMessage: async (text, parseMode = 'HTML', options = {}) => {
         sentMessages.push({ text, parseMode, options });
         return { ok: true, result: { message_id: sentMessages.length + 7000 } };
+      },
+      sendPrivateMessage: async (text, parseMode = 'HTML', options = {}) => {
+        privateMessages.push({ text, parseMode, options });
+        return { ok: true, result: { message_id: privateMessages.length + 8000 } };
       },
     },
     cogsAutofillService: {
@@ -238,7 +249,8 @@ test('deliverPaidOrderNotification still falls back to a completed card when no 
     });
 
     assert.equal(result.kind, 'sent_paid_fallback');
-    assert.equal(sentMessages.length, 2);
+    assert.equal(sentMessages.length, 1);
+    assert.equal(privateMessages.length, 1);
     assert.equal(sentMessages[0].text, 'completed:202603150001:payment_confirmed');
     assert.deepEqual(completionMarks, [
       {
@@ -251,7 +263,36 @@ test('deliverPaidOrderNotification still falls back to a completed card when no 
         },
       },
     ]);
-    assert.equal(sentMessages[1].options.protectContent, true);
+    assert.equal(privateMessages[0].text, 'private:202603150001');
+  });
+});
+
+test('deliverNewOrderNotification still sends public alerts when the private helper is unavailable', async () => {
+  const sentMessages = [];
+
+  await withMockedOrderNotificationService({
+    telegram: {
+      sendMessage: async (text, parseMode = 'HTML', options = {}) => {
+        sentMessages.push({ text, parseMode, options });
+        return { ok: true, result: { message_id: 4321 } };
+      },
+    },
+    cogsAutofillService: {
+      buildNewOrderNotification: result => `new:${result.orderNo}`,
+      buildAutofillPrivateNotification: result => `private:${result.orderNo}`,
+      recordOrderNotificationDelivery: () => ({}),
+    },
+  }, async service => {
+    const result = await service.deliverNewOrderNotification({
+      orderNo: '202603150001',
+      paymentState: 'awaiting_check',
+      orderDate: '2026-03-15',
+    });
+
+    assert.equal(result.publicMessage.ok, true);
+    assert.equal(result.privateMessage.skipped, true);
+    assert.equal(result.privateMessage.reason, 'private_delivery_unavailable');
+    assert.equal(sentMessages.length, 1);
   });
 });
 

@@ -309,6 +309,12 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   font-size: var(--text-sm);
 }
 
+.analytics-inline-notice.is-error {
+  border-color: rgba(239, 68, 68, 0.24);
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+}
+
 /* ============================================
    MAIN CONTENT
    ============================================ */

@@ -35,5 +35,7 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+      - key: TELEGRAM_REQUEST_TIMEOUT_MS
+        value: "10000"
       - key: SCAN_INTERVAL_MINUTES
         value: "5"

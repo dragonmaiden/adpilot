@@ -48,7 +48,13 @@ function getCogsCoverageRatio(entry) {
  * @param {Object} dailyCogs – { "2026-03-10": { purchases, refunds, ... }, ... }
  * @returns {Array} [{date, revenue, refunded, netRevenue, orders, spend, spendKrw, purchases, cpa, roas, clicks, impressions, ctr, cpc}, ...]
  */
-function buildDailyMerged(revenueByDay, dailyInsights, dailyCogs = null) {
+function resolveUsdToKrwRate(options = {}) {
+  const rate = Number(options.usdToKrwRate);
+  return Number.isFinite(rate) && rate > 0 ? rate : undefined;
+}
+
+function buildDailyMerged(revenueByDay, dailyInsights, dailyCogs = null, options = {}) {
+  const usdToKrwRate = resolveUsdToKrwRate(options);
   const byDate = aggregateInsightsBy(
     dailyInsights,
     row => row.date_start,
@@ -111,9 +117,9 @@ function buildDailyMerged(revenueByDay, dailyInsights, dailyCogs = null) {
         ...day,
         purchases,
         netRevenue,
-        spendKrw: Math.round(convertUsdToKrw(day.spend)),
+        spendKrw: Math.round(convertUsdToKrw(day.spend, usdToKrwRate)),
         cpa: parseFloat(calcCPA(day.spend, purchases, 0).toFixed(4)),
-        roas: parseFloat(calcROAS(netRevenue, day.spend).toFixed(4)),
+        roas: parseFloat(calcROAS(netRevenue, day.spend, usdToKrwRate).toFixed(4)),
         ctr: parseFloat(calcCTR(day.clicks, day.impressions).toFixed(4)),
         cpc: parseFloat(calcCPC(day.spend, day.clicks).toFixed(4)),
       };
@@ -278,13 +284,14 @@ function buildDailyProfit(daily, profitWaterfall = null) {
  * The chart still consumes OHLC-shaped points, but highs/lows now come
  * directly from the real day-over-day range instead of fabricated noise.
  */
-function buildSpendDaily(dailyMerged) {
+function buildSpendDaily(dailyMerged, options = {}) {
+  const usdToKrwRate = resolveUsdToKrwRate(options);
   const daily = asArray(dailyMerged).slice().sort((a, b) => a.date.localeCompare(b.date));
   if (daily.length === 0) return [];
 
   return daily.map((entry, index) => {
-    const spendKrw = convertUsdToKrw(entry.spend || 0);
-    const previousSpendKrw = index > 0 ? convertUsdToKrw(daily[index - 1].spend || 0) : spendKrw;
+    const spendKrw = convertUsdToKrw(entry.spend || 0, usdToKrwRate);
+    const previousSpendKrw = index > 0 ? convertUsdToKrw(daily[index - 1].spend || 0, usdToKrwRate) : spendKrw;
     const open = previousSpendKrw;
     const close = spendKrw;
     const high = Math.max(open, close);
@@ -306,9 +313,10 @@ function buildSpendDaily(dailyMerged) {
 /**
  * Build profit waterfall data — true net profit per day including COGS, shipping, payment fees.
  */
-function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate) {
+function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate, options = {}) {
   const cogsDict = dailyCOGS || {};
   const feeRate = paymentFeeRate || 0;
+  const usdToKrwRate = resolveUsdToKrwRate(options);
 
   return asArray(dailyMerged).map(day => {
     const dateKey = (day.date || '').slice(0, 10);
@@ -323,9 +331,9 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate) {
     const hasPartialCOGS = hasAnyCOGS && coverageRatio < 1;
     const cogs = hasAnyCOGS ? (cogsEntry.cost || cogsEntry.cogs || 0) : 0;
     const cogsShipping = hasAnyCOGS ? (cogsEntry.shipping || 0) : 0;
-    const adSpendKRW = convertUsdToKrw(day.spend || 0);
+    const adSpendKRW = convertUsdToKrw(day.spend || 0, usdToKrwRate);
     const paymentFees = netRevenue * feeRate;
-    const trueNetProfit = calcGrossProfit(netRevenue, cogs + cogsShipping + paymentFees, day.spend || 0);
+    const trueNetProfit = calcGrossProfit(netRevenue, cogs + cogsShipping + paymentFees, day.spend || 0, usdToKrwRate);
 
     return {
       date: day.date,
@@ -354,7 +362,8 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate) {
 /**
  * Build campaign-level profit estimates using Meta pixel purchases × avg Imweb AOV.
  */
-function buildCampaignProfit(campaignInsights, campaigns, avgAOV, cogsData, totalRevenue) {
+function buildCampaignProfit(campaignInsights, campaigns, avgAOV, cogsData, totalRevenue, options = {}) {
+  const usdToKrwRate = resolveUsdToKrwRate(options);
   const campaignMap = {};
   for (const campaign of asArray(campaigns)) {
     campaignMap[campaign.id] = campaign;
@@ -365,11 +374,11 @@ function buildCampaignProfit(campaignInsights, campaigns, avgAOV, cogsData, tota
 
   const result = Object.entries(byCampaign).map(([campaignId, aggregate]) => {
     const campaign = campaignMap[campaignId] || {};
-    const spendKRW = convertUsdToKrw(aggregate.spend);
+    const spendKRW = convertUsdToKrw(aggregate.spend, usdToKrwRate);
     const estimatedRevenue = aggregate.purchases * avgAOV;
     const revenueShare = totalRevenue > 0 ? estimatedRevenue / totalRevenue : 0;
     const allocatedCOGS = totalCOGSWithShipping * revenueShare;
-    const grossProfit = calcGrossProfit(estimatedRevenue, allocatedCOGS, aggregate.spend);
+    const grossProfit = calcGrossProfit(estimatedRevenue, allocatedCOGS, aggregate.spend, usdToKrwRate);
     const margin = calcMargin(grossProfit, estimatedRevenue);
 
     return {

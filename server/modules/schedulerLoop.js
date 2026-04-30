@@ -52,8 +52,7 @@ function startScheduler(runScan) {
   logSchedulerDiagnostics('Runtime interval override detected');
 
   imweb.loadTokens();
-  telegram.startPolling();
-  telegram.maybeSendStartupMessage();
+  telegram.startStatusChecks();
 
   nextInitialRunAt = new Date(Date.now() + 5000);
   initialScanTimer = setTimeout(() => {
@@ -86,6 +85,8 @@ function stopScheduler() {
     unsubscribeSettings();
     unsubscribeSettings = null;
   }
+
+  telegram.stopStatusChecks();
 
   if (runScanRef) {
     runScanRef = null;

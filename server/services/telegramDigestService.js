@@ -1,6 +1,5 @@
 const crypto = require('crypto');
 
-const STARTUP_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 const ALERT_DUPLICATE_COOLDOWN_MS = 90 * 60 * 1000;
 const ALERT_ITEM_LIMIT = 3;
 const PRIORITY_RANK = Object.freeze({
@@ -9,10 +8,15 @@ const PRIORITY_RANK = Object.freeze({
   medium: 1,
   low: 0,
 });
-
-function pluralize(count, singular, plural = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : plural}`;
-}
+const PIPELINE_ERROR_STEPS = new Set([
+  'meta_structure',
+  'meta_insights',
+  'imweb_orders',
+  'cogs_sheets',
+  'fx_rate',
+  'economics_ledger',
+  'source_audit',
+]);
 
 function hash(value) {
   return crypto.createHash('sha1').update(String(value)).digest('hex');
@@ -29,12 +33,6 @@ function hoursSince(iso, now = new Date()) {
   return (now.getTime() - date.getTime()) / (60 * 60 * 1000);
 }
 
-function shouldSendStartupMessage(state, now = new Date()) {
-  const lastSentAt = state?.startup?.sentAt;
-  if (!lastSentAt) return true;
-  return (now.getTime() - new Date(lastSentAt).getTime()) >= STARTUP_COOLDOWN_MS;
-}
-
 function buildOperatorAlertItems(optimizations) {
   return (Array.isArray(optimizations) ? optimizations : [])
     .filter(opt => opt?.status === 'advisory' && (opt.priority === 'critical' || opt.priority === 'high'))
@@ -49,10 +47,102 @@ function buildOperatorAlertItems(optimizations) {
     .slice(0, ALERT_ITEM_LIMIT);
 }
 
+function formatStepName(step) {
+  return String(step || 'unknown')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function buildSourceAuditAlert(scanResult, latestData) {
+  const sourceAudit = scanResult?.sourceAudit || latestData?.sourceAudit || null;
+  const reconciliation = sourceAudit?.reconciliation || null;
+  if (!sourceAudit || reconciliation?.status === 'reconciled') {
+    return null;
+  }
+
+  const failedChecks = Array.isArray(reconciliation?.failedChecks)
+    ? reconciliation.failedChecks.filter(Boolean)
+    : [];
+  const reason = failedChecks.length > 0
+    ? failedChecks.slice(0, 3).join(', ')
+    : 'Source audit did not reconcile the latest source extraction to the financial projection.';
+
+  return {
+    priority: 'critical',
+    type: 'source_audit',
+    level: 'pipeline',
+    targetName: 'Financial data projection',
+    action: 'Source projection mismatch',
+    reason,
+    impact: 'Treat dashboard figures as stale until Imweb, Meta, Sheets, and the server projection reconcile cleanly.',
+  };
+}
+
+function buildPipelineErrorAlerts(scanResult) {
+  const seenSteps = new Set();
+  const alerts = [];
+
+  for (const entry of Array.isArray(scanResult?.errors) ? scanResult.errors : []) {
+    const step = String(entry?.step || '').trim();
+    if (!PIPELINE_ERROR_STEPS.has(step) || seenSteps.has(step)) {
+      continue;
+    }
+    seenSteps.add(step);
+    alerts.push({
+      priority: step === 'source_audit' || step === 'economics_ledger' ? 'critical' : 'high',
+      type: 'scan_error',
+      level: 'pipeline',
+      targetName: formatStepName(step),
+      action: `${formatStepName(step)} failed`,
+      reason: entry?.error || 'The scan reported a pipeline error without a detailed message.',
+      impact: 'Check source health and preserve last-known-good data until the next clean scan.',
+    });
+  }
+
+  return alerts;
+}
+
+function buildSourceHealthAlerts(latestData) {
+  const sources = latestData?.sources && typeof latestData.sources === 'object'
+    ? latestData.sources
+    : {};
+  const alerts = [];
+
+  for (const [sourceKey, source] of Object.entries(sources)) {
+    const status = String(source?.status || '').toLowerCase();
+    const stale = source?.stale === true;
+    if (!status || (status === 'connected' && !stale)) {
+      continue;
+    }
+    alerts.push({
+      priority: status === 'error' ? 'high' : 'medium',
+      type: 'source_health',
+      level: 'source',
+      targetName: formatStepName(sourceKey),
+      action: stale ? `${formatStepName(sourceKey)} is stale` : `${formatStepName(sourceKey)} is ${status}`,
+      reason: source?.lastError || 'Source health is not fully connected.',
+      impact: 'Verify source credentials and freshness before trusting new profit movement.',
+    });
+  }
+
+  return alerts;
+}
+
+function buildDataPipelineAlertItems(scanResult, latestData) {
+  const alerts = [
+    buildSourceAuditAlert(scanResult, latestData),
+    ...buildPipelineErrorAlerts(scanResult),
+    ...buildSourceHealthAlerts(latestData),
+  ].filter(Boolean);
+
+  return alerts
+    .sort((left, right) => (PRIORITY_RANK[right.priority] || 0) - (PRIORITY_RANK[left.priority] || 0))
+    .slice(0, ALERT_ITEM_LIMIT);
+}
+
 function buildFingerprintPayload(context, category) {
   return {
     category,
-    actionableCount: context.actionable.length,
     operatorAlerts: context.operatorAlerts.map(opt => [
       opt.priority,
       opt.type,
@@ -104,25 +194,22 @@ function buildOperatorAlertMessage(context) {
     + `   • Suggested move: ${opt.impact}`
   )).join('\n\n');
 
-  const approvalNotice = context.actionable.length > 0
-    ? `\n\n<i>${pluralize(context.actionable.length, 'approval request')} sent separately for executable campaign budget or stop-loss changes.</i>`
-    : '';
+  return `🚨 <b>AdPilot Data Pipeline Alert</b>
 
-  return `🚨 <b>AdPilot Action Alert</b>
-
-${alertLines}${approvalNotice}`;
+${alertLines}`;
 }
 
 function buildScanSummaryPlan(scanResult, latestData, state, now = new Date()) {
-  void latestData;
+  const optimizations = Array.isArray(scanResult?.optimizations)
+    ? scanResult.optimizations
+    : [];
 
-  const optimizations = [];
-
-  const actionable = optimizations.filter(opt => opt.status === 'needs_approval' || opt.status === 'awaiting_telegram');
-  const operatorAlerts = buildOperatorAlertItems(optimizations);
-  const category = getCategory({ actionable, operatorAlerts });
+  const operatorAlerts = [
+    ...buildDataPipelineAlertItems(scanResult, latestData),
+    ...buildOperatorAlertItems(optimizations),
+  ].slice(0, ALERT_ITEM_LIMIT);
+  const category = getCategory({ operatorAlerts });
   const fingerprint = hash(JSON.stringify(buildFingerprintPayload({
-    actionable,
     operatorAlerts,
   }, category)));
   const decision = buildNotificationDecision({ category, fingerprint, state, now });
@@ -134,7 +221,6 @@ function buildScanSummaryPlan(scanResult, latestData, state, now = new Date()) {
     fingerprint,
     text: decision.shouldSend
       ? buildOperatorAlertMessage({
-        actionable,
         operatorAlerts,
       })
       : null,
@@ -144,6 +230,5 @@ function buildScanSummaryPlan(scanResult, latestData, state, now = new Date()) {
 module.exports = {
   buildScanSummaryPlan,
   buildNotificationDecision,
-  shouldSendStartupMessage,
   hoursSince,
 };

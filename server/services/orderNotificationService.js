@@ -7,10 +7,13 @@ function getTelegramMessageId(response) {
 }
 
 async function sendPrivateOrderDetails(result) {
-  return telegram.sendMessage(
+  if (typeof telegram.sendPrivateMessage !== 'function') {
+    return { ok: false, skipped: true, reason: 'private_delivery_unavailable' };
+  }
+
+  return telegram.sendPrivateMessage(
     cogsAutofillService.buildAutofillPrivateNotification(result),
-    'HTML',
-    { protectContent: true }
+    'HTML'
   );
 }
 

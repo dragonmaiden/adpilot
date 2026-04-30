@@ -133,3 +133,43 @@ test('saveSnapshot retries after ENOSPC by pruning more aggressively', async () 
     }
   }
 });
+
+test('saveSnapshot persists a complete recovery projection with source freshness metadata', async () => {
+  const dataDir = createTempDataDir();
+
+  await withMockedSnapshotRepository({
+    dataDir,
+    logDir: path.join(dataDir, 'logs'),
+  }, async repository => {
+    repository.saveSnapshot('5000', {
+      campaigns: [{ id: 'c1' }],
+      adSets: [{ id: 'a1' }],
+      ads: [{ id: 'ad1' }],
+      campaignInsights: [{ campaign_id: 'c1', spend: '10' }],
+      adInsights: [{ ad_id: 'ad1', spend: '3' }],
+      orders: [],
+      revenueData: { totalRevenue: 1000, dailyRevenue: { '2026-04-30': { revenue: 1000 } } },
+      cogsData: { totalCOGS: 400, dailyCOGS: { '2026-04-30': { cost: 400 } } },
+      economicsLedger: { summary: { totalRows: 1 }, rows: [{ kind: 'order_approval' }] },
+      fx: { usdToKrwRate: 1500, source: 'test-rate', stale: false },
+      sources: { imweb: { status: 'connected', stale: false } },
+      sourceAudit: {
+        status: 'reconciled',
+        summary: { failedChecks: [], failedFetches: [] },
+      },
+    });
+
+    const snapshotDir = path.join(dataDir, 'snapshots');
+    assert.ok(fs.existsSync(path.join(snapshotDir, '5000_meta_structure.json')));
+    assert.ok(fs.existsSync(path.join(snapshotDir, '5000_meta_insights.json')));
+    assert.ok(fs.existsSync(path.join(snapshotDir, '5000_imweb_orders.json')));
+
+    const normalized = JSON.parse(fs.readFileSync(path.join(snapshotDir, '5000_normalized.json'), 'utf8'));
+    assert.equal(normalized.revenueData.totalRevenue, 1000);
+    assert.equal(normalized.cogsData.totalCOGS, 400);
+    assert.equal(normalized.economicsLedger.summary.totalRows, 1);
+    assert.equal(normalized.fx.usdToKrwRate, 1500);
+    assert.equal(normalized.sources.imweb.status, 'connected');
+    assert.equal(normalized.sourceAudit.status, 'reconciled');
+  });
+});

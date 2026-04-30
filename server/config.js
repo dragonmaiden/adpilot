@@ -103,10 +103,12 @@ const config = {
     storeCurrency: 'KRW',
   },
 
-  // Telegram Approval
+  // Telegram notifications
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
     chatId: process.env.TELEGRAM_CHAT_ID,
+    privateChatId: process.env.TELEGRAM_PRIVATE_CHAT_ID,
+    requestTimeoutMs: parseInt(process.env.TELEGRAM_REQUEST_TIMEOUT_MS || '10000', 10),
   },
 
   // Observability
@@ -114,6 +116,10 @@ const config = {
     dsn: process.env.SENTRY_DSN || '',
     environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
     release: process.env.SENTRY_RELEASE || process.env.RENDER_GIT_COMMIT || process.env.npm_package_version || 'local',
+  },
+
+  features: {
+    legacyAdOpsEnabled: process.env.LEGACY_AD_OPS_ENABLED === 'true',
   },
 
   // Server

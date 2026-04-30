@@ -12,7 +12,6 @@ const runtimePaths = require('./runtime/paths');
 const runtimeSettings = require('./runtime/runtimeSettings');
 const scheduler = require('./modules/scheduler');
 const imweb = require('./modules/imwebClient');
-const meta = require('./modules/metaClient');
 const telegram = require('./modules/telegram');
 const contracts = require('./contracts/v1');
 const transforms = require('./transforms/charts');
@@ -22,15 +21,12 @@ const postmortemService = require('./services/postmortemService');
 const analyticsService = require('./services/analyticsService');
 const livePerformanceService = require('./services/livePerformanceService');
 const calendarService = require('./services/calendarService');
+const { buildFinancialProjection } = require('./services/financialProjectionService');
 const reconciliationService = require('./services/reconciliationService');
 const cogsAutofillService = require('./services/cogsAutofillService');
 const orderNotificationService = require('./services/orderNotificationService');
 const observabilityService = require('./services/observabilityService');
 const imwebAuthRepairService = require('./services/imwebAuthRepairService');
-
-function isValidMetaId(id) {
-  return /^\d{1,20}$/.test(String(id || ''));
-}
 
 function shouldDeliverPaidOrderNotification(result) {
   return result?.status === 'appended'
@@ -50,15 +46,15 @@ function handleInternalError(req, res, err) {
   res.status(500).json({ error: 'Internal server error' });
 }
 
-function validateMetaIdParam(req, res, next) {
-  if (!isValidMetaId(req.params.id)) {
-    return res.status(400).json({ error: 'Invalid Meta object ID' });
+function requireLegacyAdOps(req, res, next) {
+  if (config.features.legacyAdOpsEnabled) {
+    return next();
   }
-  next();
-}
 
-function isFiniteNumberInRange(value, min, max) {
-  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+  return res.status(410).json({
+    error: 'Legacy ad-operations endpoints are disabled.',
+    nextAction: 'Set LEGACY_AD_OPS_ENABLED=true only when intentionally using old Meta operations.',
+  });
 }
 
 function escapeHtml(value) {
@@ -297,6 +293,7 @@ app.use('/api', (req, res, next) => {
 // ── Health check ──
 app.get('/api/health', (req, res) => {
   const sourceHealth = scheduler.getSourceHealth();
+  const latestData = scheduler.getLatestData();
   res.json({
     status: 'ok',
     version: '1.0.0',
@@ -306,6 +303,11 @@ app.get('/api/health', (req, res) => {
     imwebAuth: imweb.getAuthState().status,
     telegram: telegram.getStatus(),
     sources: sourceHealth,
+    sourceAudit: latestData.sourceAudit ? {
+      status: latestData.sourceAudit.status,
+      generatedAt: latestData.sourceAudit.generatedAt,
+      summary: latestData.sourceAudit.summary,
+    } : null,
   });
 });
 
@@ -319,11 +321,11 @@ app.get('/api/overview', async (req, res) => {
 });
 
 // ── Campaigns list with live data ──
-app.get('/api/campaigns', (req, res) => {
+app.get('/api/campaigns', requireLegacyAdOps, (req, res) => {
   res.json(campaignService.getEnrichedCampaigns(req.query));
 });
 
-app.get('/api/live-performance', (req, res) => {
+app.get('/api/live-performance', requireLegacyAdOps, (req, res) => {
   try {
     res.json(livePerformanceService.buildLivePerformanceResponse(req.query));
   } catch (err) {
@@ -381,89 +383,6 @@ app.post('/api/cogs/autofill-order', writeLimiter, async (req, res) => {
       await orderNotificationService.deliverPaidOrderNotification(result);
     }
     res.json(cogsAutofillService.sanitizeAutofillResultForResponse(result));
-  } catch (err) {
-    handleInternalError(req, res, err);
-  }
-});
-
-// ── Campaign actions (write operations — require Telegram approval) ──
-app.post('/api/campaigns/:id/status', writeLimiter, validateMetaIdParam, async (req, res) => {
-  try {
-    const { status } = req.body || {};
-    if (!['ACTIVE', 'PAUSED'].includes(status)) {
-      return res.status(400).json({ error: 'Status must be ACTIVE or PAUSED' });
-    }
-
-    // Find campaign name
-    const data = scheduler.getLatestData();
-    const campaign = (data.campaigns || []).find(c => c.id === req.params.id);
-    const name = campaign ? campaign.name : req.params.id;
-
-    // Request Telegram approval
-    const approvalId = await telegram.requestApproval({
-      type: 'status',
-      level: 'campaign',
-      targetId: req.params.id,
-      targetName: name,
-      action: `${status === 'PAUSED' ? 'Pause' : 'Resume'} campaign "${name}"`,
-      reason: `Manual ${status === 'PAUSED' ? 'pause' : 'resume'} request from dashboard`,
-      impact: status === 'PAUSED' ? 'Campaign will stop spending immediately' : 'Campaign will resume spending at its daily budget',
-      priority: 'high',
-    });
-
-    if (!approvalId) {
-      return res.status(500).json({ error: 'Failed to send Telegram approval' });
-    }
-
-    // Respond immediately — execution happens after approval
-    res.json({ success: true, pending: true, message: 'Approval request sent to Telegram. Waiting for your response.' });
-
-    // Wait and execute in background
-    const response = await telegram.waitForApproval(approvalId, 300000);
-    if (response.approved) {
-      await meta.updateCampaignStatus(req.params.id, status);
-      await telegram.sendMessage(`✅ Campaign "${name}" ${status === 'PAUSED' ? 'paused' : 'resumed'} successfully.`);
-    }
-  } catch (err) {
-    handleInternalError(req, res, err);
-  }
-});
-
-app.post('/api/campaigns/:id/budget', writeLimiter, validateMetaIdParam, async (req, res) => {
-  try {
-    const { dailyBudget } = req.body || {};
-    if (!isFiniteNumberInRange(dailyBudget, 0.01, 10000)) {
-      return res.status(400).json({ error: 'dailyBudget must be a positive number up to 10000' });
-    }
-    const cents = Math.round(dailyBudget * 100);
-
-    const data = scheduler.getLatestData();
-    const campaign = (data.campaigns || []).find(c => c.id === req.params.id);
-    const name = campaign ? campaign.name : req.params.id;
-    const oldBudget = campaign ? (parseInt(campaign.daily_budget) / 100).toFixed(2) : '?';
-
-    const approvalId = await telegram.requestApproval({
-      type: 'budget',
-      level: 'campaign',
-      targetId: req.params.id,
-      targetName: name,
-      action: `Change daily budget from $${oldBudget} → $${dailyBudget}`,
-      reason: `Manual budget change from dashboard`,
-      impact: `New daily spend will be $${dailyBudget}/day`,
-      priority: 'high',
-    });
-
-    if (!approvalId) {
-      return res.status(500).json({ error: 'Failed to send Telegram approval' });
-    }
-
-    res.json({ success: true, pending: true, message: 'Budget change sent to Telegram for approval.' });
-
-    const response = await telegram.waitForApproval(approvalId, 300000);
-    if (response.approved) {
-      await meta.updateCampaignBudget(req.params.id, cents);
-      await telegram.sendMessage(`✅ Budget for "${name}" updated to $${dailyBudget}/day.`);
-    }
   } catch (err) {
     handleInternalError(req, res, err);
   }
@@ -546,6 +465,7 @@ app.get('/api/settings', (req, res) => {
     },
     telegram: telegram.getStatus(),
     sources: sourceHealth,
+    sourceAudit: latestData.sourceAudit || null,
     currency: config.currency,
   }));
 });
@@ -566,7 +486,7 @@ app.put('/api/settings', writeLimiter, (req, res) => {
 });
 
 // ── Post-mortem analysis for paused ads ──
-app.get('/api/postmortem', (req, res) => {
+app.get('/api/postmortem', requireLegacyAdOps, (req, res) => {
   res.json(postmortemService.getPostmortemResponse(req.query));
 });
 
@@ -574,12 +494,8 @@ app.get('/api/postmortem', (req, res) => {
 app.get('/api/spend-daily', async (req, res) => {
   try {
     const data = scheduler.getLatestData();
-    const dailyMerged = transforms.buildDailyMerged(
-      data.revenueData?.dailyRevenue,
-      data.campaignInsights,
-      data.cogsData?.dailyCOGS
-    );
-    const result = transforms.buildSpendDaily(dailyMerged);
+    const projection = buildFinancialProjection(data);
+    const result = transforms.buildSpendDaily(projection.dailyMerged, projection.transformOptions);
     res.json(contracts.spendDaily(result));
   } catch (err) {
     console.error('Spend daily error:', err.message);

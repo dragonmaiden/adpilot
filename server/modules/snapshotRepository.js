@@ -65,14 +65,25 @@ function writeSnapshotParts(scanId, snapshotData) {
     });
   }
 
-  if (snapshotData.orders && snapshotData.orders.length > 0) {
+  if (Array.isArray(snapshotData.orders)) {
     saveSnapshotFile(`${scanId}_imweb_orders.json`, snapshotData.orders);
   }
 
-  if (snapshotData.revenueData !== undefined || snapshotData.cogsData !== undefined) {
+  if (
+    snapshotData.revenueData !== undefined ||
+    snapshotData.cogsData !== undefined ||
+    snapshotData.economicsLedger !== undefined ||
+    snapshotData.fx !== undefined ||
+    snapshotData.sourceAudit !== undefined ||
+    snapshotData.sources !== undefined
+  ) {
     saveSnapshotFile(`${scanId}_normalized.json`, {
       revenueData: snapshotData.revenueData,
       cogsData: snapshotData.cogsData ?? null,
+      economicsLedger: snapshotData.economicsLedger ?? null,
+      fx: snapshotData.fx ?? null,
+      sourceAudit: snapshotData.sourceAudit ?? null,
+      sources: snapshotData.sources ?? {},
       timestamp: new Date().toISOString(),
     });
   }

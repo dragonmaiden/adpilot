@@ -1,0 +1,211 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const {
+  buildSourceExtractionAudit,
+  buildProjectionReconciliation,
+} = require('../server/services/sourceExtractionAuditService');
+
+function createLatestData(overrides = {}) {
+  const latestData = {
+    orders: [
+      {
+        orderNo: 'order-1',
+        wtime: '2026-04-30T01:00:00.000Z',
+        totalPaymentPrice: 90000,
+        totalRefundedPrice: 10000,
+      },
+      {
+        orderNo: 'order-2',
+        wtime: '2026-04-30T02:00:00.000Z',
+        totalPaymentPrice: 50000,
+        totalRefundedPrice: 0,
+      },
+    ],
+    revenueData: {
+      totalRevenue: 150000,
+      totalRefunded: 10000,
+      netRevenue: 140000,
+      totalOrders: 2,
+      dailyRevenue: {
+        '2026-04-30': {
+          revenue: 150000,
+          refunded: 10000,
+          orders: 2,
+        },
+      },
+    },
+    campaignInsights: [
+      {
+        campaign_id: 'campaign-1',
+        date_start: '2026-04-30',
+        spend: '10.25',
+        clicks: '20',
+        impressions: '1000',
+        actions: [{ action_type: 'purchase', value: '2' }],
+      },
+    ],
+    adInsights: [
+      {
+        ad_id: 'ad-1',
+        date_start: '2026-04-30',
+        spend: '10.25',
+        clicks: '20',
+        impressions: '1000',
+        actions: [{ action_type: 'purchase', value: '2' }],
+      },
+    ],
+    cogsData: {
+      totalCOGS: 30000,
+      totalShipping: 5000,
+      totalCOGSWithShipping: 35000,
+      itemCount: 2,
+      orderCount: 2,
+      incompletePurchaseCount: 0,
+      missingCostItemCount: 0,
+      pendingRecoveryItemCount: 0,
+      orders: [{ orderNo: 'order-1' }, { orderNo: 'order-2' }],
+      dailyCOGS: {
+        '2026-04-30': {
+          cost: 30000,
+          shipping: 5000,
+          purchases: 2,
+          costCoverageRatio: 1,
+        },
+      },
+    },
+    fx: {
+      base: 'USD',
+      quote: 'KRW',
+      source: 'test-rate',
+      usdToKrwRate: 1500,
+      rateDate: '2026-04-30',
+      fetchedAt: '2026-04-30T00:00:00.000Z',
+      stale: false,
+    },
+    sources: {
+      imweb: { status: 'connected', stale: false },
+      metaInsights: { status: 'connected', stale: false },
+      cogs: { status: 'connected', stale: false },
+    },
+  };
+
+  return {
+    ...latestData,
+    ...overrides,
+  };
+}
+
+function createSourceResults(overrides = {}) {
+  const results = {
+    imweb: {
+      ok: true,
+      validation: { valid: true, warnings: [], errors: [] },
+      received: {
+        rowCount: 2,
+        recognizedOrders: 2,
+        grossRevenue: 150000,
+        refundedAmount: 10000,
+        netRevenue: 140000,
+      },
+      acceptedRows: 2,
+    },
+    metaInsights: {
+      ok: true,
+      adSince: '2026-04-30',
+      validation: { valid: true, warnings: [], errors: [] },
+      received: {
+        campaignRows: 1,
+        adRows: 1,
+        spendUsd: 10.25,
+      },
+      acceptedRows: 1,
+    },
+    cogs: {
+      ok: true,
+      validation: { valid: true, warnings: [], errors: [] },
+      received: {
+        rowCount: 2,
+        itemCount: 2,
+        totalCOGS: 30000,
+        totalShipping: 5000,
+      },
+      acceptedRows: 2,
+    },
+  };
+
+  return {
+    ...results,
+    ...overrides,
+  };
+}
+
+test('source extraction audit reconciles canonical sources to the financial projection', () => {
+  const latestData = createLatestData();
+  const audit = buildSourceExtractionAudit({
+    scanId: 'scan-1',
+    since: '2026-04-30',
+    until: '2026-04-30',
+    sourceResults: createSourceResults(),
+    latestData,
+  });
+
+  assert.equal(audit.status, 'reconciled');
+  assert.equal(audit.reconciliation.status, 'reconciled');
+  assert.deepEqual(audit.summary.failedChecks, []);
+  assert.deepEqual(audit.summary.failedFetches, []);
+  assert.equal(audit.reconciliation.sourceTotals.imweb.grossRevenue, 150000);
+  assert.equal(audit.reconciliation.sourceTotals.meta.spendUsd, 10.25);
+  assert.equal(audit.reconciliation.projectionTotals.adSpendKRW, 15375);
+  assert.equal(audit.reconciliation.projectionTotals.trueNetProfit, 81225);
+});
+
+test('source extraction audit fails loud when Imweb cash totals drift from revenue input', () => {
+  const latestData = createLatestData({
+    revenueData: {
+      totalRevenue: 149000,
+      totalRefunded: 10000,
+      netRevenue: 139000,
+      totalOrders: 2,
+      dailyRevenue: {
+        '2026-04-30': {
+          revenue: 149000,
+          refunded: 10000,
+          orders: 2,
+        },
+      },
+    },
+  });
+
+  const reconciliation = buildProjectionReconciliation(latestData);
+
+  assert.equal(reconciliation.status, 'mismatch');
+  assert.ok(reconciliation.failedChecks.includes('imweb_orders_to_revenue_gross'));
+  assert.ok(reconciliation.failedChecks.includes('imweb_orders_to_revenue_net'));
+});
+
+test('source extraction audit preserves last-known-good projection but marks failed fetches', () => {
+  const latestData = createLatestData({
+    sources: {
+      imweb: { status: 'connected', stale: true, lastError: 'timeout' },
+      metaInsights: { status: 'connected', stale: false },
+      cogs: { status: 'connected', stale: false },
+    },
+  });
+  const audit = buildSourceExtractionAudit({
+    scanId: 'scan-2',
+    since: '2026-04-30',
+    until: '2026-04-30',
+    sourceResults: createSourceResults({
+      imweb: { ok: false, error: 'timeout' },
+    }),
+    latestData,
+  });
+
+  assert.equal(audit.status, 'reconciled_with_stale_sources');
+  assert.equal(audit.reconciliation.status, 'reconciled');
+  assert.deepEqual(audit.summary.failedFetches, ['imweb']);
+  assert.deepEqual(audit.summary.staleSources, ['imweb']);
+  assert.equal(audit.sources.imweb.accepted.rowCount, 0);
+  assert.equal(audit.sources.imweb.accepted.latestRowCount, 2);
+});

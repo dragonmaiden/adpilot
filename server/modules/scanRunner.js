@@ -13,6 +13,13 @@ const { buildEconomicsLedger } = require('../services/economicsLedgerService');
 const cogsAutofillService = require('../services/cogsAutofillService');
 const orderNotificationService = require('../services/orderNotificationService');
 const observabilityService = require('../services/observabilityService');
+const fxService = require('../services/fxService');
+const {
+  buildSourceExtractionAudit,
+  summarizeImwebOrders,
+  summarizeMetaInsights,
+  summarizeCogsData,
+} = require('../services/sourceExtractionAuditService');
 
 const META_AD_INSIGHTS_LOOKBACK_DAYS = 45;
 
@@ -69,11 +76,60 @@ function markSourceFailure(sourceKey, attemptedAt, err, { hasData = false } = {}
   });
 }
 
+async function refreshFxRate(scanResult) {
+  console.log('[SCHEDULER] Step 3c: Refreshing USD/KRW FX rate...');
+
+  try {
+    const fx = await fxService.getLatestUsdToKrwRate();
+    const storedFx = {
+      ...fx,
+      stale: false,
+    };
+    scanStore.patchLatestData({ fx: storedFx });
+    scanStore.saveLatestData();
+    pushStep(scanResult, {
+      step: 'fx_rate',
+      status: 'ok',
+      source: storedFx.source,
+      rateDate: storedFx.rateDate,
+      usdToKrwRate: storedFx.usdToKrwRate,
+    });
+    console.log(`[SCHEDULER]   → USD/KRW ${storedFx.usdToKrwRate} (${storedFx.rateDate})`);
+    return storedFx;
+  } catch (err) {
+    const latestFx = scanStore.getLatestData().fx;
+    const fallbackRate = Number(latestFx?.usdToKrwRate || config.currency.usdToKrw);
+    const fallbackFx = {
+      base: latestFx?.base || 'USD',
+      quote: latestFx?.quote || 'KRW',
+      source: latestFx?.source || 'static-config',
+      usdToKrwRate: fallbackRate,
+      rateDate: latestFx?.rateDate || null,
+      fetchedAt: latestFx?.fetchedAt || null,
+      stale: true,
+      lastError: err.message,
+    };
+    scanStore.patchLatestData({ fx: fallbackFx });
+    scanStore.saveLatestData();
+    pushError(scanResult, 'fx_rate', err);
+    pushStep(scanResult, {
+      step: 'fx_rate',
+      status: 'failed',
+      usingFallback: true,
+      usdToKrwRate: fallbackFx.usdToKrwRate,
+    });
+    console.warn('[SCHEDULER]   ⚠ FX refresh failed; using fallback USD/KRW rate:', err.message);
+    return fallbackFx;
+  }
+}
+
 function buildScanStats(latestData, until) {
+  const usdToKrwRate = Number(latestData?.fx?.usdToKrwRate || config.currency.usdToKrw);
   const dailyMerged = transforms.buildDailyMerged(
     latestData?.revenueData?.dailyRevenue,
     latestData?.campaignInsights,
-    latestData?.cogsData?.dailyCOGS
+    latestData?.cogsData?.dailyCOGS,
+    { usdToKrwRate }
   );
   const trailingSevenDays = dailyMerged.filter(day => day.date >= shiftDate(until, -6));
   const totalSpend7d = trailingSevenDays.reduce((sum, day) => sum + (day.spend || 0), 0);
@@ -91,7 +147,7 @@ function buildScanStats(latestData, until) {
     activeAds: (latestData?.ads || [])
       .filter(ad => String(ad?.effective_status || ad?.status || '').toUpperCase() === 'ACTIVE')
       .length,
-    roas: trailingSevenDays.length > 0 ? calcROAS(totalNetRevenue7d, totalSpend7d).toFixed(2) + 'x' : 'N/A',
+    roas: trailingSevenDays.length > 0 ? calcROAS(totalNetRevenue7d, totalSpend7d, usdToKrwRate).toFixed(2) + 'x' : 'N/A',
   };
 }
 
@@ -112,7 +168,7 @@ async function fetchMetaStructure(scanResult) {
     ]);
 
     const campaignsValidation = validateMetaCampaigns(campaigns);
-    logValidation(campaignsValidation, 'Meta campaigns');
+    logValidation(campaignsValidation, 'Meta campaigns', true);
 
     scanStore.patchLatestData({ campaigns, adSets, ads });
     markSourceSuccess('metaStructure', attemptedAt, {
@@ -130,7 +186,19 @@ async function fetchMetaStructure(scanResult) {
     });
     console.log(`[SCHEDULER]   → ${campaigns.length} campaigns, ${adSets.length} ad sets, ${ads.length} ads`);
 
-    return { ok: true, campaigns, adSets, ads };
+    return {
+      ok: true,
+      campaigns,
+      adSets,
+      ads,
+      validation: campaignsValidation,
+      received: {
+        campaignRows: campaigns.length,
+        adSetRows: adSets.length,
+        adRows: ads.length,
+      },
+      acceptedRows: campaigns.length,
+    };
   } catch (err) {
     console.error('[SCHEDULER]   ⚠ Meta structure fetch failed:', err.message);
     pushError(scanResult, 'meta_structure', err);
@@ -140,7 +208,7 @@ async function fetchMetaStructure(scanResult) {
       hasData: (latestData.campaigns || []).length > 0 || (latestData.adSets || []).length > 0 || (latestData.ads || []).length > 0,
     });
     scanStore.saveLatestData();
-    return { ok: false };
+    return { ok: false, error: err.message };
   }
 }
 
@@ -157,8 +225,8 @@ async function fetchMetaInsights(scanResult, since, until) {
 
     const campaignInsightsValid = validateMetaInsights(campaignInsights, 'campaign');
     const adInsightsValid = validateMetaInsights(adInsights, 'ad');
-    logValidation(campaignInsightsValid, 'Meta campaign insights');
-    logValidation(adInsightsValid, 'Meta ad insights');
+    logValidation(campaignInsightsValid, 'Meta campaign insights', true);
+    logValidation(adInsightsValid, 'Meta ad insights', true);
 
     scanStore.patchLatestData({ campaignInsights, adInsights });
     markSourceSuccess('metaInsights', attemptedAt, {
@@ -181,7 +249,25 @@ async function fetchMetaInsights(scanResult, since, until) {
     });
     console.log(`[SCHEDULER]   → ${campaignInsights.length} campaign rows (${since} → ${until}) and ${adInsights.length} ad rows (${adSince} → ${until})`);
 
-    return { ok: true, campaignInsights, adInsights };
+    return {
+      ok: true,
+      campaignInsights,
+      adInsights,
+      adSince,
+      validation: {
+        valid: campaignInsightsValid.valid && adInsightsValid.valid,
+        warnings: [
+          ...campaignInsightsValid.warnings,
+          ...adInsightsValid.warnings,
+        ],
+        errors: [
+          ...campaignInsightsValid.errors,
+          ...adInsightsValid.errors,
+        ],
+      },
+      received: summarizeMetaInsights(campaignInsights, adInsights),
+      acceptedRows: campaignInsights.length,
+    };
   } catch (err) {
     console.error('[SCHEDULER]   ⚠ Meta insights fetch failed:', err.message);
     pushError(scanResult, 'meta_insights', err);
@@ -197,7 +283,7 @@ async function fetchMetaInsights(scanResult, since, until) {
       hasData: (latestData.campaignInsights || []).length > 0 || (latestData.adInsights || []).length > 0,
     });
     scanStore.saveLatestData();
-    return { ok: false };
+    return { ok: false, error: err.message, adSince };
   }
 }
 
@@ -208,7 +294,7 @@ async function fetchImwebOrders(scanResult) {
   try {
     const orders = await imweb.getAllOrders();
     const ordersValid = validateImwebOrders(orders);
-    logValidation(ordersValid, 'Imweb orders');
+    logValidation(ordersValid, 'Imweb orders', true);
 
     const revenueData = imweb.processOrders(orders);
     scanStore.patchLatestData({ orders, revenueData });
@@ -229,7 +315,14 @@ async function fetchImwebOrders(scanResult) {
     });
     console.log(`[SCHEDULER]   → ${orders.length} orders, ₩${revenueData.netRevenue.toLocaleString()} net revenue`);
 
-    return { ok: true, orders, revenueData };
+    return {
+      ok: true,
+      orders,
+      revenueData,
+      validation: ordersValid,
+      received: summarizeImwebOrders(orders),
+      acceptedRows: orders.length,
+    };
   } catch (err) {
     console.error('[SCHEDULER]   ⚠ Imweb fetch failed:', err.message);
     pushError(scanResult, 'imweb_orders', err);
@@ -239,7 +332,7 @@ async function fetchImwebOrders(scanResult) {
       hasData: Boolean(latestData.revenueData) || (latestData.orders || []).length > 0,
     });
     scanStore.saveLatestData();
-    return { ok: false };
+    return { ok: false, error: err.message };
   }
 }
 
@@ -265,7 +358,13 @@ async function fetchCogs(scanResult) {
     });
     console.log(`[SCHEDULER]   → ₩${cogsData.totalCOGS.toLocaleString()} COGS + ₩${cogsData.totalShipping.toLocaleString()} shipping (${cogsData.itemCount} items)`);
 
-    return { ok: true, cogsData };
+    return {
+      ok: true,
+      cogsData,
+      validation: cogsData.validation || null,
+      received: summarizeCogsData(cogsData),
+      acceptedRows: Array.isArray(cogsData.orders) ? cogsData.orders.length : 0,
+    };
   } catch (err) {
     console.error('[SCHEDULER]   ⚠ COGS fetch failed:', err.message);
     pushError(scanResult, 'cogs_sheets', err);
@@ -275,7 +374,7 @@ async function fetchCogs(scanResult) {
       hasData: Boolean(latestData.cogsData),
     });
     scanStore.saveLatestData();
-    return { ok: false };
+    return { ok: false, error: err.message };
   }
 }
 
@@ -549,7 +648,9 @@ async function runScan(manual = false) {
     const cogsResult = await fetchCogs(scanResult);
     sourceStatus.cogs = cogsResult.ok;
 
-    console.log('[SCHEDULER] Step 3c: Building economics ledger...');
+    const fx = await refreshFxRate(scanResult);
+
+    console.log('[SCHEDULER] Step 3d: Building economics ledger...');
     try {
       const latestData = scanStore.getLatestData();
       const economicsLedger = buildEconomicsLedger({
@@ -557,6 +658,7 @@ async function runScan(manual = false) {
         cogsData: latestData.cogsData,
         campaignInsights: latestData.campaignInsights,
         campaigns: latestData.campaigns,
+        usdToKrwRate: fx.usdToKrwRate,
       });
       scanStore.patchLatestData({ economicsLedger });
       scanStore.saveLatestData();
@@ -582,6 +684,48 @@ async function runScan(manual = false) {
       pushStep(scanResult, { step: 'economics_ledger', status: 'failed' });
     }
 
+    console.log('[SCHEDULER] Step 3e: Auditing source extraction and projection reconciliation...');
+    try {
+      const latestData = scanStore.getLatestData();
+      const sourceAudit = buildSourceExtractionAudit({
+        scanId,
+        since,
+        until,
+        sourceResults: {
+          metaStructure: metaStructureResult,
+          metaInsights: metaInsightsResult,
+          imweb: imwebResult,
+          cogs: cogsResult,
+        },
+        latestData,
+      });
+      scanStore.patchLatestData({ sourceAudit });
+      scanStore.saveLatestData();
+      scanResult.sourceAudit = {
+        status: sourceAudit.status,
+        summary: sourceAudit.summary,
+        reconciliation: {
+          status: sourceAudit.reconciliation.status,
+          failedChecks: sourceAudit.reconciliation.failedChecks,
+        },
+      };
+      pushStep(scanResult, {
+        step: 'source_audit',
+        status: sourceAudit.reconciliation.status === 'reconciled' ? 'ok' : 'failed',
+        auditStatus: sourceAudit.status,
+        failedChecks: sourceAudit.reconciliation.failedChecks,
+      });
+      if (sourceAudit.reconciliation.status === 'reconciled') {
+        console.log(`[SCHEDULER]   → source projection reconciled (${sourceAudit.summary.passedChecks} checks)`);
+      } else {
+        console.warn(`[SCHEDULER]   ⚠ source projection mismatch: ${sourceAudit.reconciliation.failedChecks.join(', ')}`);
+      }
+    } catch (err) {
+      console.warn('[SCHEDULER]   ⚠ Source audit failed:', err.message);
+      pushError(scanResult, 'source_audit', err);
+      pushStep(scanResult, { step: 'source_audit', status: 'failed' });
+    }
+
     scanResult.stats = buildScanStats(scanStore.getLatestData(), until);
 
     const latestData = scanStore.getLatestData();
@@ -590,22 +734,18 @@ async function runScan(manual = false) {
     if (anySourceUpdated) {
       try {
         snapshotRepository.saveSnapshot(scanId, {
-          ...(sourceStatus.metaStructure ? {
-            campaigns: latestData.campaigns,
-            adSets: latestData.adSets,
-            ads: latestData.ads,
-          } : {}),
-          ...(sourceStatus.metaInsights ? {
-            campaignInsights: latestData.campaignInsights,
-            adInsights: latestData.adInsights,
-          } : {}),
-          ...(sourceStatus.imweb ? {
-            orders: latestData.orders,
-            revenueData: latestData.revenueData,
-          } : {}),
-          ...(sourceStatus.cogs ? {
-            cogsData: latestData.cogsData,
-          } : {}),
+          campaigns: latestData.campaigns,
+          adSets: latestData.adSets,
+          ads: latestData.ads,
+          campaignInsights: latestData.campaignInsights,
+          adInsights: latestData.adInsights,
+          orders: latestData.orders,
+          revenueData: latestData.revenueData,
+          cogsData: latestData.cogsData,
+          economicsLedger: latestData.economicsLedger,
+          fx: latestData.fx,
+          sourceAudit: latestData.sourceAudit,
+          sources: latestData.sources,
         });
         console.log(`[SCHEDULER]   → Snapshot ${scanId} saved`);
       } catch (err) {

@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const {
   buildScanSummaryPlan,
   buildNotificationDecision,
-  shouldSendStartupMessage,
 } = require('../server/services/telegramDigestService');
 
 const REFERENCE_NOW = new Date('2026-03-11T14:00:00Z');
@@ -123,12 +122,6 @@ function buildLatestData() {
   };
 }
 
-test('startup message is throttled when a recent startup notification was sent', () => {
-  const state = { startup: { sentAt: '2026-03-11T10:00:00Z' } };
-  assert.equal(shouldSendStartupMessage(state, new Date('2026-03-11T12:00:00Z')), false);
-  assert.equal(shouldSendStartupMessage(state, new Date('2026-03-11T18:30:00Z')), true);
-});
-
 test('duplicate operator alerts are suppressed during cooldown', () => {
   const decision = buildNotificationDecision({
     category: 'alert',
@@ -182,4 +175,39 @@ test('scan summary plan stays silent when optimizations are passed (optimizer re
 
   assert.equal(plan.shouldSend, false);
   assert.equal(plan.category, 'silent');
+});
+
+test('scan summary plan sends source-audit mismatch alerts', () => {
+  const latestData = buildLatestData();
+  latestData.sourceAudit = {
+    status: 'mismatch',
+    reconciliation: {
+      status: 'mismatch',
+      failedChecks: ['imweb_projection_revenue', 'true_net_profit_identity'],
+    },
+  };
+
+  const plan = buildScanSummaryPlan({
+    errors: [],
+    sourceAudit: latestData.sourceAudit,
+  }, latestData, { summary: { fingerprint: null, sentAt: null } }, REFERENCE_NOW);
+
+  assert.equal(plan.shouldSend, true);
+  assert.equal(plan.category, 'alert');
+  assert.match(plan.text, /Source projection mismatch/);
+  assert.match(plan.text, /imweb_projection_revenue/);
+});
+
+test('scan summary plan sends pipeline fetch failure alerts', () => {
+  const plan = buildScanSummaryPlan({
+    errors: [
+      { step: 'imweb_orders', error: 'Imweb validation failed' },
+      { step: 'new_order_notification_backstop', error: 'Telegram unavailable' },
+    ],
+  }, buildLatestData(), { summary: { fingerprint: null, sentAt: null } }, REFERENCE_NOW);
+
+  assert.equal(plan.shouldSend, true);
+  assert.equal(plan.category, 'alert');
+  assert.match(plan.text, /Imweb Orders failed/);
+  assert.doesNotMatch(plan.text, /new_order_notification_backstop/);
 });

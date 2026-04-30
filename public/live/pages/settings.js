@@ -89,6 +89,47 @@
     return map[source.status] || { text: source.status || tr('Unknown', '알 수 없음'), badge: 'badge-neutral' };
   }
 
+  function formatAuditStatus(status) {
+    const map = {
+      reconciled: { text: tr('Reconciled', '조정 완료'), badge: 'badge-success' },
+      reconciled_with_stale_sources: { text: tr('Using Last Good Data', '마지막 정상 데이터 사용'), badge: 'badge-warning' },
+      mismatch: { text: tr('Mismatch', '불일치'), badge: 'badge-error' },
+    };
+    return map[status] || { text: tr('Waiting', '대기 중'), badge: 'badge-neutral' };
+  }
+
+  function formatAuditWindow(windowValue) {
+    if (!windowValue?.since && !windowValue?.until) return '—';
+    return `${windowValue.since || '—'} → ${windowValue.until || '—'}`;
+  }
+
+  function formatAuditSummary(sourceAudit) {
+    if (!sourceAudit?.summary) return tr('No source audit has run yet.', '아직 소스 감사가 실행되지 않았습니다.');
+    const summary = sourceAudit.summary;
+    const failedChecks = Array.isArray(summary.failedChecks) ? summary.failedChecks : [];
+    const failedFetches = Array.isArray(summary.failedFetches) ? summary.failedFetches : [];
+    const staleSources = Array.isArray(summary.staleSources) ? summary.staleSources : [];
+    const totalChecks = Number(summary.passedChecks || 0) + failedChecks.length;
+    const parts = [
+      tr(
+        `${Number(summary.passedChecks || 0).toLocaleString(getLocale())}/${totalChecks.toLocaleString(getLocale())} checks passed`,
+        `${Number(summary.passedChecks || 0).toLocaleString(getLocale())}/${totalChecks.toLocaleString(getLocale())}개 검사 통과`
+      ),
+    ];
+
+    if (failedChecks.length > 0) {
+      parts.push(tr(`failed checks: ${failedChecks.join(', ')}`, `실패 검사: ${failedChecks.join(', ')}`));
+    }
+    if (failedFetches.length > 0) {
+      parts.push(tr(`failed fetches: ${failedFetches.join(', ')}`, `가져오기 실패: ${failedFetches.join(', ')}`));
+    }
+    if (staleSources.length > 0) {
+      parts.push(tr(`stale sources: ${staleSources.join(', ')}`, `캐시 소스: ${staleSources.join(', ')}`));
+    }
+
+    return parts.join(' · ');
+  }
+
   function formatTelegramStatus(status) {
     const map = {
       connected: { text: tr('Connected', '연결됨'), badge: 'badge-success' },
@@ -129,6 +170,7 @@
       const imwebData = settingsData?.imweb?.data || settingsData?.sources?.imweb || null;
       const cogsData = settingsData?.cogs || null;
       const telegramStatus = settingsData?.telegram || null;
+      const sourceAudit = settingsData?.sourceAudit || null;
 
       const imwebStatusEl = document.getElementById('settingsImwebStatus');
       if (imwebStatusEl) {
@@ -236,7 +278,7 @@
         if (telegramStatus?.lastError) {
           telegramNoteEl.textContent = localizeSystemText(telegramStatus.lastError);
         } else if (telegramStatus?.status === 'connected') {
-          telegramNoteEl.textContent = tr('Approval messages and scan summaries can be delivered.', '승인 메시지와 스캔 요약을 전달할 수 있습니다.');
+          telegramNoteEl.textContent = tr('Order notifications and scan summaries can be delivered.', '주문 알림과 스캔 요약을 전달할 수 있습니다.');
         } else if (telegramStatus?.status === 'misconfigured') {
           telegramNoteEl.textContent = tr('Check TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.', 'TELEGRAM_BOT_TOKEN과 TELEGRAM_CHAT_ID를 확인하세요.');
         } else {
@@ -312,6 +354,36 @@
             ? noteParts.join(' · ')
             : tr('No COGS row warnings in the latest scan.', '최신 스캔 기준 COGS 행 경고가 없습니다.');
         }
+      }
+
+      const sourceAuditStatusEl = document.getElementById('settingsSourceAuditStatus');
+      if (sourceAuditStatusEl) {
+        const statusMeta = formatAuditStatus(sourceAudit?.status);
+        sourceAuditStatusEl.className = `badge ${statusMeta.badge}`;
+        sourceAuditStatusEl.textContent = statusMeta.text;
+      }
+
+      const sourceAuditWindowEl = document.getElementById('settingsSourceAuditWindow');
+      if (sourceAuditWindowEl) {
+        sourceAuditWindowEl.textContent = formatAuditWindow(sourceAudit?.window);
+      }
+
+      const sourceAuditSourcesEl = document.getElementById('settingsSourceAuditSources');
+      if (sourceAuditSourcesEl) {
+        const sources = Array.isArray(sourceAudit?.canonicalSources)
+          ? sourceAudit.canonicalSources
+          : ['imweb', 'meta', 'cogs'];
+        sourceAuditSourcesEl.textContent = sources.join(', ');
+      }
+
+      const sourceAuditSummaryEl = document.getElementById('settingsSourceAuditSummary');
+      if (sourceAuditSummaryEl) {
+        sourceAuditSummaryEl.textContent = formatAuditSummary(sourceAudit);
+      }
+
+      const sourceAuditGeneratedEl = document.getElementById('settingsSourceAuditGenerated');
+      if (sourceAuditGeneratedEl) {
+        sourceAuditGeneratedEl.textContent = formatTimestamp(sourceAudit?.generatedAt);
       }
     } catch (e) {
       console.warn('[LIVE] refreshSettingsPage error:', e.message);

@@ -20,7 +20,7 @@ function buildRateMetric({ rate = 0, numerator = 0, denominator = 0, unit = '', 
 /**
  * Build /api/overview response.
  */
-function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanning, dataSources, fx }) {
+function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanning, dataSources, sourceAudit, fx }) {
   return {
     apiVersion: API_VERSION,
     ready: true,
@@ -64,6 +64,7 @@ function overview({ kpis, days, campaigns, charts, scanStats, lastScan, isScanni
     },
     scanStats: scanStats ?? {},
     dataSources: dataSources ?? {},
+    sourceAudit: sourceAudit ?? null,
     fx: fx ?? {},
   };
 }
@@ -82,7 +83,7 @@ function overviewNotReady() {
 /**
  * Build /api/analytics response.
  */
-function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, monthlyRates, profitAnalysis, dataSources }) {
+function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, monthlyRates, profitAnalysis, dataSources, sourceAudit }) {
   const refundMetric = buildRateMetric({
     rate: revenueData?.refundRate ?? 0,
     numerator: revenueData?.totalRefunded ?? 0,
@@ -134,6 +135,7 @@ function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, m
     dailyInsights: dailyInsights ?? [],
     adInsights: adInsights ?? [],
     dataSources: dataSources ?? {},
+    sourceAudit: sourceAudit ?? null,
     // Profit Analysis
     profitAnalysis: {
       waterfall: profitAnalysis?.waterfall ?? [],
@@ -148,7 +150,7 @@ function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, m
 /**
  * Build /api/calendar-analysis response.
  */
-function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, selection }) {
+function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, sourceAudit, selection }) {
   return {
     apiVersion: API_VERSION,
     ready: ready !== false,
@@ -163,6 +165,7 @@ function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate
     calendarDays: calendarDays ?? [],
     categoryRevenueByDate: categoryRevenueByDate ?? {},
     categoryRevenueByMonth: categoryRevenueByMonth ?? {},
+    sourceAudit: sourceAudit ?? null,
     selection: {
       label: selection?.label ?? '',
       dayCount: selection?.dayCount ?? 0,
@@ -284,7 +287,7 @@ function postmortem({ active, inactive, noData, lessonsSummary, totals, windowKe
 /**
  * Build /api/settings response.
  */
-function settings({ rules, scheduler, meta, imweb, telegram, sources, currency, cogs }) {
+function settings({ rules, scheduler, meta, imweb, telegram, sources, sourceAudit, currency, cogs }) {
   return {
     apiVersion: API_VERSION,
     rules: rules ?? {},
@@ -294,6 +297,7 @@ function settings({ rules, scheduler, meta, imweb, telegram, sources, currency, 
     cogs: cogs ?? {},
     telegram: telegram ?? {},
     sources: sources ?? {},
+    sourceAudit: sourceAudit ?? null,
     currency: currency ?? {},
   };
 }

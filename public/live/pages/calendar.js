@@ -132,7 +132,24 @@
   }
 
   function calcCalendarPercent(numerator, denominator) {
-    return denominator > 0 ? (numerator / denominator) * 100 : 0;
+    return denominator > 0 ? (numerator / denominator) * 100 : null;
+  }
+
+  function roundCalendarPercent(numerator, denominator, digits = 1) {
+    const percent = calcCalendarPercent(numerator, denominator);
+    return percent == null ? null : Number(percent.toFixed(digits));
+  }
+
+  function hasCalendarMetric(value) {
+    return value !== null && value !== undefined && Number.isFinite(Number(value));
+  }
+
+  function formatCalendarPercentMetric(value, digits = 1) {
+    return hasCalendarMetric(value) ? formatPercent(Number(value), digits) : '—';
+  }
+
+  function formatCalendarRoasMetric(value) {
+    return hasCalendarMetric(value) ? `${Number(value).toFixed(2)}x` : '—';
   }
 
   function formatFeePercentLabel(value) {
@@ -188,7 +205,7 @@
       adSpendKRW,
       paymentFees,
       trueNetProfit,
-      margin: Number(calcCalendarPercent(trueNetProfit, netRevenue).toFixed(1)),
+      margin: roundCalendarPercent(trueNetProfit, netRevenue),
     };
   }
 
@@ -348,8 +365,8 @@
     return {
       ...totals,
       dayCount,
-      refundRate: Number(calcCalendarPercent(totals.refundedAmount, totals.grossRevenue).toFixed(1)),
-      margin: Number(calcCalendarPercent(totals.trueNetProfit, totals.netRevenue).toFixed(1)),
+      refundRate: roundCalendarPercent(totals.refundedAmount, totals.grossRevenue),
+      margin: roundCalendarPercent(totals.trueNetProfit, totals.netRevenue),
       cogsCoverageRatio: dayCount > 0 ? Number((totals.daysWithCOGS / dayCount).toFixed(3)) : 0,
     };
   }
@@ -631,7 +648,7 @@
       ? tr(`${adSpendNetShare} of net rev`, `순매출의 ${adSpendNetShare}`)
       : tr(`${formatUsd(summary.adSpend || 0, 2)} media spend`, `광고비 ${formatUsd(summary.adSpend || 0, 2)}`);
 
-    const profitMarginLabel = formatPercent(summary.margin || 0);
+    const profitMarginLabel = formatCalendarPercentMetric(summary.margin);
     const resultSub = isProfitPositive
       ? tr(`${profitMarginLabel} margin`, `마진 ${profitMarginLabel}`)
       : tr('Loss after costs', '비용 차감 후 손실');
@@ -686,7 +703,7 @@
         fixedValue: zeroFixedValue(grossV) },
       { id: 'refunded', key: 'refunded', label: tr('Refunded', '환불'),
         displayValue: expenseValue(summary.refundedAmount),
-        sub: tr(`${formatPercent(summary.refundRate || 0)} refund rate`, `환불률 ${formatPercent(summary.refundRate || 0)}`),
+        sub: tr(`${formatCalendarPercentMetric(summary.refundRate)} refund rate`, `환불률 ${formatCalendarPercentMetric(summary.refundRate)}`),
         tone: refundedV > 0 ? 'negative' : 'neutral', column: revenueColumn, order: 0,
         fixedValue: zeroFixedValue(refundedV) },
       { id: 'net', key: 'net', label: tr('Net Revenue', '순매출'),
@@ -955,6 +972,28 @@
     `;
   }
 
+  function renderSourceAuditNotice(sourceAudit) {
+    if (!sourceAudit) return '';
+    const failedChecks = Array.isArray(sourceAudit.summary?.failedChecks) ? sourceAudit.summary.failedChecks : [];
+    const failedFetches = Array.isArray(sourceAudit.summary?.failedFetches) ? sourceAudit.summary.failedFetches : [];
+
+    if (sourceAudit.status === 'mismatch') {
+      const message = failedChecks.length > 0
+        ? tr(`Source audit mismatch: ${failedChecks.join(', ')}. Calendar financial totals need review before use.`, `소스 감사 불일치: ${failedChecks.join(', ')}. 사용 전 캘린더 재무 합계 검토가 필요합니다.`)
+        : tr('Source audit mismatch. Calendar financial totals need review before use.', '소스 감사 불일치. 사용 전 캘린더 재무 합계 검토가 필요합니다.');
+      return `<div class="analytics-inline-notice is-error">${esc(message)}</div>`;
+    }
+
+    if (sourceAudit.status === 'reconciled_with_stale_sources') {
+      const message = failedFetches.length > 0
+        ? tr(`Using last-known-good source data for ${failedFetches.join(', ')}.`, `${failedFetches.join(', ')} 마지막 정상 소스 데이터를 사용 중입니다.`)
+        : tr('Using last-known-good source data.', '마지막 정상 소스 데이터를 사용 중입니다.');
+      return `<div class="analytics-inline-notice">${esc(message)}</div>`;
+    }
+
+    return '';
+  }
+
   function renderStatusBadge(status) {
     const normalized = String(status || '').toUpperCase();
     const badgeClass = normalized === 'ACTIVE' || normalized === 'OPEN'
@@ -1027,11 +1066,11 @@
     const isProfitPositive = (summary.trueNetProfit || 0) >= 0;
 
     const summaryCards = [
-      { label: tr('Margin', '마진'), value: formatPercent(summary.margin || 0), sub: tr('True net profit / net revenue', '실질 순이익 / 순매출'), tone: (summary.margin || 0) >= 0 ? 'positive' : 'negative', icon: 'percent' },
-      { label: 'ROAS', value: `${Number(summary.roas || 0).toFixed(2)}x`, sub: tr('Net revenue / ad spend', '순매출 / 광고비'), tone: (summary.roas || 0) >= 1 ? 'positive' : 'negative', icon: 'trending-up' },
+      { label: tr('Margin', '마진'), value: formatCalendarPercentMetric(summary.margin), sub: tr('True net profit / net revenue', '실질 순이익 / 순매출'), tone: hasCalendarMetric(summary.margin) && Number(summary.margin) >= 0 ? 'positive' : 'negative', icon: 'percent' },
+      { label: 'ROAS', value: formatCalendarRoasMetric(summary.roas), sub: tr('Net revenue / ad spend', '순매출 / 광고비'), tone: hasCalendarMetric(summary.roas) && Number(summary.roas) >= 1 ? 'positive' : 'negative', icon: 'trending-up' },
       { label: tr('Recognized Orders', '인식 주문'), value: formatCount(summary.recognizedOrders || 0), sub: tr(`${formatCount(summary.refundOrders || 0)} refund orders`, `환불 주문 ${formatCount(summary.refundOrders || 0)}건`), tone: 'neutral', icon: 'receipt' },
-      { label: tr('Refund Rate', '환불률'), value: formatPercent(summary.refundRate || 0), sub: tr(`${formatKrw(summary.refundedAmount || 0)} refunded`, `${formatKrw(summary.refundedAmount || 0)} 환불`), tone: (summary.refundRate || 0) > 10 ? 'negative' : 'neutral', icon: 'percent' },
-      { label: tr('Return / Cancel Sections', '반품/취소 섹션'), value: formatCount(summary.cancelledSections || 0), sub: tr(`${formatPercent(summary.cancelRate || 0)} of ${formatCount(summary.totalSections || 0)} sections`, `섹션 ${formatCount(summary.totalSections || 0)}개 중 ${formatPercent(summary.cancelRate || 0)}`), tone: (summary.cancelRate || 0) > 10 ? 'negative' : 'neutral', icon: 'x-circle' },
+      { label: tr('Refund Rate', '환불률'), value: formatCalendarPercentMetric(summary.refundRate), sub: tr(`${formatKrw(summary.refundedAmount || 0)} refunded`, `${formatKrw(summary.refundedAmount || 0)} 환불`), tone: hasCalendarMetric(summary.refundRate) && Number(summary.refundRate) > 10 ? 'negative' : 'neutral', icon: 'percent' },
+      { label: tr('Return / Cancel Sections', '반품/취소 섹션'), value: formatCount(summary.cancelledSections || 0), sub: tr(`${formatCalendarPercentMetric(summary.cancelRate)} of ${formatCount(summary.totalSections || 0)} sections`, `섹션 ${formatCount(summary.totalSections || 0)}개 중 ${formatCalendarPercentMetric(summary.cancelRate)}`), tone: hasCalendarMetric(summary.cancelRate) && Number(summary.cancelRate) > 10 ? 'negative' : 'neutral', icon: 'x-circle' },
       { label: tr('Meta Purchases', '메타 구매'), value: formatCount(summary.metaPurchases || 0), sub: tr('Selected-range Meta signal', '선택 범위 메타 신호'), tone: 'neutral', icon: 'mouse-pointer-2' },
     ];
 
@@ -1050,7 +1089,7 @@
             <td>${formatKrw((day.cogs || 0) + (day.shipping || 0))}</td>
             <td>${formatKrw(day.paymentFees || 0)}</td>
             <td style="font-weight:600;color:${(day.trueNetProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-error)'}">${formatSignedKrw(day.trueNetProfit || 0)}</td>
-            <td>${Number(day.roas || 0).toFixed(2)}x</td>
+            <td>${formatCalendarRoasMetric(day.roas)}</td>
             <td>${
               day.hasCOGS
                 ? `<span class="badge badge-success">${esc(tr('Covered', '커버됨'))}</span>`
@@ -1102,6 +1141,8 @@
       : `<tr><td colspan="10" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No product rows in this selection.', '선택 범위에 상품 행이 없습니다.'))}</td></tr>`;
 
     container.innerHTML = `
+      ${renderSourceAuditNotice(calendarState.data?.sourceAudit || null)}
+
       <div class="card">
         <div class="calendar-detail-head">
           <div>

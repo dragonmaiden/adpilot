@@ -1,15 +1,13 @@
-const config = require('../config');
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const transforms = require('../transforms/charts');
 const reconciliationService = require('./reconciliationService');
+const { buildFinancialProjection } = require('./financialProjectionService');
 const {
   calcAOV,
-  calcMargin,
-  calcPercent,
-  calcROAS,
   getPurchases,
 } = require('../domain/metrics');
+const { divideOrNull } = require('../domain/profitWindowMetrics');
 const { getOrderCashTotals } = require('../domain/imwebPayments');
 const { buildProductCategoryRevenue } = require('../domain/productCategories');
 const {
@@ -91,6 +89,16 @@ function enumerateDateKeys(start, end) {
   }
 
   return dates;
+}
+
+function ratioPercentOrNull(numerator, denominator, digits = 1) {
+  const ratio = divideOrNull(numerator, denominator);
+  return ratio == null ? null : Number((ratio * 100).toFixed(digits));
+}
+
+function ratioOrNull(numerator, denominator, digits = 2) {
+  const ratio = divideOrNull(numerator, denominator);
+  return ratio == null ? null : Number(ratio.toFixed(digits));
 }
 
 function buildMonthEntries(visibleStart, visibleEnd) {
@@ -487,7 +495,7 @@ function buildProductExplorerRows(orders, cogsItems) {
     });
 }
 
-function buildCampaignRows(insights, campaigns, summary) {
+function buildCampaignRows(insights, campaigns, summary, transformOptions = {}) {
   const avgAOV = calcAOV(summary.netRevenue || 0, summary.recognizedOrders || 0);
   const selectionCogs = {
     totalCOGS: summary.cogs || 0,
@@ -499,7 +507,8 @@ function buildCampaignRows(insights, campaigns, summary) {
     campaigns,
     avgAOV,
     selectionCogs,
-    summary.netRevenue || 0
+    summary.netRevenue || 0,
+    transformOptions
   ).map(row => ({
     ...row,
     estimatedRoas: row.spendKRW > 0 ? Number((row.estimatedRevenue / row.spendKRW).toFixed(2)) : 0,
@@ -645,10 +654,10 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage) {
 
   return {
     ...dayTotals,
-    margin: Number(calcMargin(dayTotals.trueNetProfit, dayTotals.netRevenue).toFixed(1)),
-    roas: Number(calcROAS(dayTotals.netRevenue, dayTotals.adSpend).toFixed(2)),
+    margin: ratioPercentOrNull(dayTotals.trueNetProfit, dayTotals.netRevenue),
+    roas: ratioOrNull(dayTotals.netRevenue, dayTotals.adSpendKRW),
     recognizedOrders: orderMetrics.recognizedOrders,
-    refundRate: Number(calcPercent(dayTotals.refundedAmount, dayTotals.grossRevenue).toFixed(1)),
+    refundRate: ratioPercentOrNull(dayTotals.refundedAmount, dayTotals.grossRevenue),
     cancelRate: Number(orderMetrics.cancelRate.toFixed(1)),
     refundOrders: orderMetrics.refundOrders,
     cancelledSections: orderMetrics.cancelledSections,
@@ -685,9 +694,9 @@ function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, opera
       shipping: Number(profit.cogsShipping || 0),
       paymentFees: Number(profit.paymentFees || 0),
       trueNetProfit: Number(profit.trueNetProfit || 0),
-      margin: Number(calcMargin(profit.trueNetProfit || 0, merged.netRevenue || 0).toFixed(1)),
-      roas: Number(calcROAS(merged.netRevenue || 0, merged.spend || 0).toFixed(2)),
-      refundRate: Number(calcPercent(merged.refunded || 0, merged.revenue || 0).toFixed(1)),
+      margin: ratioPercentOrNull(profit.trueNetProfit || 0, merged.netRevenue || 0),
+      roas: ratioOrNull(merged.netRevenue || 0, merged.spendKrw || 0),
+      refundRate: ratioPercentOrNull(merged.refunded || 0, merged.revenue || 0),
       cancelRate: Number(orderMetrics.cancelRate.toFixed(1)),
       refundCount: orderMetrics.refundOrders,
       opCount: (operationsByDate.get(date) || []).length,
@@ -711,6 +720,7 @@ async function getCalendarAnalysisResponse(query = {}) {
       ready: false,
       viewport,
       calendarDays: [],
+      sourceAudit: data.sourceAudit || null,
       selection: {
         label: '',
         dayCount: 0,
@@ -726,9 +736,10 @@ async function getCalendarAnalysisResponse(query = {}) {
     });
   }
 
-  const cogs = data.cogsData || {};
-  const dailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights, cogs.dailyCOGS);
-  const profitWaterfall = transforms.buildProfitWaterfall(dailyMerged, cogs.dailyCOGS, config.fees.paymentFeeRate);
+  const projection = buildFinancialProjection(data);
+  const cogs = projection.cogs || {};
+  const dailyMerged = projection.dailyMerged;
+  const profitWaterfall = projection.profitWaterfall;
   const maps = buildDayMaps(dailyMerged, profitWaterfall);
   const metaPurchasesByDate = buildMetaPurchasesByDate(data.campaignInsights || []);
 
@@ -832,6 +843,7 @@ async function getCalendarAnalysisResponse(query = {}) {
     calendarDays,
     categoryRevenueByDate,
     categoryRevenueByMonth,
+    sourceAudit: data.sourceAudit || null,
     selection: {
       label: viewport.selectionStart === viewport.selectionEnd
         ? viewport.selectionStart
@@ -842,7 +854,7 @@ async function getCalendarAnalysisResponse(query = {}) {
       categoryRevenue: buildProductCategoryRevenue(selectionOrders),
       orders: buildOrderLedgerRows(selectionOrders),
       products: buildProductExplorerRows(selectionOrders, cogs.items || []),
-      campaigns: buildCampaignRows(selectionInsights, data.campaigns || [], selectionSummary),
+      campaigns: buildCampaignRows(selectionInsights, data.campaigns || [], selectionSummary, projection.transformOptions),
       operations: selectionOperations,
       reconciliation: selectionReconciliation,
       coverage: selectionCoverage,

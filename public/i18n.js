@@ -175,7 +175,7 @@ const I18N = {
   'settings.dataNote':      { en: 'Data Note',                kr: '데이터 메모' },
   'settings.lineItems':     { en: 'Line Items',               kr: '항목수' },
   'settings.totalCogs':     { en: 'Total COGS',               kr: '총 매출원가' },
-  'settings.telegramBot':   { en: 'Telegram Approval Bot',    kr: '텔레그램 승인 봇' },
+  'settings.telegramBot':   { en: 'Telegram Notifications',   kr: '텔레그램 알림' },
   'settings.bot':           { en: 'Bot',                      kr: '봇' },
   'settings.chat':          { en: 'Chat',                     kr: '채팅' },
   'settings.lastCheck':     { en: 'Last Check',               kr: '최근 확인' },

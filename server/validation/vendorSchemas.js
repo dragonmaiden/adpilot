@@ -170,7 +170,8 @@ function validateImwebOrders(orders) {
   }
 
   if (missingPrice > 0) {
-    result.warnings.push(`[VALIDATION] Imweb orders: ${missingPrice}/${orders.length} orders missing price field (totalPaymentPrice or totalPrice)`);
+    result.valid = false;
+    result.errors.push(`[VALIDATION] Imweb orders: ${missingPrice}/${orders.length} orders missing price field (totalPaymentPrice or totalPrice) — cannot trust revenue totals`);
   }
 
   if (missingTime > orders.length * 0.1) {

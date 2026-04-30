@@ -1,7 +1,7 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
-const transforms = require('../transforms/charts');
 const fxService = require('./fxService');
+const { buildFinancialProjection } = require('./financialProjectionService');
 const {
   summarizeInsights,
   calcCPA,
@@ -9,26 +9,6 @@ const {
   calcPercent,
   calcMargin,
 } = require('../domain/metrics');
-
-/**
- * Build the full /api/overview response.
- * Returns the not-ready contract if no scan has completed yet.
- */
-function applyOverviewFx(dailyMerged, usdToKrwRate) {
-  return (dailyMerged || []).map(row => {
-    const spend = Number(row?.spend || 0);
-    const netRevenue = Number(row?.netRevenue ?? ((row?.revenue || 0) - (row?.refunded || 0)));
-    const spendKrw = Math.round(spend * usdToKrwRate);
-    const roas = spendKrw > 0 ? Number((netRevenue / spendKrw).toFixed(4)) : 0;
-
-    return {
-      ...row,
-      spendKrw,
-      roas,
-      usdToKrwRate,
-    };
-  });
-}
 
 async function getOverviewResponse() {
   const data = scheduler.getLatestData();
@@ -48,17 +28,19 @@ async function getOverviewResponse() {
   const totalPurchases = cogs?.purchaseCount ?? revenue.totalOrders ?? 0;
   const cpa = calcCPA(totalSpend, totalPurchases, 0);
   const ctr = insightSummary.ctr;
-  const fx = await fxService.getLatestUsdToKrwRate();
-  const usdToKrwRate = Number(fx?.usdToKrwRate || 0);
+  let fx = data.fx || null;
+  if (!Number.isFinite(Number(fx?.usdToKrwRate)) || Number(fx?.usdToKrwRate) <= 0) {
+    try {
+      fx = await fxService.getLatestUsdToKrwRate();
+    } catch (err) {
+      console.warn('[OVERVIEW] FX rate unavailable; using projection fallback:', err.message);
+    }
+  }
+  const projection = buildFinancialProjection(data, { fx });
+  const usdToKrwRate = projection.fx.usdToKrwRate;
 
   // Build ALL chart data server-side — frontend does zero transformation
-  const baseDailyMerged = transforms.buildDailyMerged(revenue.dailyRevenue, data.campaignInsights, cogs?.dailyCOGS);
-  const dailyMerged = applyOverviewFx(baseDailyMerged, usdToKrwRate);
-  const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
-  const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
-  const weeklyAgg = transforms.buildWeeklyAgg(dailyMerged);
-  const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
-  const dailyProfit = transforms.buildDailyProfit(dailyMerged);
+  const dailyMerged = projection.dailyMerged;
 
   // Compute gross profit margin
   const totalCOGSWithShipping = cogs ? cogs.totalCOGSWithShipping : 0;
@@ -91,18 +73,27 @@ async function getOverviewResponse() {
     },
     days: dailyMerged.length,
     campaigns: data.campaigns || [],
-    charts: { dailyMerged, hourlyOrders, weekdayPerf, weeklyAgg, monthlyRefunds, dailyProfit },
+    charts: {
+      dailyMerged,
+      hourlyOrders: projection.hourlyOrders,
+      weekdayPerf: projection.weekdayPerf,
+      weeklyAgg: projection.weeklyAgg,
+      monthlyRefunds: projection.monthlyRefunds,
+      dailyProfit: projection.dailyProfit,
+    },
     scanStats: scan.stats || {},
     lastScan: scheduler.getLastScanTime()?.toISOString(),
     isScanning: scheduler.getIsScanning(),
     dataSources: scheduler.getSourceHealth(),
+    sourceAudit: data.sourceAudit || null,
     fx: {
-      base: fx.base,
-      quote: fx.quote,
-      source: fx.source,
+      base: projection.fx.base,
+      quote: projection.fx.quote,
+      source: projection.fx.source,
       usdToKrwRate,
-      rateDate: fx.rateDate,
-      fetchedAt: fx.fetchedAt,
+      rateDate: projection.fx.rateDate,
+      fetchedAt: projection.fx.fetchedAt,
+      stale: projection.fx.stale,
     },
   });
 }

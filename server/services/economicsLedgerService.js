@@ -62,7 +62,7 @@ function pushMoneyRow(rows, row) {
   });
 }
 
-function buildMetaSpendRows(campaignInsights, campaigns) {
+function buildMetaSpendRows(campaignInsights, campaigns, usdToKrwRate = config.currency.usdToKrw) {
   const campaignLookup = buildCampaignLookup(campaigns);
   const grouped = new Map();
 
@@ -93,7 +93,7 @@ function buildMetaSpendRows(campaignInsights, campaigns) {
       date: bucket.date,
       kind: 'meta_spend',
       source: 'meta_ads',
-      amount: roundMoney(convertUsdToKrw(bucket.spendUsd)),
+      amount: roundMoney(convertUsdToKrw(bucket.spendUsd, usdToKrwRate)),
       direction: 'debit',
       campaignId: bucket.campaignId,
       campaignName: bucket.campaignName,
@@ -107,7 +107,14 @@ function buildMetaSpendRows(campaignInsights, campaigns) {
     }));
 }
 
-function buildEconomicsLedger({ orders, cogsData, campaignInsights, campaigns, paymentFeeRate = config.fees.paymentFeeRate }) {
+function buildEconomicsLedger({
+  orders,
+  cogsData,
+  campaignInsights,
+  campaigns,
+  paymentFeeRate = config.fees.paymentFeeRate,
+  usdToKrwRate = config.currency.usdToKrw,
+}) {
   const rows = [];
   const cogsOrders = Array.isArray(cogsData?.orders) ? cogsData.orders : [];
   const orderCogsMatches = matchOrdersToCogs(orders, cogsOrders);
@@ -359,7 +366,7 @@ function buildEconomicsLedger({ orders, cogsData, campaignInsights, campaigns, p
     }
   }
 
-  const metaSpendRows = buildMetaSpendRows(campaignInsights, campaigns);
+  const metaSpendRows = buildMetaSpendRows(campaignInsights, campaigns, usdToKrwRate);
   rows.push(...metaSpendRows);
   rows.sort((left, right) => {
     if (left.date === right.date) return String(left.ledgerId).localeCompare(String(right.ledgerId));

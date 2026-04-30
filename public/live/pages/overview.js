@@ -143,8 +143,46 @@
     noticeEl.title = text || '';
   }
 
-  function updateHeaderSourceIndicators(dataSources) {
+  function getSourceAuditNotice(sourceAudit) {
+    if (!sourceAudit) return null;
+    const failedChecks = Array.isArray(sourceAudit.summary?.failedChecks) ? sourceAudit.summary.failedChecks : [];
+    const failedFetches = Array.isArray(sourceAudit.summary?.failedFetches) ? sourceAudit.summary.failedFetches : [];
+
+    if (sourceAudit.status === 'mismatch') {
+      return {
+        isError: true,
+        text: failedChecks.length > 0
+          ? tr(
+            `Source audit mismatch: ${failedChecks.join(', ')}.`,
+            `소스 감사 불일치: ${failedChecks.join(', ')}.`
+          )
+          : tr('Source audit mismatch. Financial totals need review.', '소스 감사 불일치. 재무 합계 검토가 필요합니다.'),
+      };
+    }
+
+    if (sourceAudit.status === 'reconciled_with_stale_sources') {
+      return {
+        isError: false,
+        text: failedFetches.length > 0
+          ? tr(
+            `Using last-known-good data for ${failedFetches.join(', ')}.`,
+            `${failedFetches.join(', ')} 마지막 정상 데이터를 사용 중입니다.`
+          )
+          : tr('Using last-known-good source data.', '마지막 정상 소스 데이터를 사용 중입니다.'),
+      };
+    }
+
+    return null;
+  }
+
+  function updateHeaderSourceIndicators(dataSources, sourceAudit) {
     const noticeEl = document.getElementById('dataFreshnessNotice');
+    const auditNotice = getSourceAuditNotice(sourceAudit);
+    if (auditNotice) {
+      setHeaderNotice(noticeEl, auditNotice.text, auditNotice.isError);
+      return;
+    }
+
     const metaSource = combineMetaSourceHealth(dataSources);
     const metaStatus = getSourceBadgeMeta(metaSource, {
       short: 'Meta Ads',
@@ -211,7 +249,7 @@
       if (!data) return;
 
       const k = data.kpis;
-      updateHeaderSourceIndicators(data.dataSources || null);
+      updateHeaderSourceIndicators(data.dataSources || null, data.sourceAudit || null);
 
       const revenueEl = document.querySelector('[data-kpi="revenue"] .kpi-value');
       if (revenueEl) {

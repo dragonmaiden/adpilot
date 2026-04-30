@@ -549,6 +549,7 @@
       const hourlyOrders = charts.hourlyOrders || [];
       const monthlyRefunds = charts.monthlyRefunds || [];
       const imwebSource = data.dataSources?.imweb || null;
+      const sourceAudit = data.sourceAudit || null;
       const analyticsNoticeEl = document.getElementById('analyticsFreshnessNotice');
       const orderPatternWindowEl = document.getElementById('orderPatternWindowNote');
       const orderPatternSummaryEl = document.getElementById('orderPatternSummary');
@@ -580,7 +581,21 @@
         ].filter(Boolean).join('');
       }
       if (analyticsNoticeEl) {
-        if (imwebSource?.stale) {
+        const failedChecks = Array.isArray(sourceAudit?.summary?.failedChecks) ? sourceAudit.summary.failedChecks : [];
+        const failedFetches = Array.isArray(sourceAudit?.summary?.failedFetches) ? sourceAudit.summary.failedFetches : [];
+        analyticsNoticeEl.classList.remove('is-error');
+        if (sourceAudit?.status === 'mismatch') {
+          analyticsNoticeEl.hidden = false;
+          analyticsNoticeEl.classList.add('is-error');
+          analyticsNoticeEl.textContent = failedChecks.length > 0
+            ? tr(`Source audit mismatch: ${failedChecks.join(', ')}. Financial totals need review before use.`, `소스 감사 불일치: ${failedChecks.join(', ')}. 사용 전 재무 합계 검토가 필요합니다.`)
+            : tr('Source audit mismatch. Financial totals need review before use.', '소스 감사 불일치. 사용 전 재무 합계 검토가 필요합니다.');
+        } else if (sourceAudit?.status === 'reconciled_with_stale_sources') {
+          analyticsNoticeEl.hidden = false;
+          analyticsNoticeEl.textContent = failedFetches.length > 0
+            ? tr(`Using last-known-good source data for ${failedFetches.join(', ')}.`, `${failedFetches.join(', ')} 마지막 정상 소스 데이터를 사용 중입니다.`)
+            : tr('Using last-known-good source data.', '마지막 정상 소스 데이터를 사용 중입니다.');
+        } else if (imwebSource?.stale) {
           analyticsNoticeEl.hidden = false;
           analyticsNoticeEl.textContent = tr('Revenue-backed analytics are using cached Imweb data. Weekday revenue, refunds, and ROAS are directional until the next successful sync.', '매출 기반 분석은 캐시된 Imweb 데이터를 사용 중입니다. 다음 정상 동기화 전까지 요일별 매출, 환불, ROAS는 방향성 참고용입니다.');
         } else if (imwebSource?.status === 'error') {
