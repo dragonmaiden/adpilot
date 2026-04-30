@@ -4,6 +4,7 @@
   const { fetchCalendarAnalysis } = live.api;
 
   const KST_TIME_ZONE = 'Asia/Seoul';
+  const DEFAULT_PAYMENT_FEE_PERCENT = 6;
   const calendarState = {
     initialized: false,
     anchorMonth: null,
@@ -16,6 +17,9 @@
     dragging: false,
     dragStart: null,
     didDrag: false,
+    waterfallGranularity: 'daily',
+    paymentFeePercent: null,
+    waterfallInputShouldRefocus: false,
   };
 
   function isIsoDateKey(value) {
@@ -119,6 +123,138 @@
       return formatUtcDate(start, { month: 'long', day: 'numeric', year: 'numeric' });
     }
     return `${formatUtcDate(start, { month: 'short', day: 'numeric' })} – ${formatUtcDate(end, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  }
+
+  function toFiniteNumber(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function calcCalendarPercent(numerator, denominator) {
+    return denominator > 0 ? (numerator / denominator) * 100 : 0;
+  }
+
+  function formatFeePercentLabel(value) {
+    return Number(value).toFixed(2).replace(/\.?0+$/, '');
+  }
+
+  function getCalendarPaymentFeePercent() {
+    return calendarState.paymentFeePercent == null
+      ? DEFAULT_PAYMENT_FEE_PERCENT
+      : calendarState.paymentFeePercent;
+  }
+
+  function parseCalendarPaymentFeePercent(value) {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+  }
+
+  function recalculateCalendarDayForFee(day, feeRate) {
+    const revenue = toFiniteNumber(day?.revenue);
+    const refunded = toFiniteNumber(day?.refunded);
+    const netRevenue = toFiniteNumber(day?.netRevenue ?? (revenue - refunded));
+    const cogs = toFiniteNumber(day?.cogs);
+    const shipping = toFiniteNumber(day?.shipping);
+    const adSpend = toFiniteNumber(day?.adSpend);
+    const adSpendKRW = toFiniteNumber(day?.adSpendKRW);
+    const paymentFees = Math.round(netRevenue * feeRate);
+    const trueNetProfit = Math.round(netRevenue - cogs - shipping - paymentFees - adSpendKRW);
+
+    return {
+      ...day,
+      revenue,
+      refunded,
+      netRevenue,
+      cogs,
+      shipping,
+      adSpend,
+      adSpendKRW,
+      paymentFees,
+      trueNetProfit,
+      margin: Number(calcCalendarPercent(trueNetProfit, netRevenue).toFixed(1)),
+    };
+  }
+
+  function getCalendarWaterfallRows(selection) {
+    const feeRate = getCalendarPaymentFeePercent() / 100;
+    let rows = Array.isArray(selection?.days) ? selection.days : [];
+
+    if (calendarState.waterfallGranularity === 'monthly') {
+      const selectedMonth = String(calendarState.selectionStart || rows[0]?.date || getKstDateKey()).slice(0, 7);
+      const today = getKstDateKey();
+      const monthRows = (calendarState.data?.calendarDays || []).filter(day =>
+        String(day?.date || '').startsWith(`${selectedMonth}-`) &&
+        compareDateKeys(day.date, today) <= 0
+      );
+      rows = monthRows.length > 0 ? monthRows : rows;
+    } else {
+      const selectedDate = calendarState.selectionStart || rows[0]?.date;
+      const availableRows = rows.length > 0 ? rows : (calendarState.data?.calendarDays || []);
+      rows = selectedDate
+        ? availableRows.filter(day => day?.date === selectedDate)
+        : availableRows.slice(0, 1);
+    }
+
+    return rows.map(day => recalculateCalendarDayForFee(day, feeRate));
+  }
+
+  function getCalendarWaterfallContextLabel(rows) {
+    if (calendarState.waterfallGranularity === 'monthly') {
+      const monthKey = String(calendarState.selectionStart || rows[0]?.date || getKstDateKey()).slice(0, 7);
+      const monthStart = `${monthKey}-01`;
+      const monthLabel = formatUtcDate(monthStart, { month: 'long', year: 'numeric' });
+      return monthKey === getKstDateKey().slice(0, 7)
+        ? tr(`${monthLabel} month-to-date`, `${monthLabel} 월 누계`)
+        : monthLabel;
+    }
+
+    return calendarState.selectionStart
+      ? formatUtcDate(calendarState.selectionStart, { month: 'long', day: 'numeric', year: 'numeric' })
+      : formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd);
+  }
+
+  function buildCalendarWaterfallSummary(rows) {
+    const totals = (Array.isArray(rows) ? rows : []).reduce((summary, day) => {
+      summary.grossRevenue += toFiniteNumber(day.revenue);
+      summary.refundedAmount += toFiniteNumber(day.refunded);
+      summary.netRevenue += toFiniteNumber(day.netRevenue);
+      summary.adSpend += toFiniteNumber(day.adSpend);
+      summary.adSpendKRW += toFiniteNumber(day.adSpendKRW);
+      summary.cogs += toFiniteNumber(day.cogs);
+      summary.shipping += toFiniteNumber(day.shipping);
+      summary.paymentFees += toFiniteNumber(day.paymentFees);
+      summary.trueNetProfit += toFiniteNumber(day.trueNetProfit);
+      summary.recognizedOrders += toFiniteNumber(day.orders);
+      summary.refundOrders += toFiniteNumber(day.refundCount);
+      summary.daysWithCOGS += day.hasCOGS ? 1 : 0;
+      summary.daysWithPartialCOGS += day.hasPartialCOGS ? 1 : 0;
+      return summary;
+    }, {
+      grossRevenue: 0,
+      refundedAmount: 0,
+      netRevenue: 0,
+      adSpend: 0,
+      adSpendKRW: 0,
+      cogs: 0,
+      shipping: 0,
+      paymentFees: 0,
+      trueNetProfit: 0,
+      recognizedOrders: 0,
+      refundOrders: 0,
+      daysWithCOGS: 0,
+      daysWithPartialCOGS: 0,
+    });
+
+    const dayCount = Array.isArray(rows) ? rows.length : 0;
+    return {
+      ...totals,
+      dayCount,
+      refundRate: Number(calcCalendarPercent(totals.refundedAmount, totals.grossRevenue).toFixed(1)),
+      margin: Number(calcCalendarPercent(totals.trueNetProfit, totals.netRevenue).toFixed(1)),
+      cogsCoverageRatio: dayCount > 0 ? Number((totals.daysWithCOGS / dayCount).toFixed(3)) : 0,
+    };
   }
 
   function ensureCalendarStateInitialized() {
@@ -364,63 +500,127 @@
     `;
   }
 
-  function renderCalendarWaterfallCard(step) {
-    const toneClass = step.tone ? ` ${step.tone}` : '';
+  function getSankeyFlowWidth(value, maxFlow) {
+    const magnitude = Math.abs(toFiniteNumber(value));
+    if (magnitude <= 0 || maxFlow <= 0) return 2;
+    return Math.max(3, Math.min(54, Math.sqrt(magnitude / maxFlow) * 54));
+  }
+
+  function renderSankeyNode(node) {
+    const style = `--node-x:${node.x}px;--node-y:${node.y}px;--node-w:${node.w}px`;
     return `
-      <div class="calendar-waterfall-card${toneClass}">
-        <div class="kpi-label">${esc(step.label)}</div>
-        <div class="kpi-value">${step.value}</div>
-        <div class="kpi-delta ${step.tone || 'neutral'}">
-          <i data-lucide="${esc(step.icon || 'minus')}"></i>
-          <span>${esc(step.sub || '—')}</span>
+      <div class="calendar-sankey-node ${esc(node.tone || 'neutral')}" style="${style}" role="listitem">
+        <div class="calendar-sankey-node-label">
+          <i data-lucide="${esc(node.icon || 'circle')}"></i>
+          <span>${esc(node.label)}</span>
+        </div>
+        <div class="calendar-sankey-node-value">${node.value}</div>
+        <div class="calendar-sankey-node-sub">${esc(node.sub || '—')}</div>
+      </div>
+    `;
+  }
+
+  function renderSankeyFlow(flow, maxFlow) {
+    const width = getSankeyFlowWidth(flow.value, maxFlow);
+    const opacity = Math.abs(toFiniteNumber(flow.value)) > 0 ? 0.72 : 0.16;
+    return `<path class="calendar-sankey-flow ${esc(flow.tone || 'neutral')}" d="${esc(flow.path)}" style="stroke-width:${width.toFixed(1)}px;opacity:${opacity}"></path>`;
+  }
+
+  function renderCalendarSankey(selection, baseSummary) {
+    const rows = getCalendarWaterfallRows(selection);
+    const summary = buildCalendarWaterfallSummary(rows);
+    const feePercent = formatFeePercentLabel(getCalendarPaymentFeePercent());
+    const contextLabel = getCalendarWaterfallContextLabel(rows);
+    const isProfitPositive = summary.trueNetProfit >= 0;
+    const coverageLabel = Number(summary.daysWithPartialCOGS || 0) > 0
+      ? tr(
+        `${formatCount(summary.daysWithCOGS || 0)} covered · ${formatCount(summary.daysWithPartialCOGS || 0)} partial`,
+        `완전 커버 ${formatCount(summary.daysWithCOGS || 0)}일 · 부분 커버 ${formatCount(summary.daysWithPartialCOGS || 0)}일`
+      )
+      : tr(`${formatCount(summary.daysWithCOGS || 0)} covered days`, `커버 일수 ${formatCount(summary.daysWithCOGS || 0)}일`);
+    const maxFlow = Math.max(
+      Math.abs(summary.grossRevenue),
+      Math.abs(summary.refundedAmount),
+      Math.abs(summary.netRevenue),
+      Math.abs(summary.cogs),
+      Math.abs(summary.shipping),
+      Math.abs(summary.paymentFees),
+      Math.abs(summary.adSpendKRW),
+      Math.abs(summary.trueNetProfit),
+      1
+    );
+
+    const nodes = [
+      { key: 'gross', label: tr('Gross Revenue', '총매출'), value: formatKrw(summary.grossRevenue), sub: tr(`${formatCount(summary.recognizedOrders || baseSummary?.recognizedOrders || 0)} orders`, `주문 ${formatCount(summary.recognizedOrders || baseSummary?.recognizedOrders || 0)}건`), tone: 'positive', icon: 'shopping-bag', x: 24, y: 160, w: 178 },
+      { key: 'refunded', label: tr('Refunded', '환불'), value: formatSignedKrw(-summary.refundedAmount), sub: tr(`${formatPercent(summary.refundRate || 0)} refund rate`, `환불률 ${formatPercent(summary.refundRate || 0)}`), tone: summary.refundedAmount > 0 ? 'negative' : 'neutral', icon: 'rotate-ccw', x: 286, y: 48, w: 176 },
+      { key: 'net', label: tr('Net Revenue', '순매출'), value: formatKrw(summary.netRevenue), sub: tr(`${formatCount(summary.dayCount || 0)} days`, `${formatCount(summary.dayCount || 0)}일`), tone: 'positive', icon: 'wallet', x: 286, y: 226, w: 176 },
+      { key: 'cogs', label: 'COGS', value: formatSignedKrw(-summary.cogs), sub: coverageLabel, tone: 'negative', icon: 'package', x: 566, y: 18, w: 172 },
+      { key: 'shipping', label: tr('Shipping', '배송비'), value: formatSignedKrw(-summary.shipping), sub: tr('Operational shipping cost', '운영 배송비'), tone: 'negative', icon: 'truck', x: 566, y: 104, w: 172 },
+      { key: 'fees', label: tr('Payment Fees', '결제 수수료'), value: formatSignedKrw(-summary.paymentFees), sub: tr(`${feePercent}% of net revenue`, `순매출의 ${feePercent}%`), tone: 'negative', icon: 'credit-card', x: 566, y: 190, w: 172 },
+      { key: 'adSpend', label: tr('Ad Spend', '광고비'), value: formatSignedKrw(-summary.adSpendKRW), sub: tr(`${formatUsd(summary.adSpend || 0, 2)} media spend`, `광고비 ${formatUsd(summary.adSpend || 0, 2)}`), tone: 'negative', icon: 'megaphone', x: 566, y: 276, w: 172 },
+      { key: 'profit', label: tr('True Net Profit', '실질 순이익'), value: formatSignedKrw(summary.trueNetProfit), sub: isProfitPositive ? tr(`${formatPercent(summary.margin || 0)} margin`, `마진 ${formatPercent(summary.margin || 0)}`) : tr('Below break-even', '손익분기 이하'), tone: isProfitPositive ? 'positive' : 'negative', icon: 'coins', x: 866, y: 202, w: 190 },
+    ];
+
+    const flows = [
+      { value: summary.refundedAmount, tone: 'negative', path: 'M 202 182 C 242 182 246 88 286 88' },
+      { value: summary.netRevenue, tone: 'positive', path: 'M 202 220 C 242 220 246 268 286 268' },
+      { value: summary.cogs, tone: 'negative', path: 'M 462 256 C 504 256 524 58 566 58' },
+      { value: summary.shipping, tone: 'negative', path: 'M 462 270 C 506 270 522 144 566 144' },
+      { value: summary.paymentFees, tone: 'neutral', path: 'M 462 284 C 508 284 520 230 566 230' },
+      { value: summary.adSpendKRW, tone: 'negative', path: 'M 462 298 C 508 298 520 316 566 316' },
+      { value: Math.abs(summary.trueNetProfit), tone: isProfitPositive ? 'positive' : 'negative', path: 'M 462 312 C 596 312 730 244 866 244' },
+    ];
+
+    const customFeeValue = calendarState.paymentFeePercent == null
+      ? ''
+      : esc(String(calendarState.paymentFeePercent));
+    const activeMode = calendarState.waterfallGranularity;
+
+    return `
+      <div class="card calendar-sankey-card" id="calendarProfitSankey">
+        <div class="card-header calendar-sankey-header">
+          <div>
+            <h2>${esc(tr('Profit Sankey', '수익 Sankey'))}</h2>
+            <span class="card-header-meta">${esc(contextLabel)} · ${esc(tr(`${feePercent}% payment fee`, `결제 수수료 ${feePercent}%`))}</span>
+          </div>
+          <div class="calendar-sankey-controls">
+            <div class="range-switch calendar-sankey-mode-switch" role="group" aria-label="${esc(tr('Profit Sankey view', '수익 Sankey 보기'))}">
+              <button type="button" class="range-switch-btn ${activeMode === 'daily' ? 'is-active' : ''}" data-calendar-waterfall-granularity="daily" aria-pressed="${activeMode === 'daily'}">${esc(tr('Daily', '일별'))}</button>
+              <button type="button" class="range-switch-btn ${activeMode === 'monthly' ? 'is-active' : ''}" data-calendar-waterfall-granularity="monthly" aria-pressed="${activeMode === 'monthly'}">${esc(tr('Monthly', '월별'))}</button>
+            </div>
+            <label class="payment-fee-control" for="calendarPaymentFeeRateInput">
+              <span>${esc(tr('Payment fee', '결제 수수료'))}</span>
+              <div class="input-with-unit">
+                <input id="calendarPaymentFeeRateInput" class="text-input payment-fee-input" type="number" min="0" step="0.1" inputmode="decimal" placeholder="${DEFAULT_PAYMENT_FEE_PERCENT}" value="${customFeeValue}" aria-label="${esc(tr('Payment fee percentage', '결제 수수료율'))}">
+                <span class="unit">%</span>
+              </div>
+            </label>
+          </div>
+        </div>
+        <div class="calendar-sankey-stage">
+          <div class="calendar-sankey-canvas" role="list" aria-label="${esc(tr('Profit Sankey with 8 financial components', '8개 재무 구성 요소 수익 Sankey'))}">
+            <svg class="calendar-sankey-svg" viewBox="0 0 1080 410" preserveAspectRatio="none" aria-hidden="true">
+              ${flows.map(flow => renderSankeyFlow(flow, maxFlow)).join('')}
+            </svg>
+            ${nodes.map(renderSankeyNode).join('')}
+          </div>
         </div>
       </div>
     `;
   }
 
-  function renderCalendarWaterfall(steps) {
-    if (!Array.isArray(steps) || steps.length === 0) return '';
+  function restoreCalendarWaterfallInputFocus(container) {
+    if (!calendarState.waterfallInputShouldRefocus) return;
+    calendarState.waterfallInputShouldRefocus = false;
 
-    const rowSize = 4;
-    const rows = [];
-    for (let index = 0; index < steps.length; index += rowSize) {
-      rows.push(steps.slice(index, index + rowSize));
+    const input = container?.querySelector('#calendarPaymentFeeRateInput');
+    if (!input) return;
+
+    input.focus();
+    const cursorPosition = input.value.length;
+    if (typeof input.setSelectionRange === 'function') {
+      input.setSelectionRange(cursorPosition, cursorPosition);
     }
-
-    return `
-      <div class="card">
-        <div class="card-header">
-          <h2>${esc(tr('Profit Waterfall', '수익 워터폴'))}</h2>
-          <span class="calendar-card-note">${esc(tr('Left to right: revenue becomes true net profit after refunds, operating costs, and media spend.', '왼쪽에서 오른쪽으로: 매출이 환불, 운영비, 광고비를 거쳐 실질 순이익이 됩니다.'))}</span>
-        </div>
-        <div class="calendar-waterfall">
-          ${rows.map((row, rowIndex) => `
-            <div class="calendar-waterfall-row-wrap">
-              <div class="calendar-waterfall-row" role="list" style="grid-template-columns:${row.map(() => 'minmax(0, 1fr)').join(' auto ')}">
-                ${row.map((step, stepIndex) => `
-                  <div class="calendar-waterfall-step" role="listitem">
-                    ${renderCalendarWaterfallCard(step)}
-                  </div>
-                  ${stepIndex < row.length - 1 ? '<div class="calendar-waterfall-arrow" aria-hidden="true"><i data-lucide="arrow-right"></i></div>' : ''}
-                `).join('')}
-              </div>
-              ${rowIndex < rows.length - 1 ? `
-                <div class="calendar-waterfall-row-connector" aria-hidden="true">
-                  <div class="calendar-waterfall-row-connector-start">
-                    <i data-lucide="arrow-right"></i>
-                    <span>${esc(tr('Next row starts here', '다음 줄은 여기서 시작'))}</span>
-                  </div>
-                  <div class="calendar-waterfall-row-connector-line"></div>
-                  <div class="calendar-waterfall-row-connector-turn">
-                    <i data-lucide="corner-down-left"></i>
-                  </div>
-                </div>
-              ` : ''}
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
   }
 
   function renderEmptyStateCard(title, body) {
@@ -497,35 +697,13 @@
     }
 
     if (!calendarState.data || calendarState.data.ready === false || !hasFreshSelection) {
-      container.innerHTML = renderEmptyStateCard(tr('Calendar Analysis', '캘린더 분석'), tr('Calendar analysis is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
+      container.innerHTML = renderEmptyStateCard(tr('Calendar', '캘린더'), tr('Calendar is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
       return;
     }
 
     const selection = calendarState.data.selection || {};
     const summary = selection.summary || {};
     const isProfitPositive = (summary.trueNetProfit || 0) >= 0;
-
-    const waterfallCards = [
-      { label: tr('Gross Revenue', '총매출'), value: formatKrw(summary.grossRevenue || 0), sub: tr(`${formatCount(summary.recognizedOrders || 0)} recognized orders`, `인식 주문 ${formatCount(summary.recognizedOrders || 0)}건`), tone: 'positive', icon: 'shopping-bag' },
-      { label: tr('Refunded', '환불'), value: formatSignedKrw(-(summary.refundedAmount || 0)), sub: tr(`${formatPercent(summary.refundRate || 0)} refund rate`, `환불률 ${formatPercent(summary.refundRate || 0)}`), tone: (summary.refundedAmount || 0) > 0 ? 'negative' : 'neutral', icon: 'rotate-ccw' },
-      { label: tr('Net Revenue', '순매출'), value: formatKrw(summary.netRevenue || 0), sub: tr(`${formatCount(summary.dayCount || selection.dayCount || 0)} selected days`, `선택 일수 ${formatCount(summary.dayCount || selection.dayCount || 0)}일`), tone: 'positive', icon: 'wallet' },
-      {
-        label: 'COGS',
-        value: formatSignedKrw(-(summary.cogs || 0)),
-        sub: Number(summary.daysWithPartialCOGS || 0) > 0
-          ? tr(
-            `${formatCount(summary.daysWithCOGS || 0)} covered · ${formatCount(summary.daysWithPartialCOGS || 0)} partial days`,
-            `완전 커버 ${formatCount(summary.daysWithCOGS || 0)}일 · 부분 커버 ${formatCount(summary.daysWithPartialCOGS || 0)}일`
-          )
-          : tr(`${formatCount(summary.daysWithCOGS || 0)} covered days`, `커버 일수 ${formatCount(summary.daysWithCOGS || 0)}일`),
-        tone: 'negative',
-        icon: 'package',
-      },
-      { label: tr('Shipping', '배송비'), value: formatSignedKrw(-(summary.shipping || 0)), sub: tr('Operational shipping cost', '운영 배송비'), tone: 'negative', icon: 'truck' },
-      { label: tr('Payment Fees', '결제 수수료'), value: formatSignedKrw(-(summary.paymentFees || 0)), sub: tr('6% applied to net revenue', '순매출 기준 6% 적용'), tone: 'negative', icon: 'credit-card' },
-      { label: tr('Ad Spend', '광고비'), value: formatSignedKrw(-(summary.adSpendKRW || 0)), sub: tr(`${formatUsd(summary.adSpend || 0, 2)} media spend`, `광고비 ${formatUsd(summary.adSpend || 0, 2)}`), tone: 'negative', icon: 'megaphone' },
-      { label: tr('True Net Profit', '실질 순이익'), value: formatSignedKrw(summary.trueNetProfit || 0), sub: isProfitPositive ? tr('Profit after all deductions', '모든 차감 후 수익') : tr('Below break-even after all deductions', '모든 차감 후 손익분기 이하'), tone: isProfitPositive ? 'positive' : 'negative', icon: 'coins' },
-    ];
 
     const summaryCards = [
       { label: tr('Margin', '마진'), value: formatPercent(summary.margin || 0), sub: tr('True net profit / net revenue', '실질 순이익 / 순매출'), tone: (summary.margin || 0) >= 0 ? 'positive' : 'negative', icon: 'percent' },
@@ -633,7 +811,7 @@
         </div>
       </div>
 
-      ${renderCalendarWaterfall(waterfallCards)}
+      ${renderCalendarSankey(selection, summary)}
 
       <div class="calendar-summary-grid calendar-summary-grid-secondary">
         ${summaryCards.map(renderCalendarSummaryCard).join('')}
@@ -743,6 +921,8 @@
       </div>
     `;
 
+    restoreCalendarWaterfallInputFocus(container);
+
     if (window.lucide) {
       lucide.createIcons({ nodes: [container] });
     }
@@ -809,6 +989,7 @@
     const nextBtn = document.getElementById('calendarNextBtn');
     const todayBtn = document.getElementById('calendarTodayBtn');
     const viewportEl = document.getElementById('calendarViewport');
+    const selectionDeckEl = document.getElementById('calendarSelectionDeck');
 
     if (prevBtn) {
       prevBtn.addEventListener('click', async () => {
@@ -876,6 +1057,24 @@
         calendarState.selectionStart = dayEl.dataset.date;
         calendarState.selectionEnd = dayEl.dataset.date;
         await refreshCalendarPage();
+      });
+    }
+
+    if (selectionDeckEl) {
+      selectionDeckEl.addEventListener('click', event => {
+        const modeButton = event.target.closest('[data-calendar-waterfall-granularity]');
+        if (!modeButton) return;
+
+        calendarState.waterfallGranularity = modeButton.dataset.calendarWaterfallGranularity || 'daily';
+        renderCalendarSelectionDeck();
+      });
+
+      selectionDeckEl.addEventListener('input', event => {
+        if (event.target?.id !== 'calendarPaymentFeeRateInput') return;
+
+        calendarState.paymentFeePercent = parseCalendarPaymentFeePercent(event.target.value);
+        calendarState.waterfallInputShouldRefocus = true;
+        renderCalendarSelectionDeck();
       });
     }
 
