@@ -3349,10 +3349,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   stroke: color-mix(in srgb, var(--color-text-faint) 52%, transparent);
 }
 
-.calendar-sankey-flow.is-guide {
-  stroke-opacity: 0.34;
-}
-
 .calendar-sankey-node {
   color: var(--color-text-muted);
 }

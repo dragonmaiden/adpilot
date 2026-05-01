@@ -120,6 +120,14 @@ test('calendar sankey expands to the available card width before scrolling', () 
   assert.match(css, /\.calendar-sankey-canvas\s*\{[\s\S]*width:\s*100%;[\s\S]*min-width:\s*min\(1120px,\s*100%\);[\s\S]*aspect-ratio:\s*1280\s*\/\s*560;/);
 });
 
+test('calendar sankey omits zero-value labels and guide paths', () => {
+  assert.doesNotMatch(calendarJs, /zeroFixedValue|options\.guide|is-guide|guide:/);
+  assert.doesNotMatch(css, /\.calendar-sankey-flow\.is-guide/);
+  assert.match(calendarJs, /const visibleNodes = nodes\.filter\(node => node\.visible !== false && linkedNodeIds\.has\(node\.id\)\);/);
+  assert.match(calendarJs, /noFinancialMovement/);
+  assert.match(calendarJs, /No financial movement in this selection\./);
+});
+
 test('calendar selection keeps the sankey as the metric owner before the detailed tables', () => {
   assert.doesNotMatch(calendarJs, /calendar-summary-grid-secondary|summaryCards|renderCalendarSummaryCard/);
   assert.doesNotMatch(css, /\.calendar-summary-grid/);

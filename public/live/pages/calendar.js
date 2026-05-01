@@ -623,10 +623,6 @@
     const revenueColumn = hasCategoryBreakdown ? 2 : 1;
     const costsColumn = hasCategoryBreakdown ? 3 : 2;
     const terminalColumn = hasCategoryBreakdown ? 4 : 3;
-    const largestCategoryValue = categoryRows.reduce((max, row) => Math.max(max, row.revenue), 0);
-    const largestValue = Math.max(grossV, refundedV, netV, costsTotal, cogsV, shipV, feesV, adV, resultV, largestCategoryValue, 1);
-    const minVisualValue = Math.max(largestValue * 0.012, 1);
-    const zeroFixedValue = value => value > 0 ? undefined : minVisualValue;
     const netShareLabel = value => netV > 0 ? formatPercent((value / netV) * 100) : '—';
     const costsSub = netV > 0
       ? tr(`${formatPercent((costsTotal / netV) * 100)} of net rev`, `순매출의 ${formatPercent((costsTotal / netV) * 100)}`)
@@ -652,59 +648,58 @@
         displayValue: formatKrw(summary.grossRevenue),
         sub: tr(`${formatCount(orderCount)} orders`, `주문 ${formatCount(orderCount)}건`),
         tone: grossV > 0 ? 'positive' : 'neutral', column: grossColumn, order: 1,
-        fixedValue: zeroFixedValue(grossV) },
+        visible: grossV > 0 },
       { id: 'refunded', key: 'refunded', label: tr('Refunded', '환불'),
         displayValue: expenseValue(summary.refundedAmount),
         sub: tr(`${formatCalendarPercentMetric(summary.refundRate)} refund rate`, `환불률 ${formatCalendarPercentMetric(summary.refundRate)}`),
         tone: refundedV > 0 ? 'negative' : 'neutral', column: revenueColumn, order: 0,
-        fixedValue: zeroFixedValue(refundedV) },
+        visible: refundedV > 0 },
       { id: 'net', key: 'net', label: tr('Net Revenue', '순매출'),
         displayValue: formatKrw(summary.netRevenue),
         sub: tr(`${formatCount(summary.dayCount || 0)} days`, `${formatCount(summary.dayCount || 0)}일`),
         tone: netV > 0 ? 'positive' : 'neutral', column: revenueColumn, order: 1,
-        fixedValue: zeroFixedValue(netV) },
+        visible: netV > 0 },
       { id: 'costs', key: 'costs', label: tr('Costs', '비용'),
         displayValue: expenseValue(costsTotal), sub: costsSub,
         tone: 'negative', column: costsColumn, order: 1, labelSide: 'left',
-        fixedValue: zeroFixedValue(costsTotal + (!isProfitPositive ? lossV : 0)) },
+        visible: costsTotal > 0 },
       { id: 'profit', key: 'profit',
         label: isProfitPositive ? tr('True Net Profit', '실질 순이익') : tr('True Net Loss', '실질 순손실'),
         displayValue: formatSignedKrw(summary.trueNetProfit), sub: resultSub,
         tone: isProfitPositive ? 'positive' : 'negative',
         column: terminalColumn, order: isProfitPositive ? 0 : 5, terminal: true,
-        fixedValue: zeroFixedValue(resultV) },
+        visible: resultV > 0 },
       { id: 'cogs', key: 'cogs', label: 'COGS',
         displayValue: expenseValue(summary.cogs),
         sub: netV > 0 ? tr(`${netShareLabel(cogsV)} of net rev`, `순매출의 ${netShareLabel(cogsV)}`) : coverageLabel,
         tone: cogsV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 1,
-        fixedValue: zeroFixedValue(cogsV) },
+        visible: cogsV > 0 },
       { id: 'shipping', key: 'shipping', label: tr('Shipping', '배송비'),
         displayValue: expenseValue(summary.shipping),
         sub: netV > 0 ? tr(`${netShareLabel(shipV)} of net rev`, `순매출의 ${netShareLabel(shipV)}`) : shippingSub,
         tone: shipV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 2,
-        fixedValue: zeroFixedValue(shipV) },
+        visible: shipV > 0 },
       { id: 'fees', key: 'fees', label: tr('Payment Fees', '결제 수수료'),
         displayValue: expenseValue(summary.paymentFees),
         sub: netV > 0 ? tr(`${netShareLabel(feesV)} of net rev`, `순매출의 ${netShareLabel(feesV)}`) : tr(`${formatCount(orderCount)} transactions`, `거래 ${formatCount(orderCount)}건`),
         tone: feesV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 3,
-        fixedValue: zeroFixedValue(feesV) },
+        visible: feesV > 0 },
       { id: 'adSpend', key: 'adSpend', label: tr('Ad Spend', '광고비'),
         displayValue: expenseValue(summary.adSpendKRW), sub: adSpendSub,
         tone: adV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: isProfitPositive ? 5 : 4,
-        titleAttr: adSpendUsdTitle, fixedValue: zeroFixedValue(adV) },
+        titleAttr: adSpendUsdTitle, visible: adV > 0 },
     ];
 
     const links = [];
-    const addLink = (source, target, value, tone, order, options = {}) => {
+    const addLink = (source, target, value, tone, order) => {
       const numericValue = Number(value) || 0;
-      if (numericValue <= 0 && !options.guide) return;
+      if (numericValue <= 0) return;
       links.push({
         source,
         target,
-        value: options.guide ? minVisualValue : numericValue,
+        value: numericValue,
         tone,
         order,
-        guide: Boolean(options.guide),
       });
     };
 
@@ -712,13 +707,7 @@
       addLink(`category:${row.key}`, 'gross', row.revenue, 'neutral', row.order);
     }
     addLink('gross', 'refunded', refundedV, 'negative', 0);
-    if (refundedV <= 0 && grossV > 0) {
-      addLink('gross', 'refunded', 0, 'neutral', 0, { guide: true });
-    }
     addLink('gross', 'net', netV, grossV > 0 ? 'positive' : 'neutral', 1);
-    if (grossV <= 0 && netV <= 0) {
-      addLink('gross', 'net', 0, 'neutral', 1, { guide: true });
-    }
 
     if (isProfitPositive) {
       addLink('net', 'profit', profitV, 'positive', 0);
@@ -726,8 +715,6 @@
     } else {
       if (netV > 0) {
         addLink('net', 'costs', Math.min(netV, costsTotal), 'negative', 1);
-      } else if (costsTotal > 0) {
-        addLink('net', 'costs', 0, 'neutral', 1, { guide: true });
       }
       addLink('costs', 'profit', lossV, 'negative', 4);
     }
@@ -737,8 +724,21 @@
     addLink('costs', 'adSpend', adV, 'negative', 3);
 
     const d3Sankey = window.d3 && typeof window.d3.sankey === 'function' ? window.d3 : null;
+    const displayableNodeIds = new Set(nodes.filter(node => node.visible !== false).map(node => node.id));
+    const visibleLinks = links.filter(link => displayableNodeIds.has(link.source) && displayableNodeIds.has(link.target));
+    const linkedNodeIds = visibleLinks.reduce((ids, link) => {
+      ids.add(link.source);
+      ids.add(link.target);
+      return ids;
+    }, new Set());
+    const visibleNodes = nodes.filter(node => node.visible !== false && linkedNodeIds.has(node.id));
+
+    if (visibleNodes.length === 0 || visibleLinks.length === 0) {
+      return { nodes: [], flows: [], summary, feePercent, contextLabel, isProfitPositive, noFinancialMovement: true };
+    }
+
     if (!d3Sankey) {
-      return { nodes, flows: [], summary, feePercent, contextLabel, isProfitPositive, missingSankeyEngine: true };
+      return { nodes: visibleNodes, flows: [], summary, feePercent, contextLabel, isProfitPositive, missingSankeyEngine: true };
     }
 
     const layout = d3Sankey.sankey()
@@ -750,8 +750,8 @@
       .nodeAlign(node => node.column)
       .extent(hasCategoryBreakdown ? [[170, 74], [1080, 500]] : [[96, 74], [1080, 500]]);
     const graph = layout({
-      nodes: nodes.map(node => ({ ...node })),
-      links: links.map(link => ({ ...link })),
+      nodes: visibleNodes.map(node => ({ ...node })),
+      links: visibleLinks.map(link => ({ ...link })),
     });
     const linkPath = d3Sankey.sankeyLinkHorizontal();
     const laidOutNodes = graph.nodes.map(node => ({
@@ -790,8 +790,7 @@
     });
     const flows = graph.links.map(link => ({
       tone: link.tone || 'neutral',
-      guide: Boolean(link.guide),
-      width: Math.max(link.guide ? 4 : 2, link.width || 1),
+      width: Math.max(2, link.width || 1),
       d: linkPath(link),
     }));
 
@@ -822,11 +821,13 @@
   }
 
   function renderSankeyFlow(flow) {
-    const guideClass = flow.guide ? ' is-guide' : '';
-    return `<path class="calendar-sankey-flow ${esc(flow.tone || 'neutral')}${guideClass}" d="${flow.d}" stroke-width="${flow.width.toFixed(2)}"></path>`;
+    return `<path class="calendar-sankey-flow ${esc(flow.tone || 'neutral')}" d="${flow.d}" stroke-width="${flow.width.toFixed(2)}"></path>`;
   }
 
   function renderSankeyBodyMarkup(viewModel) {
+    if (viewModel.noFinancialMovement) {
+      return `<div class="calendar-sankey-missing">${esc(tr('No financial movement in this selection.', '선택 범위에 재무 흐름이 없습니다.'))}</div>`;
+    }
     if (viewModel.missingSankeyEngine) {
       return `<div class="calendar-sankey-missing">${esc(tr('Sankey engine did not load.', 'Sankey 엔진을 불러오지 못했습니다.'))}</div>`;
     }
