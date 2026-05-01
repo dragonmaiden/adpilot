@@ -216,8 +216,9 @@
     setChartTopPadding(chart, labelsVisible ? 38 : 24);
   }
 
-  function setPercentAxisBreathingRoom(chart, values, labelsVisible) {
-    if (!chart?.options?.scales?.y) return;
+  function setPercentAxisBreathingRoom(chart, values, labelsVisible, scaleId = 'y') {
+    const scale = chart?.options?.scales?.[scaleId];
+    if (!scale) return;
     const finiteValues = (Array.isArray(values) ? values : [])
       .map(value => Number(value))
       .filter(value => Number.isFinite(value));
@@ -226,13 +227,13 @@
     const maxAbs = Math.max(Math.abs(maxValue), Math.abs(minValue), 1);
     const padding = Math.max(maxAbs * (labelsVisible ? 0.3 : 0.16), labelsVisible ? 5 : 0);
 
-    chart.options.scales.y.suggestedMax = maxValue > 0
+    scale.suggestedMax = maxValue > 0
       ? Math.ceil((maxValue + padding) / 5) * 5
       : undefined;
-    chart.options.scales.y.suggestedMin = minValue < 0
+    scale.suggestedMin = minValue < 0
       ? Math.floor((minValue - padding) / 5) * 5
       : undefined;
-    setChartTopPadding(chart, labelsVisible ? 38 : 24);
+    if (scaleId === 'y') setChartTopPadding(chart, labelsVisible ? 38 : 24);
   }
 
   function setChartTopPadding(chart, top) {
@@ -516,15 +517,25 @@
     const netProfitBuckets = buildNetProfitBuckets(waterfallBuckets);
     if (typeof netProfitChartInstance !== 'undefined' && netProfitChartInstance) {
       const netProfitDataset = netProfitChartInstance.data.datasets[0];
+      const marginDataset = netProfitChartInstance.data.datasets[1];
+      const netProfitValues = netProfitBuckets.map(row => row.trueNetProfit);
+      const marginValues = netProfitBuckets.map(row => row.margin);
+      const netRevenueValues = netProfitBuckets.map(row => row.netRevenue);
       netProfitChartInstance.data.labels = netProfitBuckets.map(row => row.label);
-      netProfitDataset.data = netProfitBuckets.map(row => row.margin);
-      netProfitDataset.netProfitValues = netProfitBuckets.map(row => row.trueNetProfit);
-      netProfitDataset.netRevenue = netProfitBuckets.map(row => row.netRevenue);
+      netProfitDataset.data = netProfitValues;
+      netProfitDataset.marginValues = marginValues;
+      netProfitDataset.netRevenue = netRevenueValues;
       netProfitDataset.showValueLabels = showChartValueLabels;
-      const marginValues = netProfitBuckets
-        .map(row => Number(row.margin))
+      if (marginDataset) {
+        marginDataset.data = marginValues;
+        marginDataset.netProfitValues = netProfitValues;
+        marginDataset.netRevenue = netRevenueValues;
+      }
+      const finiteMarginValues = marginValues
+        .map(value => Number(value))
         .filter(value => Number.isFinite(value));
-      setPercentAxisBreathingRoom(netProfitChartInstance, marginValues, showChartValueLabels);
+      setCurrencyAxisBreathingRoom(netProfitChartInstance, netProfitValues, showChartValueLabels);
+      setPercentAxisBreathingRoom(netProfitChartInstance, finiteMarginValues, false, 'y1');
       netProfitChartInstance.options.scales.x.ticks.minRotation = 45;
       netProfitChartInstance.options.scales.x.ticks.maxRotation = 45;
       netProfitChartInstance.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';

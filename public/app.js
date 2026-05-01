@@ -554,8 +554,7 @@ function initAnalyticsCharts() {
     afterDatasetsDraw(chart) {
       const dataset = chart.data?.datasets?.[0] || {};
       if (!dataset.showValueLabels) return;
-      const values = dataset.netProfitValues || [];
-      const margins = dataset.data || [];
+      const values = dataset.data || [];
       const bars = chart.getDatasetMeta(0)?.data || [];
       if (bars.length === 0 || values.length === 0) return;
 
@@ -568,14 +567,13 @@ function initAnalyticsCharts() {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
 
       bars.forEach((bar, index) => {
-        const margin = Number(margins[index]);
-        if (!Number.isFinite(margin)) return;
-        const value = Number(values[index] || 0);
+        const value = Number(values[index]);
+        if (!Number.isFinite(value) || value === 0) return;
         const label = formatSignedChartKrw(value);
-        const y = margin < 0
+        const y = value < 0
           ? Math.min(bar.y + 8, chartArea.bottom - 12)
           : Math.max(bar.y - 6, chartArea.top + 14);
-        ctx.textBaseline = margin < 0 ? 'top' : 'bottom';
+        ctx.textBaseline = value < 0 ? 'top' : 'bottom';
         ctx.strokeText(label, bar.x, y);
         ctx.fillText(label, bar.x, y);
       });
@@ -649,15 +647,29 @@ function initAnalyticsCharts() {
         labels: [],
         datasets: [
           {
-            label: 'Net Margin',
+            label: 'Net Profit',
             data: [],
             backgroundColor: ctx => {
-              const profit = Number(ctx.dataset.netProfitValues?.[ctx.dataIndex] ?? ctx.raw ?? 0);
+              const profit = Number(ctx.raw ?? 0);
               return profit < 0 ? 'rgba(185, 28, 28, 0.58)' : c.netProfitBlueFill;
             },
             borderRadius: 4,
             barPercentage: 0.62,
             categoryPercentage: 0.72,
+            yAxisID: 'y',
+          },
+          {
+            label: 'Margin',
+            data: [],
+            type: 'line',
+            borderColor: c.netProfitLine,
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointHoverRadius: 5,
+            pointBackgroundColor: c.netProfitLine,
+            tension: 0.3,
+            yAxisID: 'y1',
           },
         ]
       },
@@ -671,20 +683,20 @@ function initAnalyticsCharts() {
           intersect: false,
         },
         plugins: {
-          legend: { display: false },
+          legend: { display: true, position: 'top', labels: { color: c.chartLabel, boxWidth: 12, padding: 16 } },
           tooltip: {
+            mode: 'index',
+            intersect: false,
             callbacks: {
-              label: ctx => `Margin: ${formatChartPercentTick(ctx.parsed.y)}`,
+              label: ctx => ctx.dataset.yAxisID === 'y1'
+                ? `Margin: ${formatChartPercentTick(ctx.parsed.y)}`
+                : `Net profit: ${formatSignedChartKrw(ctx.parsed.y)}`,
               afterBody: items => {
                 if (!Array.isArray(items) || items.length === 0) return [];
                 const index = items[0].dataIndex;
-                const dataset = items[0].chart.data?.datasets?.[0] || {};
-                const profit = Number(dataset.netProfitValues?.[index]);
-                const netRevenue = Number(dataset.netRevenue?.[index] || 0);
-                return [
-                  Number.isFinite(profit) ? `Net profit: ${formatSignedChartKrw(profit)}` : null,
-                  `Net revenue: ${formatChartKrwTick(netRevenue)}`,
-                ].filter(Boolean);
+                const profitDataset = items[0].chart.data?.datasets?.[0] || {};
+                const netRevenue = Number(profitDataset.netRevenue?.[index] || 0);
+                return [`Net revenue: ${formatChartKrwTick(netRevenue)}`];
               },
             }
           }
@@ -692,9 +704,14 @@ function initAnalyticsCharts() {
         scales: {
           x: { grid: { display: false }, ticks: { color: c.chartLabel, minRotation: 45, maxRotation: 45 } },
           y: {
-            beginAtZero: true,
-            title: { display: true, text: 'Margin (%)', color: c.chartLabel },
+            title: { display: true, text: 'Net Profit (₩)', color: c.chartLabel },
             grid: { color: c.grid },
+            ticks: { color: c.chartLabel, callback: v => formatSignedChartKrw(v) },
+          },
+          y1: {
+            position: 'right',
+            title: { display: true, text: 'Margin (%)', color: c.chartLabel },
+            grid: { display: false },
             ticks: { color: c.chartLabel, callback: v => formatChartPercentTick(v) },
           },
         }

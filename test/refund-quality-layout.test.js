@@ -42,8 +42,10 @@ test('net profit chart follows the profit movement window instead of monthly ref
   assert.match(analyticsJs, /formatNullableSignedKrw\(totalProfit\)[\s\S]*formatNullablePercent\(blendedMargin, 1\)[\s\S]*formatNullableKrw\(totalNetRevenue\)/);
   assert.match(analyticsJs, /label:\s*formatShortDateLabel\(key\)/);
   assert.doesNotMatch(analyticsJs, /Week of/);
-  assert.match(analyticsJs, /netProfitDataset\.data = netProfitBuckets\.map\(row => row\.margin\)/);
-  assert.match(analyticsJs, /netProfitDataset\.netProfitValues = netProfitBuckets\.map\(row => row\.trueNetProfit\)/);
+  assert.match(analyticsJs, /const netProfitValues = netProfitBuckets\.map\(row => row\.trueNetProfit\)/);
+  assert.match(analyticsJs, /const marginValues = netProfitBuckets\.map\(row => row\.margin\)/);
+  assert.match(analyticsJs, /netProfitDataset\.data = netProfitValues/);
+  assert.match(analyticsJs, /marginDataset\.data = marginValues/);
   assert.doesNotMatch(analyticsJs, /monthlyRefunds/);
 });
 
@@ -58,19 +60,23 @@ test('profit movement excludes the separate refund series and uses net revenue a
   assert.doesNotMatch(analyticsJs, /Daily view refund rate|granularityLabel\)} refund rate/);
 });
 
-test('net profit chart scales by net margin and labels profit from the same visible buckets', () => {
+test('net profit chart scales bars by net profit and overlays margin from the same buckets', () => {
   assert.match(analyticsJs, /function buildNetProfitBuckets\(waterfallBuckets\)/);
   assert.match(analyticsJs, /const revenue = toFiniteNumber\(row\.revenue\);[\s\S]*const refunded = toFiniteNumber\(row\.refunded\);[\s\S]*const netRevenue = revenue - refunded;/);
   assert.match(analyticsJs, /const trueNetProfit = toFiniteNumber\(row\.trueNetProfit\);/);
   assert.match(analyticsJs, /const margin = netRevenue > 0 \? Number\(\(\(trueNetProfit \/ netRevenue\) \* 100\)\.toFixed\(1\)\) : null;/);
-  assert.match(analyticsJs, /netProfitDataset\.data = netProfitBuckets\.map\(row => row\.margin\)/);
-  assert.match(analyticsJs, /netProfitDataset\.netProfitValues = netProfitBuckets\.map\(row => row\.trueNetProfit\)/);
-  assert.match(analyticsJs, /const marginValues = netProfitBuckets[\s\S]*\.filter\(value => Number\.isFinite\(value\)\);/);
+  assert.match(analyticsJs, /const netProfitValues = netProfitBuckets\.map\(row => row\.trueNetProfit\);/);
+  assert.match(analyticsJs, /const marginValues = netProfitBuckets\.map\(row => row\.margin\);/);
+  assert.match(analyticsJs, /netProfitDataset\.data = netProfitValues;/);
+  assert.match(analyticsJs, /netProfitDataset\.marginValues = marginValues;/);
+  assert.match(analyticsJs, /marginDataset\.data = marginValues;/);
+  assert.match(analyticsJs, /const finiteMarginValues = marginValues[\s\S]*\.filter\(value => Number\.isFinite\(value\)\);/);
   assert.match(analyticsJs, /const showChartValueLabels = profitWaterfallGranularity !== 'day';/);
   assert.match(analyticsJs, /profitWaterfallChart\.data\.datasets\[0\]\.showValueLabels = showChartValueLabels;/);
   assert.match(analyticsJs, /netProfitDataset\.showValueLabels = showChartValueLabels;/);
   assert.match(analyticsJs, /setCurrencyAxisBreathingRoom\(profitWaterfallChart, \[\.\.\.netRevenueValues, \.\.\.costValues\], showChartValueLabels\)/);
-  assert.match(analyticsJs, /setPercentAxisBreathingRoom\(netProfitChartInstance, marginValues, showChartValueLabels\)/);
+  assert.match(analyticsJs, /setCurrencyAxisBreathingRoom\(netProfitChartInstance, netProfitValues, showChartValueLabels\)/);
+  assert.match(analyticsJs, /setPercentAxisBreathingRoom\(netProfitChartInstance, finiteMarginValues, false, 'y1'\)/);
   assert.match(analyticsJs, /function setChartTopPadding\(chart, top\)/);
   assert.match(analyticsJs, /options\.scales\.x\.ticks\.minRotation = 45;[\s\S]*options\.scales\.x\.ticks\.maxRotation = 45;/);
   assert.doesNotMatch(analyticsJs, /\.\.\.\(chart\.options\.layout\.padding \|\| \{\}\)/);
