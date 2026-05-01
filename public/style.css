@@ -3300,7 +3300,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .calendar-sankey-flow {
   fill: none;
-  stroke-linecap: round;
+  stroke-linecap: butt;
   stroke-linejoin: round;
   stroke-opacity: 0.52;
   mix-blend-mode: multiply;

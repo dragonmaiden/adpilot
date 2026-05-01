@@ -5,6 +5,8 @@
 
   const KST_TIME_ZONE = 'Asia/Seoul';
   const DEFAULT_PAYMENT_FEE_PERCENT = 6;
+  const SANKEY_MAX_FLOW_WIDTH = 128;
+  const SANKEY_MAX_NODE_HEIGHT = 220;
   const calendarState = {
     initialized: false,
     anchorMonth: null,
@@ -149,6 +151,16 @@
 
   function formatCalendarRoasMetric(value) {
     return hasCalendarMetric(value) ? `${Number(value).toFixed(2)}x` : '—';
+  }
+
+  function clampSankeyFlowWidth(width) {
+    const numeric = Math.max(2, Number(width) || 1);
+    return Math.min(numeric, SANKEY_MAX_FLOW_WIDTH);
+  }
+
+  function clampSankeyNodeHeight(height) {
+    const numeric = Math.max(1, Number(height) || 1);
+    return Math.min(numeric, SANKEY_MAX_NODE_HEIGHT);
   }
 
   function formatFeePercentLabel(value) {
@@ -670,7 +682,6 @@
         column: isProfitPositive ? terminalColumn : revenueColumn,
         order: isProfitPositive ? 0 : 2,
         terminal: isProfitPositive,
-        labelSide: isProfitPositive ? undefined : 'left',
         visible: resultV > 0 },
       { id: 'cogs', key: 'cogs', label: 'COGS',
         displayValue: expenseValue(summary.cogs),
@@ -768,28 +779,42 @@
     const linkPath = d3Sankey.sankeyLinkHorizontal();
     const hasNetCostLink = graph.links.some(link => link.source.id === 'net' && link.target.id === 'costs');
     const buildSankeyFlowPath = link => {
+      const displayWidth = clampSankeyFlowWidth(link.width);
       const isFlatLossGap = link.variant === 'loss-gap'
         && !hasNetCostLink
         && Math.abs((link.y1 || 0) - (link.y0 || 0)) < 4;
-      if (!isFlatLossGap) return linkPath(link);
-
       const sourceX = link.source.x1;
       const targetX = link.target.x0;
       const dx = targetX - sourceX;
-      const bow = Math.min(90, Math.max(34, (link.width || 1) * 0.16));
+
+      if (isFlatLossGap) {
+        const bow = Math.min(64, Math.max(28, displayWidth * 0.2));
+        return [
+          `M${sourceX},${link.y0}`,
+          `C${sourceX + dx * 0.28},${link.y0 - bow}`,
+          `${targetX - dx * 0.28},${link.y1 + bow}`,
+          `${targetX},${link.y1}`,
+        ].join(' ');
+      }
+
+      const isFlatWideFlow = displayWidth >= 64 && Math.abs((link.y1 || 0) - (link.y0 || 0)) < 14;
+      if (!isFlatWideFlow) return linkPath(link);
+
+      const direction = (link.target.order || 0) <= (link.source.order || 0) ? -1 : 1;
+      const bow = Math.min(42, Math.max(18, displayWidth * 0.16));
       return [
         `M${sourceX},${link.y0}`,
-        `C${sourceX + dx * 0.28},${link.y0 - bow}`,
-        `${targetX - dx * 0.28},${link.y1 + bow}`,
+        `C${sourceX + dx * 0.3},${link.y0 + direction * bow}`,
+        `${targetX - dx * 0.3},${link.y1 + direction * bow}`,
         `${targetX},${link.y1}`,
       ].join(' ');
     };
     const laidOutNodes = graph.nodes.map(node => ({
       ...node,
       x: node.x0,
-      y: node.y0,
+      y: node.y0 + ((node.y1 - node.y0) - clampSankeyNodeHeight(node.y1 - node.y0)) / 2,
       w: Math.max(1, node.x1 - node.x0),
-      h: Math.max(1, node.y1 - node.y0),
+      h: clampSankeyNodeHeight(node.y1 - node.y0),
     }));
     const labelGroups = laidOutNodes
       .filter(node => !node.quiet)
@@ -821,7 +846,7 @@
     const flows = graph.links.map(link => ({
       tone: link.tone || 'neutral',
       variant: link.variant || '',
-      width: Math.max(2, link.width || 1),
+      width: clampSankeyFlowWidth(link.width),
       d: buildSankeyFlowPath(link),
     }));
 

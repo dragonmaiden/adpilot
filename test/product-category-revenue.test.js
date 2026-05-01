@@ -145,8 +145,13 @@ test('loss sankey flows balance uncovered costs instead of double-counting losse
   assert.doesNotMatch(calendarJs, /addLink\('costs', 'profit', lossV/);
   assert.match(calendarJs, /sankeyColumn: columnIndexByValue\.get\(Number\(node\.column \|\| 0\)\) \|\| 0/);
   assert.match(calendarJs, /const isFlatLossGap = link\.variant === 'loss-gap'[\s\S]*!hasNetCostLink/);
+  assert.match(calendarJs, /const isFlatWideFlow = displayWidth >= 64 && Math\.abs\(\(link\.y1 \|\| 0\) - \(link\.y0 \|\| 0\)\) < 14;/);
+  assert.match(calendarJs, /SANKEY_MAX_FLOW_WIDTH = 128/);
+  assert.match(calendarJs, /SANKEY_MAX_NODE_HEIGHT = 220/);
+  assert.match(calendarJs, /width: clampSankeyFlowWidth\(link\.width\)/);
+  assert.match(calendarJs, /h: clampSankeyNodeHeight\(node\.y1 - node\.y0\)/);
   assert.match(calendarJs, /flow\.variant \? ` is-\$\{esc\(flow\.variant\)\}` : ''/);
-  assert.match(css, /calendar-sankey-flow\s*\{[\s\S]*stroke-linecap:\s*round;[\s\S]*stroke-linejoin:\s*round;/);
+  assert.match(css, /calendar-sankey-flow\s*\{[\s\S]*stroke-linecap:\s*butt;[\s\S]*stroke-linejoin:\s*round;/);
   assert.match(css, /\.calendar-sankey-flow\.is-loss-gap\s*\{[\s\S]*stroke-opacity:\s*0\.42;/);
 });
 
