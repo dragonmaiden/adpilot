@@ -29,19 +29,22 @@ test('profit structure shows net profit chart under profit movement without dupl
   assert.match(css, /\.net-profit-card\s*\{[\s\S]*margin-top:\s*var\(--space-4\);/);
 });
 
-test('profit movement defaults to the weekly view', () => {
-  assert.match(indexHtml, /data-profit-waterfall-granularity="day"\s+aria-pressed="false"/);
-  assert.match(indexHtml, /class="range-switch-btn is-active"\s+data-profit-waterfall-granularity="week"\s+aria-pressed="true"/);
-  assert.match(analyticsJs, /let profitWaterfallGranularity = 'week';/);
-  assert.doesNotMatch(analyticsJs, /let profitWaterfallGranularity = 'day';/);
+test('profit movement uses the calendar selection instead of manual timeframe controls', () => {
+  assert.doesNotMatch(indexHtml, /data-profit-waterfall-granularity|data-series-window-group="profit-structure"/);
+  assert.match(analyticsJs, /function chooseSelectionGranularity\(rows\)/);
+  assert.match(analyticsJs, /chooseSelectionGranularity\(rows\)/);
+  assert.doesNotMatch(analyticsJs, /profitWaterfallGranularity|data-profit-waterfall-granularity/);
 });
 
-test('net profit chart follows the profit movement window instead of monthly refunds', () => {
+test('net profit chart follows the selected calendar range instead of monthly refunds', () => {
   assert.match(analyticsJs, /buildNetProfitBuckets\(waterfallBuckets\)/);
-  assert.match(analyticsJs, /sliceRowsByWindow\(pa\.waterfall \|\| \[\], 'profit-structure'\)/);
+  assert.match(analyticsJs, /normalizeCalendarWaterfallRows\(payload\.rows \|\| selection\.days \|\| \[\]\)/);
+  assert.match(analyticsJs, /buildSelectionSummary\(rows,\s*selection\)/);
+  assert.match(analyticsJs, /live\.profitSummary = \{[\s\S]*renderCalendarSelection: renderCalendarSelectionProfitSummary/);
   assert.match(analyticsJs, /formatNullableSignedKrw\(totalProfit\)[\s\S]*formatNullablePercent\(blendedMargin, 1\)[\s\S]*formatNullableKrw\(totalNetRevenue\)/);
   assert.match(analyticsJs, /label:\s*formatShortDateLabel\(key\)/);
   assert.doesNotMatch(analyticsJs, /Week of/);
+  assert.doesNotMatch(analyticsJs, /sliceRowsByWindow|getSeriesWindowMeta|fetchAnalytics/);
   assert.match(analyticsJs, /const netProfitValues = netProfitBuckets\.map\(row => row\.trueNetProfit\)/);
   assert.match(analyticsJs, /const marginValues = netProfitBuckets\.map\(row => row\.margin\)/);
   assert.match(analyticsJs, /netProfitDataset\.data = netProfitValues/);
@@ -71,7 +74,7 @@ test('net profit chart scales bars by net profit and overlays margin from the sa
   assert.match(analyticsJs, /netProfitDataset\.marginValues = marginValues;/);
   assert.match(analyticsJs, /marginDataset\.data = marginValues;/);
   assert.match(analyticsJs, /const finiteMarginValues = marginValues[\s\S]*\.filter\(value => Number\.isFinite\(value\)\);/);
-  assert.match(analyticsJs, /const showChartValueLabels = profitWaterfallGranularity !== 'day';/);
+  assert.match(analyticsJs, /const showChartValueLabels = selectedGranularity !== 'day';/);
   assert.match(analyticsJs, /profitWaterfallChart\.data\.datasets\[0\]\.showValueLabels = showChartValueLabels;/);
   assert.match(analyticsJs, /netProfitDataset\.showValueLabels = showChartValueLabels;/);
   assert.match(analyticsJs, /setCurrencyAxisBreathingRoom\(profitWaterfallChart, \[\.\.\.netRevenueValues, \.\.\.costValues\], showChartValueLabels\)/);
@@ -89,8 +92,9 @@ test('profit summary no longer renders or fetches settlement reconciliation UI',
 });
 
 test('order pattern section avoids duplicate campaign and weekday table surfaces', () => {
-  assert.match(indexHtml, /<div class="card chart-card order-pattern-card">[\s\S]*(Average orders &amp; revenue in the week|Average orders & revenue in the week)/);
-  assert.match(indexHtml, /<div class="card chart-card order-pattern-card">[\s\S]*data-series-window-group="order-patterns"[\s\S]*<canvas id="weekdayChart"><\/canvas>/);
+  assert.match(indexHtml, /<div class="card chart-card order-pattern-card">[\s\S]*Orders &amp; revenue by weekday/);
+  assert.match(indexHtml, /<div class="card chart-card order-pattern-card">[\s\S]*<canvas id="weekdayChart"><\/canvas>/);
+  assert.doesNotMatch(indexHtml, /data-series-window-group="order-patterns"/);
   assert.match(indexHtml, /<canvas id="weekdayChart"><\/canvas>[\s\S]*<canvas id="hourChart"><\/canvas>/);
   assert.doesNotMatch(indexHtml, /Campaign Profit Leaderboard|campaignProfitTable|weekdayTable/);
   assert.doesNotMatch(indexHtml, /Media Profitability|Media Efficiency/);

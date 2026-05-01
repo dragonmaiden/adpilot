@@ -39,11 +39,7 @@
     <nav class="sidebar-nav">
       <a href="#" class="nav-item active" data-page="calendar">
         <i data-lucide="calendar-range"></i>
-        <span data-i18n="nav.calendar">Calendar</span>
-      </a>
-      <a href="#" class="nav-item" data-page="analytics">
-        <i data-lucide="bar-chart-3"></i>
-        <span data-i18n="nav.analytics">Profit Summary</span>
+        <span data-i18n="nav.calendar">Summary</span>
       </a>
       <a href="#" class="nav-item" data-page="settings">
         <i data-lucide="shield-check"></i>
@@ -64,147 +60,14 @@
   <!-- Main Content -->
   <main class="main" id="mainContent">
 
-    <!-- Profit Page -->
-    <section class="page" data-page="analytics">
-      <div class="section-head section-head-with-toolbar">
-        <div class="section-head-copy">
-          <div>
-            <div class="section-kicker" data-i18n="analytics.sectionKicker">Profit Summary</div>
-            <h2 data-i18n="analytics.sectionTitle">Profit and cost summary</h2>
-          </div>
-          <p class="section-note" data-i18n="analytics.sectionNote">Revenue, refunds, total costs, and net profit in one place.</p>
-        </div>
-        <div class="range-toolbar section-head-toolbar">
-          <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
-          <div class="range-switch" data-series-window-group="profit-structure" role="group" aria-label="Profit structure time frame" data-i18n-aria-label="analytics.windowStructureAria">
-            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="all" data-i18n="misc.all">All</button>
-          </div>
-        </div>
-      </div>
-      <div class="analytics-inline-notice" id="analyticsFreshnessNotice" hidden></div>
-
-      <div class="profit-hero" id="profitHero">
-        <div class="profit-hero-head">
-          <div class="profit-hero-kicker" id="profitHeroKicker">Selected period net profit</div>
-          <span class="confidence-badge" id="profitConfidence">—</span>
-        </div>
-        <div class="profit-hero-main">
-          <div class="profit-hero-primary">
-            <div class="profit-amount" id="profitAmount">—</div>
-            <div class="profit-verdict" id="profitVerdict">—</div>
-          </div>
-          <div class="profit-hero-metrics">
-            <div class="profit-hero-metric">
-              <span data-i18n="analytics.hero.margin">Margin</span>
-              <strong id="profitHeroMargin">—</strong>
-            </div>
-            <div class="profit-hero-metric">
-              <span data-i18n="analytics.hero.trueRoas">True ROAS</span>
-              <strong id="profitHeroRoas">—</strong>
-            </div>
-            <div class="profit-hero-metric">
-              <span data-i18n="analytics.hero.runRate">30d run rate</span>
-              <strong id="profitHeroRunRate">—</strong>
-            </div>
-          </div>
-        </div>
-        <div class="profit-hero-sub" id="profitHeroSub" data-i18n="analytics.hero.waiting">Waiting for data...</div>
-        <div class="profit-hero-latest" id="profitLatestSignal" data-i18n="analytics.hero.latestWaiting">Latest completed day: waiting for covered data.</div>
-      </div>
-
-      <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card" data-profit-source-kpi="grossRevenue">
-          <div class="kpi-label" data-i18n="analytics.kpi.grossRevenue">Gross Revenue</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="receipt"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-profit-source-kpi="refunds">
-          <div class="kpi-label" data-i18n="analytics.kpi.refunds">Refunds</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="rotate-ccw"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-profit-source-kpi="totalCosts">
-          <div class="kpi-label" data-i18n="analytics.kpi.totalCosts">Total Costs</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="package"></i><span>—</span></div>
-        </div>
-        <div class="kpi-card" data-profit-source-kpi="trueNetProfit">
-          <div class="kpi-label" data-i18n="analytics.kpi.trueNetProfit">Net Profit</div>
-          <div class="kpi-value">—</div>
-          <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
-        </div>
-      </div>
-
-      <div class="card chart-card">
-        <div class="card-header">
-          <h2 data-i18n="analytics.waterfallTitle">Profit Movement</h2>
-          <div class="range-switch profit-waterfall-granularity-switch" role="group" aria-label="Profit movement granularity" data-i18n-aria-label="analytics.waterfallGranularityAria">
-            <button type="button" class="range-switch-btn" data-profit-waterfall-granularity="day" aria-pressed="false" data-i18n="misc.day">Day</button>
-            <button type="button" class="range-switch-btn is-active" data-profit-waterfall-granularity="week" aria-pressed="true" data-i18n="misc.week">Week</button>
-            <button type="button" class="range-switch-btn" data-profit-waterfall-granularity="month" aria-pressed="false" data-i18n="misc.month">Month</button>
-          </div>
-        </div>
-        <div class="chart-container">
-          <canvas id="profitWaterfallChart"></canvas>
-        </div>
-        <div class="chart-footnote profit-movement-footnote" id="profitMovementFootnote">
-          <span data-i18n="analytics.coverageWaiting">Waiting for data...</span>
-        </div>
-      </div>
-
-      <div class="card chart-card net-profit-card">
-        <div class="card-header">
-          <h2 data-i18n="chart.netProfitMargin">Net Profit &amp; Margin</h2>
-        </div>
-        <div class="chart-summary-row net-profit-summary" id="netProfitSummary" aria-live="polite"></div>
-        <div class="chart-container">
-          <canvas id="netProfitChart"></canvas>
-        </div>
-      </div>
-
-      <div class="charts-grid order-patterns-grid">
-        <div class="card chart-card order-pattern-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.orderWeekday">Average orders & revenue in the week</h2>
-            <div class="range-toolbar">
-              <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
-              <div class="range-switch" data-series-window-group="order-patterns" role="group" aria-label="Order and revenue pattern time frame" data-i18n-aria-label="analytics.windowOrderPatternsAria">
-                <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
-                <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
-                <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-                <button type="button" class="range-switch-btn is-active" data-series-window-value="all" data-i18n="misc.all">All</button>
-              </div>
-            </div>
-          </div>
-          <div class="order-pattern-summary" id="orderPatternSummary"></div>
-          <div class="chart-container">
-            <canvas id="weekdayChart"></canvas>
-          </div>
-        </div>
-        <div class="card chart-card">
-          <div class="card-header">
-            <h2 data-i18n="chart.hourVolume">Order Timing Distribution (KST)</h2>
-            <span class="card-header-note" data-i18n="overview.hourSubtitle">All synced Imweb orders</span>
-          </div>
-          <div class="chart-container">
-            <canvas id="hourChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-    </section>
-
-    <!-- Calendar Page -->
+    <!-- Summary Page -->
     <section class="page active" data-page="calendar">
       <div class="section-head section-head-inline-note">
         <div>
-          <div class="section-kicker" data-i18n="calendar.sectionKicker">Calendar</div>
-          <h2 data-i18n="calendar.sectionTitle">Zoom into any day or date range</h2>
+          <div class="section-kicker" data-i18n="calendar.sectionKicker">Summary</div>
+          <h2 data-i18n="calendar.sectionTitle">Select a date range to review profit</h2>
         </div>
-        <p class="section-head-note" data-i18n="calendar.sectionNote">Revenue heatmap · click or drag dates · KST</p>
+        <p class="section-head-note" data-i18n="calendar.sectionNote">Calendar selection controls every chart below · KST</p>
       </div>
 
       <div class="card calendar-shell">
@@ -230,10 +93,123 @@
         </div>
       </div>
 
+      <div class="summary-profit-visuals">
+        <div class="analytics-inline-notice" id="analyticsFreshnessNotice" hidden></div>
+
+        <div class="summary-profit-topline">
+          <div class="profit-hero" id="profitHero">
+            <div class="profit-hero-head">
+              <div class="profit-hero-kicker" id="profitHeroKicker">Selected range net profit</div>
+              <span class="confidence-badge" id="profitConfidence">—</span>
+            </div>
+            <div class="profit-hero-main">
+              <div class="profit-hero-primary">
+                <div class="profit-amount" id="profitAmount">—</div>
+                <div class="profit-verdict" id="profitVerdict">—</div>
+              </div>
+              <div class="profit-hero-metrics">
+                <div class="profit-hero-metric">
+                  <span data-i18n="analytics.hero.margin">Margin</span>
+                  <strong id="profitHeroMargin">—</strong>
+                </div>
+                <div class="profit-hero-metric">
+                  <span data-i18n="analytics.hero.trueRoas">ROAS</span>
+                  <strong id="profitHeroRoas">—</strong>
+                </div>
+                <div class="profit-hero-metric">
+                  <span data-i18n="analytics.hero.runRate">Avg/day</span>
+                  <strong id="profitHeroRunRate">—</strong>
+                </div>
+              </div>
+            </div>
+            <div class="profit-hero-sub" id="profitHeroSub" data-i18n="analytics.hero.waiting">Waiting for data...</div>
+            <div class="profit-hero-latest" id="profitLatestSignal" data-i18n="analytics.hero.latestWaiting">Selected range: waiting for data.</div>
+          </div>
+
+          <div class="kpi-grid kpi-grid-4 summary-profit-kpis">
+            <div class="kpi-card" data-profit-source-kpi="grossRevenue">
+              <div class="kpi-label" data-i18n="analytics.kpi.grossRevenue">Gross Revenue</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="receipt"></i><span>—</span></div>
+            </div>
+            <div class="kpi-card" data-profit-source-kpi="refunds">
+              <div class="kpi-label" data-i18n="analytics.kpi.refunds">Refunds</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="rotate-ccw"></i><span>—</span></div>
+            </div>
+            <div class="kpi-card" data-profit-source-kpi="totalCosts">
+              <div class="kpi-label" data-i18n="analytics.kpi.totalCosts">Total Costs</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="package"></i><span>—</span></div>
+            </div>
+            <div class="kpi-card" data-profit-source-kpi="trueNetProfit">
+              <div class="kpi-label" data-i18n="analytics.kpi.trueNetProfit">Net Profit</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="trending-up"></i><span>—</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="calendar-sankey-deck" id="calendarSankeyDeck">
+          <div class="card">
+            <div class="card-header">
+              <h2 data-i18n="calendar.sankeyTitle">Profit Sankey</h2>
+              <span class="badge badge-neutral" data-i18n="calendar.selectedHint">Choose a day or drag across a period</span>
+            </div>
+            <p class="card-desc" data-i18n="calendar.selectedDesc">The drilldown will populate with profit, orders, refunds, campaign estimates, and product mix for the selected KST date range.</p>
+          </div>
+        </div>
+
+        <div class="summary-profit-charts">
+          <div class="card chart-card">
+            <div class="card-header">
+              <h2 data-i18n="analytics.waterfallTitle">Profit Movement</h2>
+            </div>
+            <div class="chart-container">
+              <canvas id="profitWaterfallChart"></canvas>
+            </div>
+            <div class="chart-footnote profit-movement-footnote" id="profitMovementFootnote">
+              <span data-i18n="analytics.coverageWaiting">Waiting for data...</span>
+            </div>
+          </div>
+
+          <div class="card chart-card net-profit-card">
+            <div class="card-header">
+              <h2 data-i18n="chart.netProfitMargin">Net Profit &amp; Margin</h2>
+            </div>
+            <div class="chart-summary-row net-profit-summary" id="netProfitSummary" aria-live="polite"></div>
+            <div class="chart-container">
+              <canvas id="netProfitChart"></canvas>
+            </div>
+          </div>
+
+          <div class="charts-grid order-patterns-grid">
+            <div class="card chart-card order-pattern-card">
+              <div class="card-header">
+                <h2 data-i18n="chart.orderWeekday">Orders &amp; revenue by weekday</h2>
+              </div>
+              <div class="order-pattern-summary" id="orderPatternSummary"></div>
+              <div class="chart-container">
+                <canvas id="weekdayChart"></canvas>
+              </div>
+            </div>
+            <div class="card chart-card">
+              <div class="card-header">
+                <h2 data-i18n="chart.hourVolume">Order Timing Distribution (KST)</h2>
+                <span class="card-header-note" data-i18n="overview.hourSubtitle">Selected range</span>
+              </div>
+              <div class="chart-container">
+                <canvas id="hourChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="calendar-selection-deck" id="calendarSelectionDeck">
         <div class="card">
           <div class="card-header">
-            <h2 data-i18n="calendar.sankeyTitle">Profit Sankey</h2>
+            <h2>Daily Breakdown</h2>
             <span class="badge badge-neutral" data-i18n="calendar.selectedHint">Choose a day or drag across a period</span>
           </div>
           <p class="card-desc" data-i18n="calendar.selectedDesc">The drilldown will populate with profit, orders, refunds, campaign estimates, and product mix for the selected KST date range.</p>

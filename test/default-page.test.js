@@ -5,9 +5,10 @@ const path = require('node:path');
 
 const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
 
-test('dashboard opens to calendar page by default', () => {
+test('dashboard opens to the combined summary page by default', () => {
   assert.match(indexHtml, /<a href="#" class="nav-item active" data-page="calendar">/);
-  assert.match(indexHtml, /<a href="#" class="nav-item" data-page="analytics">/);
+  assert.match(indexHtml, /data-i18n="nav\.calendar">Summary/);
   assert.match(indexHtml, /<section class="page active" data-page="calendar">/);
-  assert.match(indexHtml, /<section class="page" data-page="analytics">/);
+  assert.doesNotMatch(indexHtml, /data-page="analytics"/);
+  assert.match(indexHtml, /summary-profit-visuals/);
 });

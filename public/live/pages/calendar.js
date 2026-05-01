@@ -906,6 +906,7 @@
 
     syncPaymentFeeControlState();
     syncSankeyOverflow();
+    renderCalendarProfitSummary();
   }
 
   function syncPaymentFeeControlState() {
@@ -931,26 +932,36 @@
     `;
   }
 
-  function renderSourceAuditNotice(sourceAudit) {
-    if (!sourceAudit) return '';
-    const failedChecks = Array.isArray(sourceAudit.summary?.failedChecks) ? sourceAudit.summary.failedChecks : [];
-    const failedFetches = Array.isArray(sourceAudit.summary?.failedFetches) ? sourceAudit.summary.failedFetches : [];
+  function renderCalendarProfitSummary(state = {}) {
+    const renderer = live.profitSummary?.renderCalendarSelection;
+    if (typeof renderer !== 'function') return;
 
-    if (sourceAudit.status === 'mismatch') {
-      const message = failedChecks.length > 0
-        ? tr(`Source audit mismatch: ${failedChecks.join(', ')}. Calendar financial totals need review before use.`, `소스 감사 불일치: ${failedChecks.join(', ')}. 사용 전 캘린더 재무 합계 검토가 필요합니다.`)
-        : tr('Source audit mismatch. Calendar financial totals need review before use.', '소스 감사 불일치. 사용 전 캘린더 재무 합계 검토가 필요합니다.');
-      return `<div class="analytics-inline-notice is-error">${esc(message)}</div>`;
+    ensureCalendarStateInitialized();
+    syncCalendarSelectionIntoViewport();
+
+    const hasFreshSelection = hasFreshCalendarSelectionPayload(calendarState.data);
+    if (state.loading || (!hasFreshSelection && calendarState.loading)) {
+      renderer({ loading: true });
+      return;
     }
 
-    if (sourceAudit.status === 'reconciled_with_stale_sources') {
-      const message = failedFetches.length > 0
-        ? tr(`Using last-known-good source data for ${failedFetches.join(', ')}.`, `${failedFetches.join(', ')} 마지막 정상 소스 데이터를 사용 중입니다.`)
-        : tr('Using last-known-good source data.', '마지막 정상 소스 데이터를 사용 중입니다.');
-      return `<div class="analytics-inline-notice">${esc(message)}</div>`;
+    if (state.error || (!hasFreshSelection && calendarState.error)) {
+      renderer({ error: state.error || calendarState.error });
+      return;
     }
 
-    return '';
+    if (!calendarState.data || calendarState.data.ready === false || !hasFreshSelection) {
+      renderer({ error: tr('Summary is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.') });
+      return;
+    }
+
+    const selection = calendarState.data.selection || {};
+    renderer({
+      selection,
+      rows: getCalendarWaterfallRows(selection),
+      contextLabel: getCalendarWaterfallContextLabel(),
+      sourceAudit: calendarState.data?.sourceAudit || null,
+    });
   }
 
   function renderStatusBadge(status) {
@@ -999,29 +1010,37 @@
 
   function renderCalendarSelectionDeck() {
     const container = document.getElementById('calendarSelectionDeck');
-    if (!container) return;
+    const sankeyContainer = document.getElementById('calendarSankeyDeck');
+    if (!container || !sankeyContainer) return;
 
     ensureCalendarStateInitialized();
     syncCalendarSelectionIntoViewport();
 
     const hasFreshSelection = hasFreshCalendarSelectionPayload(calendarState.data);
     if (!hasFreshSelection && calendarState.loading) {
-      container.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), tr('Refreshing calendar metrics for the selected date range...', '선택한 날짜 범위의 캘린더 지표를 새로고침 중...'));
+      renderCalendarProfitSummary({ loading: true });
+      sankeyContainer.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), tr('Refreshing calendar metrics for the selected date range...', '선택한 날짜 범위의 캘린더 지표를 새로고침 중...'));
+      container.innerHTML = renderEmptyStateCard(tr('Daily Breakdown', '일별 상세'), tr('Refreshing selected-range details...', '선택 범위 상세를 새로고침 중...'));
       return;
     }
 
     if (!hasFreshSelection && calendarState.error) {
-      container.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), calendarState.error);
+      renderCalendarProfitSummary({ error: calendarState.error });
+      sankeyContainer.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), calendarState.error);
+      container.innerHTML = renderEmptyStateCard(tr('Daily Breakdown', '일별 상세'), calendarState.error);
       return;
     }
 
     if (!calendarState.data || calendarState.data.ready === false || !hasFreshSelection) {
-      container.innerHTML = renderEmptyStateCard(tr('Calendar', '캘린더'), tr('Calendar is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
+      renderCalendarProfitSummary();
+      sankeyContainer.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), tr('Calendar is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
+      container.innerHTML = renderEmptyStateCard(tr('Daily Breakdown', '일별 상세'), tr('Calendar is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
       return;
     }
 
     const selection = calendarState.data.selection || {};
     const summary = selection.summary || {};
+    renderCalendarProfitSummary();
 
     const dailyRows = Array.isArray(selection.days) ? selection.days : [];
     const orderRows = Array.isArray(selection.orders) ? selection.orders : [];
@@ -1089,11 +1108,8 @@
         }).join('')
       : `<tr><td colspan="10" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No product rows in this selection.', '선택 범위에 상품 행이 없습니다.'))}</td></tr>`;
 
+    sankeyContainer.innerHTML = renderCalendarSankey(selection, summary);
     container.innerHTML = `
-      ${renderSourceAuditNotice(calendarState.data?.sourceAudit || null)}
-
-      ${renderCalendarSankey(selection, summary)}
-
       <div class="card">
         <div class="card-header">
           <h2>${esc(tr('Daily Breakdown', '일별 상세'))}</h2>
@@ -1174,7 +1190,7 @@
     `;
 
     if (window.lucide) {
-      lucide.createIcons({ nodes: [container] });
+      lucide.createIcons({ nodes: [sankeyContainer, container] });
     }
 
     syncPaymentFeeControlState();
@@ -1242,7 +1258,7 @@
     const nextBtn = document.getElementById('calendarNextBtn');
     const todayBtn = document.getElementById('calendarTodayBtn');
     const viewportEl = document.getElementById('calendarViewport');
-    const selectionDeckEl = document.getElementById('calendarSelectionDeck');
+    const summaryPageEl = document.querySelector('.page[data-page="calendar"]');
 
     if (prevBtn) {
       prevBtn.addEventListener('click', async () => {
@@ -1313,8 +1329,8 @@
       });
     }
 
-    if (selectionDeckEl) {
-      selectionDeckEl.addEventListener('click', event => {
+    if (summaryPageEl) {
+      summaryPageEl.addEventListener('click', event => {
         const resetButton = event.target.closest('[data-calendar-payment-fee-reset]');
         if (resetButton) {
           calendarState.paymentFeePercent = null;
@@ -1324,7 +1340,7 @@
         }
       });
 
-      selectionDeckEl.addEventListener('input', event => {
+      summaryPageEl.addEventListener('input', event => {
         if (event.target?.id !== 'calendarPaymentFeeRateInput') return;
 
         calendarState.paymentFeePercent = parseCalendarPaymentFeePercent(event.target.value);

@@ -620,6 +620,62 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   grid-template-columns: 1fr;
 }
 
+.summary-profit-visuals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.summary-profit-visuals .analytics-inline-notice {
+  margin-top: 0;
+}
+
+.summary-profit-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.summary-profit-topline .profit-hero {
+  height: 100%;
+  padding: var(--space-6);
+}
+
+.summary-profit-topline .profit-hero-main {
+  display: block;
+  margin-top: var(--space-5);
+}
+
+.summary-profit-topline .profit-hero-metrics {
+  display: none;
+}
+
+.summary-profit-kpis {
+  height: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.summary-profit-kpis .kpi-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--space-4);
+}
+
+.calendar-sankey-deck,
+.summary-profit-charts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.summary-profit-charts .net-profit-card {
+  margin-top: 0;
+}
+
 .net-profit-card {
   margin-top: var(--space-4);
 }
@@ -3456,6 +3512,15 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 @media (max-width: 1024px) {
   .charts-grid { grid-template-columns: 1fr; }
+  .summary-profit-topline {
+    grid-template-columns: 1fr;
+  }
+  .summary-profit-topline .profit-hero-metrics {
+    display: grid;
+  }
+  .summary-profit-topline .profit-hero-main {
+    display: grid;
+  }
   .calendar-viewport { grid-template-columns: 1fr; }
   .live-intraday-takeaway { grid-template-columns: 1fr; }
   .live-intraday-takeaway-side {

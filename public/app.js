@@ -7,6 +7,12 @@
 const navItems = document.querySelectorAll('.nav-item');
 const pages = document.querySelectorAll('.page');
 
+function initSummaryChartsForPage(pageName) {
+  if (pageName !== 'calendar') return;
+  if (!analyticsChartsInitialized) initAnalyticsCharts();
+  if (!profitChartsInitialized) initProfitCharts();
+}
+
 navItems.forEach(item => {
   item.addEventListener('click', (e) => {
     e.preventDefault();
@@ -19,8 +25,7 @@ navItems.forEach(item => {
     const targetPage = document.querySelector(`.page[data-page="${target}"]`);
     if (targetPage) targetPage.classList.add('active');
 
-    if (target === 'analytics' && !analyticsChartsInitialized) initAnalyticsCharts();
-    if (target === 'analytics' && !profitChartsInitialized) initProfitCharts();
+    initSummaryChartsForPage(target);
     if (window.AdPilotLive) {
       window.AdPilotLive.handlePageActivated(target);
     }
@@ -727,8 +732,5 @@ document.addEventListener('DOMContentLoaded', () => {
   animateKPIs();
   initCharts();
   const activePage = document.querySelector('.page.active')?.dataset.page;
-  if (activePage === 'analytics') {
-    if (!analyticsChartsInitialized) initAnalyticsCharts();
-    if (!profitChartsInitialized) initProfitCharts();
-  }
+  initSummaryChartsForPage(activePage);
 });

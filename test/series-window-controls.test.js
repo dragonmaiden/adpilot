@@ -4,54 +4,26 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const INDEX_HTML_PATH = path.join(__dirname, '..', 'public', 'index.html');
+const INIT_JS_PATH = path.join(__dirname, '..', 'public', 'live', 'init.js');
+const ANALYTICS_JS_PATH = path.join(__dirname, '..', 'public', 'live', 'pages', 'analytics.js');
+const CALENDAR_JS_PATH = path.join(__dirname, '..', 'public', 'live', 'pages', 'calendar.js');
+
 const indexHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+const initJs = fs.readFileSync(INIT_JS_PATH, 'utf8');
+const analyticsJs = fs.readFileSync(ANALYTICS_JS_PATH, 'utf8');
+const calendarJs = fs.readFileSync(CALENDAR_JS_PATH, 'utf8');
 
-const EXPECTED_GROUP_OPTIONS = ['7d', '14d', '30d', 'all'];
-const EXPECTED_DEFAULTS = {
-  'profit-structure': 'all',
-  'order-patterns': 'all',
-};
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getGroupMarkup(group) {
-  const pattern = new RegExp(
-    `<div class="range-switch"[^>]*data-series-window-group="${escapeRegExp(group)}"[^>]*>([\\s\\S]*?)</div>`
-  );
-  const match = indexHtml.match(pattern);
-  assert.ok(match, `Expected series window group "${group}" to exist in public/index.html`);
-  return match[1];
-}
-
-function getButtonValues(markup) {
-  return Array.from(markup.matchAll(/data-series-window-value="([^"]+)"/g), match => match[1]);
-}
-
-function getActiveValue(markup) {
-  const match = markup.match(/class="[^"]*\bis-active\b[^"]*"[^>]*data-series-window-value="([^"]+)"/);
-  return match ? match[1] : null;
-}
-
-test('each series window group exposes the shared timeframe options in a consistent order', () => {
-  Object.keys(EXPECTED_DEFAULTS).forEach(group => {
-    const markup = getGroupMarkup(group);
-    assert.deepEqual(
-      getButtonValues(markup),
-      EXPECTED_GROUP_OPTIONS,
-      `Expected ${group} to show ${EXPECTED_GROUP_OPTIONS.join(', ')}`
-    );
-  });
+test('profit summary no longer exposes independent timeframe window controls', () => {
+  assert.doesNotMatch(indexHtml, /data-series-window-group="profit-structure"/);
+  assert.doesNotMatch(indexHtml, /data-series-window-group="order-patterns"/);
+  assert.doesNotMatch(indexHtml, /data-series-window-value="(?:7d|14d|30d|all)"/);
+  assert.doesNotMatch(initJs, /registerSeriesWindowRefresher\('profit-structure'/);
+  assert.doesNotMatch(initJs, /registerSeriesWindowRefresher\('order-patterns'/);
 });
 
-test('each series window group starts with the same default active option as the shared window state', () => {
-  Object.entries(EXPECTED_DEFAULTS).forEach(([group, expectedDefault]) => {
-    const markup = getGroupMarkup(group);
-    assert.equal(
-      getActiveValue(markup),
-      expectedDefault,
-      `Expected ${group} to default to ${expectedDefault}`
-    );
-  });
+test('profit summary renderer is driven by the calendar selected range', () => {
+  assert.match(analyticsJs, /renderCalendarSelectionProfitSummary\(payload = \{\}\)/);
+  assert.match(calendarJs, /rows: getCalendarWaterfallRows\(selection\)/);
+  assert.match(calendarJs, /contextLabel: getCalendarWaterfallContextLabel\(\)/);
+  assert.match(calendarJs, /sourceAudit: calendarState\.data\?\.sourceAudit \|\| null/);
 });

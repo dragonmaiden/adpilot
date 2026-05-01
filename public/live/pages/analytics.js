@@ -1,10 +1,8 @@
 (function () {
   const live = window.AdPilotLive;
   const { esc, safeConfidenceLevel, formatSignedKrw, formatKrw, formatPercent, formatCount, tr, getLocale } = live.shared;
-  const { fetchAnalytics } = live.api;
-  const { getSeriesWindowMeta, sliceRowsByWindow } = live.seriesWindows;
-  let cachedAnalyticsData = null;
-  let profitWaterfallGranularity = 'week';
+  const AUTO_GRANULARITY_THRESHOLD_DAYS = 21;
+  const AUTO_GRANULARITY_THRESHOLD_MONTHS = 75;
 
   function toFiniteNumber(value) {
     const parsed = Number(value);
@@ -245,12 +243,11 @@
     chart.options.layout = { padding: { top } };
   }
 
-  function syncProfitWaterfallGranularityControls() {
-    document.querySelectorAll('[data-profit-waterfall-granularity]').forEach(button => {
-      const isActive = button.dataset.profitWaterfallGranularity === profitWaterfallGranularity;
-      button.classList.toggle('is-active', isActive);
-      button.setAttribute('aria-pressed', String(isActive));
-    });
+  function chooseSelectionGranularity(rows) {
+    const rowCount = Array.isArray(rows) ? rows.length : 0;
+    if (rowCount > AUTO_GRANULARITY_THRESHOLD_MONTHS) return 'month';
+    if (rowCount > AUTO_GRANULARITY_THRESHOLD_DAYS) return 'week';
+    return 'day';
   }
 
   function updateProfitInputCard(key, value, detail, tone = 'neutral') {
@@ -317,9 +314,12 @@
     if (!data || !data.profitAnalysis) return;
 
     const pa = data.profitAnalysis;
-    const waterfall = sliceRowsByWindow(pa.waterfall || [], 'profit-structure');
-    const windowMeta = getSeriesWindowMeta('profit-structure');
-    const windowSummary = getProfitWindowSummary(pa, windowMeta.key);
+    const waterfall = (Array.isArray(pa.waterfall) ? pa.waterfall : [])
+      .filter(row => row?.date)
+      .slice()
+      .sort((left, right) => String(left.date).localeCompare(String(right.date)));
+    const selectedGranularity = pa.granularity || chooseSelectionGranularity(waterfall);
+    const windowSummary = pa.selectionSummary || getProfitWindowSummary(pa, 'selected');
     const windowCoverage = windowSummary.coverage || emptyCoverage();
     const overallCoverage = pa.coverage || {
       totalDays: waterfall.length,
@@ -331,8 +331,6 @@
       confidence: { level: 'low', label: tr('Waiting for data', '데이터 대기 중') },
     };
     const coverage = windowCoverage.totalDays > 0 ? windowCoverage : overallCoverage;
-    const todaySummary = pa.todaySummary;
-    const runRate = pa.runRate;
     const totalProfit = windowSummary.totalProfit;
     const totalGrossRevenue = windowSummary.totalGrossRevenue;
     const totalRefunded = windowSummary.totalRefunded;
@@ -340,11 +338,15 @@
     const totalCosts = windowSummary.totalCosts;
     const blendedMargin = windowSummary.blendedMargin;
     const trueRoas = windowSummary.trueRoas;
-    const windowLabel = windowMeta?.label || tr('Selected', '선택');
+    const windowLabel = pa.windowLabel || tr('Selected range', '선택 범위');
     const refundRate = windowSummary.refundRate;
     const costsShare = windowSummary.costsShare;
     const totalNetRevenue = hasNumericValue(totalGrossRevenue) && hasNumericValue(totalRefunded)
       ? totalGrossRevenue - totalRefunded
+      : null;
+    const daysShown = toFiniteNumber(windowSummary.daysShown || waterfall.length);
+    const avgDailyProfit = daysShown > 0 && hasNumericValue(totalProfit)
+      ? Math.round(Number(totalProfit) / daysShown)
       : null;
 
     const heroEl = document.getElementById('profitHero');
@@ -360,7 +362,7 @@
     const netProfitSummaryEl = document.getElementById('netProfitSummary');
 
     if (heroKickerEl) {
-      heroKickerEl.textContent = tr(`${windowLabel} time frame net profit`, `${windowLabel} 기준 순이익`);
+      heroKickerEl.textContent = tr(`${windowLabel} net profit`, `${windowLabel} 순이익`);
     }
 
     if (verdictEl && amountEl) {
@@ -391,26 +393,20 @@
         ? tr(` · ${coverage.daysWithPendingRecovery} recovery-pending`, ` · 환급 대기 ${coverage.daysWithPendingRecovery.toLocaleString(getLocale())}일`)
         : '';
       heroSubEl.textContent = tr(
-        `${windowLabel} time frame · ${toFiniteNumber(windowSummary.daysShown || waterfall.length)} days shown · ${coverage.daysWithCOGS} fully covered of ${coverage.totalDays} (${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage)${partialNote}${pendingNote}`,
+        `${windowLabel} · ${toFiniteNumber(windowSummary.daysShown || waterfall.length)} days shown · ${coverage.daysWithCOGS} fully covered of ${coverage.totalDays} (${(coverage.coverageRatio * 100).toFixed(0)}% weighted coverage)${partialNote}${pendingNote}`,
         `${windowLabel} 기준 · ${toFiniteNumber(windowSummary.daysShown || waterfall.length).toLocaleString(getLocale())}일 표시 · ${coverage.totalDays.toLocaleString(getLocale())}일 중 ${coverage.daysWithCOGS.toLocaleString(getLocale())}일 완전 커버 (${(coverage.coverageRatio * 100).toFixed(0)}% 가중 커버)${partialNote}${pendingNote}`
       );
     }
 
     if (heroMarginEl) heroMarginEl.textContent = formatNullablePercent(blendedMargin, 1);
     if (heroRoasEl) heroRoasEl.textContent = formatNullableRoas(trueRoas);
-    if (heroRunRateEl) heroRunRateEl.textContent = runRate ? formatSignedKrw(runRate.projectedMonthlyNetProfit) : '—';
+    if (heroRunRateEl) heroRunRateEl.textContent = formatNullableSignedKrw(avgDailyProfit);
 
     if (latestSignalEl) {
-      if (todaySummary) {
-        let summaryLabel = tr('Latest profit signal', '최근 수익 신호');
-        if (todaySummary.summaryType === 'today') summaryLabel = tr('Today', '오늘');
-        if (todaySummary.summaryType === 'latest_completed') summaryLabel = tr('Latest completed day', '최신 완료일');
-        if (todaySummary.summaryType === 'estimated') summaryLabel = tr('Current estimate', '현재 추정치');
-        const cogsNote = todaySummary.hasCOGS ? tr('COGS included', 'COGS 포함') : tr('COGS not yet available', 'COGS 아직 없음');
-        latestSignalEl.textContent = `${summaryLabel}: ${todaySummary.date} · ${formatSignedKrw(todaySummary.trueNetProfit)} · ${cogsNote}`;
-      } else {
-        latestSignalEl.textContent = tr('Latest completed day: waiting for covered profit data.', '최신 완료일: 원가 포함 수익 데이터 대기 중');
-      }
+      latestSignalEl.textContent = tr(
+        `${windowLabel}: ${formatNullableCount(totalOrders)} orders · ${formatNullableKrw(totalGrossRevenue)} gross · ${formatNullableKrw(totalRefunded)} refunded`,
+        `${windowLabel}: 주문 ${formatNullableCount(totalOrders)}건 · 총매출 ${formatNullableKrw(totalGrossRevenue)} · 환불 ${formatNullableKrw(totalRefunded)}`
+      );
     }
 
     updateProfitInputCard(
@@ -473,29 +469,16 @@
     if (roasSub) roasSub.textContent = tr('Net Revenue / Ad Spend', '순매출 / 광고비');
 
     const runRateKpi = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-value');
-    if (runRateKpi) {
-      const projected = runRate ? runRate.projectedMonthlyNetProfit : null;
-      runRateKpi.textContent = projected == null
-        ? '—'
-        : projected >= 0
-        ? '₩' + projected.toLocaleString()
-        : '-₩' + Math.abs(projected).toLocaleString();
-    }
+    if (runRateKpi) runRateKpi.textContent = formatNullableSignedKrw(avgDailyProfit);
     const runRateSub = document.querySelector('[data-profit-kpi="runRate30d"] .kpi-delta span');
     if (runRateSub) {
-      if (runRate) {
-        const avgDaily = runRate.avgDailyNetProfit >= 0
-          ? '₩' + runRate.avgDailyNetProfit.toLocaleString()
-          : '-₩' + Math.abs(runRate.avgDailyNetProfit).toLocaleString();
-        runRateSub.textContent = tr(`${runRate.daysUsed}d used · ${avgDaily}/day`, `${runRate.daysUsed}일 사용 · 일평균 ${avgDaily}`);
-      } else {
-        runRateSub.textContent = tr('Waiting for covered days', '커버된 날짜 대기 중');
-      }
+      runRateSub.textContent = daysShown > 0
+        ? tr(`${daysShown.toLocaleString(getLocale())} selected days`, `선택 ${daysShown.toLocaleString(getLocale())}일`)
+        : tr('Waiting for selected days', '선택 날짜 대기 중');
     }
 
-    syncProfitWaterfallGranularityControls();
-    const waterfallBuckets = aggregateProfitWaterfallRows(waterfall, profitWaterfallGranularity);
-    const showChartValueLabels = profitWaterfallGranularity !== 'day';
+    const waterfallBuckets = aggregateProfitWaterfallRows(waterfall, selectedGranularity);
+    const showChartValueLabels = selectedGranularity !== 'day';
 
     if (waterfallBuckets.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
       const netRevenueValues = waterfallBuckets.map(row => row.revenue - row.refunded);
@@ -510,7 +493,7 @@
       setCurrencyAxisBreathingRoom(profitWaterfallChart, [...netRevenueValues, ...costValues], showChartValueLabels);
       profitWaterfallChart.options.scales.x.ticks.minRotation = 45;
       profitWaterfallChart.options.scales.x.ticks.maxRotation = 45;
-      profitWaterfallChart.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
+      profitWaterfallChart.options.scales.x.ticks.autoSkip = selectedGranularity === 'day';
       profitWaterfallChart.update();
     }
 
@@ -538,7 +521,7 @@
       setPercentAxisBreathingRoom(netProfitChartInstance, finiteMarginValues, false, 'y1');
       netProfitChartInstance.options.scales.x.ticks.minRotation = 45;
       netProfitChartInstance.options.scales.x.ticks.maxRotation = 45;
-      netProfitChartInstance.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
+      netProfitChartInstance.options.scales.x.ticks.autoSkip = selectedGranularity === 'day';
       netProfitChartInstance.update();
     }
 
@@ -547,9 +530,9 @@
       const conf = coverage.confidence;
       const coveredRange = coverage.cogsCoveredRange || {};
       const missing = coverage.missingRanges || [];
-      const granularityLabel = profitWaterfallGranularity === 'month'
+      const granularityLabel = selectedGranularity === 'month'
         ? tr('Monthly view', '월별 보기')
-        : profitWaterfallGranularity === 'week'
+        : selectedGranularity === 'week'
         ? tr('Weekly view', '주별 보기')
         : tr('Daily view', '일별 보기');
       const coverageLabel = tr(
@@ -567,7 +550,7 @@
         `${periodCount.toLocaleString(getLocale())} ${periodCount === 1 ? 'period' : 'periods'} shown`,
         `${periodCount.toLocaleString(getLocale())}개 구간 표시`
       );
-      const windowContextLabel = tr(`${windowLabel} time frame`, `${windowLabel} 기준`);
+      const windowContextLabel = tr(windowLabel, `${windowLabel} 기준`);
 
       profitMovementFootnote.innerHTML = `
         <span><strong>${esc(granularityLabel)}:</strong> ${esc(windowContextLabel)} · ${esc(periodsShownLabel)}</span>
@@ -578,135 +561,280 @@
     }
   }
 
-  async function refreshAnalyticsPage(options = {}) {
-    try {
-      if (
-        typeof initProfitCharts === 'function'
-        && typeof profitChartsInitialized !== 'undefined'
-        && !profitChartsInitialized
-      ) {
-        initProfitCharts();
-      }
-
-      let data = cachedAnalyticsData;
-      const shouldReuseCache = Boolean(
-        options?.preferCached
-        && cachedAnalyticsData
-      );
-      if (!shouldReuseCache) {
-        data = await fetchAnalytics();
-        if (!data) return;
-        cachedAnalyticsData = data;
-      }
-      if (!data) return;
-
-      const charts = data.charts || {};
-      const allDailyMerged = charts.dailyMerged || [];
-      const orderPatternDaily = sliceRowsByWindow(allDailyMerged, 'order-patterns');
-      const orderPatternCutoff = orderPatternDaily[0]?.date || '';
-      const orderPatternWeeklyAgg = (charts.weeklyAgg || []).filter(week => week.week >= orderPatternCutoff);
-      const weekdayPerf = buildWeekdayPerformance(orderPatternDaily);
-      const hourlyOrders = charts.hourlyOrders || [];
-      const imwebSource = data.dataSources?.imweb || null;
-      const sourceAudit = data.sourceAudit || null;
-      const analyticsNoticeEl = document.getElementById('analyticsFreshnessNotice');
-      const orderPatternSummaryEl = document.getElementById('orderPatternSummary');
-
-      if (orderPatternSummaryEl) {
-        const revenueDays = weekdayPerf.filter(day => Number(day.net || 0) > 0);
-        const bestRevenueDay = revenueDays.reduce((best, day) => !best || day.net > best.net ? day : best, null);
-        const peakOrderDay = weekdayPerf.reduce((best, day) => !best || (day.orders || 0) > (best.orders || 0) ? day : best, null);
-        const latestWeek = orderPatternWeeklyAgg[orderPatternWeeklyAgg.length - 1] || null;
-        const previousWeek = orderPatternWeeklyAgg[orderPatternWeeklyAgg.length - 2] || null;
-        const latestRevenue = Number(latestWeek?.revenue || 0) - Number(latestWeek?.refunded || 0);
-        const previousRevenue = Number(previousWeek?.revenue || 0) - Number(previousWeek?.refunded || 0);
-        const latestDelta = latestWeek && previousWeek
-          ? latestRevenue - previousRevenue
-          : 0;
-        const latestDetail = latestWeek
-          ? (previousWeek
-            ? tr(`${latestDelta >= 0 ? '+' : '-'}${formatKrw(Math.abs(latestDelta))} vs prior week`, `${latestDelta >= 0 ? '+' : '-'}${formatKrw(Math.abs(latestDelta))} 전주 대비`)
-            : '')
-          : '';
-        orderPatternSummaryEl.innerHTML = [
-          bestRevenueDay ? renderOrderPatternChip(tr('Best revenue day', '최고 매출 요일'), bestRevenueDay.day, formatKrw(bestRevenueDay.net || 0)) : '',
-          peakOrderDay ? renderOrderPatternChip(tr('Peak order day', '주문 피크 요일'), peakOrderDay.day, tr(`${formatCount(peakOrderDay.orders || 0)} orders`, `주문 ${formatCount(peakOrderDay.orders || 0)}건`)) : '',
-          latestWeek && (latestRevenue > 0 || previousRevenue > 0) ? renderOrderPatternChip(tr('Latest weekly revenue', '최근 주간 매출'), formatKrw(latestRevenue), latestDetail) : '',
-        ].filter(Boolean).join('');
-      }
-      if (analyticsNoticeEl) {
-        const failedChecks = Array.isArray(sourceAudit?.summary?.failedChecks) ? sourceAudit.summary.failedChecks : [];
-        const failedFetches = Array.isArray(sourceAudit?.summary?.failedFetches) ? sourceAudit.summary.failedFetches : [];
-        analyticsNoticeEl.classList.remove('is-error');
-        if (sourceAudit?.status === 'mismatch') {
-          analyticsNoticeEl.hidden = false;
-          analyticsNoticeEl.classList.add('is-error');
-          analyticsNoticeEl.textContent = failedChecks.length > 0
-            ? tr(`Source audit mismatch: ${failedChecks.join(', ')}. Financial totals need review before use.`, `소스 감사 불일치: ${failedChecks.join(', ')}. 사용 전 재무 합계 검토가 필요합니다.`)
-            : tr('Source audit mismatch. Financial totals need review before use.', '소스 감사 불일치. 사용 전 재무 합계 검토가 필요합니다.');
-        } else if (sourceAudit?.status === 'reconciled_with_stale_sources') {
-          analyticsNoticeEl.hidden = false;
-          analyticsNoticeEl.textContent = failedFetches.length > 0
-            ? tr(`Using last-known-good source data for ${failedFetches.join(', ')}.`, `${failedFetches.join(', ')} 마지막 정상 소스 데이터를 사용 중입니다.`)
-            : tr('Using last-known-good source data.', '마지막 정상 소스 데이터를 사용 중입니다.');
-        } else if (imwebSource?.stale) {
-          analyticsNoticeEl.hidden = false;
-          analyticsNoticeEl.textContent = tr('Revenue-backed analytics are using cached Imweb data. Weekday revenue, refunds, and ROAS are directional until the next successful sync.', '매출 기반 분석은 캐시된 Imweb 데이터를 사용 중입니다. 다음 정상 동기화 전까지 요일별 매출, 환불, ROAS는 방향성 참고용입니다.');
-        } else if (imwebSource?.status === 'error') {
-          analyticsNoticeEl.hidden = false;
-          analyticsNoticeEl.textContent = tr('Imweb sync is unavailable. Revenue-backed analytics may be incomplete.', 'Imweb 동기화를 사용할 수 없어 매출 기반 분석이 불완전할 수 있습니다.');
-        } else {
-          analyticsNoticeEl.hidden = true;
-          analyticsNoticeEl.textContent = '';
-        }
-      }
-
-      renderProfitAnalysisSection(data);
-
-      if (weekdayPerf.length > 0 && typeof weekdayChartInstance !== 'undefined' && weekdayChartInstance) {
-        weekdayChartInstance.data.labels = weekdayPerf.map(day => day.day);
-        weekdayChartInstance.data.datasets[0].data = weekdayPerf.map(day => day.orders || 0);
-        weekdayChartInstance.data.datasets[1].data = weekdayPerf.map(day => day.net || 0);
-        weekdayChartInstance.update();
-      }
-
-      if (hourlyOrders.length > 0 && typeof hourChartInstance !== 'undefined' && hourChartInstance) {
-        const peakHours = hourlyOrders
-          .slice()
-          .sort((left, right) => (right.orders || 0) - (left.orders || 0))
-          .slice(0, 3)
-          .map(row => row.hour);
-
-        hourChartInstance.data.labels = hourlyOrders.map(row => `${row.hour}:00`);
-        hourChartInstance.data.datasets[0].data = hourlyOrders.map(row => row.orders || 0);
-        hourChartInstance.data.datasets[0].backgroundColor = hourlyOrders.map(row =>
-          peakHours.includes(row.hour) ? 'rgba(22, 101, 52, 0.92)' : 'rgba(22, 101, 52, 0.56)'
-        );
-        hourChartInstance.update();
-      }
-
-    } catch (e) {
-      console.warn('[LIVE] refreshAnalyticsPage error:', e.message);
+  function ensureProfitSummaryChartsInitialized() {
+    if (
+      typeof initProfitCharts === 'function'
+      && typeof profitChartsInitialized !== 'undefined'
+      && !profitChartsInitialized
+    ) {
+      initProfitCharts();
+    }
+    if (
+      typeof initAnalyticsCharts === 'function'
+      && typeof analyticsChartsInitialized !== 'undefined'
+      && !analyticsChartsInitialized
+    ) {
+      initAnalyticsCharts();
     }
   }
 
-  document.addEventListener('click', event => {
-    const button = event.target.closest('[data-profit-waterfall-granularity]');
-    if (!button) return;
+  function updateAnalyticsNotice(sourceAudit) {
+    const analyticsNoticeEl = document.getElementById('analyticsFreshnessNotice');
+    if (!analyticsNoticeEl) return;
 
-    const nextGranularity = button.dataset.profitWaterfallGranularity;
-    if (!['day', 'week', 'month'].includes(nextGranularity) || nextGranularity === profitWaterfallGranularity) {
+    const failedChecks = Array.isArray(sourceAudit?.summary?.failedChecks) ? sourceAudit.summary.failedChecks : [];
+    const failedFetches = Array.isArray(sourceAudit?.summary?.failedFetches) ? sourceAudit.summary.failedFetches : [];
+    analyticsNoticeEl.classList.remove('is-error');
+    if (sourceAudit?.status === 'mismatch') {
+      analyticsNoticeEl.hidden = false;
+      analyticsNoticeEl.classList.add('is-error');
+      analyticsNoticeEl.textContent = failedChecks.length > 0
+        ? tr(`Source audit mismatch: ${failedChecks.join(', ')}. Financial totals need review before use.`, `소스 감사 불일치: ${failedChecks.join(', ')}. 사용 전 재무 합계 검토가 필요합니다.`)
+        : tr('Source audit mismatch. Financial totals need review before use.', '소스 감사 불일치. 사용 전 재무 합계 검토가 필요합니다.');
+    } else if (sourceAudit?.status === 'reconciled_with_stale_sources') {
+      analyticsNoticeEl.hidden = false;
+      analyticsNoticeEl.textContent = failedFetches.length > 0
+        ? tr(`Using last-known-good source data for ${failedFetches.join(', ')}.`, `${failedFetches.join(', ')} 마지막 정상 소스 데이터를 사용 중입니다.`)
+        : tr('Using last-known-good source data.', '마지막 정상 소스 데이터를 사용 중입니다.');
+    } else {
+      analyticsNoticeEl.hidden = true;
+      analyticsNoticeEl.textContent = '';
+    }
+  }
+
+  function getSelectionCoverage(rows, selection, summary) {
+    const coverage = selection?.coverage || {};
+    const totalDays = toFiniteNumber(coverage.totalDays ?? summary?.totalDays ?? rows.length);
+    const daysWithCOGS = toFiniteNumber(coverage.daysWithCOGS ?? summary?.daysWithCOGS);
+    const daysWithPartialCOGS = toFiniteNumber(coverage.daysWithPartialCOGS ?? summary?.daysWithPartialCOGS);
+    const daysWithPendingRecovery = toFiniteNumber(coverage.daysWithPendingRecovery);
+    const coverageRatio = hasNumericValue(coverage.coverageRatio)
+      ? Number(coverage.coverageRatio)
+      : totalDays > 0
+      ? Number((rows.reduce((sum, row) => sum + toFiniteNumber(row.cogsCoverageRatio), 0) / totalDays).toFixed(3))
+      : 0;
+
+    return {
+      totalDays,
+      daysWithCOGS,
+      daysWithPartialCOGS,
+      daysWithPendingRecovery,
+      coverageRatio,
+      cogsCoveredRange: coverage.cogsCoveredRange || {},
+      missingRanges: Array.isArray(coverage.missingRanges) ? coverage.missingRanges : [],
+      confidence: coverage.confidence || summary?.confidence || emptyCoverage().confidence,
+    };
+  }
+
+  function buildSelectionSummary(rows, selection) {
+    const totals = (Array.isArray(rows) ? rows : []).reduce((summary, row) => {
+      summary.totalGrossRevenue += toFiniteNumber(row.revenue);
+      summary.totalRefunded += toFiniteNumber(row.refunded);
+      summary.totalOrders += toFiniteNumber(row.orders);
+      summary.cogs += toFiniteNumber(row.cogs);
+      summary.shipping += toFiniteNumber(row.cogsShipping ?? row.shipping);
+      summary.adSpendKRW += toFiniteNumber(row.adSpendKRW);
+      summary.paymentFees += toFiniteNumber(row.paymentFees);
+      summary.totalProfit += toFiniteNumber(row.trueNetProfit);
+      return summary;
+    }, {
+      totalGrossRevenue: 0,
+      totalRefunded: 0,
+      totalOrders: 0,
+      cogs: 0,
+      shipping: 0,
+      adSpendKRW: 0,
+      paymentFees: 0,
+      totalProfit: 0,
+    });
+    const sourceSummary = selection?.summary || {};
+    const totalNetRevenue = totals.totalGrossRevenue - totals.totalRefunded;
+    const totalCosts = totals.cogs + totals.shipping + totals.adSpendKRW + totals.paymentFees;
+    const coverage = getSelectionCoverage(rows, selection, sourceSummary);
+
+    return {
+      daysShown: Array.isArray(rows) ? rows.length : 0,
+      totalProfit: totals.totalProfit,
+      totalGrossRevenue: totals.totalGrossRevenue,
+      totalRefunded: totals.totalRefunded,
+      totalOrders: hasNumericValue(sourceSummary.recognizedOrders)
+        ? Number(sourceSummary.recognizedOrders)
+        : totals.totalOrders,
+      totalCosts,
+      blendedMargin: totalNetRevenue > 0 ? (totals.totalProfit / totalNetRevenue) * 100 : null,
+      trueRoas: totals.adSpendKRW > 0 ? totalNetRevenue / totals.adSpendKRW : null,
+      refundRate: totals.totalGrossRevenue > 0 ? (totals.totalRefunded / totals.totalGrossRevenue) * 100 : null,
+      costsShare: totalNetRevenue > 0 ? (totalCosts / totalNetRevenue) * 100 : null,
+      coverage,
+    };
+  }
+
+  function normalizeCalendarWaterfallRows(rows) {
+    return (Array.isArray(rows) ? rows : []).map(row => ({
+      ...row,
+      date: row?.date || '',
+      revenue: toFiniteNumber(row?.revenue),
+      refunded: toFiniteNumber(row?.refunded),
+      cogs: toFiniteNumber(row?.cogs),
+      cogsShipping: toFiniteNumber(row?.cogsShipping ?? row?.shipping),
+      adSpendKRW: toFiniteNumber(row?.adSpendKRW),
+      paymentFees: toFiniteNumber(row?.paymentFees),
+      trueNetProfit: toFiniteNumber(row?.trueNetProfit),
+      orders: toFiniteNumber(row?.orders),
+      spend: toFiniteNumber(row?.spend ?? row?.adSpend),
+      purchases: toFiniteNumber(row?.purchases ?? row?.metaPurchases),
+      hasCOGS: Boolean(row?.hasCOGS),
+      hasPartialCOGS: Boolean(row?.hasPartialCOGS),
+      hasPendingRecovery: Boolean(row?.hasPendingRecovery),
+    })).filter(row => row.date);
+  }
+
+  function parseOrderHour(order) {
+    const raw = String(order?.orderedAt || '').trim();
+    const timeMatch = raw.match(/(?:T|\s)(\d{1,2}):\d{2}/);
+    if (timeMatch) {
+      const hour = Number(timeMatch[1]);
+      return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null;
+    }
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.getHours();
+    }
+    return null;
+  }
+
+  function buildHourlyOrders(orders) {
+    const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0 }));
+    (Array.isArray(orders) ? orders : []).forEach(order => {
+      const hour = parseOrderHour(order);
+      if (hour == null) return;
+      buckets[hour].orders += 1;
+    });
+    return buckets;
+  }
+
+  function renderOrderPatternSummary(weekdayPerf, summary) {
+    const orderPatternSummaryEl = document.getElementById('orderPatternSummary');
+    if (!orderPatternSummaryEl) return;
+
+    const revenueDays = weekdayPerf.filter(day => Number(day.net || 0) > 0);
+    const bestRevenueDay = revenueDays.reduce((best, day) => !best || day.net > best.net ? day : best, null);
+    const peakOrderDay = weekdayPerf.reduce((best, day) => !best || (day.orders || 0) > (best.orders || 0) ? day : best, null);
+    const selectedRevenue = toFiniteNumber(summary.totalGrossRevenue) - toFiniteNumber(summary.totalRefunded);
+
+    orderPatternSummaryEl.innerHTML = [
+      bestRevenueDay ? renderOrderPatternChip(tr('Best revenue day', '최고 매출 요일'), bestRevenueDay.day, formatKrw(bestRevenueDay.net || 0)) : '',
+      peakOrderDay ? renderOrderPatternChip(tr('Peak order day', '주문 피크 요일'), peakOrderDay.day, tr(`${formatCount(peakOrderDay.orders || 0)} orders`, `주문 ${formatCount(peakOrderDay.orders || 0)}건`)) : '',
+      renderOrderPatternChip(tr('Selected net revenue', '선택 순매출'), formatKrw(selectedRevenue), tr(`${formatCount(summary.totalOrders || 0)} orders`, `주문 ${formatCount(summary.totalOrders || 0)}건`)),
+    ].filter(Boolean).join('');
+  }
+
+  function updatePatternCharts(rows, orders, summary) {
+    const weekdayPerf = buildWeekdayPerformance(rows);
+    renderOrderPatternSummary(weekdayPerf, summary);
+
+    if (typeof weekdayChartInstance !== 'undefined' && weekdayChartInstance) {
+      weekdayChartInstance.data.labels = weekdayPerf.map(day => day.day);
+      weekdayChartInstance.data.datasets[0].data = weekdayPerf.map(day => day.orders || 0);
+      weekdayChartInstance.data.datasets[1].data = weekdayPerf.map(day => day.net || 0);
+      weekdayChartInstance.update();
+    }
+
+    if (typeof hourChartInstance !== 'undefined' && hourChartInstance) {
+      const hourlyOrders = buildHourlyOrders(orders);
+      const peakHours = hourlyOrders
+        .slice()
+        .sort((left, right) => (right.orders || 0) - (left.orders || 0))
+        .slice(0, 3)
+        .filter(row => row.orders > 0)
+        .map(row => row.hour);
+
+      hourChartInstance.data.labels = hourlyOrders.map(row => `${String(row.hour).padStart(2, '0')}:00`);
+      hourChartInstance.data.datasets[0].data = hourlyOrders.map(row => row.orders || 0);
+      hourChartInstance.data.datasets[0].backgroundColor = hourlyOrders.map(row =>
+        peakHours.includes(row.hour) ? 'rgba(22, 101, 52, 0.92)' : 'rgba(22, 101, 52, 0.56)'
+      );
+      hourChartInstance.update();
+    }
+  }
+
+  function clearSummaryCharts() {
+    [profitWaterfallChart, netProfitChartInstance, weekdayChartInstance, hourChartInstance].forEach(chart => {
+      if (!chart) return;
+      chart.data.labels = [];
+      chart.data.datasets.forEach(dataset => {
+        dataset.data = [];
+        if (Array.isArray(dataset.backgroundColor)) dataset.backgroundColor = [];
+      });
+      chart.update('none');
+    });
+  }
+
+  function renderProfitSummaryPlaceholder(message) {
+    updateAnalyticsNotice(null);
+    const waitingText = message || tr('Waiting for the selected range...', '선택 범위 대기 중...');
+    const heroKickerEl = document.getElementById('profitHeroKicker');
+    const heroEl = document.getElementById('profitHero');
+    const amountEl = document.getElementById('profitAmount');
+    const verdictEl = document.getElementById('profitVerdict');
+    const confEl = document.getElementById('profitConfidence');
+    const heroSubEl = document.getElementById('profitHeroSub');
+    const latestSignalEl = document.getElementById('profitLatestSignal');
+    const netProfitSummaryEl = document.getElementById('netProfitSummary');
+
+    if (heroKickerEl) heroKickerEl.textContent = tr('Selected range net profit', '선택 범위 순이익');
+    if (heroEl) heroEl.className = 'profit-hero';
+    if (amountEl) {
+      amountEl.textContent = '—';
+      amountEl.className = 'profit-amount';
+    }
+    if (verdictEl) {
+      verdictEl.textContent = '—';
+      verdictEl.className = 'profit-verdict';
+    }
+    if (confEl) confEl.textContent = tr('Waiting for data', '데이터 대기 중');
+    if (heroSubEl) heroSubEl.textContent = waitingText;
+    if (latestSignalEl) latestSignalEl.textContent = waitingText;
+    if (netProfitSummaryEl) netProfitSummaryEl.innerHTML = '';
+    updateProfitInputCard('grossRevenue', '—', waitingText, 'neutral');
+    updateProfitInputCard('refunds', '—', waitingText, 'neutral');
+    updateProfitInputCard('totalCosts', '—', waitingText, 'neutral');
+    updateProfitInputCard('trueNetProfit', '—', waitingText, 'neutral');
+    const footnote = document.getElementById('profitMovementFootnote');
+    if (footnote) footnote.innerHTML = `<span>${esc(waitingText)}</span>`;
+    const orderSummary = document.getElementById('orderPatternSummary');
+    if (orderSummary) orderSummary.innerHTML = '';
+    clearSummaryCharts();
+  }
+
+  function renderCalendarSelectionProfitSummary(payload = {}) {
+    ensureProfitSummaryChartsInitialized();
+
+    if (payload.loading || payload.error || !payload.selection) {
+      renderProfitSummaryPlaceholder(payload.error || tr('Refreshing selected range...', '선택 범위 새로고침 중...'));
       return;
     }
 
-    profitWaterfallGranularity = nextGranularity;
-    syncProfitWaterfallGranularityControls();
-    if (cachedAnalyticsData) {
-      renderProfitAnalysisSection(cachedAnalyticsData);
-    }
-  });
+    const selection = payload.selection || {};
+    const rows = normalizeCalendarWaterfallRows(payload.rows || selection.days || []);
+    const orders = Array.isArray(selection.orders) ? selection.orders : [];
+    const selectionSummary = buildSelectionSummary(rows, selection);
+    const windowLabel = payload.contextLabel || selection.label || tr('Selected range', '선택 범위');
 
-  live.registerPage('analytics', {
-    refresh: refreshAnalyticsPage,
-  });
+    updateAnalyticsNotice(payload.sourceAudit || null);
+    renderProfitAnalysisSection({
+      profitAnalysis: {
+        waterfall: rows,
+        selectionSummary,
+        windowLabel,
+        granularity: chooseSelectionGranularity(rows),
+        orders,
+      },
+    });
+    updatePatternCharts(rows, orders, selectionSummary);
+  }
+
+  live.profitSummary = {
+    renderCalendarSelection: renderCalendarSelectionProfitSummary,
+  };
 })();

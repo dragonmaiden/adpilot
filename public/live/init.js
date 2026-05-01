@@ -1,14 +1,14 @@
 (function () {
   const live = window.AdPilotLive;
   const { checkBackendAvailable, api } = live.api;
-  const { registerSeriesWindowRefresher, initSeriesWindowControls } = live.seriesWindows;
+  const { initSeriesWindowControls } = live.seriesWindows;
 
   let overviewPollId = null;
   let secondaryPollId = null;
   let bootstrapPollId = null;
 
   function isPageRefreshable(pageName) {
-    return ['overview', 'analytics', 'calendar', 'settings'].includes(pageName);
+    return ['overview', 'calendar', 'settings'].includes(pageName);
   }
 
   async function refreshPageIfActive(pageName) {
@@ -107,8 +107,6 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     live.setPageActivatedHandler(handlePageActivated);
-    registerSeriesWindowRefresher('profit-structure', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
-    registerSeriesWindowRefresher('order-patterns', () => live.refresh('analytics', { preferCached: true, cause: 'series-window' }));
     initSeriesWindowControls();
 
     startLiveMode();

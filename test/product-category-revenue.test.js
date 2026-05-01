@@ -156,7 +156,12 @@ test('calendar sankey keeps D3 as the geometry owner', () => {
 test('calendar selection keeps the sankey as the metric owner before the detailed tables', () => {
   assert.doesNotMatch(calendarJs, /calendar-summary-grid-secondary|summaryCards|renderCalendarSummaryCard/);
   assert.doesNotMatch(css, /\.calendar-summary-grid/);
-  assert.match(calendarJs, /\$\{renderCalendarSankey\(selection,\s*summary\)\}[\s\S]*<h2>\$\{esc\(tr\('Daily Breakdown'/);
+  assert.match(indexHtml, /class="summary-profit-topline"[\s\S]*id="calendarSankeyDeck"[\s\S]*id="calendarSelectionDeck"/);
+  assert.match(css, /\.summary-profit-topline\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(0,\s*1fr\);/);
+  assert.match(css, /\.summary-profit-kpis\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(calendarJs, /const sankeyContainer = document\.getElementById\('calendarSankeyDeck'\);/);
+  assert.match(calendarJs, /sankeyContainer\.innerHTML = renderCalendarSankey\(selection,\s*summary\);/);
+  assert.match(calendarJs, /container\.innerHTML = `[\s\S]*<h2>\$\{esc\(tr\('Daily Breakdown'/);
 });
 
 test('calendar drag selection refreshes the same selected-range summary path', () => {
