@@ -3301,7 +3301,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .calendar-sankey-flow {
   fill: none;
   stroke-linecap: butt;
-  stroke-linejoin: round;
   stroke-opacity: 0.52;
   mix-blend-mode: multiply;
 }
@@ -3316,10 +3315,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .calendar-sankey-flow.neutral {
   stroke: color-mix(in srgb, var(--color-text-faint) 52%, transparent);
-}
-
-.calendar-sankey-flow.is-loss-gap {
-  stroke-opacity: 0.42;
 }
 
 .calendar-sankey-node {

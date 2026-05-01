@@ -122,10 +122,13 @@ test('calendar sankey expands to the available card width before scrolling', () 
   assert.match(css, /\.calendar-sankey-canvas\s*\{[\s\S]*width:\s*100%;[\s\S]*min-width:\s*min\(1120px,\s*100%\);[\s\S]*aspect-ratio:\s*1280\s*\/\s*560;/);
 });
 
-test('calendar sankey omits zero-value labels and guide paths', () => {
-  assert.doesNotMatch(calendarJs, /zeroFixedValue|options\.guide|is-guide|guide:/);
+test('calendar sankey uses layout-only zero guides without rendering zero labels or guide paths', () => {
+  assert.match(calendarJs, /const zeroFixedValue = value => value > 0 \? undefined : minVisualValue;/);
+  assert.match(calendarJs, /hidden: grossV <= 0/);
+  assert.match(calendarJs, /if \(node\.hidden\) return '';/);
+  assert.match(calendarJs, /if \(flow\.guide\) return '';/);
+  assert.match(calendarJs, /addLink\('gross', 'net', 0, 'neutral', 1, \{ guide: true \}\)/);
   assert.doesNotMatch(css, /\.calendar-sankey-flow\.is-guide/);
-  assert.match(calendarJs, /const visibleNodes = nodes\.filter\(node => node\.visible !== false && linkedNodeIds\.has\(node\.id\)\);/);
   assert.match(calendarJs, /noFinancialMovement/);
   assert.match(calendarJs, /No financial movement in this selection\./);
 });
@@ -138,21 +141,16 @@ test('calendar sankey owns the selected date label without the old status card',
   assert.doesNotMatch(css, /\.calendar-detail-head|\.calendar-chip/);
 });
 
-test('loss sankey flows balance uncovered costs instead of double-counting losses', () => {
-  assert.match(calendarJs, /sub: isProfitPositive \? resultSub : tr\('Uncovered costs'/);
-  assert.match(calendarJs, /column: isProfitPositive \? terminalColumn : revenueColumn/);
-  assert.match(calendarJs, /addLink\('profit', 'costs', lossV, 'negative', 0, 'loss-gap'\)/);
-  assert.doesNotMatch(calendarJs, /addLink\('costs', 'profit', lossV/);
-  assert.match(calendarJs, /sankeyColumn: columnIndexByValue\.get\(Number\(node\.column \|\| 0\)\) \|\| 0/);
-  assert.match(calendarJs, /const isFlatLossGap = link\.variant === 'loss-gap'[\s\S]*!hasNetCostLink/);
-  assert.match(calendarJs, /const isFlatWideFlow = displayWidth >= 64 && Math\.abs\(\(link\.y1 \|\| 0\) - \(link\.y0 \|\| 0\)\) < 14;/);
-  assert.match(calendarJs, /SANKEY_MAX_FLOW_WIDTH = 128/);
-  assert.match(calendarJs, /SANKEY_MAX_NODE_HEIGHT = 220/);
-  assert.match(calendarJs, /width: clampSankeyFlowWidth\(link\.width\)/);
-  assert.match(calendarJs, /h: clampSankeyNodeHeight\(node\.y1 - node\.y0\)/);
-  assert.match(calendarJs, /flow\.variant \? ` is-\$\{esc\(flow\.variant\)\}` : ''/);
-  assert.match(css, /calendar-sankey-flow\s*\{[\s\S]*stroke-linecap:\s*butt;[\s\S]*stroke-linejoin:\s*round;/);
-  assert.match(css, /\.calendar-sankey-flow\.is-loss-gap\s*\{[\s\S]*stroke-opacity:\s*0\.42;/);
+test('calendar sankey keeps D3 as the geometry owner', () => {
+  const sankeyFlowBlock = css.match(/\.calendar-sankey-flow\s*\{[\s\S]*?\}/)?.[0] || '';
+  assert.match(calendarJs, /\.nodeAlign\(node => node\.column\)/);
+  assert.match(calendarJs, /const linkPath = d3Sankey\.sankeyLinkHorizontal\(\);/);
+  assert.match(calendarJs, /d: linkPath\(link\)/);
+  assert.match(calendarJs, /addLink\('costs', 'profit', lossV, 'negative', 4\)/);
+  assert.doesNotMatch(calendarJs, /buildSankeyFlowPath|sankeyColumn|clampSankey|SANKEY_MAX|loss-gap|isFlatWideFlow|isFlatLossGap/);
+  assert.match(sankeyFlowBlock, /stroke-linecap:\s*butt;/);
+  assert.doesNotMatch(css, /is-loss-gap/);
+  assert.doesNotMatch(sankeyFlowBlock, /stroke-linejoin/);
 });
 
 test('calendar selection keeps the sankey as the metric owner before the detailed tables', () => {
