@@ -14,6 +14,7 @@ const cogsAutofillService = require('../services/cogsAutofillService');
 const orderNotificationService = require('../services/orderNotificationService');
 const observabilityService = require('../services/observabilityService');
 const fxService = require('../services/fxService');
+const financialLedgerRepository = require('../db/financialLedgerRepository');
 const {
   buildSourceExtractionAudit,
   summarizeImwebOrders,
@@ -790,6 +791,20 @@ async function runScan(manual = false) {
       scanStore.saveLatestArtifacts(scanResult);
     } catch (err) {
       console.warn('[SCHEDULER]   ⚠ Failed to persist latest scan artifacts:', err.message);
+    }
+
+    try {
+      const ledgerResult = await financialLedgerRepository.persistScanLedger({
+        scanResult,
+        latestData: scanStore.getLatestData(),
+      });
+      if (ledgerResult?.ok) {
+        console.log(
+          `[SCHEDULER]   → Postgres ledger persisted (${ledgerResult.imwebOrders} Imweb orders, ${ledgerResult.dailySnapshots} daily snapshots)`
+        );
+      }
+    } catch (err) {
+      console.warn('[SCHEDULER]   ⚠ Postgres ledger persist failed:', err.message);
     }
 
     scanStore.setIsScanning(false);

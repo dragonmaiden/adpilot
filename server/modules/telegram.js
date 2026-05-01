@@ -7,6 +7,7 @@ const config = require('../config');
 const telegramState = require('./telegramState');
 const { buildScanSummaryPlan } = require('../services/telegramDigestService');
 const { buildDailySummaryReportPlan } = require('../services/dailyTelegramReportService');
+const financialLedgerRepository = require('../db/financialLedgerRepository');
 
 const BOT_TOKEN = typeof config.telegram.botToken === 'string'
   ? config.telegram.botToken.trim()
@@ -321,6 +322,21 @@ async function sendScanSummary(scanResult, latestData = null) {
   return result;
 }
 
+async function recordDailyReportDelivery(plan, patch = {}) {
+  try {
+    await financialLedgerRepository.recordTelegramReportDelivery({
+      reportDate: plan.reportDate,
+      status: patch.status,
+      payload: patch.payload ?? plan.text ?? null,
+      sentAt: patch.sentAt || null,
+      error: patch.error || null,
+      metadata: patch.metadata || {},
+    });
+  } catch (err) {
+    console.warn('[TELEGRAM] Daily report ledger write failed:', err.message);
+  }
+}
+
 // ── Send daily financial summary report ──
 async function sendDailySummaryReport(latestData = null, options = {}) {
   const plan = buildDailySummaryReportPlan(
@@ -329,14 +345,32 @@ async function sendDailySummaryReport(latestData = null, options = {}) {
     options.now || new Date()
   );
   if (!plan.shouldSend || !plan.text) {
+    await recordDailyReportDelivery(plan, {
+      status: `skipped:${plan.reason}`,
+      error: plan.reason,
+      metadata: plan.diagnostics ? { diagnostics: plan.diagnostics } : {},
+    });
     return { skipped: true, reason: plan.reason, reportDate: plan.reportDate };
   }
 
   const result = await sendMessage(plan.text);
+  const sentAt = new Date().toISOString();
   if (result?.ok) {
     telegramState.markDailyReportSent({
       reportDate: plan.reportDate,
-      sentAt: options.sentAt || new Date().toISOString(),
+      sentAt: options.sentAt || sentAt,
+    });
+    await recordDailyReportDelivery(plan, {
+      status: 'sent',
+      sentAt: options.sentAt || sentAt,
+      metadata: {
+        telegramMessageId: result.result?.message_id || null,
+      },
+    });
+  } else {
+    await recordDailyReportDelivery(plan, {
+      status: 'failed',
+      error: result?.description || 'telegram-send-failed',
     });
   }
   return result;
