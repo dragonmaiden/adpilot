@@ -10,6 +10,9 @@ const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', {
 const MIN_RECORD_HISTORY_DAYS = 7;
 const MIN_AVERAGE_HISTORY_DAYS = 3;
 const PROFIT_AVERAGE_LOOKBACK_DAYS = 14;
+const DAILY_REPORT_KST_HOUR = 23;
+const DAILY_REPORT_KST_MINUTE = 30;
+const DAILY_REPORT_KST_MINUTE_OF_DAY = (DAILY_REPORT_KST_HOUR * 60) + DAILY_REPORT_KST_MINUTE;
 
 function parseDateKey(dateKey) {
   const [year, month, day] = String(dateKey || '').split('-').map(value => Number.parseInt(value, 10));
@@ -19,21 +22,44 @@ function parseDateKey(dateKey) {
   return { year, month, day };
 }
 
-function dateKeyToKstMidnightUtc(dateKey) {
+function dateKeyToKstTimeUtc(dateKey, hour = 0, minute = 0) {
   const parsed = parseDateKey(dateKey);
   if (!parsed) return null;
-  return new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day) - KST_UTC_OFFSET_MS);
+  return new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, hour, minute) - KST_UTC_OFFSET_MS);
 }
 
-function getNextKstMidnightAt(now = new Date()) {
+function getKstMinuteOfDay(now = new Date()) {
+  const date = new Date(now);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const kstDate = new Date(date.getTime() + KST_UTC_OFFSET_MS);
+  return (kstDate.getUTCHours() * 60) + kstDate.getUTCMinutes();
+}
+
+function getNextDailyReportAt(now = new Date()) {
+  const currentTime = new Date(now);
+  if (Number.isNaN(currentTime.getTime())) return null;
+
   const currentKstDate = formatDateInTimeZone(now, KST_TIME_ZONE);
+  const todayReportAt = dateKeyToKstTimeUtc(
+    currentKstDate,
+    DAILY_REPORT_KST_HOUR,
+    DAILY_REPORT_KST_MINUTE
+  );
+  if (todayReportAt && currentTime < todayReportAt) {
+    return todayReportAt;
+  }
+
   const nextKstDate = shiftDate(currentKstDate, 1);
-  return dateKeyToKstMidnightUtc(nextKstDate);
+  return dateKeyToKstTimeUtc(nextKstDate, DAILY_REPORT_KST_HOUR, DAILY_REPORT_KST_MINUTE);
 }
 
 function resolveDailyReportDate(now = new Date()) {
   const currentKstDate = formatDateInTimeZone(now, KST_TIME_ZONE);
-  return shiftDate(currentKstDate, -1);
+  const minuteOfDay = getKstMinuteOfDay(now);
+  return minuteOfDay != null && minuteOfDay >= DAILY_REPORT_KST_MINUTE_OF_DAY
+    ? currentKstDate
+    : shiftDate(currentKstDate, -1);
 }
 
 function getOrdinalSuffix(day) {
@@ -511,9 +537,9 @@ module.exports = {
   buildHistoricalPerformanceInsights,
   buildHistoricalPerformanceSignals,
   buildRevenueCoverageDiagnostics,
-  dateKeyToKstMidnightUtc,
+  dateKeyToKstTimeUtc,
   formatKrw,
   formatReportDate,
-  getNextKstMidnightAt,
+  getNextDailyReportAt,
   resolveDailyReportDate,
 };

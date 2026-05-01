@@ -1,7 +1,7 @@
 const imweb = require('./imwebClient');
 const telegram = require('./telegram');
 const runtimeSettings = require('../runtime/runtimeSettings');
-const { getNextKstMidnightAt } = require('../services/dailyTelegramReportService');
+const { getNextDailyReportAt } = require('../services/dailyTelegramReportService');
 
 let scanTimer = null;
 let initialScanTimer = null;
@@ -72,9 +72,9 @@ async function sendScheduledDailyReport(reportNow = new Date()) {
 function scheduleDailyReport() {
   clearDailyReportTimer();
 
-  nextDailyReportAt = getNextKstMidnightAt(new Date());
+  nextDailyReportAt = getNextDailyReportAt(new Date());
   if (!nextDailyReportAt) {
-    console.warn('[SCHEDULER] Daily Telegram report not scheduled: unable to resolve next KST midnight');
+    console.warn('[SCHEDULER] Daily Telegram report not scheduled: unable to resolve next 23:30 KST report time');
     return null;
   }
 
@@ -86,7 +86,7 @@ function scheduleDailyReport() {
     await sendScheduledDailyReport(reportNow);
     scheduleDailyReport();
   }, delayMs);
-  console.log(`[SCHEDULER] Daily Telegram report scheduled for ${nextDailyReportAt.toISOString()} (00:00 KST)`);
+  console.log(`[SCHEDULER] Daily Telegram report scheduled for ${nextDailyReportAt.toISOString()} (23:30 KST)`);
   return dailyReportTimer;
 }
 

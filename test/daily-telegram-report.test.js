@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const {
   buildDailySummaryReportPlan,
   formatReportDate,
-  getNextKstMidnightAt,
+  getNextDailyReportAt,
   resolveDailyReportDate,
 } = require('../server/services/dailyTelegramReportService');
 
@@ -32,14 +32,21 @@ function buildLatestData(overrides = {}) {
   };
 }
 
-test('daily report resolves the completed KST day at midnight', () => {
-  const midnightKst = new Date('2026-04-30T15:00:00.000Z');
+test('daily report resolves the latest 23:30 KST reporting cutoff', () => {
+  const beforeReportTime = new Date('2026-04-30T14:29:00.000Z');
+  const reportTime = new Date('2026-04-30T14:30:00.000Z');
 
-  assert.equal(resolveDailyReportDate(midnightKst), '2026-04-30');
+  assert.equal(resolveDailyReportDate(beforeReportTime), '2026-04-29');
+  assert.equal(resolveDailyReportDate(reportTime), '2026-04-30');
+  assert.equal(resolveDailyReportDate(new Date('2026-04-30T15:00:00.000Z')), '2026-04-30');
   assert.equal(formatReportDate('2026-04-30'), '30th April');
   assert.equal(
-    getNextKstMidnightAt(new Date('2026-04-30T14:59:00.000Z')).toISOString(),
-    '2026-04-30T15:00:00.000Z'
+    getNextDailyReportAt(beforeReportTime).toISOString(),
+    '2026-04-30T14:30:00.000Z'
+  );
+  assert.equal(
+    getNextDailyReportAt(reportTime).toISOString(),
+    '2026-05-01T14:30:00.000Z'
   );
 });
 
@@ -47,7 +54,7 @@ test('daily report message uses canonical financial projection totals', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData(),
     { dailyReport: { reportDate: null, sentAt: null } },
-    new Date('2026-04-30T15:00:00.000Z')
+    new Date('2026-04-30T14:30:00.000Z')
   );
 
   assert.equal(plan.shouldSend, true);
@@ -105,7 +112,7 @@ test('daily report skips duplicate report dates', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData(),
     { dailyReport: { reportDate: '2026-04-30', sentAt: '2026-04-30T15:01:00.000Z' } },
-    new Date('2026-04-30T15:00:00.000Z')
+    new Date('2026-04-30T14:30:00.000Z')
   );
 
   assert.equal(plan.shouldSend, false);
@@ -126,7 +133,7 @@ test('daily report refuses to print zero revenue when revenue source is stale fo
       },
     }),
     { dailyReport: { reportDate: null, sentAt: null } },
-    new Date('2026-04-30T15:00:00.000Z')
+    new Date('2026-04-30T14:30:00.000Z')
   );
 
   assert.equal(plan.shouldSend, false);
@@ -141,7 +148,7 @@ test('daily report does not fake profit when COGS are pending for a sales day', 
   const plan = buildDailySummaryReportPlan(
     latestData,
     { dailyReport: { reportDate: null, sentAt: null } },
-    new Date('2026-04-30T15:00:00.000Z')
+    new Date('2026-04-30T14:30:00.000Z')
   );
 
   assert.equal(plan.totals.profitAvailable, false);
@@ -168,7 +175,7 @@ test('daily report adds data and Telegram audit warnings without changing core t
       },
     }),
     { dailyReport: { reportDate: null, sentAt: null } },
-    new Date('2026-04-30T15:00:00.000Z')
+    new Date('2026-04-30T14:30:00.000Z')
   );
 
   assert.equal(plan.shouldSend, true);
@@ -199,7 +206,7 @@ test('daily report uses the insight block for campaign watch items', () => {
       ],
     }),
     { dailyReport: { reportDate: null, sentAt: null } },
-    new Date('2026-04-30T15:00:00.000Z')
+    new Date('2026-04-30T14:30:00.000Z')
   );
 
   assert.match(plan.text, /🧾 <b>Total Costs:<\/b> ₩9,007,836/);
@@ -237,7 +244,7 @@ test('daily report celebrates record orders, record sales, and above-average pro
       campaignInsights: [],
     }),
     { dailyReport: { reportDate: null, sentAt: null } },
-    new Date('2026-04-30T15:00:00.000Z')
+    new Date('2026-04-30T14:30:00.000Z')
   );
 
   assert.deepEqual(plan.totals.historicalSignals.map(signal => signal.type), [
