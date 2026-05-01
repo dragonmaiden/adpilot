@@ -26,4 +26,15 @@ test('profit summary renderer is driven by the calendar selected range', () => {
   assert.match(calendarJs, /rows: getCalendarWaterfallRows\(selection\)/);
   assert.match(calendarJs, /contextLabel: getCalendarWaterfallContextLabel\(\)/);
   assert.match(calendarJs, /sourceAudit: calendarState\.data\?\.sourceAudit \|\| null/);
+  assert.match(calendarJs, /orderPatterns: calendarState\.data\?\.orderPatterns \|\| null/);
+});
+
+test('order pattern charts use the all-time calendar-analysis payload', () => {
+  assert.match(analyticsJs, /function updatePatternCharts\(orderPatterns\)/);
+  assert.match(analyticsJs, /normalizeOrderPatternWeekday\(orderPatterns\?\.weekday\)/);
+  assert.match(analyticsJs, /normalizeOrderPatternHourly\(orderPatterns\?\.hourly\)/);
+  assert.match(analyticsJs, /setOrderPatternRangeLabel\(formatOrderPatternRange\(orderPatterns\?\.range\)\)/);
+  assert.match(analyticsJs, /updatePatternCharts\(payload\.orderPatterns \|\| \{\}\)/);
+  assert.doesNotMatch(analyticsJs, /updatePatternCharts\(rows,\s*orders,\s*selectionSummary\)/);
+  assert.doesNotMatch(analyticsJs, /buildHourlyOrders\(orders\)/);
 });

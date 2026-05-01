@@ -85,6 +85,14 @@
     return new Intl.DateTimeFormat(getLocale(), { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(date);
   }
 
+  function formatDayMonthLabel(dateKey) {
+    const date = parseDateKey(dateKey);
+    if (!date) return '';
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    return `${day}/${month}`;
+  }
+
   function formatMonthLabel(monthKey) {
     const date = parseDateKey(`${monthKey}-01`);
     if (!date) return monthKey || '';
@@ -276,38 +284,32 @@
     `;
   }
 
-  function buildWeekdayPerformance(rows) {
+  function normalizeOrderPatternWeekday(weekdayRows) {
     const labels = tr(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], ['일', '월', '화', '수', '목', '금', '토']);
-    const buckets = labels.map(day => ({
+    const buckets = labels.map((day, dayIndex) => ({
+      dayIndex,
       day,
-      spend: 0,
-      purchases: 0,
       paid: 0,
       refunded: 0,
       net: 0,
       orders: 0,
     }));
 
-    (Array.isArray(rows) ? rows : []).forEach(row => {
-      if (!row?.date) return;
-      const weekdayIndex = new Date(`${row.date}T00:00:00`).getDay();
-      const bucket = buckets[weekdayIndex];
+    (Array.isArray(weekdayRows) ? weekdayRows : []).forEach(row => {
+      const dayIndex = Number(row?.dayIndex);
+      if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) return;
+      const bucket = buckets[dayIndex];
       if (!bucket) return;
 
-      const paid = toFiniteNumber(row.revenue);
+      const paid = toFiniteNumber(row.revenue ?? row.paid);
       const refunded = toFiniteNumber(row.refunded);
-      bucket.spend += toFiniteNumber(row.spend);
-      bucket.purchases += toFiniteNumber(row.purchases);
       bucket.paid += paid;
       bucket.refunded += refunded;
-      bucket.net += paid - refunded;
+      bucket.net += hasNumericValue(row.net) ? toFiniteNumber(row.net) : paid - refunded;
       bucket.orders += toFiniteNumber(row.orders);
     });
 
-    return buckets.map(bucket => ({
-      ...bucket,
-      cpa: bucket.purchases > 0 ? bucket.spend / bucket.purchases : 0,
-    }));
+    return buckets;
   }
 
   function renderProfitAnalysisSection(data) {
@@ -689,28 +691,37 @@
     })).filter(row => row.date);
   }
 
-  function parseOrderHour(order) {
-    const raw = String(order?.orderedAt || '').trim();
-    const timeMatch = raw.match(/(?:T|\s)(\d{1,2}):\d{2}/);
-    if (timeMatch) {
-      const hour = Number(timeMatch[1]);
-      return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null;
-    }
-    const parsed = new Date(raw);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.getHours();
-    }
-    return null;
-  }
-
-  function buildHourlyOrders(orders) {
+  function normalizeOrderPatternHourly(hourlyRows) {
     const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0 }));
-    (Array.isArray(orders) ? orders : []).forEach(order => {
-      const hour = parseOrderHour(order);
-      if (hour == null) return;
-      buckets[hour].orders += 1;
+    (Array.isArray(hourlyRows) ? hourlyRows : []).forEach(row => {
+      const hour = Number(row?.hour);
+      if (!Number.isInteger(hour) || hour < 0 || hour > 23) return;
+      buckets[hour].orders = toFiniteNumber(row.orders);
     });
     return buckets;
+  }
+
+  function normalizeOrderPatternSummary(summary) {
+    return {
+      totalGrossRevenue: toFiniteNumber(summary?.totalGrossRevenue),
+      totalRefunded: toFiniteNumber(summary?.totalRefunded),
+      totalNetRevenue: toFiniteNumber(summary?.totalNetRevenue),
+      totalOrders: toFiniteNumber(summary?.totalOrders),
+    };
+  }
+
+  function formatOrderPatternRange(range) {
+    const startLabel = formatDayMonthLabel(range?.start);
+    const endLabel = formatDayMonthLabel(range?.end);
+    if (!startLabel || !endLabel) return '—';
+    return `${startLabel} to ${endLabel}`;
+  }
+
+  function setOrderPatternRangeLabel(label) {
+    ['weekdayPatternRange', 'hourPatternRange'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = label || '—';
+    });
   }
 
   function renderOrderPatternSummary(weekdayPerf, summary) {
@@ -720,17 +731,21 @@
     const revenueDays = weekdayPerf.filter(day => Number(day.net || 0) > 0);
     const bestRevenueDay = revenueDays.reduce((best, day) => !best || day.net > best.net ? day : best, null);
     const peakOrderDay = weekdayPerf.reduce((best, day) => !best || (day.orders || 0) > (best.orders || 0) ? day : best, null);
-    const selectedRevenue = toFiniteNumber(summary.totalGrossRevenue) - toFiniteNumber(summary.totalRefunded);
+    const allTimeRevenue = hasNumericValue(summary.totalNetRevenue)
+      ? toFiniteNumber(summary.totalNetRevenue)
+      : toFiniteNumber(summary.totalGrossRevenue) - toFiniteNumber(summary.totalRefunded);
 
     orderPatternSummaryEl.innerHTML = [
       bestRevenueDay ? renderOrderPatternChip(tr('Best revenue day', '최고 매출 요일'), bestRevenueDay.day, formatKrw(bestRevenueDay.net || 0)) : '',
       peakOrderDay ? renderOrderPatternChip(tr('Peak order day', '주문 피크 요일'), peakOrderDay.day, tr(`${formatCount(peakOrderDay.orders || 0)} orders`, `주문 ${formatCount(peakOrderDay.orders || 0)}건`)) : '',
-      renderOrderPatternChip(tr('Selected net revenue', '선택 순매출'), formatKrw(selectedRevenue), tr(`${formatCount(summary.totalOrders || 0)} orders`, `주문 ${formatCount(summary.totalOrders || 0)}건`)),
+      renderOrderPatternChip(tr('All-time net revenue', '전체 순매출'), formatKrw(allTimeRevenue), tr(`${formatCount(summary.totalOrders || 0)} orders`, `주문 ${formatCount(summary.totalOrders || 0)}건`)),
     ].filter(Boolean).join('');
   }
 
-  function updatePatternCharts(rows, orders, summary) {
-    const weekdayPerf = buildWeekdayPerformance(rows);
+  function updatePatternCharts(orderPatterns) {
+    const weekdayPerf = normalizeOrderPatternWeekday(orderPatterns?.weekday);
+    const summary = normalizeOrderPatternSummary(orderPatterns?.summary);
+    setOrderPatternRangeLabel(formatOrderPatternRange(orderPatterns?.range));
     renderOrderPatternSummary(weekdayPerf, summary);
 
     if (typeof weekdayChartInstance !== 'undefined' && weekdayChartInstance) {
@@ -741,7 +756,7 @@
     }
 
     if (typeof hourChartInstance !== 'undefined' && hourChartInstance) {
-      const hourlyOrders = buildHourlyOrders(orders);
+      const hourlyOrders = normalizeOrderPatternHourly(orderPatterns?.hourly);
       const peakHours = hourlyOrders
         .slice()
         .sort((left, right) => (right.orders || 0) - (left.orders || 0))
@@ -804,6 +819,7 @@
     if (footnote) footnote.innerHTML = `<span>${esc(waitingText)}</span>`;
     const orderSummary = document.getElementById('orderPatternSummary');
     if (orderSummary) orderSummary.innerHTML = '';
+    setOrderPatternRangeLabel('—');
     clearSummaryCharts();
   }
 
@@ -831,7 +847,7 @@
         orders,
       },
     });
-    updatePatternCharts(rows, orders, selectionSummary);
+    updatePatternCharts(payload.orderPatterns || {});
   }
 
   live.profitSummary = {

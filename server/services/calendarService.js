@@ -101,6 +101,11 @@ function ratioOrNull(numerator, denominator, digits = 2) {
   return ratio == null ? null : Number(ratio.toFixed(digits));
 }
 
+function toFiniteNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function buildMonthEntries(visibleStart, visibleEnd) {
   const months = [];
   let cursor = startOfMonth(visibleStart);
@@ -670,6 +675,73 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage) {
   };
 }
 
+function normalizeAllTimeHourlyRows(hourlyRows) {
+  const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0 }));
+
+  for (const row of Array.isArray(hourlyRows) ? hourlyRows : []) {
+    const hour = Number.isInteger(row?.hour) ? row.hour : null;
+    if (hour == null || hour < 0 || hour > 23) continue;
+    buckets[hour].orders = toFiniteNumber(row?.orders);
+  }
+
+  return buckets;
+}
+
+function buildAllTimeOrderPatterns(projection) {
+  const dailyRows = Array.isArray(projection?.dailyMerged) ? projection.dailyMerged : [];
+  const weekday = Array.from({ length: 7 }, (_, dayIndex) => ({
+    dayIndex,
+    revenue: 0,
+    refunded: 0,
+    net: 0,
+    orders: 0,
+  }));
+  const summary = {
+    totalGrossRevenue: 0,
+    totalRefunded: 0,
+    totalNetRevenue: 0,
+    totalOrders: 0,
+  };
+  let rangeStart = null;
+  let rangeEnd = null;
+
+  for (const row of dailyRows) {
+    const date = isValidDateKey(row?.date) ? row.date : null;
+    if (!date) continue;
+
+    rangeStart = !rangeStart || compareDateKeys(date, rangeStart) < 0 ? date : rangeStart;
+    rangeEnd = !rangeEnd || compareDateKeys(date, rangeEnd) > 0 ? date : rangeEnd;
+
+    const dateObj = toUtcDate(date);
+    if (!dateObj) continue;
+
+    const revenue = toFiniteNumber(row?.revenue);
+    const refunded = toFiniteNumber(row?.refunded);
+    const net = revenue - refunded;
+    const orders = toFiniteNumber(row?.orders);
+    const bucket = weekday[dateObj.getUTCDay()];
+    bucket.revenue += revenue;
+    bucket.refunded += refunded;
+    bucket.net += net;
+    bucket.orders += orders;
+
+    summary.totalGrossRevenue += revenue;
+    summary.totalRefunded += refunded;
+    summary.totalNetRevenue += net;
+    summary.totalOrders += orders;
+  }
+
+  return {
+    range: {
+      start: rangeStart,
+      end: rangeEnd,
+    },
+    weekday,
+    hourly: normalizeAllTimeHourlyRows(projection?.hourlyOrders),
+    summary,
+  };
+}
+
 function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, operationsByDate, reconciliationByDate) {
   return dateKeys.map(date => {
     const merged = maps.mergedByDate.get(date) || { date, revenue: 0, refunded: 0, netRevenue: 0, orders: 0, spend: 0, spendKrw: 0, purchases: 0 };
@@ -720,6 +792,7 @@ async function getCalendarAnalysisResponse(query = {}) {
       ready: false,
       viewport,
       calendarDays: [],
+      orderPatterns: buildAllTimeOrderPatterns({}),
       sourceAudit: data.sourceAudit || null,
       selection: {
         label: '',
@@ -843,6 +916,7 @@ async function getCalendarAnalysisResponse(query = {}) {
     calendarDays,
     categoryRevenueByDate,
     categoryRevenueByMonth,
+    orderPatterns: buildAllTimeOrderPatterns(projection),
     sourceAudit: data.sourceAudit || null,
     selection: {
       label: viewport.selectionStart === viewport.selectionEnd

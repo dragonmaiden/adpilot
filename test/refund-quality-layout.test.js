@@ -40,6 +40,7 @@ test('net profit chart follows the selected calendar range instead of monthly re
   assert.match(analyticsJs, /buildNetProfitBuckets\(waterfallBuckets\)/);
   assert.match(analyticsJs, /normalizeCalendarWaterfallRows\(payload\.rows \|\| selection\.days \|\| \[\]\)/);
   assert.match(analyticsJs, /buildSelectionSummary\(rows,\s*selection\)/);
+  assert.match(analyticsJs, /updatePatternCharts\(payload\.orderPatterns \|\| \{\}\)/);
   assert.match(analyticsJs, /live\.profitSummary = \{[\s\S]*renderCalendarSelection: renderCalendarSelectionProfitSummary/);
   assert.match(analyticsJs, /formatNullableSignedKrw\(totalProfit\)[\s\S]*formatNullablePercent\(blendedMargin, 1\)[\s\S]*formatNullableKrw\(totalNetRevenue\)/);
   assert.match(analyticsJs, /label:\s*formatShortDateLabel\(key\)/);
@@ -93,9 +94,12 @@ test('profit summary no longer renders or fetches settlement reconciliation UI',
 
 test('order pattern section avoids duplicate campaign and weekday table surfaces', () => {
   assert.match(indexHtml, /<div class="card chart-card order-pattern-card">[\s\S]*Orders &amp; revenue by weekday/);
+  assert.match(indexHtml, /id="weekdayPatternRange"/);
+  assert.match(indexHtml, /id="hourPatternRange"/);
   assert.match(indexHtml, /<div class="card chart-card order-pattern-card">[\s\S]*<canvas id="weekdayChart"><\/canvas>/);
   assert.doesNotMatch(indexHtml, /data-series-window-group="order-patterns"/);
   assert.match(indexHtml, /<canvas id="weekdayChart"><\/canvas>[\s\S]*<canvas id="hourChart"><\/canvas>/);
+  assert.match(analyticsJs, /All-time net revenue/);
   assert.doesNotMatch(indexHtml, /Campaign Profit Leaderboard|campaignProfitTable|weekdayTable/);
   assert.doesNotMatch(indexHtml, /Media Profitability|Media Efficiency/);
 });

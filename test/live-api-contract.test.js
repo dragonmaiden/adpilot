@@ -116,6 +116,7 @@ test('live API client rejects source audit shape drift on calendar payloads', as
     ready: true,
     viewport: {},
     calendarDays: [],
+    orderPatterns: { range: {}, weekday: [], hourly: [] },
     selection: { days: [] },
     sourceAudit: 'mismatch',
   });
@@ -129,4 +130,25 @@ test('live API client rejects source audit shape drift on calendar payloads', as
 
   assert.equal(data, null);
   assert.ok(warnings.some(message => message.includes('sourceAudit must be an object or null')));
+});
+
+test('live API client rejects calendar payloads without all-time order patterns', async () => {
+  const { api, warnings } = loadApiClient({
+    apiVersion: 'v1',
+    ready: true,
+    viewport: {},
+    calendarDays: [],
+    selection: { days: [] },
+    sourceAudit: null,
+  });
+
+  const data = await api.fetchCalendarAnalysis({
+    visibleStart: '2026-04-01',
+    visibleEnd: '2026-04-30',
+    selectionStart: '2026-04-30',
+    selectionEnd: '2026-04-30',
+  });
+
+  assert.equal(data, null);
+  assert.ok(warnings.some(message => message.includes('missing orderPatterns object')));
 });

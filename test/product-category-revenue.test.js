@@ -116,6 +116,15 @@ test('calendar payload exposes category inflows and sankey consumes selected-ran
   assert.doesNotMatch(css, /\.calendar-sankey-mode-switch/);
 });
 
+test('calendar payload exposes all-time order patterns for order charts', () => {
+  assert.match(contractsJs, /orderPatterns:\s*\{/);
+  assert.match(contractsJs, /weekday:\s*orderPatterns\?\.weekday\s*\?\?\s*\[\]/);
+  assert.match(contractsJs, /hourly:\s*orderPatterns\?\.hourly\s*\?\?\s*\[\]/);
+  assert.match(calendarServiceJs, /function buildAllTimeOrderPatterns\(projection\)/);
+  assert.match(calendarServiceJs, /const dailyRows = Array\.isArray\(projection\?\.dailyMerged\) \? projection\.dailyMerged : \[\];/);
+  assert.match(calendarServiceJs, /orderPatterns: buildAllTimeOrderPatterns\(projection\)/);
+});
+
 test('calendar sankey expands to the available card width before scrolling', () => {
   assert.match(calendarJs, /viewBox="0 0 1280 560"/);
   assert.match(calendarJs, /Profit Sankey with product category inflows/);

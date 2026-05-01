@@ -961,6 +961,7 @@
       rows: getCalendarWaterfallRows(selection),
       contextLabel: getCalendarWaterfallContextLabel(),
       sourceAudit: calendarState.data?.sourceAudit || null,
+      orderPatterns: calendarState.data?.orderPatterns || null,
     });
   }
 

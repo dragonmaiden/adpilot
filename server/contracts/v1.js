@@ -150,7 +150,7 @@ function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, m
 /**
  * Build /api/calendar-analysis response.
  */
-function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, sourceAudit, selection }) {
+function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, orderPatterns, sourceAudit, selection }) {
   return {
     apiVersion: API_VERSION,
     ready: ready !== false,
@@ -165,6 +165,15 @@ function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate
     calendarDays: calendarDays ?? [],
     categoryRevenueByDate: categoryRevenueByDate ?? {},
     categoryRevenueByMonth: categoryRevenueByMonth ?? {},
+    orderPatterns: {
+      range: {
+        start: orderPatterns?.range?.start ?? null,
+        end: orderPatterns?.range?.end ?? null,
+      },
+      weekday: orderPatterns?.weekday ?? [],
+      hourly: orderPatterns?.hourly ?? [],
+      summary: orderPatterns?.summary ?? {},
+    },
     sourceAudit: sourceAudit ?? null,
     selection: {
       label: selection?.label ?? '',

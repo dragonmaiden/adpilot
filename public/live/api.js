@@ -75,6 +75,10 @@
     if (payload.ready === false) return passContract();
     if (!hasObject(payload, 'viewport')) return failContract('calendar-analysis', 'missing viewport object');
     if (!hasArray(payload, 'calendarDays')) return failContract('calendar-analysis', 'missing calendarDays array');
+    if (!hasObject(payload, 'orderPatterns')) return failContract('calendar-analysis', 'missing orderPatterns object');
+    if (!hasObject(payload.orderPatterns, 'range')) return failContract('calendar-analysis', 'missing orderPatterns.range object');
+    if (!hasArray(payload.orderPatterns, 'weekday')) return failContract('calendar-analysis', 'missing orderPatterns.weekday array');
+    if (!hasArray(payload.orderPatterns, 'hourly')) return failContract('calendar-analysis', 'missing orderPatterns.hourly array');
     if (!hasObject(payload, 'selection')) return failContract('calendar-analysis', 'missing selection object');
     if (!hasArray(payload.selection, 'days')) return failContract('calendar-analysis', 'missing selection.days array');
     if (payload.sourceAudit != null && !isPlainObject(payload.sourceAudit)) return failContract('calendar-analysis', 'sourceAudit must be an object or null');
