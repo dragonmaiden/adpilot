@@ -61,7 +61,10 @@ test('net profit chart scales by net margin and labels profit from the same visi
   assert.match(analyticsJs, /netProfitDataset\.showValueLabels = showChartValueLabels;/);
   assert.match(analyticsJs, /setCurrencyAxisBreathingRoom\(profitWaterfallChart, \[\.\.\.netRevenueValues, \.\.\.costValues\], showChartValueLabels\)/);
   assert.match(analyticsJs, /setPercentAxisBreathingRoom\(netProfitChartInstance, marginValues, showChartValueLabels\)/);
+  assert.match(analyticsJs, /function setChartTopPadding\(chart, top\)/);
   assert.match(analyticsJs, /options\.scales\.x\.ticks\.minRotation = 45;[\s\S]*options\.scales\.x\.ticks\.maxRotation = 45;/);
+  assert.doesNotMatch(analyticsJs, /\.\.\.\(chart\.options\.layout\.padding \|\| \{\}\)/);
+  assert.doesNotMatch(analyticsJs, /chart\.options\.layout = chart\.options\.layout \|\| \{\}/);
 });
 
 test('profit summary no longer renders or fetches settlement reconciliation UI', () => {

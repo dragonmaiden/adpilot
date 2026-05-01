@@ -213,11 +213,7 @@
     chart.options.scales.y.suggestedMin = minValue < 0
       ? Math.floor((minValue - padding) / step) * step
       : undefined;
-    chart.options.layout = chart.options.layout || {};
-    chart.options.layout.padding = {
-      ...(chart.options.layout.padding || {}),
-      top: labelsVisible ? 38 : 24,
-    };
+    setChartTopPadding(chart, labelsVisible ? 38 : 24);
   }
 
   function setPercentAxisBreathingRoom(chart, values, labelsVisible) {
@@ -236,11 +232,16 @@
     chart.options.scales.y.suggestedMin = minValue < 0
       ? Math.floor((minValue - padding) / 5) * 5
       : undefined;
-    chart.options.layout = chart.options.layout || {};
-    chart.options.layout.padding = {
-      ...(chart.options.layout.padding || {}),
-      top: labelsVisible ? 38 : 24,
-    };
+    setChartTopPadding(chart, labelsVisible ? 38 : 24);
+  }
+
+  function setChartTopPadding(chart, top) {
+    if (!chart?.options) return;
+    if (chart.options.layout) {
+      chart.options.layout.padding = { top };
+      return;
+    }
+    chart.options.layout = { padding: { top } };
   }
 
   function syncProfitWaterfallGranularityControls() {
