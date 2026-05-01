@@ -4,7 +4,7 @@
   const { fetchAnalytics } = live.api;
   const { getSeriesWindowMeta, sliceRowsByWindow } = live.seriesWindows;
   let cachedAnalyticsData = null;
-  let profitWaterfallGranularity = 'day';
+  let profitWaterfallGranularity = 'week';
 
   function toFiniteNumber(value) {
     const parsed = Number(value);

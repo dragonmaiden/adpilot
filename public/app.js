@@ -75,9 +75,12 @@ function formatChartPercentTick(value) {
 // ── Chart.js Defaults ──
 function getChartColors() {
   const style = getComputedStyle(document.documentElement);
+  const chartLabel = style.getPropertyValue('--color-chart-label').trim()
+    || style.getPropertyValue('--color-text-muted').trim();
   return {
     text: style.getPropertyValue('--color-text-muted').trim(),
     textFaint: style.getPropertyValue('--color-text-faint').trim(),
+    chartLabel,
     grid: style.getPropertyValue('--color-divider').trim(),
     surface: style.getPropertyValue('--color-surface').trim(),
     primary: '#20808D',
@@ -105,15 +108,20 @@ let profitChartsInitialized = false;
 
 function updateChartColors() {
   const c = getChartColors();
-  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, hourChartInstance, profitWaterfallChart, netProfitChartInstance];
+  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, hourChartInstance, profitWaterfallChart, netProfitChartInstance, weekdayChartInstance];
+  const profitSummaryCharts = new Set([hourChartInstance, profitWaterfallChart, netProfitChartInstance, weekdayChartInstance]);
   allCharts.forEach(chart => {
     if (!chart) return;
+    const labelColor = profitSummaryCharts.has(chart) ? c.chartLabel : c.textFaint;
     if (chart.options.scales) {
       Object.values(chart.options.scales).forEach(scale => {
         if (scale.grid) scale.grid.color = c.grid;
-        if (scale.ticks) scale.ticks.color = c.textFaint;
+        if (scale.ticks) scale.ticks.color = labelColor;
+        if (scale.title) scale.title.color = labelColor;
       });
     }
+    const legendLabels = chart.options.plugins?.legend?.labels;
+    if (legendLabels && profitSummaryCharts.has(chart)) legendLabels.color = c.chartLabel;
     chart.update('none');
   });
 }
@@ -388,8 +396,8 @@ function initCharts() {
           tooltip: { callbacks: { title: ctx => ctx[0].label + ' KST' } }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { color: c.textFaint, font: { size: 9 }, maxRotation: 0 } },
-          y: { grid: { color: c.grid }, ticks: { color: c.textFaint } },
+          x: { grid: { display: false }, ticks: { color: c.chartLabel, font: { size: 9 }, maxRotation: 0 } },
+          y: { grid: { color: c.grid }, ticks: { color: c.chartLabel } },
         }
       }
     });
@@ -479,7 +487,7 @@ function initProfitCharts() {
             display: true,
             position: 'top',
             labels: {
-              color: c.text,
+              color: c.chartLabel,
               boxWidth: 12,
               padding: 12,
               usePointStyle: true,
@@ -515,12 +523,12 @@ function initProfitCharts() {
         scales: {
           x: {
             grid: { display: false },
-            ticks: { color: c.textFaint, minRotation: 45, maxRotation: 45, font: { size: 10 } }
+            ticks: { color: c.chartLabel, minRotation: 45, maxRotation: 45, font: { size: 10 } }
           },
           y: {
             grid: { color: c.grid },
             ticks: {
-              color: c.textFaint,
+              color: c.chartLabel,
               callback: v => formatChartKrwTick(v)
             }
           }
@@ -611,7 +619,7 @@ function initAnalyticsCharts() {
           intersect: false,
         },
         plugins: {
-          legend: { display: true, position: 'top', labels: { color: c.text, boxWidth: 12, padding: 16 } },
+          legend: { display: true, position: 'top', labels: { color: c.chartLabel, boxWidth: 12, padding: 16 } },
           tooltip: {
             mode: 'index',
             intersect: false,
@@ -623,9 +631,9 @@ function initAnalyticsCharts() {
           },
         },
         scales: {
-          x: { grid: { display: false }, ticks: { color: c.textFaint } },
-          y: { title: { display: true, text: 'Orders', color: c.textFaint }, grid: { color: c.grid }, ticks: { color: c.textFaint } },
-          y1: { position: 'right', title: { display: true, text: 'Revenue (\u20a9)', color: c.textFaint }, grid: { display: false }, ticks: { color: c.netProfitLine, callback: v => formatChartKrwTick(v) } },
+          x: { grid: { display: false }, ticks: { color: c.chartLabel } },
+          y: { title: { display: true, text: 'Orders', color: c.chartLabel }, grid: { color: c.grid }, ticks: { color: c.chartLabel } },
+          y1: { position: 'right', title: { display: true, text: 'Revenue (\u20a9)', color: c.chartLabel }, grid: { display: false }, ticks: { color: c.netProfitLine, callback: v => formatChartKrwTick(v) } },
         }
       }
     });
@@ -682,12 +690,12 @@ function initAnalyticsCharts() {
           }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { color: c.textFaint, minRotation: 45, maxRotation: 45 } },
+          x: { grid: { display: false }, ticks: { color: c.chartLabel, minRotation: 45, maxRotation: 45 } },
           y: {
             beginAtZero: true,
-            title: { display: true, text: 'Margin (%)', color: c.textFaint },
+            title: { display: true, text: 'Margin (%)', color: c.chartLabel },
             grid: { color: c.grid },
-            ticks: { color: c.textFaint, callback: v => formatChartPercentTick(v) },
+            ticks: { color: c.chartLabel, callback: v => formatChartPercentTick(v) },
           },
         }
       }

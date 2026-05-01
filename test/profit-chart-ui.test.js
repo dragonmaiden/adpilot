@@ -57,9 +57,18 @@ test('net profit chart uses margin axis and KRW profit labels', () => {
   assert.match(appJs, /const label = formatSignedChartKrw\(value\);/);
   assert.match(appJs, /label:\s*ctx => `Margin: \$\{formatChartPercentTick\(ctx\.parsed\.y\)\}`/);
   assert.match(appJs, /title:\s*\{\s*display:\s*true,\s*text:\s*'Margin \(%\)'/);
-  assert.match(appJs, /x:\s*\{\s*grid:\s*\{\s*display:\s*false\s*\},\s*ticks:\s*\{\s*color:\s*c\.textFaint,\s*minRotation:\s*45,\s*maxRotation:\s*45\s*\}/);
-  assert.match(appJs, /ticks:\s*\{\s*color:\s*c\.textFaint,\s*callback:\s*v => formatChartPercentTick\(v\) \}/);
+  assert.match(appJs, /x:\s*\{\s*grid:\s*\{\s*display:\s*false\s*\},\s*ticks:\s*\{\s*color:\s*c\.chartLabel,\s*minRotation:\s*45,\s*maxRotation:\s*45\s*\}/);
+  assert.match(appJs, /ticks:\s*\{\s*color:\s*c\.chartLabel,\s*callback:\s*v => formatChartPercentTick\(v\) \}/);
   assert.match(appJs, /ctx\.fillStyle = c\.netProfitLine \|\| '#111827';/);
+});
+
+test('profit summary chart labels use the stronger chart label color', () => {
+  assert.match(css, /--color-chart-label:\s*#71717a;/);
+  assert.match(appJs, /const chartLabel = style\.getPropertyValue\('--color-chart-label'\)/);
+  assert.match(appJs, /const profitSummaryCharts = new Set\(\[hourChartInstance, profitWaterfallChart, netProfitChartInstance, weekdayChartInstance\]\)/);
+  assert.match(appJs, /if \(legendLabels && profitSummaryCharts\.has\(chart\)\) legendLabels\.color = c\.chartLabel;/);
+  assert.match(appJs, /legend:\s*\{[\s\S]*labels:\s*\{[\s\S]*color:\s*c\.chartLabel[\s\S]*pointStyleWidth:\s*16/);
+  assert.match(appJs, /x:\s*\{\s*grid:\s*\{\s*display:\s*false\s*\},\s*ticks:\s*\{\s*color:\s*c\.chartLabel,\s*font:\s*\{\s*size:\s*9\s*\},\s*maxRotation:\s*0\s*\}/);
 });
 
 test('compact section headers stay visually tied to the card below', () => {

@@ -44,8 +44,8 @@
   --calendar-card-padding: clamp(var(--space-5), 2vw, var(--space-6));
   --calendar-month-padding: var(--space-4);
   --calendar-panel-gap: var(--space-5);
-  --chart-visual-height: clamp(340px, 32vw, 380px);
-  --chart-visual-height-mobile: 300px;
+  --chart-visual-height: clamp(380px, 34vw, 420px);
+  --chart-visual-height-mobile: 340px;
 }
 
 /* DARK MODE (default) */
@@ -61,6 +61,7 @@
   --color-text-muted:     #8b8b94;
   --color-text-faint:     #56565e;
   --color-text-inverse:   #18181b;
+  --color-chart-label:    #a1a1aa;
 
   --color-primary:        #3b9ea8;
   --color-primary-hover:  #2d8690;
@@ -95,6 +96,7 @@
   --color-text-muted:     #6b6b76;
   --color-text-faint:     #a1a1aa;
   --color-text-inverse:   #f9f9fa;
+  --color-chart-label:    #71717a;
 
   --color-primary:        #0d7a84;
   --color-primary-hover:  #096570;
@@ -128,6 +130,7 @@
     --color-text-muted:     #6b6b76;
     --color-text-faint:     #a1a1aa;
     --color-text-inverse:   #f9f9fa;
+    --color-chart-label:    #71717a;
     --color-primary:        #0d7a84;
     --color-primary-hover:  #096570;
     --color-primary-active: #08545c;
