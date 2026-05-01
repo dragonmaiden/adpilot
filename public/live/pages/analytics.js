@@ -111,7 +111,7 @@
       const key = getWeekStartKey(row?.date);
       return {
         key,
-        label: tr(`Week of ${formatShortDateLabel(key)}`, `${formatShortDateLabel(key)} 주`),
+        label: formatShortDateLabel(key),
       };
     }
 
@@ -194,6 +194,53 @@
         margin,
       };
     });
+  }
+
+  function setCurrencyAxisBreathingRoom(chart, values, labelsVisible) {
+    if (!chart?.options?.scales?.y) return;
+    const finiteValues = (Array.isArray(values) ? values : [])
+      .map(value => Number(value))
+      .filter(value => Number.isFinite(value));
+    const maxValue = finiteValues.reduce((max, value) => Math.max(max, value), 0);
+    const minValue = finiteValues.reduce((min, value) => Math.min(min, value), 0);
+    const maxAbs = Math.max(Math.abs(maxValue), Math.abs(minValue), 1);
+    const step = maxAbs >= 1_000_000 ? 100_000 : maxAbs >= 100_000 ? 50_000 : 10_000;
+    const padding = Math.max(maxAbs * (labelsVisible ? 0.28 : 0.14), labelsVisible ? step : 0);
+
+    chart.options.scales.y.suggestedMax = maxValue > 0
+      ? Math.ceil((maxValue + padding) / step) * step
+      : undefined;
+    chart.options.scales.y.suggestedMin = minValue < 0
+      ? Math.floor((minValue - padding) / step) * step
+      : undefined;
+    chart.options.layout = chart.options.layout || {};
+    chart.options.layout.padding = {
+      ...(chart.options.layout.padding || {}),
+      top: labelsVisible ? 38 : 24,
+    };
+  }
+
+  function setPercentAxisBreathingRoom(chart, values, labelsVisible) {
+    if (!chart?.options?.scales?.y) return;
+    const finiteValues = (Array.isArray(values) ? values : [])
+      .map(value => Number(value))
+      .filter(value => Number.isFinite(value));
+    const maxValue = finiteValues.reduce((max, value) => Math.max(max, value), 0);
+    const minValue = finiteValues.reduce((min, value) => Math.min(min, value), 0);
+    const maxAbs = Math.max(Math.abs(maxValue), Math.abs(minValue), 1);
+    const padding = Math.max(maxAbs * (labelsVisible ? 0.3 : 0.16), labelsVisible ? 5 : 0);
+
+    chart.options.scales.y.suggestedMax = maxValue > 0
+      ? Math.ceil((maxValue + padding) / 5) * 5
+      : undefined;
+    chart.options.scales.y.suggestedMin = minValue < 0
+      ? Math.floor((minValue - padding) / 5) * 5
+      : undefined;
+    chart.options.layout = chart.options.layout || {};
+    chart.options.layout.padding = {
+      ...(chart.options.layout.padding || {}),
+      top: labelsVisible ? 38 : 24,
+    };
   }
 
   function syncProfitWaterfallGranularityControls() {
@@ -446,14 +493,21 @@
 
     syncProfitWaterfallGranularityControls();
     const waterfallBuckets = aggregateProfitWaterfallRows(waterfall, profitWaterfallGranularity);
+    const showChartValueLabels = profitWaterfallGranularity !== 'day';
 
     if (waterfallBuckets.length > 0 && typeof profitWaterfallChart !== 'undefined' && profitWaterfallChart) {
-      profitWaterfallChart.data.labels = waterfallBuckets.map(row => row.label);
-      profitWaterfallChart.data.datasets[0].data = waterfallBuckets.map(row => row.revenue - row.refunded);
-      profitWaterfallChart.data.datasets[1].data = waterfallBuckets.map(row =>
+      const netRevenueValues = waterfallBuckets.map(row => row.revenue - row.refunded);
+      const costValues = waterfallBuckets.map(row =>
         -(row.cogs + row.cogsShipping + row.adSpendKRW + row.paymentFees)
       );
-      profitWaterfallChart.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
+      profitWaterfallChart.data.labels = waterfallBuckets.map(row => row.label);
+      profitWaterfallChart.data.datasets[0].data = netRevenueValues;
+      profitWaterfallChart.data.datasets[0].showValueLabels = showChartValueLabels;
+      profitWaterfallChart.data.datasets[1].data = costValues;
+      profitWaterfallChart.data.datasets[1].showValueLabels = showChartValueLabels;
+      setCurrencyAxisBreathingRoom(profitWaterfallChart, [...netRevenueValues, ...costValues], showChartValueLabels);
+      profitWaterfallChart.options.scales.x.ticks.minRotation = 45;
+      profitWaterfallChart.options.scales.x.ticks.maxRotation = 45;
       profitWaterfallChart.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
       profitWaterfallChart.update();
     }
@@ -462,20 +516,16 @@
     if (typeof netProfitChartInstance !== 'undefined' && netProfitChartInstance) {
       const netProfitDataset = netProfitChartInstance.data.datasets[0];
       netProfitChartInstance.data.labels = netProfitBuckets.map(row => row.label);
-      netProfitDataset.data = netProfitBuckets.map(row => row.trueNetProfit);
-      netProfitDataset.netProfitMargins = netProfitBuckets.map(row => row.margin);
+      netProfitDataset.data = netProfitBuckets.map(row => row.margin);
+      netProfitDataset.netProfitValues = netProfitBuckets.map(row => row.trueNetProfit);
       netProfitDataset.netRevenue = netProfitBuckets.map(row => row.netRevenue);
-      const profitValues = netProfitBuckets.map(row => Number(row.trueNetProfit || 0));
-      const maxProfit = profitValues.reduce((max, value) => Math.max(max, value), 0);
-      const minProfit = profitValues.reduce((min, value) => Math.min(min, value), 0);
-      const padding = Math.max(Math.abs(maxProfit), Math.abs(minProfit)) * 0.18;
-      netProfitChartInstance.options.scales.y.suggestedMax = maxProfit > 0
-        ? Math.ceil((maxProfit + padding) / 100000) * 100000
-        : undefined;
-      netProfitChartInstance.options.scales.y.suggestedMin = minProfit < 0
-        ? Math.floor((minProfit - padding) / 100000) * 100000
-        : undefined;
-      netProfitChartInstance.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
+      netProfitDataset.showValueLabels = showChartValueLabels;
+      const marginValues = netProfitBuckets
+        .map(row => Number(row.margin))
+        .filter(value => Number.isFinite(value));
+      setPercentAxisBreathingRoom(netProfitChartInstance, marginValues, showChartValueLabels);
+      netProfitChartInstance.options.scales.x.ticks.minRotation = 45;
+      netProfitChartInstance.options.scales.x.ticks.maxRotation = 45;
       netProfitChartInstance.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
       netProfitChartInstance.update();
     }

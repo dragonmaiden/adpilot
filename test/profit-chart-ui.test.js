@@ -19,6 +19,8 @@ const livePerformanceServiceJs = fs.readFileSync(LIVE_PERFORMANCE_SERVICE_PATH, 
 
 test('profit movement keeps only net revenue and total costs', () => {
   assert.match(appJs, /label:\s*'Net Revenue'[\s\S]*label:\s*'Total Costs'/);
+  assert.match(appJs, /id:\s*'profitMovementValueLabelPlugin'/);
+  assert.match(appJs, /if \(!dataset\.showValueLabels\) return;/);
   assert.doesNotMatch(
     appJs,
     /label:\s*'Net Profit'[\s\S]*type:\s*'line'/
@@ -41,17 +43,22 @@ test('positive bar charts share the deep green profit palette', () => {
   assert.match(appJs, /label:\s*'Orders'[\s\S]*backgroundColor:\s*c\.darkGreenFill/);
 });
 
-test('net profit chart uses complementary blue bars with dark margin labels', () => {
+test('net profit chart uses complementary blue bars with dark profit labels', () => {
   assert.match(appJs, /netProfitBlueFill:\s*'rgba\(37, 99, 235, 0\.72\)'/);
-  assert.match(appJs, /id:\s*'netProfitMarginLabelPlugin'/);
-  assert.match(appJs, /label:\s*'Net Profit'[\s\S]*backgroundColor:\s*ctx => Number\(ctx\.raw \|\| 0\) < 0[\s\S]*c\.netProfitBlueFill/);
+  assert.match(appJs, /id:\s*'netProfitValueLabelPlugin'/);
+  assert.match(appJs, /label:\s*'Net Margin'[\s\S]*const profit = Number\(ctx\.dataset\.netProfitValues\?\.\[ctx\.dataIndex\] \?\? ctx\.raw \?\? 0\);[\s\S]*c\.netProfitBlueFill/);
   assert.match(appJs, /ctx\.fillStyle\s*=\s*c\.netProfitLine\s*\|\|\s*'#111827'/);
 });
 
-test('net profit margin data labels use black whole-number labels', () => {
-  assert.match(appJs, /id:\s*'netProfitMarginLabelPlugin'/);
+test('net profit chart uses margin axis and KRW profit labels', () => {
+  assert.match(appJs, /id:\s*'netProfitValueLabelPlugin'/);
+  assert.match(appJs, /if \(!dataset\.showValueLabels\) return;/);
   assert.match(appJs, /const margin = Number\(margins\[index\]\);[\s\S]*if \(!Number\.isFinite\(margin\)\) return;/);
-  assert.match(appJs, /const label = `\$\{Math\.round\(margin\)\}%`;/);
+  assert.match(appJs, /const label = formatSignedChartKrw\(value\);/);
+  assert.match(appJs, /label:\s*ctx => `Margin: \$\{formatChartPercentTick\(ctx\.parsed\.y\)\}`/);
+  assert.match(appJs, /title:\s*\{\s*display:\s*true,\s*text:\s*'Margin \(%\)'/);
+  assert.match(appJs, /x:\s*\{\s*grid:\s*\{\s*display:\s*false\s*\},\s*ticks:\s*\{\s*color:\s*c\.textFaint,\s*minRotation:\s*45,\s*maxRotation:\s*45\s*\}/);
+  assert.match(appJs, /ticks:\s*\{\s*color:\s*c\.textFaint,\s*callback:\s*v => formatChartPercentTick\(v\) \}/);
   assert.match(appJs, /ctx\.fillStyle = c\.netProfitLine \|\| '#111827';/);
 });
 
