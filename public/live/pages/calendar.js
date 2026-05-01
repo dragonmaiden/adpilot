@@ -405,8 +405,7 @@
 
   function getCalendarSelectionMeta(months) {
     const monthLabel = (months || []).map(month => month.label).join(' + ') || tr('Calendar', '캘린더');
-    const selectionLabel = formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd);
-    return `${monthLabel} · ${selectionLabel} · KST${calendarState.loading ? ` · ${tr('Updating...', '업데이트 중...')}` : ''}`;
+    return `${monthLabel}${calendarState.loading ? ` · ${tr('Updating...', '업데이트 중...')}` : ''}`;
   }
 
   function getCalendarDayClasses(dateKey) {
@@ -665,9 +664,13 @@
         visible: costsTotal > 0 },
       { id: 'profit', key: 'profit',
         label: isProfitPositive ? tr('True Net Profit', '실질 순이익') : tr('True Net Loss', '실질 순손실'),
-        displayValue: formatSignedKrw(summary.trueNetProfit), sub: resultSub,
+        displayValue: formatSignedKrw(summary.trueNetProfit),
+        sub: isProfitPositive ? resultSub : tr('Uncovered costs', '미충당 비용'),
         tone: isProfitPositive ? 'positive' : 'negative',
-        column: terminalColumn, order: isProfitPositive ? 0 : 5, terminal: true,
+        column: isProfitPositive ? terminalColumn : revenueColumn,
+        order: isProfitPositive ? 0 : 2,
+        terminal: isProfitPositive,
+        labelSide: isProfitPositive ? undefined : 'left',
         visible: resultV > 0 },
       { id: 'cogs', key: 'cogs', label: 'COGS',
         displayValue: expenseValue(summary.cogs),
@@ -691,7 +694,7 @@
     ];
 
     const links = [];
-    const addLink = (source, target, value, tone, order) => {
+    const addLink = (source, target, value, tone, order, variant = '') => {
       const numericValue = Number(value) || 0;
       if (numericValue <= 0) return;
       links.push({
@@ -700,6 +703,7 @@
         value: numericValue,
         tone,
         order,
+        variant,
       });
     };
 
@@ -716,7 +720,7 @@
       if (netV > 0) {
         addLink('net', 'costs', Math.min(netV, costsTotal), 'negative', 1);
       }
-      addLink('costs', 'profit', lossV, 'negative', 4);
+      addLink('profit', 'costs', lossV, 'negative', 0, 'loss-gap');
     }
     addLink('costs', 'cogs', cogsV, 'negative', 0);
     addLink('costs', 'shipping', shipV, 'negative', 1);
@@ -741,19 +745,45 @@
       return { nodes: visibleNodes, flows: [], summary, feePercent, contextLabel, isProfitPositive, missingSankeyEngine: true };
     }
 
+    const visibleColumns = Array.from(new Set(visibleNodes.map(node => Number(node.column || 0))))
+      .sort((left, right) => left - right);
+    const columnIndexByValue = new Map(visibleColumns.map((column, index) => [column, index]));
+    const layoutNodes = visibleNodes.map(node => ({
+      ...node,
+      sankeyColumn: columnIndexByValue.get(Number(node.column || 0)) || 0,
+    }));
+
     const layout = d3Sankey.sankey()
       .nodeId(node => node.id)
       .nodeWidth(14)
       .nodePadding(34)
       .nodeSort((a, b) => (a.order || 0) - (b.order || 0))
       .linkSort((a, b) => (a.order || 0) - (b.order || 0))
-      .nodeAlign(node => node.column)
+      .nodeAlign(node => node.sankeyColumn)
       .extent(hasCategoryBreakdown ? [[170, 74], [1080, 500]] : [[96, 74], [1080, 500]]);
     const graph = layout({
-      nodes: visibleNodes.map(node => ({ ...node })),
+      nodes: layoutNodes,
       links: visibleLinks.map(link => ({ ...link })),
     });
     const linkPath = d3Sankey.sankeyLinkHorizontal();
+    const hasNetCostLink = graph.links.some(link => link.source.id === 'net' && link.target.id === 'costs');
+    const buildSankeyFlowPath = link => {
+      const isFlatLossGap = link.variant === 'loss-gap'
+        && !hasNetCostLink
+        && Math.abs((link.y1 || 0) - (link.y0 || 0)) < 4;
+      if (!isFlatLossGap) return linkPath(link);
+
+      const sourceX = link.source.x1;
+      const targetX = link.target.x0;
+      const dx = targetX - sourceX;
+      const bow = Math.min(90, Math.max(34, (link.width || 1) * 0.16));
+      return [
+        `M${sourceX},${link.y0}`,
+        `C${sourceX + dx * 0.28},${link.y0 - bow}`,
+        `${targetX - dx * 0.28},${link.y1 + bow}`,
+        `${targetX},${link.y1}`,
+      ].join(' ');
+    };
     const laidOutNodes = graph.nodes.map(node => ({
       ...node,
       x: node.x0,
@@ -790,8 +820,9 @@
     });
     const flows = graph.links.map(link => ({
       tone: link.tone || 'neutral',
+      variant: link.variant || '',
       width: Math.max(2, link.width || 1),
-      d: linkPath(link),
+      d: buildSankeyFlowPath(link),
     }));
 
     return { nodes: laidOutNodes, flows, summary, feePercent, contextLabel, isProfitPositive };
@@ -821,7 +852,8 @@
   }
 
   function renderSankeyFlow(flow) {
-    return `<path class="calendar-sankey-flow ${esc(flow.tone || 'neutral')}" d="${flow.d}" stroke-width="${flow.width.toFixed(2)}"></path>`;
+    const variantClass = flow.variant ? ` is-${esc(flow.variant)}` : '';
+    return `<path class="calendar-sankey-flow ${esc(flow.tone || 'neutral')}${variantClass}" d="${flow.d}" stroke-width="${flow.width.toFixed(2)}"></path>`;
   }
 
   function renderSankeyBodyMarkup(viewModel) {
@@ -993,12 +1025,12 @@
 
     const hasFreshSelection = hasFreshCalendarSelectionPayload(calendarState.data);
     if (!hasFreshSelection && calendarState.loading) {
-      container.innerHTML = renderEmptyStateCard(tr('Selected Range', '선택한 범위'), tr('Refreshing calendar metrics for the selected date range...', '선택한 날짜 범위의 캘린더 지표를 새로고침 중...'));
+      container.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), tr('Refreshing calendar metrics for the selected date range...', '선택한 날짜 범위의 캘린더 지표를 새로고침 중...'));
       return;
     }
 
     if (!hasFreshSelection && calendarState.error) {
-      container.innerHTML = renderEmptyStateCard(tr('Selected Range', '선택한 범위'), calendarState.error);
+      container.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), calendarState.error);
       return;
     }
 
@@ -1009,7 +1041,6 @@
 
     const selection = calendarState.data.selection || {};
     const summary = selection.summary || {};
-    const isProfitPositive = (summary.trueNetProfit || 0) >= 0;
 
     const dailyRows = Array.isArray(selection.days) ? selection.days : [];
     const orderRows = Array.isArray(selection.orders) ? selection.orders : [];
@@ -1079,19 +1110,6 @@
 
     container.innerHTML = `
       ${renderSourceAuditNotice(calendarState.data?.sourceAudit || null)}
-
-      <div class="card">
-        <div class="calendar-detail-head">
-          <div>
-            <div class="section-kicker">${esc(tr('Selected Range', '선택한 범위'))}</div>
-            <div class="calendar-detail-title">${esc(formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd))}</div>
-            <div class="calendar-detail-note">${tr(`${formatCount(selection.dayCount || 0)} day${selection.dayCount === 1 ? '' : 's'} selected · All dates shown in KST`, `${formatCount(selection.dayCount || 0)}일 선택 · 모든 날짜는 KST 기준`)}</div>
-          </div>
-          <div class="calendar-chip-row">
-            <span class="calendar-chip ${isProfitPositive ? 'positive' : 'negative'}">${esc(isProfitPositive ? tr('Profitable time frame', '수익 구간') : tr('Below break-even', '손익분기 이하'))}</span>
-          </div>
-        </div>
-      </div>
 
       ${renderCalendarSankey(selection, summary)}
 

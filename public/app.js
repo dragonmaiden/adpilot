@@ -80,6 +80,8 @@ function getChartColors() {
     success: '#4ade80',
     darkGreen: '#166534',
     darkGreenFill: 'rgba(22, 101, 52, 0.72)',
+    netProfitBlue: '#2563EB',
+    netProfitBlueFill: 'rgba(37, 99, 235, 0.72)',
     teal: '#1B474D',
     netProfitLine: '#111827',
     gold: '#FFC553',
@@ -98,7 +100,7 @@ let profitChartsInitialized = false;
 
 function updateChartColors() {
   const c = getChartColors();
-  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, hourChartInstance, profitWaterfallChart, refundChartInstance];
+  const allCharts = [spendRevenueChart, impactChart, roasChart, brandChart, hourChartInstance, profitWaterfallChart, netProfitChartInstance];
   allCharts.forEach(chart => {
     if (!chart) return;
     if (chart.options.scales) {
@@ -396,55 +398,11 @@ function initCharts() {
 function initProfitCharts() {
   profitChartsInitialized = true;
   const c = getChartColors();
-  const profitMarginLabelPlugin = {
-    id: 'profitMarginLabelPlugin',
-    afterDatasetsDraw(chart) {
-      const datasetIndex = chart.data?.datasets?.findIndex(dataset => dataset?.label === 'True Net Profit');
-      if (datasetIndex < 0) return;
-
-      const dataset = chart.data.datasets[datasetIndex];
-      const margins = dataset.netProfitMargins || [];
-      const points = chart.getDatasetMeta(datasetIndex)?.data || [];
-      if (points.length === 0 || margins.length === 0) return;
-
-      const ratio = Math.min(1, Math.max(0.1, Number(dataset.netProfitMarginLabelRatio || 0.5)));
-      const labelInterval = Math.max(1, Math.round(1 / ratio));
-      const minGap = points.length > 60 ? 28 : points.length > 30 ? 24 : 0;
-      let lastLabelX = -Infinity;
-
-      const { ctx, chartArea } = chart;
-      ctx.save();
-      ctx.font = '600 10px IBM Plex Sans KR, Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
-
-      points.forEach((point, index) => {
-        const rawMargin = margins[index];
-        if (rawMargin == null) return;
-        const margin = Number(rawMargin);
-        if (!Number.isFinite(margin)) return;
-        if (index % labelInterval !== 0) return;
-        if (point.x - lastLabelX < minGap && index !== points.length - 1) return;
-
-        const label = `${Math.round(margin)}%`;
-        const y = Math.max(point.y - 8, chartArea.top + 12);
-        ctx.fillStyle = c.netProfitLine || '#111827';
-        ctx.strokeText(label, point.x, y);
-        ctx.fillText(label, point.x, y);
-        lastLabelX = point.x;
-      });
-
-      ctx.restore();
-    },
-  };
 
   const ctx = document.getElementById('profitWaterfallChart');
   if (ctx) {
     profitWaterfallChart = new Chart(ctx, {
       type: 'bar',
-      plugins: [profitMarginLabelPlugin],
       data: {
         labels: [],
         datasets: [
@@ -467,22 +425,6 @@ function initProfitCharts() {
             order: 2,
             legendRank: 2,
             pointStyle: 'rectRounded',
-          },
-          {
-            label: 'True Net Profit',
-            data: [],
-            type: 'line',
-            borderColor: c.netProfitLine,
-            backgroundColor: c.netProfitLine,
-            borderWidth: 2.5,
-            pointRadius: 3,
-            pointBackgroundColor: c.netProfitLine,
-            pointBorderColor: c.netProfitLine,
-            pointBorderWidth: 1,
-            pointStyle: 'line',
-            tension: 0.3,
-            order: 1,
-            legendRank: 3,
           }
         ]
       },
@@ -506,20 +448,6 @@ function initProfitCharts() {
               usePointStyle: true,
               pointStyleWidth: 16,
               font: { size: 11 },
-              generateLabels: chart => {
-                const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
-                return labels.map(label => {
-                  const dataset = chart.data.datasets[label.datasetIndex];
-                  if (dataset?.label !== 'True Net Profit') return label;
-                  return {
-                    ...label,
-                    fillStyle: dataset.borderColor,
-                    strokeStyle: dataset.borderColor,
-                    lineWidth: dataset.borderWidth || 2.5,
-                    pointStyle: 'line',
-                  };
-                });
-              },
               sort: (a, b, data) => {
                 const rankA = data.datasets[a.datasetIndex]?.legendRank || a.datasetIndex;
                 const rankB = data.datasets[b.datasetIndex]?.legendRank || b.datasetIndex;
@@ -571,30 +499,39 @@ function initProfitCharts() {
 // ═══════════════════════════════════════════════════════
 
 let analyticsChartsInitialized = false;
-let weekdayChartInstance, refundChartInstance;
+let weekdayChartInstance, netProfitChartInstance;
 
 function initAnalyticsCharts() {
   analyticsChartsInitialized = true;
   const c = getChartColors();
-  const refundRateLabelPlugin = {
-    id: 'refundRateLabelPlugin',
+  const netProfitMarginLabelPlugin = {
+    id: 'netProfitMarginLabelPlugin',
     afterDatasetsDraw(chart) {
-      const rates = chart.data?.datasets?.[0]?.data || [];
+      const dataset = chart.data?.datasets?.[0] || {};
+      const margins = dataset.netProfitMargins || [];
+      const values = dataset.data || [];
       const bars = chart.getDatasetMeta(0)?.data || [];
-      if (bars.length === 0) return;
+      if (bars.length === 0 || margins.length === 0) return;
 
       const { ctx, chartArea } = chart;
       ctx.save();
       ctx.fillStyle = c.netProfitLine || '#111827';
       ctx.font = '600 11px IBM Plex Sans KR, Inter, sans-serif';
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
 
       bars.forEach((bar, index) => {
-        const rate = Number(rates[index]);
-        if (!Number.isFinite(rate) || rate <= 0) return;
-        const y = Math.max(bar.y - 6, chartArea.top + 14);
-        ctx.fillText(`${rate.toFixed(1)}%`, bar.x, y);
+        const margin = Number(margins[index]);
+        if (!Number.isFinite(margin)) return;
+        const value = Number(values[index] || 0);
+        const label = `${Math.round(margin)}%`;
+        const y = value < 0
+          ? Math.min(bar.y + 8, chartArea.bottom - 12)
+          : Math.max(bar.y - 6, chartArea.top + 14);
+        ctx.textBaseline = value < 0 ? 'top' : 'bottom';
+        ctx.strokeText(label, bar.x, y);
+        ctx.fillText(label, bar.x, y);
       });
 
       ctx.restore();
@@ -656,19 +593,21 @@ function initAnalyticsCharts() {
     });
   }
 
-  // ── Refund Rate (empty) ──
-  const refCtx = document.getElementById('refundChart');
-  if (refCtx) {
-    refundChartInstance = new Chart(refCtx, {
+  // ── Net Profit and Margin (empty) ──
+  const netProfitCtx = document.getElementById('netProfitChart');
+  if (netProfitCtx) {
+    netProfitChartInstance = new Chart(netProfitCtx, {
       type: 'bar',
-      plugins: [refundRateLabelPlugin],
+      plugins: [netProfitMarginLabelPlugin],
       data: {
         labels: [],
         datasets: [
           {
-            label: 'Refund Rate (%)',
+            label: 'True Net Profit',
             data: [],
-            backgroundColor: 'rgba(239, 68, 68, 0.7)',
+            backgroundColor: ctx => Number(ctx.raw || 0) < 0
+              ? 'rgba(185, 28, 28, 0.58)'
+              : c.netProfitBlueFill,
             borderRadius: 4,
             barPercentage: 0.62,
             categoryPercentage: 0.72,
@@ -685,17 +624,17 @@ function initAnalyticsCharts() {
           legend: { display: false },
           tooltip: {
             callbacks: {
-              label: ctx => `Refund Rate: ${Number(ctx.parsed.y || 0).toFixed(1)}%`,
+              label: ctx => `Net Profit: ${formatSignedChartKrw(ctx.parsed.y)}`,
               afterBody: items => {
                 if (!Array.isArray(items) || items.length === 0) return [];
                 const index = items[0].dataIndex;
                 const dataset = items[0].chart.data?.datasets?.[0] || {};
-                const revenueValue = Number(dataset.revenue?.[index] || 0);
-                const refundedValue = Number(dataset.refunded?.[index] || 0);
+                const margin = Number(dataset.netProfitMargins?.[index]);
+                const netRevenue = Number(dataset.netRevenue?.[index] || 0);
                 return [
-                  `Refunded: ${formatChartKrwTick(refundedValue)}`,
-                  `Gross revenue: ${formatChartKrwTick(revenueValue)}`,
-                ];
+                  Number.isFinite(margin) ? `Margin: ${Math.round(margin)}%` : null,
+                  `Net revenue: ${formatChartKrwTick(netRevenue)}`,
+                ].filter(Boolean);
               },
             }
           }
@@ -705,7 +644,7 @@ function initAnalyticsCharts() {
           y: {
             beginAtZero: true,
             grid: { color: c.grid },
-            ticks: { color: c.textFaint, callback: v => `${Number(v).toFixed(0)}%` },
+            ticks: { color: c.textFaint, callback: v => formatSignedChartKrw(v) },
           },
         }
       }

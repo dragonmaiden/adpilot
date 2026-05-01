@@ -138,13 +138,6 @@
         </div>
       </div>
 
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="analytics.structureKicker">Profit Structure</div>
-          <h2 data-i18n="analytics.structureTitle">Revenue and cost movement</h2>
-        </div>
-      </div>
-
       <div class="card chart-card">
         <div class="card-header">
           <h2 data-i18n="analytics.waterfallTitle">Profit Movement</h2>
@@ -162,29 +155,13 @@
         </div>
       </div>
 
-      <div class="card chart-card refund-rate-card">
+      <div class="card chart-card net-profit-card">
         <div class="card-header">
-          <h2 data-i18n="chart.refundRate">Refund Rate</h2>
+          <h2 data-i18n="chart.netProfitMargin">Net Profit &amp; Margin</h2>
         </div>
-        <div class="chart-summary-row refund-rate-summary" id="refundRateSummary" aria-live="polite"></div>
+        <div class="chart-summary-row net-profit-summary" id="netProfitSummary" aria-live="polite"></div>
         <div class="chart-container" style="height:300px">
-          <canvas id="refundChart"></canvas>
-        </div>
-      </div>
-
-      <div class="section-head section-head-compact">
-        <div>
-          <div class="section-kicker" data-i18n="analytics.orderPatternsKicker">Order Patterns</div>
-          <h2 data-i18n="analytics.orderPatternsTitle">When orders and revenue happen</h2>
-        </div>
-        <div class="range-toolbar">
-          <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
-          <div class="range-switch" data-series-window-group="order-patterns" role="group" aria-label="Order and revenue pattern time frame" data-i18n-aria-label="analytics.windowOrderPatternsAria">
-            <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
-            <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
-            <button type="button" class="range-switch-btn is-active" data-series-window-value="all" data-i18n="misc.all">All</button>
-          </div>
+          <canvas id="netProfitChart"></canvas>
         </div>
       </div>
 
@@ -192,7 +169,15 @@
         <div class="card chart-card order-pattern-card">
           <div class="card-header">
             <h2 data-i18n="chart.orderWeekday">Average orders & revenue in the week</h2>
-            <span class="card-header-note" id="orderPatternWindowNote">All time frame</span>
+            <div class="range-toolbar">
+              <span class="range-toolbar-label" data-i18n="analytics.window">Time frame</span>
+              <div class="range-switch" data-series-window-group="order-patterns" role="group" aria-label="Order and revenue pattern time frame" data-i18n-aria-label="analytics.windowOrderPatternsAria">
+                <button type="button" class="range-switch-btn" data-series-window-value="7d">7D</button>
+                <button type="button" class="range-switch-btn" data-series-window-value="14d">14D</button>
+                <button type="button" class="range-switch-btn" data-series-window-value="30d">30D</button>
+                <button type="button" class="range-switch-btn is-active" data-series-window-value="all" data-i18n="misc.all">All</button>
+              </div>
+            </div>
           </div>
           <div class="order-pattern-summary" id="orderPatternSummary"></div>
           <div class="chart-container" style="height:320px">
@@ -248,7 +233,7 @@
       <div class="calendar-selection-deck" id="calendarSelectionDeck">
         <div class="card">
           <div class="card-header">
-            <h2 data-i18n="calendar.selectedTitle">Selected Range</h2>
+            <h2 data-i18n="calendar.sankeyTitle">Profit Sankey</h2>
             <span class="badge badge-neutral" data-i18n="calendar.selectedHint">Choose a day or drag across a period</span>
           </div>
           <p class="card-desc" data-i18n="calendar.selectedDesc">The drilldown will populate with profit, orders, refunds, campaign estimates, and product mix for the selected KST date range.</p>

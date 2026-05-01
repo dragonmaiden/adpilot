@@ -12,11 +12,13 @@ const CONTRACTS_PATH = path.join(__dirname, '..', 'server', 'contracts', 'v1.js'
 const CALENDAR_SERVICE_PATH = path.join(__dirname, '..', 'server', 'services', 'calendarService.js');
 const CALENDAR_JS_PATH = path.join(__dirname, '..', 'public', 'live', 'pages', 'calendar.js');
 const STYLE_PATH = path.join(__dirname, '..', 'public', 'style.css');
+const INDEX_HTML_PATH = path.join(__dirname, '..', 'public', 'index.html');
 
 const contractsJs = fs.readFileSync(CONTRACTS_PATH, 'utf8');
 const calendarServiceJs = fs.readFileSync(CALENDAR_SERVICE_PATH, 'utf8');
 const calendarJs = fs.readFileSync(CALENDAR_JS_PATH, 'utf8');
 const css = fs.readFileSync(STYLE_PATH, 'utf8');
+const indexHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 
 function makeOrder(orderNo, totalPaymentPrice, totalRefundedPrice, items) {
   return {
@@ -126,6 +128,26 @@ test('calendar sankey omits zero-value labels and guide paths', () => {
   assert.match(calendarJs, /const visibleNodes = nodes\.filter\(node => node\.visible !== false && linkedNodeIds\.has\(node\.id\)\);/);
   assert.match(calendarJs, /noFinancialMovement/);
   assert.match(calendarJs, /No financial movement in this selection\./);
+});
+
+test('calendar sankey owns the selected date label without the old status card', () => {
+  assert.match(indexHtml, /data-i18n="calendar\.sankeyTitle">Profit Sankey/);
+  assert.match(calendarJs, /data-calendar-sankey-meta/);
+  assert.match(calendarJs, /return viewModel\.contextLabel \|\| tr\('Selected range'/);
+  assert.doesNotMatch(calendarJs, /All dates shown in KST|Profitable time frame|Below break-even|calendar-detail-head/);
+  assert.doesNotMatch(css, /\.calendar-detail-head|\.calendar-chip/);
+});
+
+test('loss sankey flows balance uncovered costs instead of double-counting losses', () => {
+  assert.match(calendarJs, /sub: isProfitPositive \? resultSub : tr\('Uncovered costs'/);
+  assert.match(calendarJs, /column: isProfitPositive \? terminalColumn : revenueColumn/);
+  assert.match(calendarJs, /addLink\('profit', 'costs', lossV, 'negative', 0, 'loss-gap'\)/);
+  assert.doesNotMatch(calendarJs, /addLink\('costs', 'profit', lossV/);
+  assert.match(calendarJs, /sankeyColumn: columnIndexByValue\.get\(Number\(node\.column \|\| 0\)\) \|\| 0/);
+  assert.match(calendarJs, /const isFlatLossGap = link\.variant === 'loss-gap'[\s\S]*!hasNetCostLink/);
+  assert.match(calendarJs, /flow\.variant \? ` is-\$\{esc\(flow\.variant\)\}` : ''/);
+  assert.match(css, /calendar-sankey-flow\s*\{[\s\S]*stroke-linecap:\s*round;[\s\S]*stroke-linejoin:\s*round;/);
+  assert.match(css, /\.calendar-sankey-flow\.is-loss-gap\s*\{[\s\S]*stroke-opacity:\s*0\.42;/);
 });
 
 test('calendar selection keeps the sankey as the metric owner before the detailed tables', () => {

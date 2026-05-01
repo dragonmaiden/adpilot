@@ -179,26 +179,20 @@
     }));
   }
 
-  function buildRefundRateBuckets(waterfallBuckets) {
+  function buildNetProfitBuckets(waterfallBuckets) {
     return (Array.isArray(waterfallBuckets) ? waterfallBuckets : []).map(row => {
       const revenue = toFiniteNumber(row.revenue);
       const refunded = toFiniteNumber(row.refunded);
-      const rate = revenue > 0 ? Number(((refunded / revenue) * 100).toFixed(1)) : null;
+      const netRevenue = revenue - refunded;
+      const trueNetProfit = toFiniteNumber(row.trueNetProfit);
+      const margin = netRevenue > 0 ? Number(((trueNetProfit / netRevenue) * 100).toFixed(1)) : null;
 
       return {
         label: row.label || row.date || '',
-        revenue,
-        refunded,
-        rate,
+        netRevenue,
+        trueNetProfit,
+        margin,
       };
-    });
-  }
-
-  function buildNetProfitMarginLabels(waterfallBuckets) {
-    return (Array.isArray(waterfallBuckets) ? waterfallBuckets : []).map(row => {
-      const netRevenue = toFiniteNumber(row.revenue) - toFiniteNumber(row.refunded);
-      const trueNetProfit = toFiniteNumber(row.trueNetProfit);
-      return netRevenue > 0 ? Math.round((trueNetProfit / netRevenue) * 100) : null;
     });
   }
 
@@ -300,6 +294,9 @@
     const windowLabel = windowMeta?.label || tr('Selected', '선택');
     const refundRate = windowSummary.refundRate;
     const costsShare = windowSummary.costsShare;
+    const totalNetRevenue = hasNumericValue(totalGrossRevenue) && hasNumericValue(totalRefunded)
+      ? totalGrossRevenue - totalRefunded
+      : null;
 
     const heroEl = document.getElementById('profitHero');
     const heroKickerEl = document.getElementById('profitHeroKicker');
@@ -311,7 +308,7 @@
     const heroMarginEl = document.getElementById('profitHeroMargin');
     const heroRoasEl = document.getElementById('profitHeroRoas');
     const heroRunRateEl = document.getElementById('profitHeroRunRate');
-    const refundRateSummaryEl = document.getElementById('refundRateSummary');
+    const netProfitSummaryEl = document.getElementById('netProfitSummary');
 
     if (heroKickerEl) {
       heroKickerEl.textContent = tr(`${windowLabel} time frame true net profit`, `${windowLabel} 기준 실질 순이익`);
@@ -392,10 +389,11 @@
       totalProfit > 0 ? 'positive' : totalProfit < 0 ? 'negative' : 'neutral'
     );
 
-    if (refundRateSummaryEl) {
-      refundRateSummaryEl.innerHTML = `
-        <span><strong>${esc(formatNullableKrw(totalRefunded))}</strong> ${esc(tr('total refunds', '총 환불'))}</span>
-        <span><strong>${esc(formatNullablePercent(refundRate, 1))}</strong> ${esc(tr(`of ${formatNullableKrw(totalGrossRevenue)} gross revenue`, `총매출 ${formatNullableKrw(totalGrossRevenue)} 대비`))}</span>
+    if (netProfitSummaryEl) {
+      const profitTone = totalProfit > 0 ? 'positive' : totalProfit < 0 ? 'negative' : '';
+      netProfitSummaryEl.innerHTML = `
+        <span class="${profitTone}"><strong>${esc(formatNullableSignedKrw(totalProfit))}</strong> ${esc(tr('true net profit', '실질 순이익'))}</span>
+        <span><strong>${esc(formatNullablePercent(blendedMargin, 1))}</strong> ${esc(tr(`margin on ${formatNullableKrw(totalNetRevenue)} net revenue`, `순매출 ${formatNullableKrw(totalNetRevenue)} 기준 마진`))}</span>
       `;
     }
 
@@ -455,33 +453,31 @@
       profitWaterfallChart.data.datasets[1].data = waterfallBuckets.map(row =>
         -(row.cogs + row.cogsShipping + row.adSpendKRW + row.paymentFees)
       );
-      profitWaterfallChart.data.datasets[2].data = waterfallBuckets.map(row => row.trueNetProfit);
-      profitWaterfallChart.data.datasets[2].netProfitMargins = buildNetProfitMarginLabels(waterfallBuckets);
-      profitWaterfallChart.data.datasets[2].netProfitMarginLabelRatio = 0.5;
-      profitWaterfallChart.data.datasets[2].pointBackgroundColor = '#111827';
-      profitWaterfallChart.data.datasets[2].pointBorderColor = '#111827';
       profitWaterfallChart.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
       profitWaterfallChart.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
       profitWaterfallChart.update();
     }
 
-    const refundRateBuckets = buildRefundRateBuckets(waterfallBuckets);
-    if (typeof refundChartInstance !== 'undefined' && refundChartInstance) {
-      const refundRateDataset = refundChartInstance.data.datasets[0];
-      refundChartInstance.data.labels = refundRateBuckets.map(row => row.label);
-      refundRateDataset.data = refundRateBuckets.map(row => row.rate);
-      refundRateDataset.revenue = refundRateBuckets.map(row => row.revenue);
-      refundRateDataset.refunded = refundRateBuckets.map(row => row.refunded);
-      const maxRefundRate = refundRateBuckets.reduce((max, row) => {
-        const rate = Number(row.rate);
-        return Number.isFinite(rate) ? Math.max(max, rate) : max;
-      }, 0);
-      refundChartInstance.options.scales.y.suggestedMax = maxRefundRate > 0
-        ? Math.max(5, Math.ceil((maxRefundRate * 1.2) / 5) * 5)
-        : 5;
-      refundChartInstance.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
-      refundChartInstance.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
-      refundChartInstance.update();
+    const netProfitBuckets = buildNetProfitBuckets(waterfallBuckets);
+    if (typeof netProfitChartInstance !== 'undefined' && netProfitChartInstance) {
+      const netProfitDataset = netProfitChartInstance.data.datasets[0];
+      netProfitChartInstance.data.labels = netProfitBuckets.map(row => row.label);
+      netProfitDataset.data = netProfitBuckets.map(row => row.trueNetProfit);
+      netProfitDataset.netProfitMargins = netProfitBuckets.map(row => row.margin);
+      netProfitDataset.netRevenue = netProfitBuckets.map(row => row.netRevenue);
+      const profitValues = netProfitBuckets.map(row => Number(row.trueNetProfit || 0));
+      const maxProfit = profitValues.reduce((max, value) => Math.max(max, value), 0);
+      const minProfit = profitValues.reduce((min, value) => Math.min(min, value), 0);
+      const padding = Math.max(Math.abs(maxProfit), Math.abs(minProfit)) * 0.18;
+      netProfitChartInstance.options.scales.y.suggestedMax = maxProfit > 0
+        ? Math.ceil((maxProfit + padding) / 100000) * 100000
+        : undefined;
+      netProfitChartInstance.options.scales.y.suggestedMin = minProfit < 0
+        ? Math.floor((minProfit - padding) / 100000) * 100000
+        : undefined;
+      netProfitChartInstance.options.scales.x.ticks.maxRotation = profitWaterfallGranularity === 'day' ? 45 : 0;
+      netProfitChartInstance.options.scales.x.ticks.autoSkip = profitWaterfallGranularity === 'day';
+      netProfitChartInstance.update();
     }
 
     const profitMovementFootnote = document.getElementById('profitMovementFootnote');
@@ -552,13 +548,8 @@
       const imwebSource = data.dataSources?.imweb || null;
       const sourceAudit = data.sourceAudit || null;
       const analyticsNoticeEl = document.getElementById('analyticsFreshnessNotice');
-      const orderPatternWindowEl = document.getElementById('orderPatternWindowNote');
       const orderPatternSummaryEl = document.getElementById('orderPatternSummary');
-      const orderPatternWindowMeta = getSeriesWindowMeta('order-patterns');
 
-      if (orderPatternWindowEl) {
-        orderPatternWindowEl.textContent = tr(`${orderPatternWindowMeta.label} time frame`, `${orderPatternWindowMeta.label} 기준`);
-      }
       if (orderPatternSummaryEl) {
         const revenueDays = weekdayPerf.filter(day => Number(day.net || 0) > 0);
         const bestRevenueDay = revenueDays.reduce((best, day) => !best || day.net > best.net ? day : best, null);

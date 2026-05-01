@@ -15,21 +15,23 @@ const css = fs.readFileSync(STYLE_PATH, 'utf8');
 const analyticsServiceJs = fs.readFileSync(ANALYTICS_SERVICE_PATH, 'utf8');
 const contractsJs = fs.readFileSync(CONTRACTS_PATH, 'utf8');
 
-test('profit structure shows a full-width refund rate chart under profit movement', () => {
-  assert.match(indexHtml, /<canvas id="profitWaterfallChart"><\/canvas>[\s\S]*<div class="card chart-card refund-rate-card">[\s\S]*id="refundRateSummary"[\s\S]*<canvas id="refundChart"><\/canvas>[\s\S]*data-i18n="analytics.orderPatternsKicker"/);
-  assert.match(indexHtml, /data-i18n="chart.refundRate"/);
+test('profit structure shows net profit chart under profit movement without duplicate section titles', () => {
+  assert.match(indexHtml, /<canvas id="profitWaterfallChart"><\/canvas>[\s\S]*<div class="card chart-card net-profit-card">[\s\S]*id="netProfitSummary"[\s\S]*<canvas id="netProfitChart"><\/canvas>[\s\S]*<div class="charts-grid order-patterns-grid">/);
+  assert.match(indexHtml, /data-i18n="chart.netProfitMargin"/);
+  assert.doesNotMatch(indexHtml, /analytics.structureKicker|analytics.structureTitle|analytics.orderPatternsKicker|analytics.orderPatternsTitle/);
   assert.doesNotMatch(indexHtml, /analytics.operationsKicker|analytics.operationsTitle|refund-quality-grid|refund-quality-kpis/);
   assert.doesNotMatch(indexHtml, /data-kpi-analytics="refundRate"|data-kpi-analytics="cancelRate"/);
   assert.doesNotMatch(indexHtml, /data-kpi-analytics="febRefundRate"|data-kpi-analytics="marRefundRate"/);
   assert.doesNotMatch(css, /\.refund-quality-grid|\.refund-quality-kpis/);
-  assert.match(css, /\.refund-rate-card\s*\{[\s\S]*margin-top:\s*var\(--space-4\);/);
+  assert.match(css, /\.net-profit-card\s*\{[\s\S]*margin-top:\s*var\(--space-4\);/);
 });
 
-test('refund rate chart follows the profit movement window instead of monthly refunds', () => {
-  assert.match(analyticsJs, /buildRefundRateBuckets\(waterfallBuckets\)/);
+test('net profit chart follows the profit movement window instead of monthly refunds', () => {
+  assert.match(analyticsJs, /buildNetProfitBuckets\(waterfallBuckets\)/);
   assert.match(analyticsJs, /sliceRowsByWindow\(pa\.waterfall \|\| \[\], 'profit-structure'\)/);
-  assert.match(analyticsJs, /formatNullableKrw\(totalRefunded\)[\s\S]*formatNullablePercent\(refundRate, 1\)[\s\S]*formatNullableKrw\(totalGrossRevenue\)/);
-  assert.match(analyticsJs, /refundRateDataset\.data = refundRateBuckets\.map\(row => row\.rate\)/);
+  assert.match(analyticsJs, /formatNullableSignedKrw\(totalProfit\)[\s\S]*formatNullablePercent\(blendedMargin, 1\)[\s\S]*formatNullableKrw\(totalNetRevenue\)/);
+  assert.match(analyticsJs, /netProfitDataset\.data = netProfitBuckets\.map\(row => row\.trueNetProfit\)/);
+  assert.match(analyticsJs, /netProfitDataset\.netProfitMargins = netProfitBuckets\.map\(row => row\.margin\)/);
   assert.doesNotMatch(analyticsJs, /monthlyRefunds/);
 });
 
@@ -42,13 +44,12 @@ test('profit movement excludes the separate refund series and uses net revenue a
   assert.doesNotMatch(analyticsJs, /Daily view refund rate|granularityLabel\)} refund rate/);
 });
 
-test('profit movement data labels show true net margin from the same visible buckets', () => {
-  assert.match(analyticsJs, /function buildNetProfitMarginLabels\(waterfallBuckets\)/);
-  assert.match(analyticsJs, /const netRevenue = toFiniteNumber\(row\.revenue\) - toFiniteNumber\(row\.refunded\);/);
+test('net profit chart data labels show true net margin from the same visible buckets', () => {
+  assert.match(analyticsJs, /function buildNetProfitBuckets\(waterfallBuckets\)/);
+  assert.match(analyticsJs, /const revenue = toFiniteNumber\(row\.revenue\);[\s\S]*const refunded = toFiniteNumber\(row\.refunded\);[\s\S]*const netRevenue = revenue - refunded;/);
   assert.match(analyticsJs, /const trueNetProfit = toFiniteNumber\(row\.trueNetProfit\);/);
-  assert.match(analyticsJs, /return netRevenue > 0 \? Math\.round\(\(trueNetProfit \/ netRevenue\) \* 100\) : null;/);
-  assert.match(analyticsJs, /netProfitMargins = buildNetProfitMarginLabels\(waterfallBuckets\)/);
-  assert.match(analyticsJs, /netProfitMarginLabelRatio = 0\.5/);
+  assert.match(analyticsJs, /const margin = netRevenue > 0 \? Number\(\(\(trueNetProfit \/ netRevenue\) \* 100\)\.toFixed\(1\)\) : null;/);
+  assert.match(analyticsJs, /netProfitDataset\.netProfitMargins = netProfitBuckets\.map\(row => row\.margin\)/);
 });
 
 test('profit summary no longer renders or fetches settlement reconciliation UI', () => {
@@ -57,7 +58,8 @@ test('profit summary no longer renders or fetches settlement reconciliation UI',
 });
 
 test('order pattern section avoids duplicate campaign and weekday table surfaces', () => {
-  assert.match(indexHtml, /Average orders &amp; revenue in the week|Average orders & revenue in the week/);
+  assert.match(indexHtml, /<div class="card chart-card order-pattern-card">[\s\S]*(Average orders &amp; revenue in the week|Average orders & revenue in the week)/);
+  assert.match(indexHtml, /<div class="card chart-card order-pattern-card">[\s\S]*data-series-window-group="order-patterns"[\s\S]*<canvas id="weekdayChart"><\/canvas>/);
   assert.match(indexHtml, /<canvas id="weekdayChart"><\/canvas>[\s\S]*<canvas id="hourChart"><\/canvas>/);
   assert.doesNotMatch(indexHtml, /Campaign Profit Leaderboard|campaignProfitTable|weekdayTable/);
   assert.doesNotMatch(indexHtml, /Media Profitability|Media Efficiency/);
