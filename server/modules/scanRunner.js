@@ -638,6 +638,7 @@ function auditRecentImwebOrderNotifications(scanResult, orders) {
     summary: audit.summary,
     issues: audit.issues.slice(0, 25),
   };
+  scanStore.patchLatestData({ orderNotificationAudit: scanResult.orderNotificationAudit });
 
   pushStep(scanResult, {
     step: 'order_notification_audit',
@@ -817,6 +818,7 @@ async function runScan(manual = false) {
           revenueData: latestData.revenueData,
           cogsData: latestData.cogsData,
           economicsLedger: latestData.economicsLedger,
+          orderNotificationAudit: latestData.orderNotificationAudit,
           fx: latestData.fx,
           sourceAudit: latestData.sourceAudit,
           sources: latestData.sources,

@@ -151,6 +151,7 @@ test('saveSnapshot persists a complete recovery projection with source freshness
       revenueData: { totalRevenue: 1000, dailyRevenue: { '2026-04-30': { revenue: 1000 } } },
       cogsData: { totalCOGS: 400, dailyCOGS: { '2026-04-30': { cost: 400 } } },
       economicsLedger: { summary: { totalRows: 1 }, rows: [{ kind: 'order_approval' }] },
+      orderNotificationAudit: { status: 'reconciled', summary: { missingDeliveryCount: 0 } },
       fx: { usdToKrwRate: 1500, source: 'test-rate', stale: false },
       sources: { imweb: { status: 'connected', stale: false } },
       sourceAudit: {
@@ -168,6 +169,7 @@ test('saveSnapshot persists a complete recovery projection with source freshness
     assert.equal(normalized.revenueData.totalRevenue, 1000);
     assert.equal(normalized.cogsData.totalCOGS, 400);
     assert.equal(normalized.economicsLedger.summary.totalRows, 1);
+    assert.equal(normalized.orderNotificationAudit.status, 'reconciled');
     assert.equal(normalized.fx.usdToKrwRate, 1500);
     assert.equal(normalized.sources.imweb.status, 'connected');
     assert.equal(normalized.sourceAudit.status, 'reconciled');

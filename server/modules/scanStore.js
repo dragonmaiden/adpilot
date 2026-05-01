@@ -41,6 +41,7 @@ function createLatestDataState() {
     orders: [],
     cogsData: null,
     economicsLedger: null,
+    orderNotificationAudit: null,
     fx: null,
     sourceAudit: null,
     sources: createSourcesState(),
@@ -170,6 +171,9 @@ function normalizeLatestData(raw) {
     orders: asArray(raw.orders),
     cogsData: raw.cogsData && typeof raw.cogsData === 'object' ? raw.cogsData : null,
     economicsLedger: raw.economicsLedger && typeof raw.economicsLedger === 'object' ? raw.economicsLedger : null,
+    orderNotificationAudit: raw.orderNotificationAudit && typeof raw.orderNotificationAudit === 'object' && !Array.isArray(raw.orderNotificationAudit)
+      ? raw.orderNotificationAudit
+      : null,
     fx: raw.fx && typeof raw.fx === 'object' && !Array.isArray(raw.fx) ? raw.fx : null,
     sourceAudit: raw.sourceAudit && typeof raw.sourceAudit === 'object' && !Array.isArray(raw.sourceAudit) ? raw.sourceAudit : null,
     timestamp: typeof raw.timestamp === 'string' ? raw.timestamp : null,
@@ -224,6 +228,7 @@ function hydrateLatestDataFromSnapshot(scanId, latestData) {
   if (!hasUsableRevenueData(latestData.revenueData) && hasUsableRevenueData(normalized?.revenueData)) snapshotPatch.revenueData = normalized.revenueData;
   if (!hasUsableCogsData(latestData.cogsData) && hasUsableCogsData(normalized?.cogsData)) snapshotPatch.cogsData = normalized.cogsData;
   if (!latestData.economicsLedger && normalized?.economicsLedger) snapshotPatch.economicsLedger = normalized.economicsLedger;
+  if (!latestData.orderNotificationAudit && normalized?.orderNotificationAudit) snapshotPatch.orderNotificationAudit = normalized.orderNotificationAudit;
   if (!latestData.fx && normalized?.fx) snapshotPatch.fx = normalized.fx;
   if (!latestData.sourceAudit && normalized?.sourceAudit) snapshotPatch.sourceAudit = normalized.sourceAudit;
   if (normalized?.sources && typeof normalized.sources === 'object') {

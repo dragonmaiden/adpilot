@@ -73,6 +73,7 @@ function writeSnapshotParts(scanId, snapshotData) {
     snapshotData.revenueData !== undefined ||
     snapshotData.cogsData !== undefined ||
     snapshotData.economicsLedger !== undefined ||
+    snapshotData.orderNotificationAudit !== undefined ||
     snapshotData.fx !== undefined ||
     snapshotData.sourceAudit !== undefined ||
     snapshotData.sources !== undefined
@@ -81,6 +82,7 @@ function writeSnapshotParts(scanId, snapshotData) {
       revenueData: snapshotData.revenueData,
       cogsData: snapshotData.cogsData ?? null,
       economicsLedger: snapshotData.economicsLedger ?? null,
+      orderNotificationAudit: snapshotData.orderNotificationAudit ?? null,
       fx: snapshotData.fx ?? null,
       sourceAudit: snapshotData.sourceAudit ?? null,
       sources: snapshotData.sources ?? {},
