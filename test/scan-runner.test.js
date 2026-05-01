@@ -38,3 +38,21 @@ test('scan runner records a source audit after projection writes', () => {
   assert.match(source, /step: 'source_audit'/);
   assert.match(source, /sourceAudit: latestData\.sourceAudit/);
 });
+
+test('scan runner audits recent paid-order Telegram delivery coverage', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'server/modules/scanRunner.js'), 'utf8');
+
+  assert.match(source, /buildOrderNotificationAudit\(recentOrders\)/);
+  assert.match(source, /step: 'order_notification_audit'/);
+  assert.match(source, /pushError\(scanResult, 'order_notification_audit'/);
+});
+
+test('scan runner sends paid fallback notifications for duplicate paid orders without prior state', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'server/modules/scanRunner.js'), 'utf8');
+
+  assert.match(
+    source,
+    /for \(const duplicate of result\.duplicates\) {\s+await orderNotificationService\.deliverPaidOrderNotification\(duplicate\);\s+}/
+  );
+  assert.doesNotMatch(source, /duplicate\?\.alreadyNotified/);
+});

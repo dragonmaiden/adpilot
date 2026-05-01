@@ -12,6 +12,7 @@ const runtimeSettings = require('../runtime/runtimeSettings');
 const { buildEconomicsLedger } = require('../services/economicsLedgerService');
 const cogsAutofillService = require('../services/cogsAutofillService');
 const orderNotificationService = require('../services/orderNotificationService');
+const orderNotificationAuditService = require('../services/orderNotificationAuditService');
 const observabilityService = require('../services/observabilityService');
 const fxService = require('../services/fxService');
 const financialLedgerRepository = require('../db/financialLedgerRepository');
@@ -23,9 +24,14 @@ const {
 } = require('../services/sourceExtractionAuditService');
 
 const META_AD_INSIGHTS_LOOKBACK_DAYS = 45;
+const ORDER_NOTIFICATION_AUDIT_LOOKBACK_HOURS = 48;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 function pushStep(scanResult, payload) {
@@ -34,6 +40,15 @@ function pushStep(scanResult, payload) {
 
 function pushError(scanResult, step, err) {
   scanResult.errors.push({ step, error: err.message });
+}
+
+function filterRecentOrderNotificationAuditRows(orders, now = new Date()) {
+  const cutoffMs = now.getTime() - (ORDER_NOTIFICATION_AUDIT_LOOKBACK_HOURS * 60 * 60 * 1000);
+
+  return asArray(orders).filter(order => {
+    const orderedAt = order?.wtime ? new Date(order.wtime) : null;
+    return orderedAt && !Number.isNaN(orderedAt.getTime()) && orderedAt.getTime() >= cutoffMs;
+  });
 }
 
 function formatCogsAutofillErrorSummary(errors) {
@@ -54,6 +69,21 @@ function formatCogsAutofillErrorSummary(errors) {
   }
 
   return visibleErrors.join(' | ');
+}
+
+function formatOrderNotificationAuditSummary(audit) {
+  const missing = audit?.missingDeliveries?.slice(0, 3).map(issue => issue.orderNo).filter(Boolean) || [];
+  const stale = audit?.staleNotifications?.slice(0, 3).map(issue => issue.orderNo).filter(Boolean) || [];
+  const parts = [];
+
+  if (missing.length > 0) {
+    parts.push(`missing Telegram delivery: ${missing.join(', ')}`);
+  }
+  if (stale.length > 0) {
+    parts.push(`stale Telegram stage: ${stale.join(', ')}`);
+  }
+
+  return parts.join(' | ') || 'Order notification audit failed';
 }
 
 function markSourceSuccess(sourceKey, attemptedAt, { hasData = false } = {}) {
@@ -576,9 +606,7 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, freshOrders) {
     }
 
     for (const duplicate of result.duplicates) {
-      if (duplicate?.alreadyNotified) {
-        await orderNotificationService.deliverPaidOrderNotification(duplicate);
-      }
+      await orderNotificationService.deliverPaidOrderNotification(duplicate);
     }
 
     return { ok: true, result };
@@ -588,6 +616,48 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, freshOrders) {
     pushStep(scanResult, { step: 'cogs_autofill', status: 'failed' });
     return { ok: false, result: null };
   }
+}
+
+function auditRecentImwebOrderNotifications(scanResult, orders) {
+  const recentOrders = filterRecentOrderNotificationAuditRows(orders);
+
+  if (recentOrders.length === 0) {
+    pushStep(scanResult, {
+      step: 'order_notification_audit',
+      status: 'skipped',
+      reason: 'no_recent_imweb_orders',
+      lookbackHours: ORDER_NOTIFICATION_AUDIT_LOOKBACK_HOURS,
+    });
+    return null;
+  }
+
+  const audit = orderNotificationAuditService.buildOrderNotificationAudit(recentOrders);
+  scanResult.orderNotificationAudit = {
+    status: audit.status,
+    generatedAt: audit.generatedAt,
+    summary: audit.summary,
+    issues: audit.issues.slice(0, 25),
+  };
+
+  pushStep(scanResult, {
+    step: 'order_notification_audit',
+    status: audit.status === 'reconciled' ? 'ok' : 'failed',
+    lookbackHours: ORDER_NOTIFICATION_AUDIT_LOOKBACK_HOURS,
+    ...audit.summary,
+  });
+
+  if (audit.status === 'reconciled') {
+    console.log(
+      `[SCHEDULER]   → Telegram order notification audit reconciled `
+      + `(${audit.summary.checkedOrders} financial order${audit.summary.checkedOrders === 1 ? '' : 's'} checked)`
+    );
+  } else {
+    const summary = formatOrderNotificationAuditSummary(audit);
+    console.warn(`[SCHEDULER]   ⚠ Telegram order notification audit failed: ${summary}`);
+    pushError(scanResult, 'order_notification_audit', new Error(summary));
+  }
+
+  return audit;
 }
 
 async function runScan(manual = false) {
@@ -646,12 +716,15 @@ async function runScan(manual = false) {
     // order data when Imweb is unavailable so sheets keep updating.
     await reconcileRecentImwebOrdersToCogs(scanResult, imwebResult.ok ? imwebResult.orders : null);
 
+    console.log('[SCHEDULER] Step 3d: Auditing recent Imweb order Telegram delivery coverage...');
+    auditRecentImwebOrderNotifications(scanResult, imwebResult.ok ? imwebResult.orders : []);
+
     const cogsResult = await fetchCogs(scanResult);
     sourceStatus.cogs = cogsResult.ok;
 
     const fx = await refreshFxRate(scanResult);
 
-    console.log('[SCHEDULER] Step 3d: Building economics ledger...');
+    console.log('[SCHEDULER] Step 3e: Building economics ledger...');
     try {
       const latestData = scanStore.getLatestData();
       const economicsLedger = buildEconomicsLedger({
@@ -685,7 +758,7 @@ async function runScan(manual = false) {
       pushStep(scanResult, { step: 'economics_ledger', status: 'failed' });
     }
 
-    console.log('[SCHEDULER] Step 3e: Auditing source extraction and projection reconciliation...');
+    console.log('[SCHEDULER] Step 3f: Auditing source extraction and projection reconciliation...');
     try {
       const latestData = scanStore.getLatestData();
       const sourceAudit = buildSourceExtractionAudit({

@@ -252,10 +252,72 @@ async function recordTelegramReportDelivery({
   );
 }
 
+function normalizeAuditLimit(value) {
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit <= 0) return 500;
+  return Math.min(Math.floor(limit), 2000);
+}
+
+function normalizeAuditLookbackHours(value) {
+  const hours = Number(value);
+  if (!Number.isFinite(hours) || hours <= 0) return 48;
+  return Math.min(Math.floor(hours), 24 * 30);
+}
+
+async function listRecentImwebOrdersForNotificationAudit(options = {}) {
+  if (!postgres.isConfigured()) {
+    return { skipped: true, reason: 'database-url-missing' };
+  }
+
+  const params = [];
+  const where = [
+    'ordered_at is not null',
+    '(approved_amount > 0 or refunded_amount > 0)',
+  ];
+
+  if (options.sinceTime) {
+    const since = parseDate(options.sinceTime);
+    if (!since) {
+      return { skipped: true, reason: 'invalid-since-time' };
+    }
+    params.push(since.toISOString());
+    where.push(`ordered_at >= $${params.length}`);
+  } else {
+    params.push(normalizeAuditLookbackHours(options.lookbackHours));
+    where.push(`ordered_at >= now() - ($${params.length}::int * interval '1 hour')`);
+  }
+
+  params.push(normalizeAuditLimit(options.limit));
+  const limitRef = `$${params.length}`;
+
+  const result = await postgres.query(
+    `select
+      order_no,
+      ordered_at,
+      order_date,
+      approved_amount,
+      refunded_amount,
+      raw,
+      last_seen_scan_id,
+      last_seen_at
+    from imweb_orders
+    where ${where.join(' and ')}
+    order by ordered_at desc
+    limit ${limitRef}`,
+    params
+  );
+
+  return {
+    ok: true,
+    orders: result.rows,
+  };
+}
+
 module.exports = {
   buildCogsSnapshots,
   buildMetaSnapshots,
   buildRevenueSnapshots,
+  listRecentImwebOrdersForNotificationAudit,
   persistScanLedger,
   recordTelegramReportDelivery,
 };

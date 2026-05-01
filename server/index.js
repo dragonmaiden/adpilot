@@ -25,6 +25,7 @@ const { buildFinancialProjection } = require('./services/financialProjectionServ
 const reconciliationService = require('./services/reconciliationService');
 const cogsAutofillService = require('./services/cogsAutofillService');
 const orderNotificationService = require('./services/orderNotificationService');
+const orderNotificationAuditService = require('./services/orderNotificationAuditService');
 const observabilityService = require('./services/observabilityService');
 const imwebAuthRepairService = require('./services/imwebAuthRepairService');
 
@@ -355,6 +356,19 @@ app.get('/api/orders/:orderNo/notification-diagnostic', (req, res) => {
     found: Boolean(diagnostics?.notificationRecorded || diagnostics?.importedOrder),
     diagnostics,
   });
+});
+
+app.get('/api/audits/order-notifications', async (req, res) => {
+  try {
+    const audit = await orderNotificationAuditService.auditRecentOrderNotifications({
+      sinceTime: req.query.sinceTime || req.query.since || null,
+      lookbackHours: req.query.lookbackHours,
+      limit: req.query.limit,
+    });
+    res.json(audit);
+  } catch (err) {
+    handleInternalError(req, res, err);
+  }
 });
 
 // ── Trigger manual scan ──
