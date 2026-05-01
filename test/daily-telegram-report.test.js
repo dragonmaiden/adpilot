@@ -157,6 +157,59 @@ test('daily report does not fake profit when COGS are pending for a sales day', 
   assert.match(plan.text, /⏳ <b>Watch:<\/b> profit is pending final COGS coverage/);
 });
 
+test('daily report gives warm encouragement on no-sales days without changing totals', () => {
+  const plan = buildDailySummaryReportPlan(
+    buildLatestData({
+      revenueData: {
+        dailyRevenue: {
+          '2026-04-30': { revenue: 0, refunded: 0, orders: 0 },
+        },
+      },
+      cogsData: {
+        dailyCOGS: {
+          '2026-04-30': { cost: 0, shipping: 0, purchases: 0, costCoverageRatio: 1 },
+        },
+      },
+      campaignInsights: [],
+    }),
+    { dailyReport: { reportDate: null, sentAt: null } },
+    new Date('2026-04-30T14:30:00.000Z')
+  );
+
+  assert.equal(plan.shouldSend, true);
+  assert.equal(plan.totals.orders, 0);
+  assert.equal(plan.totals.revenue, 0);
+  assert.equal(plan.totals.trueNetProfit, 0);
+  assert.match(plan.text, /ℹ️ <b>Readout:<\/b> no revenue activity recorded for the day/);
+  assert.match(plan.text, /(?:🌱|🧭|💛) <b>Encouragement:<\/b>/);
+});
+
+test('daily report gives warm encouragement on loss days without hiding the loss', () => {
+  const plan = buildDailySummaryReportPlan(
+    buildLatestData({
+      revenueData: {
+        dailyRevenue: {
+          '2026-04-30': { revenue: 1000000, refunded: 0, orders: 2 },
+        },
+      },
+      cogsData: {
+        dailyCOGS: {
+          '2026-04-30': { cost: 1200000, shipping: 100000, purchases: 2, costCoverageRatio: 1 },
+        },
+      },
+      campaignInsights: [],
+    }),
+    { dailyReport: { reportDate: null, sentAt: null } },
+    new Date('2026-04-30T14:30:00.000Z')
+  );
+
+  assert.equal(plan.shouldSend, true);
+  assert.ok(plan.totals.trueNetProfit < 0);
+  assert.match(plan.text, /📈 <b>Total Profits:<\/b> -₩/);
+  assert.match(plan.text, /⚠️ <b>Watch:<\/b> loss after costs was -₩/);
+  assert.match(plan.text, /(?:💪|🔧|🧭) <b>Encouragement:<\/b>/);
+});
+
 test('daily report adds data and Telegram audit warnings without changing core totals', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData({

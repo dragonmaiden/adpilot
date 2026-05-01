@@ -391,6 +391,30 @@ function buildHistoricalPerformanceInsights(totals) {
   return insights.slice(0, 3);
 }
 
+function buildLowDayEncouragement(totals) {
+  if (!totals?.profitAvailable) {
+    return null;
+  }
+
+  if (totals.orders <= 0 || totals.revenue <= 0) {
+    return chooseDateVariant(totals.reportDate, [
+      '🌱 <b>Encouragement:</b> quiet day logged - clean data gives you a calm reset for tomorrow',
+      '🧭 <b>Encouragement:</b> no sales today - use the pause to check spend pacing and the strongest product angles',
+      '💛 <b>Encouragement:</b> slow day, still useful signal - tomorrow stays clearer because this was recorded honestly',
+    ]);
+  }
+
+  if (totals.trueNetProfit < 0) {
+    return chooseDateVariant(totals.reportDate, [
+      '💪 <b>Encouragement:</b> loss day spotted - useful signal to tighten costs before the next push',
+      '🔧 <b>Encouragement:</b> below break-even today - review spend and COGS while the pattern is fresh',
+      '🧭 <b>Encouragement:</b> tough margin day - protect spend and lean into proven campaigns next',
+    ]);
+  }
+
+  return null;
+}
+
 function getReportMood(totals, latestData = {}) {
   const sourceAuditFailed = latestData?.sourceAudit?.reconciliation?.status
     && latestData.sourceAudit.reconciliation.status !== 'reconciled';
@@ -459,14 +483,16 @@ function buildDailyReportInsights(totals, latestData = {}) {
     insights.push('⏳ <b>Watch:</b> profit is pending final COGS coverage');
   } else if (totals.orders <= 0 || totals.revenue <= 0) {
     insights.push('ℹ️ <b>Readout:</b> no revenue activity recorded for the day');
+    insights.push(buildLowDayEncouragement(totals));
   } else if (totals.trueNetProfit < 0) {
     insights.push(`⚠️ <b>Watch:</b> loss after costs was ${formatKrw(totals.trueNetProfit)}`);
+    insights.push(buildLowDayEncouragement(totals));
   }
 
   insights.push(...buildHistoricalPerformanceInsights(totals));
   insights.push(...buildCampaignWatchInsights(totals, latestData));
 
-  return insights.slice(0, 3);
+  return insights.filter(Boolean).slice(0, 3);
 }
 
 function buildDailyReportMessage(totals, latestData = {}) {
