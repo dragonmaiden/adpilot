@@ -44,6 +44,8 @@
   --calendar-card-padding: clamp(var(--space-5), 2vw, var(--space-6));
   --calendar-month-padding: var(--space-4);
   --calendar-panel-gap: var(--space-5);
+  --chart-visual-height: clamp(340px, 32vw, 380px);
+  --chart-visual-height-mobile: 300px;
 }
 
 /* DARK MODE (default) */
@@ -561,7 +563,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .chart-card { padding: var(--space-5); min-width: 0; }
-.chart-container { position: relative; height: 260px; min-width: 0; }
+.chart-container { position: relative; height: var(--chart-visual-height); min-width: 0; }
 .chart-container canvas { width: 100% !important; height: 100% !important; display: block; }
 
 .chart-footnote {
@@ -3750,8 +3752,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     word-break: break-all;
   }
 
-  /* Reduce chart heights */
-  .chart-container { height: 220px; }
+  .chart-container { height: var(--chart-visual-height-mobile); }
 
   .calendar-weekdays,
   .calendar-grid {

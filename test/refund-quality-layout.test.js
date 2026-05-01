@@ -22,7 +22,10 @@ test('profit structure shows net profit chart under profit movement without dupl
   assert.doesNotMatch(indexHtml, /analytics.operationsKicker|analytics.operationsTitle|refund-quality-grid|refund-quality-kpis/);
   assert.doesNotMatch(indexHtml, /data-kpi-analytics="refundRate"|data-kpi-analytics="cancelRate"/);
   assert.doesNotMatch(indexHtml, /data-kpi-analytics="febRefundRate"|data-kpi-analytics="marRefundRate"/);
+  assert.doesNotMatch(indexHtml, /chart-container" style="height:/);
   assert.doesNotMatch(css, /\.refund-quality-grid|\.refund-quality-kpis/);
+  assert.match(css, /--chart-visual-height:\s*clamp\(340px,\s*32vw,\s*380px\);/);
+  assert.match(css, /\.chart-container\s*\{\s*position:\s*relative;\s*height:\s*var\(--chart-visual-height\);/);
   assert.match(css, /\.net-profit-card\s*\{[\s\S]*margin-top:\s*var\(--space-4\);/);
 });
 
