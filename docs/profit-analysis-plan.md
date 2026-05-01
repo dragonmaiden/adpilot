@@ -91,7 +91,7 @@ Pass all to contract call.
 
 **Page layout** (top to bottom):
 1. **Hero card** (`.profit-hero`): Today's verdict — "Profitable" / "Unprofitable" + net profit amount + confidence badge
-2. **KPI row** (4 cards): True Net Profit, COGS Coverage %, Blended Margin, True ROAS
+2. **KPI row** (4 cards): Net Profit, COGS Coverage %, Blended Margin, True ROAS
 3. **Waterfall chart** (full-width): Stacked bar — Revenue (green), Refunds (red↓), COGS (orange↓), Ad Spend (blue↓), Fees (gray↓), Net Profit line overlay. Days without COGS dimmed
 4. **Campaign Profit Leaderboard** (table): Campaign | Status | Ad Spend | Purchases | Est. Revenue | Est. COGS | Gross Profit | Margin %
 5. **Data Coverage card**: Covered date ranges, missing ranges, confidence explanation

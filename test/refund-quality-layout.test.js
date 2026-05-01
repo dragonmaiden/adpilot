@@ -44,7 +44,7 @@ test('profit movement excludes the separate refund series and uses net revenue a
   assert.doesNotMatch(analyticsJs, /Daily view refund rate|granularityLabel\)} refund rate/);
 });
 
-test('net profit chart data labels show true net margin from the same visible buckets', () => {
+test('net profit chart data labels show net margin from the same visible buckets', () => {
   assert.match(analyticsJs, /function buildNetProfitBuckets\(waterfallBuckets\)/);
   assert.match(analyticsJs, /const revenue = toFiniteNumber\(row\.revenue\);[\s\S]*const refunded = toFiniteNumber\(row\.refunded\);[\s\S]*const netRevenue = revenue - refunded;/);
   assert.match(analyticsJs, /const trueNetProfit = toFiniteNumber\(row\.trueNetProfit\);/);

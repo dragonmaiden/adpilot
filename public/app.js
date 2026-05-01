@@ -603,7 +603,7 @@ function initAnalyticsCharts() {
         labels: [],
         datasets: [
           {
-            label: 'True Net Profit',
+            label: 'Net Profit',
             data: [],
             backgroundColor: ctx => Number(ctx.raw || 0) < 0
               ? 'rgba(185, 28, 28, 0.58)'

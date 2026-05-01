@@ -667,7 +667,7 @@
         tone: 'negative', column: costsColumn, order: 1, labelSide: 'left',
         fixedValue: zeroFixedValue(costsTotal + (!isProfitPositive ? lossV : 0)), hidden: costsTotal <= 0 },
       { id: 'profit', key: 'profit',
-        label: isProfitPositive ? tr('True Net Profit', '실질 순이익') : tr('True Net Loss', '실질 순손실'),
+        label: isProfitPositive ? tr('Net Profit', '순이익') : tr('Net Loss', '순손실'),
         displayValue: formatSignedKrw(summary.trueNetProfit), sub: resultSub,
         tone: isProfitPositive ? 'positive' : 'negative',
         column: terminalColumn, order: isProfitPositive ? 0 : 5, terminal: true,
@@ -1111,7 +1111,7 @@
                 <th>${esc(tr('Ad Spend', '광고비'))}</th>
                 <th>${esc(tr('COGS + Ship', '원가 + 배송'))}</th>
                 <th>${esc(tr('Fees', '수수료'))}</th>
-                <th>${esc(tr('True Net', '실질 순이익'))}</th>
+                <th>${esc(tr('Net', '순이익'))}</th>
                 <th>ROAS</th>
                 <th>${esc(tr('Coverage', '커버리지'))}</th>
               </tr>

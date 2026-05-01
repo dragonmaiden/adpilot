@@ -311,7 +311,7 @@ function buildSpendDaily(dailyMerged, options = {}) {
 }
 
 /**
- * Build profit waterfall data — true net profit per day including COGS, shipping, payment fees.
+ * Build profit waterfall data — net profit per day including COGS, shipping, payment fees.
  */
 function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate, options = {}) {
   const cogsDict = dailyCOGS || {};

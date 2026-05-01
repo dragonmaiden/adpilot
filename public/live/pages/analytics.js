@@ -311,7 +311,7 @@
     const netProfitSummaryEl = document.getElementById('netProfitSummary');
 
     if (heroKickerEl) {
-      heroKickerEl.textContent = tr(`${windowLabel} time frame true net profit`, `${windowLabel} 기준 실질 순이익`);
+      heroKickerEl.textContent = tr(`${windowLabel} time frame net profit`, `${windowLabel} 기준 순이익`);
     }
 
     if (verdictEl && amountEl) {
@@ -392,7 +392,7 @@
     if (netProfitSummaryEl) {
       const profitTone = totalProfit > 0 ? 'positive' : totalProfit < 0 ? 'negative' : '';
       netProfitSummaryEl.innerHTML = `
-        <span class="${profitTone}"><strong>${esc(formatNullableSignedKrw(totalProfit))}</strong> ${esc(tr('true net profit', '실질 순이익'))}</span>
+        <span class="${profitTone}"><strong>${esc(formatNullableSignedKrw(totalProfit))}</strong> ${esc(tr('net profit', '순이익'))}</span>
         <span><strong>${esc(formatNullablePercent(blendedMargin, 1))}</strong> ${esc(tr(`margin on ${formatNullableKrw(totalNetRevenue)} net revenue`, `순매출 ${formatNullableKrw(totalNetRevenue)} 기준 마진`))}</span>
       `;
     }

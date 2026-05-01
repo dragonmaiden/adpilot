@@ -7,7 +7,7 @@ Use this file as the compact system-design guide for future agents and engineers
 ## Operating Mode
 
 - Build for correctness, maintainability, and debuggability before polish.
-- Treat profit, revenue, refunds, COGS, shipping, payment fees, ad spend, and true net profit as financial data. Never fake precision or silently fall back to misleading percentages.
+- Treat profit, revenue, refunds, COGS, shipping, payment fees, ad spend, and net profit as financial data. Never fake precision or silently fall back to misleading percentages.
 - Prefer small, scoped changes that reduce concept duplication and blast radius.
 - Keep domain calculations out of UI components unless they are purely presentational formatting.
 - Do not add AI, ads-performance, or operations surfaces unless they directly support profit visibility.
@@ -74,7 +74,7 @@ Avoid redefining the same metric in multiple chart modules. If a number appears 
 
 Financial calculations should be server-side or shared pure domain logic:
 
-- Gross revenue, refunds, net revenue, COGS, shipping, payment fees, ad spend KRW, true net profit, margin, ROAS, coverage, refund rate, and category revenue allocation should be computed before rendering whenever possible.
+- Gross revenue, refunds, net revenue, COGS, shipping, payment fees, ad spend KRW, net profit, margin, ROAS, coverage, refund rate, and category revenue allocation should be computed before rendering whenever possible.
 - Client-side recalculation is acceptable only for local what-if presentation controls, such as a payment-fee input, and must be visually scoped to that control.
 - If the client recalculates, it must start from server-provided canonical fields and preserve obvious failure states such as zero denominators.
 
@@ -170,7 +170,7 @@ Think in state transitions, not just functions. For any workflow, identify:
 Important AdPilot invariants:
 
 - Gross revenue minus refunds equals net revenue.
-- True net profit equals net revenue minus COGS, shipping, payment fees, and ad spend KRW.
+- Net profit equals net revenue minus COGS, shipping, payment fees, and ad spend KRW.
 - Category revenue breakdowns must sum back to the gross revenue window they describe.
 - Coverage notes must be scoped to the same time frame as the chart or explicitly labeled as all-time.
 - Zero-revenue windows must not show fake percentage metrics.

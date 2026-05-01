@@ -21,7 +21,7 @@ test('profit movement keeps only net revenue and total costs', () => {
   assert.match(appJs, /label:\s*'Net Revenue'[\s\S]*label:\s*'Total Costs'/);
   assert.doesNotMatch(
     appJs,
-    /label:\s*'True Net Profit'[\s\S]*type:\s*'line'/
+    /label:\s*'Net Profit'[\s\S]*type:\s*'line'/
   );
   assert.match(
     appJs,
@@ -44,7 +44,7 @@ test('positive bar charts share the deep green profit palette', () => {
 test('net profit chart uses complementary blue bars with dark margin labels', () => {
   assert.match(appJs, /netProfitBlueFill:\s*'rgba\(37, 99, 235, 0\.72\)'/);
   assert.match(appJs, /id:\s*'netProfitMarginLabelPlugin'/);
-  assert.match(appJs, /label:\s*'True Net Profit'[\s\S]*backgroundColor:\s*ctx => Number\(ctx\.raw \|\| 0\) < 0[\s\S]*c\.netProfitBlueFill/);
+  assert.match(appJs, /label:\s*'Net Profit'[\s\S]*backgroundColor:\s*ctx => Number\(ctx\.raw \|\| 0\) < 0[\s\S]*c\.netProfitBlueFill/);
   assert.match(appJs, /ctx\.fillStyle\s*=\s*c\.netProfitLine\s*\|\|\s*'#111827'/);
 });
 
