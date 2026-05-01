@@ -14,7 +14,7 @@ const CATEGORY_RULES = [
   {
     key: 'bags',
     label: 'Bags',
-    pattern: /(bag|백|호보|토트|클러치|쇼퍼|backpack|백팩|베니티|배니티|파우치|pouch)/i,
+    pattern: /(bag|백|호보|토트|클러치|쇼퍼|backpack|백팩|베니티|배니티|파우치|pouch|네버풀)/i,
   },
   {
     key: 'shoes',
@@ -29,7 +29,7 @@ const CATEGORY_RULES = [
   {
     key: 'apparel',
     label: 'Apparel',
-    pattern: /(shirt|셔츠|가디건|cardigan|자켓|jacket|팬츠|pants|니트|knit|풀오버|후드|hood|집업|패딩|padding|코트|coat|원피스|dress|비니|beanie)/i,
+    pattern: /(shirt|셔츠|가디건|cardigan|자켓|jacket|팬츠|pants|니트|knit|풀오버|후드|hood|집업|패딩|padding|코트|coat|원피스|dress|비니|beanie|롱슬리브|long\s*sleeve)/i,
   },
   {
     key: 'wallets',
@@ -42,6 +42,7 @@ const CATEGORY_RULES = [
     pattern: /(accessor|선글라스|sunglass|안경|glasses|벨트|belt|키링|key\s*ring|키홀더|keyholder)/i,
   },
 ];
+const DEFAULT_CATEGORY_REVENUE_LIMIT = CATEGORY_RULES.length + 1;
 
 function getOrderSections(order) {
   return Array.isArray(order?.sections)
@@ -123,7 +124,7 @@ function collapseProductCategories(rows, limit) {
 }
 
 function buildProductCategoryRevenue(orders, options = {}) {
-  const limit = Number(options.limit || 6);
+  const limit = Number(options.limit ?? DEFAULT_CATEGORY_REVENUE_LIMIT);
   const categories = new Map();
 
   for (const order of Array.isArray(orders) ? orders : []) {

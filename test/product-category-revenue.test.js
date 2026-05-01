@@ -66,9 +66,38 @@ test('product category revenue allocates actual gross order revenue, not list-pr
 test('product classifier recognizes Shue category language', () => {
   assert.equal(classifyProductCategory('최대 60만원 SHUE LUCKY BOX').label, 'Lucky Box');
   assert.equal(classifyProductCategory('Imported shoulder bag').label, 'Bags');
+  assert.equal(classifyProductCategory('네버풀 MM M46975').label, 'Bags');
   assert.equal(classifyProductCategory('메리제인 슈즈').label, 'Shoes');
   assert.equal(classifyProductCategory('알함브라 네크리스').label, 'Jewelry');
   assert.equal(classifyProductCategory('cashmere cardigan knit').label, 'Apparel');
+  assert.equal(classifyProductCategory('슈에기획 GRP 포켓 루닉 롱슬리브 (남녀공용)').label, 'Apparel');
+});
+
+test('product category revenue keeps known categories split before using Other', () => {
+  const orders = [
+    makeOrder('CAT001', 10_000, 0, [{ name: '최대 60만원 SHUE LUCKY BOX', price: 10_000 }]),
+    makeOrder('CAT002', 20_000, 0, [{ name: 'Silk scarf twilly', price: 20_000 }]),
+    makeOrder('CAT003', 30_000, 0, [{ name: 'Imported shoulder bag', price: 30_000 }]),
+    makeOrder('CAT004', 40_000, 0, [{ name: '메리제인 슈즈', price: 40_000 }]),
+    makeOrder('CAT005', 50_000, 0, [{ name: '알함브라 네크리스', price: 50_000 }]),
+    makeOrder('CAT006', 60_000, 0, [{ name: 'cashmere cardigan knit', price: 60_000 }]),
+    makeOrder('CAT007', 70_000, 0, [{ name: 'card holder wallet', price: 70_000 }]),
+    makeOrder('CAT008', 80_000, 0, [{ name: 'logo belt accessory', price: 80_000 }]),
+  ];
+
+  const labels = buildProductCategoryRevenue(orders).map(row => row.label);
+
+  assert.deepEqual(new Set(labels), new Set([
+    'Lucky Box',
+    'Scarves',
+    'Bags',
+    'Shoes',
+    'Jewelry',
+    'Apparel',
+    'Wallets',
+    'Accessories',
+  ]));
+  assert.equal(labels.includes('Other'), false);
 });
 
 test('calendar payload exposes category inflows and sankey consumes selected-range inflows', () => {
@@ -78,7 +107,7 @@ test('calendar payload exposes category inflows and sankey consumes selected-ran
   assert.doesNotMatch(calendarServiceJs, /return \[month\.key,/);
   assert.match(calendarJs, /function getCalendarCategoryRevenueRows\(selection\)/);
   assert.match(calendarJs, /normalizeSankeyCategoryRows\(getCalendarCategoryRevenueRows\(selection\),\s*grossV\)/);
-  assert.match(calendarJs, /addLink\(`category:\$\{row\.key\}`,\s*'gross',\s*row\.revenue,\s*'positive'/);
+  assert.match(calendarJs, /addLink\(`category:\$\{row\.key\}`,\s*'gross',\s*row\.revenue,\s*'neutral'/);
   assert.match(calendarJs, /data-calendar-sankey-meta/);
   assert.match(calendarJs, /formatCalendarSankeyMeta\(viewModel\)/);
   assert.doesNotMatch(calendarJs, /waterfallGranularity|data-calendar-waterfall-granularity|calendar-sankey-mode-switch/);

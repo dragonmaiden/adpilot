@@ -637,7 +637,7 @@
       label: row.label,
       displayValue: formatKrw(row.revenue),
       sub: tr(`${formatPercent(row.share * 100, 0)} of gross`, `총매출의 ${formatPercent(row.share * 100, 0)}`),
-      tone: 'positive',
+      tone: 'neutral',
       column: 0,
       order: row.order,
       labelSide: 'left',
@@ -709,7 +709,7 @@
     };
 
     for (const row of categoryRows) {
-      addLink(`category:${row.key}`, 'gross', row.revenue, 'positive', row.order);
+      addLink(`category:${row.key}`, 'gross', row.revenue, 'neutral', row.order);
     }
     addLink('gross', 'refunded', refundedV, 'negative', 0);
     if (refundedV <= 0 && grossV > 0) {
