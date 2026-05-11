@@ -24,18 +24,23 @@ function roundMoney(value) {
   return Math.round(asNumber(value));
 }
 
+function resolveUsdToKrwRate(source, fallback = config.currency.usdToKrw) {
+  const rate = Number(source?.fx?.usdToKrwRate ?? source?.usdToKrwRate ?? fallback);
+  return Number.isFinite(rate) && rate > 0 ? rate : fallback;
+}
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function sumTodaySpendKrw(campaignInsights, dateKey) {
+function sumTodaySpendKrw(campaignInsights, dateKey, usdToKrwRate = config.currency.usdToKrw) {
   const spendUsd = asArray(campaignInsights)
     .filter(row => String(row?.date_start || '') === dateKey)
     .reduce((sum, row) => sum + asNumber(row?.spend), 0);
-  return roundMoney(convertUsdToKrw(spendUsd));
+  return roundMoney(convertUsdToKrw(spendUsd, usdToKrwRate));
 }
 
-function buildSnapshotSpendSampleIndex(snapshotMetas, allowedDateKeys = null) {
+function buildSnapshotSpendSampleIndex(snapshotMetas, allowedDateKeys = null, fallbackUsdToKrwRate = config.currency.usdToKrw) {
   const metas = asArray(snapshotMetas);
   const allowed = allowedDateKeys instanceof Set
     ? allowedDateKeys
@@ -53,7 +58,8 @@ function buildSnapshotSpendSampleIndex(snapshotMetas, allowedDateKeys = null) {
     const campaignInsights = snapshot?.data?.meta_insights?.campaignInsights;
     if (!Array.isArray(campaignInsights) || campaignInsights.length === 0) continue;
 
-    const spendKrw = sumTodaySpendKrw(campaignInsights, dateKey);
+    const usdToKrwRate = resolveUsdToKrwRate(snapshot?.data?.normalized, fallbackUsdToKrwRate);
+    const spendKrw = sumTodaySpendKrw(campaignInsights, dateKey, usdToKrwRate);
     const sample = {
       scanId: String(meta.scanId),
       timestamp: meta.timestamp,
@@ -72,12 +78,12 @@ function buildSnapshotSpendSampleIndex(snapshotMetas, allowedDateKeys = null) {
   return grouped;
 }
 
-function getSnapshotSpendSamples(dateKey, snapshotSampleIndex = null) {
+function getSnapshotSpendSamples(dateKey, snapshotSampleIndex = null, usdToKrwRate = config.currency.usdToKrw) {
   if (snapshotSampleIndex instanceof Map) {
     return (snapshotSampleIndex.get(String(dateKey)) || []).slice();
   }
 
-  return buildSnapshotSpendSampleIndex(scheduler.getSnapshotsList(), [dateKey]).get(String(dateKey)) || [];
+  return buildSnapshotSpendSampleIndex(scheduler.getSnapshotsList(), [dateKey], usdToKrwRate).get(String(dateKey)) || [];
 }
 
 function getLivePerformanceWindow(query = {}) {
@@ -85,8 +91,8 @@ function getLivePerformanceWindow(query = {}) {
   return LIVE_PERFORMANCE_WINDOWS[key] || LIVE_PERFORMANCE_WINDOWS['7d'];
 }
 
-function getLiveSpendFallback(latestData, dateKey) {
-  const spendKrw = sumTodaySpendKrw(latestData?.campaignInsights, dateKey);
+function getLiveSpendFallback(latestData, dateKey, usdToKrwRate = config.currency.usdToKrw) {
+  const spendKrw = sumTodaySpendKrw(latestData?.campaignInsights, dateKey, usdToKrwRate);
   if (spendKrw <= 0) return null;
 
   return {
@@ -243,7 +249,7 @@ function buildBenchmarkDateKeys({ window, currentDateKey, orderSnapshots, snapsh
   return Array.from(dateKeys).sort((left, right) => left.localeCompare(right));
 }
 
-function buildIntradayBenchmark({ latestData, currentDateKey, currentHour, window, snapshotMetas = [], snapshotSampleIndex = null }) {
+function buildIntradayBenchmark({ latestData, currentDateKey, currentHour, window, snapshotMetas = [], snapshotSampleIndex = null, usdToKrwRate = config.currency.usdToKrw }) {
   const dateKeys = buildBenchmarkDateKeys({
     window,
     currentDateKey,
@@ -257,7 +263,7 @@ function buildIntradayBenchmark({ latestData, currentDateKey, currentHour, windo
   let sampleCount = 0;
 
   for (const dateKey of dateKeys) {
-    const spendSamples = getSnapshotSpendSamples(dateKey, snapshotSampleIndex);
+    const spendSamples = getSnapshotSpendSamples(dateKey, snapshotSampleIndex, usdToKrwRate);
     if (spendSamples.length === 0) continue;
 
     const spendSeries = buildHourlySpendSeries(spendSamples, null, currentHour);
@@ -410,6 +416,7 @@ function buildLivePerformanceResponse(query = {}) {
   const now = new Date();
   const currentHour = getHourInTimeZone(now, KST_TIME_ZONE);
   const snapshotMetas = asArray(scheduler.getSnapshotsList()).slice().reverse();
+  const usdToKrwRate = resolveUsdToKrwRate(latestData);
 
   const benchmarkDateKeys = buildBenchmarkDateKeys({
     window,
@@ -418,10 +425,10 @@ function buildLivePerformanceResponse(query = {}) {
     snapshotMetas,
   });
   const targetSnapshotDates = new Set([dateKey, ...benchmarkDateKeys]);
-  const snapshotSampleIndex = buildSnapshotSpendSampleIndex(snapshotMetas, targetSnapshotDates);
+  const snapshotSampleIndex = buildSnapshotSpendSampleIndex(snapshotMetas, targetSnapshotDates, usdToKrwRate);
 
-  const spendSamples = getSnapshotSpendSamples(dateKey, snapshotSampleIndex);
-  const fallbackSample = getLiveSpendFallback(latestData, dateKey);
+  const spendSamples = getSnapshotSpendSamples(dateKey, snapshotSampleIndex, usdToKrwRate);
+  const fallbackSample = getLiveSpendFallback(latestData, dateKey, usdToKrwRate);
   const spendSeries = buildHourlySpendSeries(spendSamples, fallbackSample, currentHour);
 
   const economics = buildHourlyEconomics(latestData?.economicsLedger?.orderSnapshots, latestData, dateKey);
@@ -432,13 +439,14 @@ function buildLivePerformanceResponse(query = {}) {
     window,
     snapshotMetas,
     snapshotSampleIndex,
+    usdToKrwRate,
   });
 
   const totalDailyBudgetUsd = activeCampaigns.reduce((sum, campaign) => {
     const dailyBudgetCents = asNumber(campaign?.dailyBudget ?? campaign?.daily_budget);
     return sum + (dailyBudgetCents > 0 ? dailyBudgetCents / 100 : 0);
   }, 0);
-  const totalDailyBudgetKrw = roundMoney(convertUsdToKrw(totalDailyBudgetUsd));
+  const totalDailyBudgetKrw = roundMoney(convertUsdToKrw(totalDailyBudgetUsd, usdToKrwRate));
 
   const { points, orderCount } = buildIntradayPoints({ economics, spendSeries, currentHour });
 

@@ -130,13 +130,14 @@ function buildEconomicsThresholds({
   allocatedShipping,
   allocatedFees,
   metaPurchases,
+  usdToKrwRate = config.currency.usdToKrw,
 }) {
   const totalVariableCosts = allocatedCogs + allocatedShipping + allocatedFees;
   const contributionBeforeAdSpend = estimatedRevenue - totalVariableCosts;
   const estimatedAov = metaPurchases > 0 ? estimatedRevenue / metaPurchases : 0;
   const variableCostPerPurchase = metaPurchases > 0 ? totalVariableCosts / metaPurchases : 0;
   const breakEvenCpaKrw = metaPurchases > 0 ? contributionBeforeAdSpend / metaPurchases : 0;
-  const breakEvenCpa = breakEvenCpaKrw > 0 ? breakEvenCpaKrw / config.currency.usdToKrw : 0;
+  const breakEvenCpa = breakEvenCpaKrw > 0 ? breakEvenCpaKrw / usdToKrwRate : 0;
   const targetCpa = breakEvenCpa > 0 ? breakEvenCpa * 0.8 : 0;
 
   return {
@@ -254,6 +255,7 @@ function buildCampaignEconomics(campaigns, campaignInsights, revenueData, cogsDa
     includeCurrentDay = false,
     minCoverageRatio = HIGH_CONFIDENCE_COVERAGE_RATIO,
     paymentFeeRate = config.fees.paymentFeeRate,
+    usdToKrwRate = config.currency.usdToKrw,
   } = options;
 
   const { windowStart, windowEnd } = resolveWindowBounds(days, referenceDate, { includeCurrentDay });
@@ -283,8 +285,9 @@ function buildCampaignEconomics(campaigns, campaignInsights, revenueData, cogsDa
   const recentInsights = filterAllRecentInsights(campaignInsights, days, referenceDate, { includeCurrentDay });
   const revenueByDay = filterDateDict(revenueData?.dailyRevenue, windowStart, windowEnd);
   const dailyCogs = filterDateDict(cogsData?.dailyCOGS, windowStart, windowEnd);
-  const dailyMerged = transforms.buildDailyMerged(revenueByDay, recentInsights, dailyCogs);
-  const profitWaterfall = transforms.buildProfitWaterfall(dailyMerged, dailyCogs, paymentFeeRate);
+  const transformOptions = { usdToKrwRate };
+  const dailyMerged = transforms.buildDailyMerged(revenueByDay, recentInsights, dailyCogs, transformOptions);
+  const profitWaterfall = transforms.buildProfitWaterfall(dailyMerged, dailyCogs, paymentFeeRate, transformOptions);
   const mergedByDate = new Map(dailyMerged.map(row => [String(row.date), row]));
   const profitByDate = new Map(profitWaterfall.map(row => [String(row.date), row]));
   const campaignLookup = buildCampaignLookup(campaigns);
@@ -335,11 +338,12 @@ function buildCampaignEconomics(campaigns, campaignInsights, revenueData, cogsDa
 
   const campaignEconomics = Array.from(campaignStates.values())
     .map(state => {
-      const spendKrw = Math.round(convertUsdToKrw(state.spend));
+      const spendKrw = Math.round(convertUsdToKrw(state.spend, usdToKrwRate));
       const estimatedTrueNetProfit = Math.round(calcGrossProfit(
         state.estimatedRevenue,
         state.allocatedCogs + state.allocatedShipping + state.allocatedFees,
-        state.spend
+        state.spend,
+        usdToKrwRate
       ));
       const estimatedMargin = state.estimatedRevenue > 0
         ? estimatedTrueNetProfit / state.estimatedRevenue
@@ -357,6 +361,7 @@ function buildCampaignEconomics(campaigns, campaignInsights, revenueData, cogsDa
         allocatedShipping: state.allocatedShipping,
         allocatedFees: state.allocatedFees,
         metaPurchases: state.metaPurchases,
+        usdToKrwRate,
       });
       const confidenceReasons = buildConfidenceReasons({
         hasFreshRevenue,

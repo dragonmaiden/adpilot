@@ -48,6 +48,7 @@ test('buildLivePerformanceResponse returns intraday chart, spend snapshots, and 
 
   const latestData = {
     timestamp: kstIso(dateKey, secondHour, 20),
+    fx: { usdToKrwRate: 1500 },
     campaigns: [{ id: 'c1', name: 'Main', status: 'ACTIVE', dailyBudget: 10000 }],
     campaignInsights: [
       { campaign_id: 'c1', date_start: dateKey, spend: 20 },
@@ -124,6 +125,8 @@ test('buildLivePerformanceResponse returns intraday chart, spend snapshots, and 
     assert.equal(response.intraday.date, dateKey);
     assert.equal(response.intraday.chart.snapshotCount, 2);
     assert.equal(response.intraday.chart.usingSnapshotSpend, true);
+    assert.equal(response.intraday.summary.spendSoFarKrw, 30000);
+    assert.equal(response.intraday.summary.totalDailyBudgetKrw, 150000);
     assert.equal(response.intraday.summary.ordersSoFar, 2);
     assert.equal(response.intraday.confidence.level, 'medium');
     assert.ok(response.intraday.summary.spendSoFarKrw > 0);
@@ -141,6 +144,7 @@ test('buildLivePerformanceResponse falls back to current spend when no intraday 
 
   const latestData = {
     timestamp: kstIso(dateKey, currentHour, 30),
+    fx: { usdToKrwRate: 1500 },
     campaigns: [{ id: 'c1', name: 'Main', status: 'ACTIVE', dailyBudget: 10000 }],
     campaignInsights: [
       { campaign_id: 'c1', date_start: dateKey, spend: 12 },
@@ -163,7 +167,7 @@ test('buildLivePerformanceResponse falls back to current spend when no intraday 
 
     assert.equal(response.intraday.chart.snapshotCount, 0);
     assert.equal(response.intraday.chart.usingSnapshotSpend, false);
-    assert.ok(response.intraday.summary.spendSoFarKrw > 0);
+    assert.equal(response.intraday.summary.spendSoFarKrw, 18000);
     assert.equal(response.intraday.summary.ordersSoFar, 0);
     assert.equal(response.intraday.confidence.level, 'neutral');
   });

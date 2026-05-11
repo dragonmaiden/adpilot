@@ -99,3 +99,33 @@ test('buildCampaignEconomics downgrades estimates when revenue freshness is unav
   assert.equal(context.campaigns[0].confidence, 'low');
   assert.equal(context.campaigns[0].hasReliableEstimate, false);
 });
+
+test('buildCampaignEconomics uses the scan FX rate for spend-derived profit and CPA thresholds', () => {
+  const context = buildCampaignEconomics(
+    [{ id: 'c1', name: 'Scale Winner', status: 'ACTIVE' }],
+    [{ campaign_id: 'c1', date_start: '2026-03-11', spend: '60', actions: createActions(3) }],
+    {
+      dailyRevenue: {
+        '2026-03-11': { revenue: 1000000, refunded: 0, orders: 10 },
+      },
+    },
+    {
+      dailyCOGS: {
+        '2026-03-11': { cost: 300000, shipping: 50000, costCoverageRatio: 1 },
+      },
+    },
+    { status: 'connected', stale: false },
+    {
+      days: 7,
+      referenceDate: '2026-03-12',
+      includeCurrentDay: false,
+      usdToKrwRate: 1500,
+    }
+  );
+
+  const winner = context.campaigns[0];
+
+  assert.equal(winner.spendKrw, 90000);
+  assert.equal(winner.estimatedTrueNetProfit, 87000);
+  assert.equal(winner.breakEvenCpa, 39.33);
+});
