@@ -162,6 +162,15 @@ test('calendar sankey keeps D3 as the geometry owner', () => {
   assert.doesNotMatch(sankeyFlowBlock, /stroke-linejoin/);
 });
 
+test('calendar sankey keeps Meta ad spend visible as an explicit cost flow', () => {
+  assert.match(calendarJs, /summary\.adSpendKRW \+= toFiniteNumber\(day\.adSpendKRW\)/);
+  assert.match(calendarJs, /const adSpendUsdLabel = formatUsd\(summary\.adSpend \|\| 0,\s*2\);/);
+  assert.match(calendarJs, /`\$\{adSpendUsdLabel\} \/ \$\{adSpendNetShare\} of net rev`/);
+  assert.match(calendarJs, /label: tr\('Ad Spend', '광고비'\)/);
+  assert.match(calendarJs, /displayValue: expenseValue\(summary\.adSpendKRW\), sub: adSpendSub/);
+  assert.match(calendarJs, /addLink\('costs', 'adSpend', adV, 'negative', 3\)/);
+});
+
 test('calendar selection keeps the sankey as the metric owner before the detailed tables', () => {
   assert.doesNotMatch(calendarJs, /calendar-summary-grid-secondary|summaryCards|renderCalendarSummaryCard/);
   assert.doesNotMatch(css, /\.calendar-summary-grid/);

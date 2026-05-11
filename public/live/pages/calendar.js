@@ -591,13 +591,14 @@
       ? tr(`${formatKrw(shippingPerOrder)} per order`, `주문당 ${formatKrw(shippingPerOrder)}`)
       : tr('Operational shipping', '운영 배송');
 
-    const adSpendUsdTitle = `${formatUsd(summary.adSpend || 0, 2)} media spend`;
+    const adSpendUsdLabel = formatUsd(summary.adSpend || 0, 2);
+    const adSpendUsdTitle = `${adSpendUsdLabel} media spend`;
     const adSpendNetShare = summary.netRevenue > 0
       ? formatPercent((summary.adSpendKRW / summary.netRevenue) * 100)
       : '—';
     const adSpendSub = summary.netRevenue > 0
-      ? tr(`${adSpendNetShare} of net rev`, `순매출의 ${adSpendNetShare}`)
-      : tr(`${formatUsd(summary.adSpend || 0, 2)} media spend`, `광고비 ${formatUsd(summary.adSpend || 0, 2)}`);
+      ? tr(`${adSpendUsdLabel} / ${adSpendNetShare} of net rev`, `${adSpendUsdLabel} / 순매출의 ${adSpendNetShare}`)
+      : tr(`${adSpendUsdLabel} media spend`, `광고비 ${adSpendUsdLabel}`);
 
     const profitMarginLabel = formatCalendarPercentMetric(summary.margin);
     const resultSub = isProfitPositive
