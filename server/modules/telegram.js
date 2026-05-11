@@ -6,7 +6,10 @@
 const config = require('../config');
 const telegramState = require('./telegramState');
 const { buildScanSummaryPlan } = require('../services/telegramDigestService');
-const { buildDailySummaryReportPlan } = require('../services/dailyTelegramReportService');
+const {
+  buildDailyReportCorrectionPlan,
+  buildDailySummaryReportPlan,
+} = require('../services/dailyTelegramReportService');
 const financialLedgerRepository = require('../db/financialLedgerRepository');
 
 const BOT_TOKEN = typeof config.telegram.botToken === 'string'
@@ -337,6 +340,101 @@ async function recordDailyReportDelivery(plan, patch = {}) {
   }
 }
 
+function getTelegramMessageId(metadata = {}) {
+  const parsed = Number(metadata.telegramMessageId);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function buildCorrectionMetadata(report, delivery, result) {
+  const existing = report?.metadata && typeof report.metadata === 'object'
+    ? report.metadata
+    : {};
+  const previousTelegramMessageId = getTelegramMessageId(existing);
+  const telegramMessageId = delivery === 'new_message'
+    ? result?.result?.message_id || previousTelegramMessageId
+    : previousTelegramMessageId;
+
+  return {
+    ...existing,
+    telegramMessageId: telegramMessageId || null,
+    originalTelegramMessageId: existing.originalTelegramMessageId || previousTelegramMessageId || null,
+    correctionDelivery: delivery,
+    correctedAt: nowIso(),
+    correctionReason: 'cogs-complete',
+  };
+}
+
+async function refreshPendingDailyReports(latestData = null, options = {}) {
+  const pending = await financialLedgerRepository.listPendingCogsDailyReportDeliveries({
+    limit: options.limit,
+  });
+  if (pending?.skipped) {
+    return { skipped: true, reason: pending.reason, corrected: 0, failed: 0, waiting: 0, reports: [] };
+  }
+
+  const reports = [];
+  let corrected = 0;
+  let failed = 0;
+  let waiting = 0;
+
+  for (const report of pending.reports || []) {
+    const plan = buildDailyReportCorrectionPlan(latestData || {}, report.reportDate);
+    if (!plan.shouldCorrect || !plan.text) {
+      waiting += 1;
+      reports.push({
+        reportDate: report.reportDate,
+        status: 'waiting',
+        reason: plan.reason,
+      });
+      continue;
+    }
+
+    const messageId = getTelegramMessageId(report.metadata);
+    let delivery = 'edited_message';
+    let result = messageId ? await editMessageText(messageId, plan.text) : null;
+
+    if (!result?.ok) {
+      if (options.sendFallbackOnEditFailure === false) {
+        failed += 1;
+        reports.push({
+          reportDate: report.reportDate,
+          status: 'failed',
+          reason: result?.description || 'telegram-edit-failed',
+        });
+        continue;
+      }
+      delivery = 'new_message';
+      result = await sendMessage(plan.text);
+    }
+
+    if (result?.ok) {
+      corrected += 1;
+      await financialLedgerRepository.recordTelegramReportDelivery({
+        reportDate: report.reportDate,
+        status: 'corrected',
+        payload: plan.text,
+        sentAt: report.sentAt || null,
+        error: null,
+        metadata: buildCorrectionMetadata(report, delivery, result),
+      });
+      reports.push({
+        reportDate: report.reportDate,
+        status: 'corrected',
+        delivery,
+      });
+    } else {
+      failed += 1;
+      reports.push({
+        reportDate: report.reportDate,
+        status: 'failed',
+        reason: result?.description || 'telegram-send-failed',
+      });
+    }
+  }
+
+  return { corrected, failed, waiting, reports };
+}
+
 // ── Send daily financial summary report ──
 async function sendDailySummaryReport(latestData = null, options = {}) {
   const plan = buildDailySummaryReportPlan(
@@ -410,6 +508,7 @@ module.exports = {
   editMessageText,
   sendScanSummary,
   sendDailySummaryReport,
+  refreshPendingDailyReports,
   getStatus,
   getPrivateDeliveryError,
   probeConnection,

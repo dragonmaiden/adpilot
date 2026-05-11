@@ -252,6 +252,52 @@ async function recordTelegramReportDelivery({
   );
 }
 
+function normalizeTelegramReportLimit(value) {
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit <= 0) return 30;
+  return Math.min(Math.floor(limit), 120);
+}
+
+function normalizeTelegramReportRow(row = {}) {
+  return {
+    reportDate: row.report_date || row.reportDate || null,
+    status: row.status || null,
+    payload: row.payload || null,
+    sentAt: row.sent_at || row.sentAt || null,
+    error: row.error || null,
+    metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
+    updatedAt: row.updated_at || row.updatedAt || null,
+  };
+}
+
+async function listPendingCogsDailyReportDeliveries(options = {}) {
+  if (!postgres.isConfigured()) {
+    return { skipped: true, reason: 'database-url-missing' };
+  }
+
+  const result = await postgres.query(
+    `select
+      report_date::text as report_date,
+      status,
+      payload,
+      sent_at,
+      error,
+      metadata,
+      updated_at
+    from telegram_report_deliveries
+    where status = 'sent'
+      and payload like '%N/A (COGS pending)%'
+    order by report_date asc
+    limit $1`,
+    [normalizeTelegramReportLimit(options.limit)]
+  );
+
+  return {
+    ok: true,
+    reports: result.rows.map(normalizeTelegramReportRow),
+  };
+}
+
 function normalizeAuditLimit(value) {
   const limit = Number(value);
   if (!Number.isFinite(limit) || limit <= 0) return 500;
@@ -317,6 +363,7 @@ module.exports = {
   buildCogsSnapshots,
   buildMetaSnapshots,
   buildRevenueSnapshots,
+  listPendingCogsDailyReportDeliveries,
   listRecentImwebOrdersForNotificationAudit,
   persistScanLedger,
   recordTelegramReportDelivery,

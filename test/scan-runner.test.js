@@ -56,3 +56,10 @@ test('scan runner sends paid fallback notifications for duplicate paid orders wi
   );
   assert.doesNotMatch(source, /duplicate\?\.alreadyNotified/);
 });
+
+test('scan runner refreshes COGS-pending daily Telegram reports after source updates', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'server/modules/scanRunner.js'), 'utf8');
+
+  assert.match(source, /telegram\.refreshPendingDailyReports\(scanStore\.getLatestData\(\)\)/);
+  assert.match(source, /step: 'daily_report_corrections'/);
+});

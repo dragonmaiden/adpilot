@@ -16,7 +16,17 @@ function clearModule(modulePath) {
   }
 }
 
-async function withTelegramModule(env, fetchImpl, run) {
+function installMockModule(modulePath, exports) {
+  const resolved = require.resolve(modulePath);
+  require.cache[resolved] = {
+    id: resolved,
+    filename: resolved,
+    loaded: true,
+    exports,
+  };
+}
+
+async function withTelegramModule(env, fetchImpl, run, overrides = {}) {
   const originalEnv = {};
   for (const key of ENV_KEYS) {
     originalEnv[key] = process.env[key];
@@ -32,6 +42,10 @@ async function withTelegramModule(env, fetchImpl, run) {
   clearModule('../server/config');
   clearModule('../server/modules/telegram');
   clearModule('../server/modules/telegramState');
+  clearModule('../server/db/financialLedgerRepository');
+  if (overrides.financialLedgerRepository) {
+    installMockModule('../server/db/financialLedgerRepository', overrides.financialLedgerRepository);
+  }
 
   try {
     const telegram = require('../server/modules/telegram');
@@ -47,6 +61,7 @@ async function withTelegramModule(env, fetchImpl, run) {
     }
     clearModule('../server/modules/telegram');
     clearModule('../server/modules/telegramState');
+    clearModule('../server/db/financialLedgerRepository');
     clearModule('../server/config');
   }
 }
@@ -109,4 +124,60 @@ test('sendPrivateMessage uses the configured private chat boundary', async () =>
     assert.equal(requests[0].chat_id, '-100999888777');
     assert.equal(requests[0].protect_content, true);
   });
+});
+
+test('refreshPendingDailyReports edits stale COGS-pending reports once profit is available', async () => {
+  const requests = [];
+  const records = [];
+  const financialLedgerRepository = {
+    listPendingCogsDailyReportDeliveries: async () => ({
+      ok: true,
+      reports: [{
+        reportDate: '2026-04-30',
+        status: 'sent',
+        payload: '📈 <b>Total Profits:</b> N/A (COGS pending)',
+        sentAt: '2026-04-30T14:30:00.000Z',
+        metadata: { telegramMessageId: 77 },
+      }],
+    }),
+    recordTelegramReportDelivery: async payload => {
+      records.push(payload);
+      return { ok: true };
+    },
+  };
+
+  await withTelegramModule(validEnv(), async (url, options = {}) => {
+    requests.push({ url, body: JSON.parse(options.body) });
+    return { ok: true, json: async () => ({ ok: true, result: { message_id: 77 } }) };
+  }, async telegram => {
+    const latestData = {
+      fx: { usdToKrwRate: 1500 },
+      revenueData: {
+        dailyRevenue: {
+          '2026-04-30': { revenue: 13360120, refunded: 1729520, orders: 50 },
+        },
+      },
+      campaignInsights: [],
+      cogsData: {
+        dailyCOGS: {
+          '2026-04-30': { cost: 8000000, shipping: 100000, purchases: 6, costCoverageRatio: 1 },
+        },
+      },
+    };
+
+    const result = await telegram.refreshPendingDailyReports(latestData);
+
+    assert.equal(result.corrected, 1);
+    assert.equal(result.failed, 0);
+    assert.equal(requests.length, 1);
+    assert.match(requests[0].url, /editMessageText$/);
+    assert.equal(requests[0].body.message_id, 77);
+    assert.match(requests[0].body.text, /📈 <b>Total Profits:<\/b> ₩2,832,764/);
+    assert.doesNotMatch(requests[0].body.text, /N\/A \(COGS pending\)/);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].status, 'corrected');
+    assert.equal(records[0].sentAt, '2026-04-30T14:30:00.000Z');
+    assert.equal(records[0].metadata.correctionDelivery, 'edited_message');
+    assert.equal(records[0].metadata.telegramMessageId, 77);
+  }, { financialLedgerRepository });
 });

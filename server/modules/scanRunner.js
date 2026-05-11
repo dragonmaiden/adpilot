@@ -1,6 +1,7 @@
 const config = require('../config');
 const meta = require('./metaClient');
 const imweb = require('./imwebClient');
+const telegram = require('./telegram');
 const scanStore = require('./scanStore');
 const snapshotRepository = require('./snapshotRepository');
 const { validateMetaCampaigns, validateMetaInsights, validateImwebOrders, logValidation } = require('../validation/vendorSchemas');
@@ -799,6 +800,40 @@ async function runScan(manual = false) {
       console.warn('[SCHEDULER]   ⚠ Source audit failed:', err.message);
       pushError(scanResult, 'source_audit', err);
       pushStep(scanResult, { step: 'source_audit', status: 'failed' });
+    }
+
+    console.log('[SCHEDULER] Step 3g: Refreshing COGS-pending daily Telegram reports...');
+    try {
+      const reportCorrections = await telegram.refreshPendingDailyReports(scanStore.getLatestData());
+      const correctionStatus = reportCorrections?.skipped
+        ? 'skipped'
+        : reportCorrections.failed > 0
+        ? 'failed'
+        : 'ok';
+      pushStep(scanResult, {
+        step: 'daily_report_corrections',
+        status: correctionStatus,
+        correctedReports: reportCorrections.corrected || 0,
+        waitingReports: reportCorrections.waiting || 0,
+        failedReports: reportCorrections.failed || 0,
+        reason: reportCorrections.reason || null,
+      });
+
+      if (reportCorrections?.corrected > 0) {
+        console.log(`[SCHEDULER]   → corrected ${reportCorrections.corrected} daily Telegram report${reportCorrections.corrected === 1 ? '' : 's'}`);
+      } else if (reportCorrections?.skipped) {
+        console.log(`[SCHEDULER]   → skipped (${reportCorrections.reason})`);
+      } else {
+        console.log(`[SCHEDULER]   → no completed COGS-pending reports to correct (${reportCorrections?.waiting || 0} still pending)`);
+      }
+
+      if (reportCorrections?.failed > 0) {
+        pushError(scanResult, 'daily_report_corrections', new Error(`${reportCorrections.failed} daily report correction${reportCorrections.failed === 1 ? '' : 's'} failed`));
+      }
+    } catch (err) {
+      console.warn('[SCHEDULER]   ⚠ Daily Telegram report correction failed:', err.message);
+      pushError(scanResult, 'daily_report_corrections', err);
+      pushStep(scanResult, { step: 'daily_report_corrections', status: 'failed' });
     }
 
     scanResult.stats = buildScanStats(scanStore.getLatestData(), until);

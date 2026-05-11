@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  buildDailyReportCorrectionPlan,
   buildDailySummaryReportPlan,
   formatReportDate,
   getNextDailyReportAt,
@@ -155,6 +156,30 @@ test('daily report does not fake profit when COGS are pending for a sales day', 
   assert.match(plan.text, /📈 <b>Total Profits:<\/b> N\/A \(COGS pending\)/);
   assert.match(plan.text, /📐 <b>Net Profit Margin:<\/b> N\/A/);
   assert.match(plan.text, /⏳ <b>Watch:<\/b> profit is pending final COGS coverage/);
+});
+
+test('daily report correction waits for complete COGS before replacing a pending report', () => {
+  const pending = buildDailyReportCorrectionPlan(
+    buildLatestData({
+      cogsData: {
+        dailyCOGS: {
+          '2026-04-30': { cost: 4000000, shipping: 50000, purchases: 6, costCoverageRatio: 0.5 },
+        },
+      },
+    }),
+    '2026-04-30'
+  );
+
+  assert.equal(pending.shouldCorrect, false);
+  assert.equal(pending.reason, 'profit-still-pending-cogs');
+
+  const corrected = buildDailyReportCorrectionPlan(buildLatestData(), '2026-04-30');
+
+  assert.equal(corrected.shouldCorrect, true);
+  assert.equal(corrected.reason, 'cogs-complete');
+  assert.equal(corrected.totals.profitAvailable, true);
+  assert.match(corrected.text, /📈 <b>Total Profits:<\/b> ₩2,832,764/);
+  assert.doesNotMatch(corrected.text, /N\/A \(COGS pending\)/);
 });
 
 test('daily report gives warm encouragement on no-sales days without changing totals', () => {

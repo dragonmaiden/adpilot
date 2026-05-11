@@ -553,8 +553,47 @@ function buildDailySummaryReportPlan(latestData, state, now = new Date()) {
   };
 }
 
+function buildDailyReportCorrectionPlan(latestData, reportDate) {
+  if (!parseDateKey(reportDate)) {
+    return { shouldCorrect: false, reason: 'invalid-report-date', reportDate: null, text: null };
+  }
+
+  const diagnostics = buildRevenueCoverageDiagnostics(latestData, reportDate);
+  if (diagnostics.unavailable) {
+    return {
+      shouldCorrect: false,
+      reason: getUnavailableReason(diagnostics),
+      reportDate,
+      text: null,
+      diagnostics,
+    };
+  }
+
+  const totals = buildDailyReportTotals(latestData, reportDate);
+  if (!totals.profitAvailable) {
+    return {
+      shouldCorrect: false,
+      reason: 'profit-still-pending-cogs',
+      reportDate,
+      text: null,
+      totals,
+      diagnostics,
+    };
+  }
+
+  return {
+    shouldCorrect: true,
+    reason: 'cogs-complete',
+    reportDate,
+    text: buildDailyReportMessage(totals, latestData),
+    totals,
+    diagnostics,
+  };
+}
+
 module.exports = {
   buildCampaignWatchInsights,
+  buildDailyReportCorrectionPlan,
   buildDailyCampaignSummaries,
   buildDailySummaryReportPlan,
   buildDailyReportInsights,
