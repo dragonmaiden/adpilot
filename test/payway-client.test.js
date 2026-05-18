@@ -123,3 +123,61 @@ test('login fails loud when Payway returns a non-JSON dashboard response', async
     global.fetch = originalFetch;
   }
 });
+
+test('getStatus reports Payway readiness without exposing secrets', async () => {
+  await withMockedPaywayClient({
+    payway: {
+      enabled: true,
+      mid: 'TMN009889',
+      dashboardId: 'merchant',
+      dashboardPassword: 'secret',
+      historyPath: '/pay',
+      watchMinutes: 10,
+      pollIntervalSeconds: 30,
+      matchLeadMinutes: 2,
+    },
+  }, async client => {
+    assert.deepEqual(client.getStatus(), {
+      status: 'ready',
+      enabled: true,
+      configured: true,
+      reason: null,
+      midConfigured: true,
+      dashboardCredentialsConfigured: true,
+      sessionCookieConfigured: false,
+      historyPath: '/pay',
+      watchMinutes: 10,
+      pollIntervalSeconds: 30,
+      matchLeadMinutes: 2,
+    });
+  });
+});
+
+test('getStatus explains disabled and unconfigured Payway states', async () => {
+  await withMockedPaywayClient({
+    payway: {
+      enabled: false,
+      mid: '',
+      historyPath: '/pay',
+    },
+  }, async client => {
+    const status = client.getStatus();
+    assert.equal(status.status, 'disabled');
+    assert.equal(status.reason, 'payway_disabled');
+    assert.equal(status.configured, false);
+  });
+
+  await withMockedPaywayClient({
+    payway: {
+      enabled: true,
+      mid: 'TMN009889',
+      historyPath: '/pay',
+    },
+  }, async client => {
+    const status = client.getStatus();
+    assert.equal(status.status, 'not_configured');
+    assert.equal(status.reason, 'payway_not_configured');
+    assert.equal(status.midConfigured, true);
+    assert.equal(status.configured, false);
+  });
+});

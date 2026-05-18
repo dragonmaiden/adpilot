@@ -296,7 +296,7 @@ function postmortem({ active, inactive, noData, lessonsSummary, totals, windowKe
 /**
  * Build /api/settings response.
  */
-function settings({ rules, scheduler, meta, imweb, telegram, sources, sourceAudit, currency, cogs }) {
+function settings({ rules, scheduler, meta, imweb, telegram, payway, sources, sourceAudit, currency, cogs }) {
   return {
     apiVersion: API_VERSION,
     rules: rules ?? {},
@@ -305,6 +305,7 @@ function settings({ rules, scheduler, meta, imweb, telegram, sources, sourceAudi
     imweb: imweb ?? {},
     cogs: cogs ?? {},
     telegram: telegram ?? {},
+    payway: payway ?? {},
     sources: sources ?? {},
     sourceAudit: sourceAudit ?? null,
     currency: currency ?? {},

@@ -80,6 +80,38 @@ function isConfigured() {
   return Boolean(isEnabled() && (getConfiguredCookieHeader() || hasDashboardCredentials()));
 }
 
+function getStatus() {
+  const payway = getPaywayConfig();
+  const enabled = isEnabled();
+  const dashboardCredentialsConfigured = hasDashboardCredentials();
+  const sessionCookieConfigured = Boolean(getConfiguredCookieHeader());
+  const configured = Boolean(enabled && (sessionCookieConfigured || dashboardCredentialsConfigured));
+  let status = 'ready';
+  let reason = null;
+
+  if (!enabled) {
+    status = 'disabled';
+    reason = 'payway_disabled';
+  } else if (!configured) {
+    status = 'not_configured';
+    reason = 'payway_not_configured';
+  }
+
+  return {
+    status,
+    enabled,
+    configured,
+    reason,
+    midConfigured: Boolean(asString(payway.mid)),
+    dashboardCredentialsConfigured,
+    sessionCookieConfigured,
+    historyPath: asString(payway.historyPath) || '/pay',
+    watchMinutes: getPositiveInteger(payway.watchMinutes, 10),
+    pollIntervalSeconds: getPositiveInteger(payway.pollIntervalSeconds, 30),
+    matchLeadMinutes: getPositiveInteger(payway.matchLeadMinutes, 2),
+  };
+}
+
 function parseJsonMaybe(text) {
   try {
     return JSON.parse(text);
@@ -290,6 +322,7 @@ async function fetchPaymentHistory() {
 module.exports = {
   isEnabled,
   isConfigured,
+  getStatus,
   login,
   fetchPaymentHistory,
   parsePaymentHistoryHtml,

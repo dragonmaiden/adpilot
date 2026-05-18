@@ -454,6 +454,7 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
     let paywayWatchesStarted = 0;
     let paywayWatchesSkipped = 0;
     let paywayWatchFailures = 0;
+    const paywayWatchSkipReasons = {};
 
     for (const pending of result.pending) {
       const delivery = await orderNotificationService.deliverNewOrderNotification(pending);
@@ -467,6 +468,8 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
             paywayWatchesStarted += 1;
           } else if (watch?.skipped) {
             paywayWatchesSkipped += 1;
+            const reason = watch.reason || 'unknown';
+            paywayWatchSkipReasons[reason] = (paywayWatchSkipReasons[reason] || 0) + 1;
           }
         } catch (err) {
           paywayWatchFailures += 1;
@@ -487,12 +490,17 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
       failedAlerts,
       paywayWatchesStarted,
       paywayWatchesSkipped,
+      paywayWatchSkipReasons,
       paywayWatchFailures,
     });
+    const paywaySkipSummary = Object.entries(paywayWatchSkipReasons)
+      .map(([reason, count]) => `${reason}:${count}`)
+      .join(', ');
     console.log(
       `[SCHEDULER]   → ${deliveredAlerts} backfilled alert${deliveredAlerts === 1 ? '' : 's'}, `
       + `${failedAlerts} failed `
       + `${paywayWatchesStarted > 0 ? `, ${paywayWatchesStarted} Payway watch${paywayWatchesStarted === 1 ? '' : 'es'} started ` : ''}`
+      + `${paywayWatchesSkipped > 0 ? `, ${paywayWatchesSkipped} Payway watch${paywayWatchesSkipped === 1 ? '' : 'es'} skipped${paywaySkipSummary ? ` (${paywaySkipSummary})` : ''} ` : ''}`
       + `(${result.eligibleOrders} candidate order${result.eligibleOrders === 1 ? '' : 's'} checked since ${result.windowStartAt || 'startup'})`
     );
 

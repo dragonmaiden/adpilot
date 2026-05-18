@@ -63,3 +63,11 @@ test('scan runner refreshes COGS-pending daily Telegram reports after source upd
   assert.match(source, /telegram\.refreshPendingDailyReports\(scanStore\.getLatestData\(\)\)/);
   assert.match(source, /step: 'daily_report_corrections'/);
 });
+
+test('scan runner records Payway watcher skip reasons on new-order backfill', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'server/modules/scanRunner.js'), 'utf8');
+
+  assert.match(source, /const paywayWatchSkipReasons = \{\}/);
+  assert.match(source, /paywayWatchSkipReasons\[reason\]/);
+  assert.match(source, /paywayWatchSkipReasons,/);
+});

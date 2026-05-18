@@ -13,6 +13,7 @@ const runtimeSettings = require('./runtime/runtimeSettings');
 const scheduler = require('./modules/scheduler');
 const imweb = require('./modules/imwebClient');
 const telegram = require('./modules/telegram');
+const paywayClient = require('./modules/paywayClient');
 const contracts = require('./contracts/v1');
 const transforms = require('./transforms/charts');
 const overviewService = require('./services/overviewService');
@@ -303,6 +304,7 @@ app.get('/api/health', (req, res) => {
     isScanning: scheduler.getIsScanning(),
     imwebAuth: imweb.getAuthState().status,
     telegram: telegram.getStatus(),
+    payway: paywayClient.getStatus(),
     sources: sourceHealth,
     sourceAudit: latestData.sourceAudit ? {
       status: latestData.sourceAudit.status,
@@ -478,6 +480,7 @@ app.get('/api/settings', (req, res) => {
       validation: cogsData?.validation ?? {},
     },
     telegram: telegram.getStatus(),
+    payway: paywayClient.getStatus(),
     sources: sourceHealth,
     sourceAudit: latestData.sourceAudit || null,
     currency: config.currency,

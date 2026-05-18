@@ -37,5 +37,27 @@ services:
         sync: false
       - key: TELEGRAM_REQUEST_TIMEOUT_MS
         value: "10000"
+      - key: PAYWAY_ENABLED
+        value: "true"
+      - key: PAYWAY_BASE_URL
+        value: https://payway.kr
+      - key: PAYWAY_MID
+        value: TMN009889
+      - key: PAYWAY_DASHBOARD_ID
+        sync: false
+      - key: PAYWAY_DASHBOARD_PASSWORD
+        sync: false
+      - key: PAYWAY_SESSION_COOKIE
+        sync: false
+      - key: PAYWAY_HISTORY_PATH
+        value: /pay
+      - key: PAYWAY_WATCH_MINUTES
+        value: "10"
+      - key: PAYWAY_POLL_INTERVAL_SECONDS
+        value: "30"
+      - key: PAYWAY_MATCH_LEAD_MINUTES
+        value: "2"
+      - key: PAYWAY_REQUEST_TIMEOUT_MS
+        value: "10000"
       - key: SCAN_INTERVAL_MINUTES
         value: "5"
