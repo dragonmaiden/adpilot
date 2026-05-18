@@ -1,7 +1,12 @@
 const config = require('../config');
+const { KST_TIME_ZONE, formatDateInTimeZone } = require('../domain/time');
 const { asString } = require('../services/privacyService');
 
 let cookieJar = new Map();
+
+const PAYMENT_HISTORY_QUERY = 'asp_usr_pay_lst';
+const PAYMENT_HISTORY_ROWS = '150';
+const PAYMENT_HISTORY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 function getPaywayConfig() {
   return config.payway || {};
@@ -248,6 +253,16 @@ function buildTransactionId(payment) {
   ].filter(Boolean).join(':');
 }
 
+function pickField(row, fieldNames) {
+  for (const fieldName of fieldNames) {
+    const value = row?.[fieldName];
+    if (value != null && asString(value)) {
+      return value;
+    }
+  }
+  return '';
+}
+
 function normalizePaymentRow(cells) {
   const payment = {
     no: asString(cells[0]),
@@ -274,6 +289,56 @@ function normalizePaymentRow(cells) {
   return payment;
 }
 
+function isCancelledJsonRow(row) {
+  const cancelFlag = asString(pickField(row, ['cancel_yn', 'cancelYn', 'can_yn', 'cancelled'])).toUpperCase();
+  const status = asString(pickField(row, ['pay_sta', 'status', 'pay_status', 'stat_nm']));
+  return cancelFlag === '1' || cancelFlag === 'Y' || status.includes('취소');
+}
+
+function normalizePaymentJsonRow(row) {
+  const transactionAt = asString(pickField(row, ['pay_dt', 'payDt', 'tr_dt', 'trDt', 'transactionAt']));
+  const cancelled = isCancelledJsonRow(row);
+  const amount = parseMoney(pickField(row, ['amt', 'pay_amt', 'payAmt', 'appr_amt', 'approvedAmount', 'transactionAmount']));
+  const explicitCancelAmount = parseMoney(pickField(row, ['c_amt', 'cancel_amt', 'cancelAmount']));
+  const cancelAmount = explicitCancelAmount || (cancelled ? amount : 0);
+  const approvedAmount = cancelled ? 0 : amount;
+  const payment = {
+    no: asString(pickField(row, ['no', 'NO', 'rownum'])),
+    transactionAt,
+    status: cancelled ? '취소' : '승인',
+    merchantName: asString(pickField(row, ['mc_nm', 'merchantName', 'store_nm'])),
+    terminal: asString(pickField(row, ['tmid', 'tid', 'terminal', 'mid'])),
+    acquirer: asString(pickField(row, ['card_nm', 'acquirer', 'issuer'])),
+    installment: asString(pickField(row, ['installment', 'halbu', 'quota'])),
+    maskedCardNumber: asString(pickField(row, ['cardno', 'card_no', 'maskedCardNumber'])),
+    approvalNo: asString(pickField(row, ['authno', 'auth_no', 'approvalNo', 'appr_no'])),
+    approvedAmount,
+    cancelAmount,
+    transactionAmount: cancelled ? 0 : amount,
+    feeAmount: parseMoney(pickField(row, ['fee', 'fee_amt', 'feeAmount'])),
+    settlementAmount: parseMoney(pickField(row, ['settle_amt', 'settlementAmount'])),
+    settlementDue: asString(pickField(row, ['settle_dt', 'settlementDue'])),
+    pg: asString(pickField(row, ['pg', 'pg_nm'])),
+    agent: asString(pickField(row, ['agent', 'agent_nm'])),
+  };
+  const parsedAt = parsePaywayTimestamp(payment.transactionAt);
+  payment.transactionAtIso = parsedAt ? parsedAt.toISOString() : null;
+  payment.transactionId = buildTransactionId(payment);
+  return payment;
+}
+
+function parsePaymentHistoryAjaxResponse(payload) {
+  const rows = Array.isArray(payload?.T2)
+    ? payload.T2
+    : Array.isArray(payload?.rows)
+      ? payload.rows
+      : [];
+
+  return rows
+    .map(normalizePaymentJsonRow)
+    .filter(payment => payment.transactionId);
+}
+
 function parsePaymentHistoryHtml(html) {
   const payments = [];
   const rowMatches = asString(html).matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi);
@@ -282,6 +347,7 @@ function parsePaymentHistoryHtml(html) {
     const cellMatches = Array.from(rowMatch[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi));
     const cells = cellMatches.map(match => cellToText(match[1]));
     if (cells.length < 12) continue;
+    if (cells[0] === 'NO' || cells[1] === '거래일자') continue;
     if (!cells.some(cell => cell === '승인' || cell.includes('승인'))) continue;
 
     const payment = normalizePaymentRow(cells);
@@ -299,24 +365,74 @@ function isApprovedPaywayPayment(payment) {
   return status === '승인' && amount > 0 && cancelAmount <= 0;
 }
 
-async function fetchPaymentHistory() {
-  await ensureSession();
+function getPaymentHistoryDateRange(nowInput = new Date()) {
+  const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
+  const end = Number.isNaN(now.getTime()) ? new Date() : now;
+  const start = new Date(end.getTime() - PAYMENT_HISTORY_LOOKBACK_MS);
+  return {
+    startDate: formatDateInTimeZone(start, KST_TIME_ZONE),
+    endDate: formatDateInTimeZone(end, KST_TIME_ZONE),
+  };
+}
+
+function buildPaymentHistoryRequestBody(options = {}) {
   const payway = getPaywayConfig();
-  const historyPath = asString(payway.historyPath) || '/pay';
-  let response = await requestPayway(historyPath);
+  const { startDate, endDate } = getPaymentHistoryDateRange(options.now);
+  return new URLSearchParams({
+    qry: PAYMENT_HISTORY_QUERY,
+    jData: JSON.stringify({
+      st: startDate,
+      ed: endDate,
+      pay_sta: 'ALL',
+      pg: 'ALL',
+      kf: asString(payway.mid) ? 'terminal' : '',
+      k: asString(payway.mid),
+      rows: PAYMENT_HISTORY_ROWS,
+    }),
+    rtnType: 'json3',
+  });
+}
 
-  if ((response.status === 401 || response.status === 403) && !getConfiguredCookieHeader()) {
-    clearSession();
-    await login();
-    response = await requestPayway(historyPath);
-  }
+async function fetchPaymentHistoryViaAjax(options = {}) {
+  const response = await requestPayway('/ajax.php', {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json, text/javascript, */*; q=0.01',
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: buildPaymentHistoryRequestBody(options),
+  });
+  const text = await response.text();
 
-  const html = await response.text();
   if (!response.ok) {
-    throw new Error(`Payway payment history request failed: HTTP ${response.status}`);
+    const error = new Error(`Payway payment history request failed: HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
 
-  return parsePaymentHistoryHtml(html);
+  const payload = parseJsonMaybe(text);
+  if (!payload || typeof payload !== 'object') {
+    const error = new Error('Payway payment history request returned a non-JSON response');
+    error.status = response.status;
+    throw error;
+  }
+
+  return parsePaymentHistoryAjaxResponse(payload);
+}
+
+async function fetchPaymentHistory(options = {}) {
+  await ensureSession();
+  try {
+    return await fetchPaymentHistoryViaAjax(options);
+  } catch (err) {
+    if ((err.status === 401 || err.status === 403) && !getConfiguredCookieHeader()) {
+      clearSession();
+      await login();
+      return fetchPaymentHistoryViaAjax(options);
+    }
+    throw err;
+  }
 }
 
 module.exports = {
@@ -326,6 +442,7 @@ module.exports = {
   login,
   fetchPaymentHistory,
   parsePaymentHistoryHtml,
+  parsePaymentHistoryAjaxResponse,
   isApprovedPaywayPayment,
   parseMoney,
   parsePaywayTimestamp,

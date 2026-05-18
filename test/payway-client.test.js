@@ -72,6 +72,62 @@ test('parsePaymentHistoryHtml extracts approved Payway card rows', () => {
   assert.equal(paywayClient.isApprovedPaywayPayment(payments[0]), true);
 });
 
+test('parsePaymentHistoryHtml ignores the static Payway table header', () => {
+  const html = `
+    <table>
+      <thead>
+        <tr>
+          <th>NO</th>
+          <th>거래일자</th>
+          <th>승인상태</th>
+          <th>가맹점명</th>
+          <th>단말기번호</th>
+          <th>카드사</th>
+          <th>할부</th>
+          <th>카드번호</th>
+          <th>승인번호</th>
+          <th>승인금액</th>
+          <th>취소금액</th>
+          <th>거래금액</th>
+        </tr>
+      </thead>
+    </table>
+  `;
+
+  assert.deepEqual(paywayClient.parsePaymentHistoryHtml(html), []);
+});
+
+test('parsePaymentHistoryAjaxResponse extracts Payway AJAX payment rows', () => {
+  const payments = paywayClient.parsePaymentHistoryAjaxResponse({
+    T1: [{ cnt: 1, amt: '254000.0000' }],
+    T2: [
+      {
+        no: 1,
+        pay_dt: '2026-05-19 06:25:20',
+        cancel_yn: '0',
+        mc_nm: 'SHUE',
+        tmid: 'TMN009889',
+        card_nm: '신한',
+        cardno: '1234********5678',
+        authno: '87654321',
+        amt: '254,000',
+        fee: '7,620',
+      },
+    ],
+    'T-CNT': 1,
+  });
+
+  assert.equal(payments.length, 1);
+  assert.equal(payments[0].status, '승인');
+  assert.equal(payments[0].terminal, 'TMN009889');
+  assert.equal(payments[0].approvalNo, '87654321');
+  assert.equal(payments[0].transactionAmount, 254000);
+  assert.equal(payments[0].cancelAmount, 0);
+  assert.equal(payments[0].feeAmount, 7620);
+  assert.equal(payments[0].transactionAtIso, '2026-05-18T21:25:20.000Z');
+  assert.equal(paywayClient.isApprovedPaywayPayment(payments[0]), true);
+});
+
 test('isApprovedPaywayPayment rejects cancelled approval rows', () => {
   const [payment] = paywayClient.parsePaymentHistoryHtml(`
     <table>
@@ -93,6 +149,83 @@ test('isApprovedPaywayPayment rejects cancelled approval rows', () => {
   `);
 
   assert.equal(paywayClient.isApprovedPaywayPayment(payment), false);
+});
+
+test('fetchPaymentHistory requests Payway AJAX rows for the KST payment window', async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, options });
+
+    if (calls.length === 1) {
+      assert.equal(url, 'https://payway.kr/ajax.php');
+      assert.equal(options.method, 'POST');
+      assert.equal(new URLSearchParams(options.body).get('cmd'), 'LOGIN');
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'set-cookie': 'PAYWAYSESSID=session-1; Path=/' }),
+        text: async () => JSON.stringify({ res: 'OK' }),
+      };
+    }
+
+    assert.equal(url, 'https://payway.kr/ajax.php');
+    assert.equal(options.method, 'POST');
+    assert.match(options.headers.Cookie, /PAYWAYSESSID=session-1/);
+    const params = new URLSearchParams(options.body);
+    assert.equal(params.get('qry'), 'asp_usr_pay_lst');
+    assert.equal(params.get('rtnType'), 'json3');
+    const jData = JSON.parse(params.get('jData'));
+    assert.deepEqual(jData, {
+      st: '2026-05-18',
+      ed: '2026-05-19',
+      pay_sta: 'ALL',
+      pg: 'ALL',
+      kf: 'terminal',
+      k: 'TMN009889',
+      rows: '150',
+    });
+
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => JSON.stringify({
+        T2: [
+          {
+            pay_dt: '2026-05-19 06:25:20',
+            cancel_yn: '0',
+            mc_nm: 'SHUE',
+            tmid: 'TMN009889',
+            authno: '87654321',
+            amt: '254000',
+          },
+        ],
+      }),
+    };
+  };
+
+  try {
+    await withMockedPaywayClient({
+      payway: {
+        enabled: true,
+        baseUrl: 'https://payway.kr',
+        mid: 'TMN009889',
+        dashboardId: 'merchant',
+        dashboardPassword: 'secret',
+        requestTimeoutMs: 1000,
+      },
+    }, async client => {
+      const payments = await client.fetchPaymentHistory({
+        now: new Date('2026-05-18T22:24:00.000Z'),
+      });
+
+      assert.equal(payments.length, 1);
+      assert.equal(payments[0].transactionAmount, 254000);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('login fails loud when Payway returns a non-JSON dashboard response', async () => {
