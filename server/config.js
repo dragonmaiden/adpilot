@@ -111,6 +111,21 @@ const config = {
     requestTimeoutMs: parseInt(process.env.TELEGRAM_REQUEST_TIMEOUT_MS || '10000', 10),
   },
 
+  // Payway dashboard polling fallback for payment recognition
+  payway: {
+    enabled: process.env.PAYWAY_ENABLED === 'true',
+    baseUrl: process.env.PAYWAY_BASE_URL || 'https://payway.kr',
+    mid: process.env.PAYWAY_MID || '',
+    dashboardId: process.env.PAYWAY_DASHBOARD_ID || '',
+    dashboardPassword: process.env.PAYWAY_DASHBOARD_PASSWORD || '',
+    sessionCookie: process.env.PAYWAY_SESSION_COOKIE || '',
+    historyPath: process.env.PAYWAY_HISTORY_PATH || '/pay',
+    watchMinutes: parseInt(process.env.PAYWAY_WATCH_MINUTES || '10', 10),
+    pollIntervalSeconds: parseInt(process.env.PAYWAY_POLL_INTERVAL_SECONDS || '30', 10),
+    matchLeadMinutes: parseInt(process.env.PAYWAY_MATCH_LEAD_MINUTES || '2', 10),
+    requestTimeoutMs: parseInt(process.env.PAYWAY_REQUEST_TIMEOUT_MS || '10000', 10),
+  },
+
   // Observability
   sentry: {
     dsn: process.env.SENTRY_DSN || '',

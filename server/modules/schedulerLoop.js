@@ -2,6 +2,7 @@ const imweb = require('./imwebClient');
 const telegram = require('./telegram');
 const runtimeSettings = require('../runtime/runtimeSettings');
 const { getNextDailyReportAt } = require('../services/dailyTelegramReportService');
+const paywayPaymentWatchService = require('../services/paywayPaymentWatchService');
 
 let scanTimer = null;
 let initialScanTimer = null;
@@ -103,6 +104,7 @@ function startScheduler(runScan, options = {}) {
 
   imweb.loadTokens();
   telegram.startStatusChecks();
+  paywayPaymentWatchService.start();
 
   nextInitialRunAt = new Date(Date.now() + 5000);
   initialScanTimer = setTimeout(() => {
@@ -139,6 +141,7 @@ function stopScheduler() {
   }
 
   telegram.stopStatusChecks();
+  paywayPaymentWatchService.stop();
 
   if (runScanRef) {
     runScanRef = null;

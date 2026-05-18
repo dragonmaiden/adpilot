@@ -375,6 +375,79 @@ test('buildNewOrderNotification formats the completed checklist state after paym
   });
 });
 
+test('buildNewOrderNotification names Payway when the completed payment came from Payway polling', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const message = service.buildNewOrderNotification({
+      orderNo: '202603145648900',
+      orderDate: '2026-03-13',
+      customerName: '홍신희',
+      orderValue: 111000,
+      paymentLabel: 'Payway card approved',
+      paymentMethod: 'Payway card',
+      paymentState: 'paid',
+      paymentSource: 'payway',
+      notificationStage: 'payment_confirmed',
+      productNames: ['실크 모노그램 방도'],
+    });
+
+    assert.match(message, /Payment: Payway card approved · Payway card/);
+    assert.match(message, /Checklist: Payment recognized in Payway ✅/);
+  });
+});
+
+test('buildPaywayPaymentReceivedNotification formats the extra card-payment alert', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const message = service.buildPaywayPaymentReceivedNotification({
+      orderNo: '202603145648900',
+      customerName: '홍신희',
+      orderValue: 111000,
+    }, {
+      transactionAt: '2026-03-13 18:45:10',
+      transactionAmount: 111000,
+      approvalNo: '12345678',
+      maskedCardNumber: '1234********5678',
+    });
+
+    assert.match(message, /💳 <b>Payment received<\/b>/);
+    assert.match(message, /Order: 202603145648900/);
+    assert.match(message, /Amount: ₩111,000/);
+    assert.match(message, /Provider: Payway/);
+    assert.match(message, /Approval no: 12345678/);
+  });
+});
+
 test('buildAutofillNotification formats the paid-order COGS summary', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();

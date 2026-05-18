@@ -249,8 +249,14 @@ function sanitizeNotificationMetadata(metadata) {
     closedAt: asString(metadata.closedAt) || null,
     orderDate: asString(metadata.orderDate) || null,
     paymentState: asString(metadata.paymentState) || null,
+    paymentSource: asString(metadata.paymentSource) || null,
+    paywayTransactionId: asString(metadata.paywayTransactionId) || null,
+    paywayPaymentReceivedAt: asString(metadata.paywayPaymentReceivedAt) || null,
     sheetName: asString(metadata.sheetName) || null,
     messageId: Number.isFinite(Number(metadata.messageId)) ? Number(metadata.messageId) : null,
+    paywayPaymentReceivedMessageId: Number.isFinite(Number(metadata.paywayPaymentReceivedMessageId))
+      ? Number(metadata.paywayPaymentReceivedMessageId)
+      : null,
     rowCount: Number.isFinite(Number(metadata.rowCount)) ? Number(metadata.rowCount) : null,
   };
 }
@@ -810,6 +816,7 @@ function buildNewOrderNotification(result) {
   const isClosed = result?.notificationStage === 'order_closed'
     || ['cancelled', 'returned', 'exchanged', 'refunded', 'closed'].includes(asString(result?.paymentState).toLowerCase());
   const isCompleted = result?.paymentState === 'paid' || result?.notificationStage === 'payment_confirmed';
+  const paymentSource = asString(result?.paymentSource).toLowerCase();
   const orderValue = Number(result?.orderValue || result?.netRevenue || result?.approvedAmount || 0);
   const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
     ? result.productNames.map(line => `• ${escapeHtml(line)}`).join('\n')
@@ -821,7 +828,7 @@ function buildNewOrderNotification(result) {
   const checklistLine = isClosed
     ? `Checklist: ${escapeHtml(getClosedChecklistLabel(result))}`
     : isCompleted
-      ? 'Checklist: Payment recognized in Imweb ✅'
+      ? `Checklist: Payment recognized in ${paymentSource === 'payway' ? 'Payway' : 'Imweb'} ✅`
       : 'Checklist: Check payment in Imweb ☐';
 
   const sections = [
@@ -844,6 +851,39 @@ function buildNewOrderNotification(result) {
   }
 
   sections.push('', 'Products:', productLines);
+  return sections.join('\n');
+}
+
+function buildPaywayPaymentReceivedNotification(result, payment = {}) {
+  const amount = Number(
+    payment?.transactionAmount
+    || payment?.approvedAmount
+    || result?.orderValue
+    || result?.netRevenue
+    || result?.approvedAmount
+    || 0
+  );
+  const approvedAt = asString(payment?.transactionAt || payment?.transactionAtIso) || 'Unavailable';
+  const approvalNo = asString(payment?.approvalNo);
+  const card = asString(payment?.maskedCardNumber);
+
+  const sections = [
+    '💳 <b>Payment received</b>',
+    '',
+    `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
+    `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
+    `Amount: ${escapeHtml(formatStoreMoney(amount))}`,
+    'Provider: Payway',
+    `Approved at: ${escapeHtml(approvedAt)}`,
+  ];
+
+  if (approvalNo) {
+    sections.push(`Approval no: ${escapeHtml(approvalNo)}`);
+  }
+  if (card) {
+    sections.push(`Card: ${escapeHtml(card)}`);
+  }
+
   return sections.join('\n');
 }
 
@@ -1467,6 +1507,7 @@ module.exports = {
   findTargetForMonth,
   resolveTargetSheet,
   buildNewOrderNotification,
+  buildPaywayPaymentReceivedNotification,
   buildAutofillNotification,
   buildAutofillPrivateNotification,
   sanitizeAutofillResultForResponse,

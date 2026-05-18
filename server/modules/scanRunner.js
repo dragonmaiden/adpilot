@@ -16,6 +16,7 @@ const orderNotificationService = require('../services/orderNotificationService')
 const orderNotificationAuditService = require('../services/orderNotificationAuditService');
 const observabilityService = require('../services/observabilityService');
 const fxService = require('../services/fxService');
+const paywayPaymentWatchService = require('../services/paywayPaymentWatchService');
 const financialLedgerRepository = require('../db/financialLedgerRepository');
 const {
   buildSourceExtractionAudit,
@@ -450,11 +451,27 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
 
     let deliveredAlerts = 0;
     let failedAlerts = 0;
+    let paywayWatchesStarted = 0;
+    let paywayWatchesSkipped = 0;
+    let paywayWatchFailures = 0;
 
     for (const pending of result.pending) {
       const delivery = await orderNotificationService.deliverNewOrderNotification(pending);
       if (delivery?.publicMessage?.ok) {
         deliveredAlerts += 1;
+        try {
+          const watch = paywayPaymentWatchService.watchOrder(pending, {
+            messageId: delivery.messageId,
+          });
+          if (watch?.watching) {
+            paywayWatchesStarted += 1;
+          } else if (watch?.skipped) {
+            paywayWatchesSkipped += 1;
+          }
+        } catch (err) {
+          paywayWatchFailures += 1;
+          pushError(scanResult, 'payway_payment_watch', new Error(`${pending.orderNo || 'unknown order'}: ${err.message}`));
+        }
       } else {
         failedAlerts += 1;
         pushError(scanResult, 'new_order_notification_backstop', new Error(`Failed to deliver new-order alert for ${pending.orderNo || 'unknown order'}`));
@@ -468,14 +485,18 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
       eligibleOrders: result.eligibleOrders,
       deliveredAlerts,
       failedAlerts,
+      paywayWatchesStarted,
+      paywayWatchesSkipped,
+      paywayWatchFailures,
     });
     console.log(
       `[SCHEDULER]   → ${deliveredAlerts} backfilled alert${deliveredAlerts === 1 ? '' : 's'}, `
       + `${failedAlerts} failed `
+      + `${paywayWatchesStarted > 0 ? `, ${paywayWatchesStarted} Payway watch${paywayWatchesStarted === 1 ? '' : 'es'} started ` : ''}`
       + `(${result.eligibleOrders} candidate order${result.eligibleOrders === 1 ? '' : 's'} checked since ${result.windowStartAt || 'startup'})`
     );
 
-    return { ok: failedAlerts === 0, result };
+    return { ok: failedAlerts === 0 && paywayWatchFailures === 0, result };
   } catch (err) {
     console.error('[SCHEDULER]   ⚠ New-order alert backfill failed:', err.message);
     pushError(scanResult, 'new_order_notification_backstop', err);
