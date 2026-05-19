@@ -6,6 +6,8 @@ let cookieJar = new Map();
 
 const PAYMENT_HISTORY_QUERY = 'asp_usr_pay_lst';
 const PAYMENT_HISTORY_ROWS = '150';
+const PAYMENT_HISTORY_PAGE = 1;
+const PAYMENT_HISTORY_PAGE_SIZE = Number(PAYMENT_HISTORY_ROWS);
 const PAYMENT_HISTORY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 function getPaywayConfig() {
@@ -234,9 +236,18 @@ function parseMoney(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function formatCompactPaywayTimestamp(value) {
+  const match = asString(value).trim().match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?$/);
+  if (!match) return null;
+
+  const [, year, month, day, hour, minute, second = '00'] = match;
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
 function parsePaywayTimestamp(value) {
-  const text = asString(value);
-  const match = text.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
+  const text = asString(value).trim();
+  const normalizedText = formatCompactPaywayTimestamp(text) || text;
+  const match = normalizedText.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
   if (!match) return null;
 
   const [, year, month, day, hour, minute, second = '00'] = match;
@@ -251,6 +262,16 @@ function buildTransactionId(payment) {
     asString(payment?.transactionAt),
     String(Number(payment?.transactionAmount || payment?.approvedAmount || 0)),
   ].filter(Boolean).join(':');
+}
+
+function setPaymentTimestampAndId(payment) {
+  const parsedAt = parsePaywayTimestamp(payment.transactionAt);
+  const compactTransactionAt = formatCompactPaywayTimestamp(payment.transactionAt);
+  if (compactTransactionAt) {
+    payment.transactionAt = compactTransactionAt;
+  }
+  payment.transactionAtIso = parsedAt ? parsedAt.toISOString() : null;
+  payment.transactionId = buildTransactionId(payment);
 }
 
 function pickField(row, fieldNames) {
@@ -283,9 +304,7 @@ function normalizePaymentRow(cells) {
     pg: asString(cells[15]),
     agent: asString(cells[16]),
   };
-  const parsedAt = parsePaywayTimestamp(payment.transactionAt);
-  payment.transactionAtIso = parsedAt ? parsedAt.toISOString() : null;
-  payment.transactionId = buildTransactionId(payment);
+  setPaymentTimestampAndId(payment);
   return payment;
 }
 
@@ -321,9 +340,7 @@ function normalizePaymentJsonRow(row) {
     pg: asString(pickField(row, ['pg', 'pg_nm'])),
     agent: asString(pickField(row, ['agent', 'agent_nm'])),
   };
-  const parsedAt = parsePaywayTimestamp(payment.transactionAt);
-  payment.transactionAtIso = parsedAt ? parsedAt.toISOString() : null;
-  payment.transactionId = buildTransactionId(payment);
+  setPaymentTimestampAndId(payment);
   return payment;
 }
 
@@ -384,10 +401,11 @@ function buildPaymentHistoryRequestBody(options = {}) {
       st: startDate,
       ed: endDate,
       pay_sta: 'ALL',
-      pg: 'ALL',
       kf: asString(payway.mid) ? 'terminal' : '',
       k: asString(payway.mid),
       rows: PAYMENT_HISTORY_ROWS,
+      page: PAYMENT_HISTORY_PAGE,
+      pageSize: PAYMENT_HISTORY_PAGE_SIZE,
     }),
     rtnType: 'json3',
   });

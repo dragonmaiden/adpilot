@@ -128,6 +128,30 @@ test('parsePaymentHistoryAjaxResponse extracts Payway AJAX payment rows', () => 
   assert.equal(paywayClient.isApprovedPaywayPayment(payments[0]), true);
 });
 
+test('parsePaymentHistoryAjaxResponse handles compact Payway payment timestamps', () => {
+  const payments = paywayClient.parsePaymentHistoryAjaxResponse({
+    T1: [{ cnt: 1, amt: '171000.0000' }],
+    T2: [
+      {
+        pay_dt: '20260519205435',
+        cancel_yn: 0,
+        mc_nm: 'SHUE',
+        tmid: 'TMN009889',
+        authno: 'A1234567',
+        amt: '171000.0000',
+        fee: '10260',
+      },
+    ],
+  });
+
+  assert.equal(payments.length, 1);
+  assert.equal(payments[0].transactionAt, '2026-05-19 20:54:35');
+  assert.equal(payments[0].transactionAtIso, '2026-05-19T11:54:35.000Z');
+  assert.equal(payments[0].transactionAmount, 171000);
+  assert.equal(payments[0].feeAmount, 10260);
+  assert.equal(paywayClient.isApprovedPaywayPayment(payments[0]), true);
+});
+
 test('isApprovedPaywayPayment rejects cancelled approval rows', () => {
   const [payment] = paywayClient.parsePaymentHistoryHtml(`
     <table>
@@ -180,10 +204,11 @@ test('fetchPaymentHistory requests Payway AJAX rows for the KST payment window',
       st: '2026-05-18',
       ed: '2026-05-19',
       pay_sta: 'ALL',
-      pg: 'ALL',
       kf: 'terminal',
       k: 'TMN009889',
       rows: '150',
+      page: 1,
+      pageSize: 150,
     });
 
     return {
