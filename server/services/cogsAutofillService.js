@@ -1246,6 +1246,29 @@ function shouldBackfillNewOrderNotification(order) {
   return shouldSendNewOrderNotification(order);
 }
 
+function shouldRefreshPaywayPaymentWatch(order) {
+  const normalizedOrderNo = asString(order?.orderNo);
+  if (!normalizedOrderNo) {
+    return false;
+  }
+
+  const notification = getNotifiedOrderMetadata(normalizedOrderNo);
+  if (!notification?.messageId) {
+    return false;
+  }
+
+  const stage = asString(notification.notificationStage);
+  if (stage === 'payment_confirmed' || stage === 'order_closed') {
+    return false;
+  }
+
+  if (notification.paywayPaymentReceivedMessageId || notification.paywayTransactionId) {
+    return false;
+  }
+
+  return shouldSendNewOrderNotification(order);
+}
+
 function shouldCloseExistingOrderNotification(order) {
   const normalizedOrderNo = asString(order?.orderNo);
   if (!normalizedOrderNo || !isTerminalOrderState(order)) {
@@ -1298,6 +1321,58 @@ function collectRecentNewOrderNotifications(orders, options = {}) {
     notificationKind: 'new_order',
     notificationSource: 'scan_backstop',
   }));
+
+  return {
+    ok: true,
+    status: 'ok',
+    windowStartAt: windowStart ? windowStart.toISOString() : null,
+    eligibleOrders: eligibleOrders.length,
+    pending,
+  };
+}
+
+function collectRecentPaywayPaymentWatchCandidates(orders, options = {}) {
+  const windowStart = resolveNewOrderBackfillWindowStart(options);
+  const seenOrderNos = new Set();
+
+  const eligibleOrders = (Array.isArray(orders) ? orders : [])
+    .filter(order => {
+      const orderNo = asString(order?.orderNo);
+      if (!orderNo || seenOrderNos.has(orderNo)) {
+        return false;
+      }
+
+      if (!shouldRefreshPaywayPaymentWatch(order)) {
+        return false;
+      }
+
+      const createdAt = getOrderCreationTimestamp(order);
+      if (!isRecentEnough(createdAt, windowStart)) {
+        return false;
+      }
+
+      seenOrderNos.add(orderNo);
+      return true;
+    })
+    .sort((left, right) => {
+      const leftTime = getOrderCreationTimestamp(left)?.getTime() || 0;
+      const rightTime = getOrderCreationTimestamp(right)?.getTime() || 0;
+      return leftTime - rightTime;
+    });
+
+  const pending = eligibleOrders.map(order => {
+    const orderNo = asString(order?.orderNo);
+    const notification = getNotifiedOrderMetadata(orderNo);
+    return {
+      ...buildOrderNotificationResult(order, {
+        notificationKind: 'new_order',
+        notificationSource: 'scan_payway_watch_refresh',
+      }),
+      notificationMessageId: Number.isFinite(Number(notification?.messageId))
+        ? Number(notification.messageId)
+        : null,
+    };
+  });
 
   return {
     ok: true,
@@ -1518,6 +1593,7 @@ module.exports = {
   markOrderNotificationCompleted,
   markOrderNotificationClosed,
   collectRecentNewOrderNotifications,
+  collectRecentPaywayPaymentWatchCandidates,
   collectRecentClosedOrderNotifications,
   syncOrderToCogsSheet,
   syncImwebOrderToCogs,

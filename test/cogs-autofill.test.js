@@ -983,6 +983,127 @@ test('collectRecentNewOrderNotifications backfills only bounded-recent unpaid or
   });
 });
 
+test('collectRecentPaywayPaymentWatchCandidates refreshes recent pending Telegram cards', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const now = Date.now();
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {},
+    notifiedOrders: {
+      '20260313003': {
+        orderNo: '20260313003',
+        notifiedAt: new Date(now - (7 * 60 * 1000)).toISOString(),
+        source: 'scan_backstop',
+        notificationStage: 'payment_pending',
+        messageId: 4321,
+      },
+      '20260313004': {
+        orderNo: '20260313004',
+        notifiedAt: new Date(now - (6 * 60 * 1000)).toISOString(),
+        source: 'cogs_autofill_fallback',
+        notificationStage: 'payment_confirmed',
+        messageId: 4322,
+      },
+      '20260313005': {
+        orderNo: '20260313005',
+        notifiedAt: new Date(now - (5 * 60 * 1000)).toISOString(),
+        source: 'scan_backstop',
+        notificationStage: 'payment_pending',
+      },
+      '20260313006': {
+        orderNo: '20260313006',
+        notifiedAt: new Date(now - (4 * 60 * 1000)).toISOString(),
+        source: 'scan_backstop',
+        notificationStage: 'payment_pending',
+        messageId: 4323,
+        paywayPaymentReceivedMessageId: 8801,
+      },
+    },
+  }, null, 2));
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const result = await service.collectRecentPaywayPaymentWatchCandidates([
+      createOrder({
+        orderNo: '20260313003',
+        wtime: new Date(now - (6 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313004',
+        wtime: new Date(now - (6 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313005',
+        wtime: new Date(now - (6 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313006',
+        wtime: new Date(now - (6 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313007',
+        wtime: new Date(now - (8 * 24 * 60 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
+      }),
+      createOrder({
+        orderNo: '20260313008',
+        wtime: new Date(now - (2 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 111000,
+        payments: [
+          {
+            paidPrice: 111000,
+            paymentStatus: 'PAYMENT_COMPLETE',
+            paymentCompleteTime: new Date(now - (90 * 1000)).toISOString(),
+            method: 'CARD',
+          },
+        ],
+      }),
+    ], {
+      sinceTime: new Date(now - (30 * 60 * 1000)),
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.eligibleOrders, 1);
+    assert.equal(result.pending[0].orderNo, '20260313003');
+    assert.equal(result.pending[0].notificationMessageId, 4321);
+    assert.equal(result.pending[0].notificationSource, 'scan_payway_watch_refresh');
+  });
+});
+
 test('collectRecentClosedOrderNotifications finds pending alerts that later became cancelled', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();

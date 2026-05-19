@@ -448,10 +448,15 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
     const result = await cogsAutofillService.collectRecentNewOrderNotifications(orders, {
       sinceTime: scanWindowStart,
     });
+    const refreshResult = cogsAutofillService.collectRecentPaywayPaymentWatchCandidates(orders, {
+      sinceTime: scanWindowStart,
+    });
 
     let deliveredAlerts = 0;
     let failedAlerts = 0;
     let paywayWatchesStarted = 0;
+    let paywayWatchRefreshCandidates = 0;
+    let paywayWatchesRefreshed = 0;
     let paywayWatchesSkipped = 0;
     let paywayWatchFailures = 0;
     const paywayWatchSkipReasons = {};
@@ -481,14 +486,39 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
       }
     }
 
+    paywayWatchRefreshCandidates = refreshResult.eligibleOrders;
+
+    for (const pending of refreshResult.pending) {
+      try {
+        const watch = paywayPaymentWatchService.watchOrder(pending, {
+          messageId: pending.notificationMessageId,
+        });
+        if (watch?.watching) {
+          paywayWatchesRefreshed += 1;
+        } else if (watch?.skipped) {
+          paywayWatchesSkipped += 1;
+          const reason = watch.reason || 'unknown';
+          paywayWatchSkipReasons[reason] = (paywayWatchSkipReasons[reason] || 0) + 1;
+        }
+      } catch (err) {
+        paywayWatchFailures += 1;
+        pushError(scanResult, 'payway_payment_watch', new Error(`${pending.orderNo || 'unknown order'}: ${err.message}`));
+      }
+    }
+
+    const stepFailed = (failedAlerts > 0 && deliveredAlerts === 0 && result.pending.length > 0)
+      || paywayWatchFailures > 0;
+
     pushStep(scanResult, {
       step: 'new_order_notification_backstop',
-      status: failedAlerts > 0 && deliveredAlerts === 0 && result.pending.length > 0 ? 'failed' : 'ok',
+      status: stepFailed ? 'failed' : 'ok',
       windowStartAt: result.windowStartAt,
       eligibleOrders: result.eligibleOrders,
       deliveredAlerts,
       failedAlerts,
       paywayWatchesStarted,
+      paywayWatchRefreshCandidates,
+      paywayWatchesRefreshed,
       paywayWatchesSkipped,
       paywayWatchSkipReasons,
       paywayWatchFailures,
@@ -500,6 +530,7 @@ async function backfillRecentNewOrderNotifications(scanResult, orders) {
       `[SCHEDULER]   → ${deliveredAlerts} backfilled alert${deliveredAlerts === 1 ? '' : 's'}, `
       + `${failedAlerts} failed `
       + `${paywayWatchesStarted > 0 ? `, ${paywayWatchesStarted} Payway watch${paywayWatchesStarted === 1 ? '' : 'es'} started ` : ''}`
+      + `${paywayWatchesRefreshed > 0 ? `, ${paywayWatchesRefreshed} Payway watch${paywayWatchesRefreshed === 1 ? '' : 'es'} refreshed ` : ''}`
       + `${paywayWatchesSkipped > 0 ? `, ${paywayWatchesSkipped} Payway watch${paywayWatchesSkipped === 1 ? '' : 'es'} skipped${paywaySkipSummary ? ` (${paywaySkipSummary})` : ''} ` : ''}`
       + `(${result.eligibleOrders} candidate order${result.eligibleOrders === 1 ? '' : 's'} checked since ${result.windowStartAt || 'startup'})`
     );

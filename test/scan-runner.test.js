@@ -68,6 +68,8 @@ test('scan runner records Payway watcher skip reasons on new-order backfill', ()
   const source = fs.readFileSync(path.join(__dirname, '..', 'server/modules/scanRunner.js'), 'utf8');
 
   assert.match(source, /const paywayWatchSkipReasons = \{\}/);
+  assert.match(source, /collectRecentPaywayPaymentWatchCandidates/);
+  assert.match(source, /paywayWatchesRefreshed/);
   assert.match(source, /paywayWatchSkipReasons\[reason\]/);
   assert.match(source, /paywayWatchSkipReasons,/);
 });

@@ -126,3 +126,71 @@ test('Payway watcher detects a matching approved payment and triggers the Payway
     assert.ok(state.handledTransactions['TMN009889:87654321:2026-03-15 12:30:20:111000']);
   });
 });
+
+test('Payway watcher refresh keeps the original match window for missed pending cards', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+  const payment = {
+    transactionId: 'TMN009889:87654321:2026-03-15 12:35:20:111000',
+    transactionAt: '2026-03-15 12:35:20',
+    transactionAtIso: '2026-03-15T03:35:20.000Z',
+    status: '승인',
+    terminal: 'TMN009889',
+    approvalNo: '87654321',
+    transactionAmount: 111000,
+    approvedAmount: 111000,
+    cancelAmount: 0,
+  };
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: candidate => candidate.status === '승인' && candidate.transactionAmount > 0,
+      fetchPaymentHistory: async () => [payment],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, matchedPayment) => {
+        deliveries.push({ result, payment: matchedPayment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    const order = {
+      orderNo: '202603150001',
+      orderDate: '2026-03-15',
+      customerName: '홍신희',
+      orderValue: 111000,
+      paymentState: 'awaiting_check',
+      productNames: ['실크 모노그램 방도'],
+    };
+
+    service.watchOrder(order, {
+      now: new Date('2026-03-15T03:30:00.000Z'),
+      messageId: 4321,
+    });
+    await service.runDueChecks({
+      now: new Date('2026-03-15T03:41:30.000Z'),
+    });
+
+    let state = service.loadState();
+    assert.equal(state.watchedOrders['202603150001'].status, 'expired');
+
+    service.watchOrder(order, {
+      now: new Date('2026-03-15T03:42:00.000Z'),
+      messageId: 4321,
+    });
+    const result = await service.runDueChecks({
+      now: new Date('2026-03-15T03:42:05.000Z'),
+    });
+
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(deliveries.length, 1);
+    state = service.loadState();
+    assert.equal(state.watchedOrders['202603150001'].watchStartedAt, '2026-03-15T03:30:00.000Z');
+    assert.equal(state.watchedOrders['202603150001'].status, 'paid');
+  });
+});
