@@ -194,3 +194,70 @@ test('Payway watcher refresh keeps the original match window for missed pending 
     assert.equal(state.watchedOrders['202603150001'].status, 'paid');
   });
 });
+
+test('Payway watcher matches the Imweb payable amount instead of the display order total', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN009889:40895600:2026-05-20 12:25:28:217050',
+          transactionAt: '2026-05-20 12:25:28',
+          transactionAtIso: '2026-05-20T03:25:28.000Z',
+          status: '승인',
+          terminal: 'TMN009889',
+          approvalNo: '40895600',
+          transactionAmount: 217050,
+          approvedAmount: 217050,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    const watched = service.watchOrder({
+      orderNo: '202605208943494',
+      orderDate: '2026-05-20',
+      customerName: '김민정',
+      orderValue: 239000,
+      paymentDueAmount: 217050,
+      paywayMatchAmount: 217050,
+      paymentState: 'awaiting_check',
+      productNames: ['미니 크로스백'],
+    }, {
+      now: new Date('2026-05-20T03:27:13.000Z'),
+      messageId: 7001,
+    });
+
+    assert.equal(watched.watching, true);
+    let state = service.loadState();
+    assert.equal(state.watchedOrders['202605208943494'].amount, 217050);
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-05-20T03:27:20.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].result.orderNo, '202605208943494');
+    assert.equal(deliveries[0].result.orderValue, 217050);
+    assert.equal(deliveries[0].payment.transactionAmount, 217050);
+
+    state = service.loadState();
+    assert.equal(state.watchedOrders['202605208943494'].status, 'paid');
+  });
+});

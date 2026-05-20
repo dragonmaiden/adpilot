@@ -1104,6 +1104,55 @@ test('collectRecentPaywayPaymentWatchCandidates refreshes recent pending Telegra
   });
 });
 
+test('collectRecentNewOrderNotifications carries the payable amount for Payway matching', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const now = Date.now();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const result = await service.collectRecentNewOrderNotifications([
+      createOrder({
+        orderNo: '20260313030',
+        wtime: new Date(now - (2 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 239000,
+        totalPaymentPrice: 0,
+        totalDiscountPrice: 11950,
+        totalPoint: 10000,
+        payments: [
+          {
+            paidPrice: 217050,
+            paymentStatus: 'PAYMENT_PREPARATION',
+            method: 'BANKTRANSFER',
+          },
+        ],
+      }),
+    ], {
+      sinceTime: new Date(now - (30 * 60 * 1000)),
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.eligibleOrders, 1);
+    assert.equal(result.pending[0].orderNo, '20260313030');
+    assert.equal(result.pending[0].orderValue, 239000);
+    assert.equal(result.pending[0].paymentDueAmount, 217050);
+    assert.equal(result.pending[0].paywayMatchAmount, 217050);
+  });
+});
+
 test('collectRecentClosedOrderNotifications finds pending alerts that later became cancelled', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();

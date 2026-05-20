@@ -693,6 +693,21 @@ function getPaymentMethodLabel(order) {
   return '';
 }
 
+function getOrderPaymentDueAmount(order) {
+  const paymentAmounts = (Array.isArray(order?.payments) ? order.payments : [])
+    .map(payment => Number(payment?.paidPrice || 0))
+    .filter(amount => Number.isFinite(amount) && amount > 0);
+
+  if (paymentAmounts.length > 0) {
+    return Math.round(paymentAmounts.reduce((sum, amount) => sum + amount, 0));
+  }
+
+  const totalPaymentPrice = Number(order?.totalPaymentPrice || 0);
+  return Number.isFinite(totalPaymentPrice) && totalPaymentPrice > 0
+    ? Math.round(totalPaymentPrice)
+    : 0;
+}
+
 function summarizeOrderPayment(order) {
   const hasCompletedPayment = normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
   const paymentStatuses = [...new Set(
@@ -779,6 +794,7 @@ function buildOrderNotificationResult(order, overrides = {}) {
   const deliveryNote = asString(firstSection?.delivery?.memo || firstSection?.pickupMemo);
   const cashTotals = getOrderCashTotals(order);
   const paymentSummary = summarizeOrderPayment(order);
+  const paymentDueAmount = getOrderPaymentDueAmount(order);
   const orderValue = Number(
     order?.totalPrice
       || cashTotals.netPaidAmount
@@ -799,6 +815,8 @@ function buildOrderNotificationResult(order, overrides = {}) {
     netRevenue: cashTotals.netPaidAmount,
     refundedAmount: cashTotals.refundedAmount,
     orderValue,
+    paymentDueAmount,
+    paywayMatchAmount: paymentDueAmount || cashTotals.netPaidAmount || cashTotals.approvedAmount || orderValue,
     ...paymentSummary,
     ...overrides,
   };

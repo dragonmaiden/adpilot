@@ -60,4 +60,4 @@ services:
       - key: PAYWAY_REQUEST_TIMEOUT_MS
         value: "10000"
       - key: SCAN_INTERVAL_MINUTES
-        value: "5"
+        value: "3"

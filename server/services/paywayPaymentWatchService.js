@@ -67,7 +67,14 @@ function getMatchLeadMs() {
 }
 
 function getOrderAmount(result) {
-  const amount = Number(result?.orderValue || result?.netRevenue || result?.approvedAmount || 0);
+  const amount = Number(
+    result?.paywayMatchAmount
+      || result?.paymentDueAmount
+      || result?.netRevenue
+      || result?.approvedAmount
+      || result?.orderValue
+      || 0
+  );
   return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
 }
 
@@ -78,6 +85,7 @@ function buildStoredOrderResult(result) {
     customerName: asString(result?.customerName),
     productNames: Array.isArray(result?.productNames) ? result.productNames.map(asString).filter(Boolean) : [],
     orderValue: getOrderAmount(result),
+    paywayMatchAmount: Number(result?.paywayMatchAmount || result?.paymentDueAmount || 0) || null,
     netRevenue: Number(result?.netRevenue || 0) || null,
     approvedAmount: Number(result?.approvedAmount || 0) || null,
     paymentState: asString(result?.paymentState),
