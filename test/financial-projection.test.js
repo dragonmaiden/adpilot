@@ -1,7 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { buildFinancialProjection } = require('../server/services/financialProjectionService');
+const {
+  buildFeaturedProfitSummary,
+  buildFinancialProjection,
+} = require('../server/services/financialProjectionService');
 const { buildEconomicsLedger } = require('../server/services/economicsLedgerService');
 
 test('financial projection applies one scan FX rate to merged rows and profit waterfall', () => {
@@ -57,4 +60,39 @@ test('economics ledger uses the same explicit FX rate for Meta spend rows', () =
     ledger.rows.find(row => row.kind === 'meta_spend')?.amount,
     15000
   );
+});
+
+test('featured profit summary prefers today partial COGS estimate over older completed profit', () => {
+  const summary = buildFeaturedProfitSummary([
+    {
+      date: '2026-05-19',
+      trueNetProfit: 265434,
+      hasCOGS: true,
+      hasPartialCOGS: false,
+      cogsCoverageRatio: 1,
+    },
+    {
+      date: '2026-05-20',
+      trueNetProfit: 338357,
+      hasCOGS: false,
+      hasPartialCOGS: true,
+      cogsCoverageRatio: 0.857,
+    },
+    {
+      date: '2026-05-21',
+      trueNetProfit: 650616,
+      hasCOGS: false,
+      hasPartialCOGS: true,
+      cogsCoverageRatio: 0.8,
+    },
+  ], {
+    confidence: { level: 'high', label: 'High confidence', color: '#4ade80' },
+  }, '2026-05-21');
+
+  assert.equal(summary.date, '2026-05-21');
+  assert.equal(summary.trueNetProfit, 650616);
+  assert.equal(summary.summaryType, 'estimated');
+  assert.equal(summary.isEstimated, true);
+  assert.equal(summary.hasPartialCOGS, true);
+  assert.equal(summary.cogsCoverageRatio, 0.8);
 });

@@ -42,6 +42,9 @@ function buildFeaturedProfitSummary(profitWaterfall, coverage, todayStr) {
   if (todayRow && todayRow.hasCOGS) {
     row = todayRow;
     summaryType = 'today';
+  } else if (todayRow && (todayRow.hasPartialCOGS || Number(todayRow.cogsCoverageRatio) > 0)) {
+    row = todayRow;
+    summaryType = 'estimated';
   } else if (latestCoveredRow) {
     row = latestCoveredRow;
     summaryType = latestCoveredRow.date === todayStr ? 'today' : 'latest_completed';
@@ -54,6 +57,8 @@ function buildFeaturedProfitSummary(profitWaterfall, coverage, todayStr) {
     date: row.date,
     trueNetProfit: row.trueNetProfit,
     hasCOGS: row.hasCOGS,
+    hasPartialCOGS: row.hasPartialCOGS,
+    cogsCoverageRatio: Number.isFinite(Number(row.cogsCoverageRatio)) ? Number(row.cogsCoverageRatio) : null,
     confidence: coverage.confidence,
     verdict: row.trueNetProfit >= 0 ? 'Profitable' : 'Unprofitable',
     summaryType,
