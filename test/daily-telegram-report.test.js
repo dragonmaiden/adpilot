@@ -158,6 +158,28 @@ test('daily report does not fake profit when COGS are pending for a sales day', 
   assert.match(plan.text, /⏳ <b>Watch:<\/b> profit is pending final COGS coverage/);
 });
 
+test('daily report labels partial COGS profit as an estimate instead of N/A', () => {
+  const plan = buildDailySummaryReportPlan(
+    buildLatestData({
+      cogsData: {
+        dailyCOGS: {
+          '2026-04-30': { cost: 4000000, shipping: 50000, purchases: 6, costCoverageRatio: 0.5 },
+        },
+      },
+    }),
+    { dailyReport: { reportDate: null, sentAt: null } },
+    new Date('2026-04-30T14:30:00.000Z')
+  );
+
+  assert.equal(plan.totals.profitAvailable, false);
+  assert.equal(plan.totals.profitIsEstimated, true);
+  assert.equal(plan.totals.cogsCoverageRatio, 0.5);
+  assert.match(plan.text, /📈 <b>Total Profits:<\/b> ₩6,882,764 est\. \(50% COGS\)/);
+  assert.match(plan.text, /📐 <b>Net Profit Margin:<\/b> 59% est\./);
+  assert.match(plan.text, /⏳ <b>Watch:<\/b> profit is estimated until final COGS coverage \(50% covered\)/);
+  assert.doesNotMatch(plan.text, /N\/A \(COGS pending\)/);
+});
+
 test('daily report correction waits for complete COGS before replacing a pending report', () => {
   const pending = buildDailyReportCorrectionPlan(
     buildLatestData({

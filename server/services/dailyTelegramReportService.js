@@ -105,6 +105,10 @@ function formatPercent(value) {
   return Number.isFinite(Number(value)) ? `${Math.round(Number(value))}%` : 'N/A';
 }
 
+function formatCoveragePercent(value) {
+  return Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : '0%';
+}
+
 function escapeTelegramHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -120,6 +124,16 @@ function divideOrNull(numerator, denominator) {
 
 function findRowByDate(rows, dateKey) {
   return (Array.isArray(rows) ? rows : []).find(row => row?.date === dateKey) || null;
+}
+
+function getCoverageRatio(row) {
+  const ratio = Number(row?.cogsCoverageRatio);
+  if (!Number.isFinite(ratio)) {
+    if (row?.hasCOGS) return 1;
+    if (row?.hasPartialCOGS) return 0.5;
+    return 0;
+  }
+  return Math.max(0, Math.min(1, ratio));
 }
 
 function getDailyRevenue(latestData) {
@@ -251,8 +265,11 @@ function buildDailyReportTotals(latestData, reportDate) {
   const adSpendKrw = asFiniteNumber(profitRow?.adSpendKRW ?? revenueRow?.spendKrw);
   const paymentFees = asFiniteNumber(profitRow?.paymentFees);
   const trueNetProfit = asFiniteNumber(profitRow?.trueNetProfit);
+  const cogsCoverageRatio = getCoverageRatio(profitRow);
   const profitAvailable = !profitRow || profitRow.hasCOGS || orders === 0;
-  const marginRatio = profitAvailable ? divideOrNull(trueNetProfit, netRevenue) : null;
+  const profitIsEstimated = !profitAvailable && profitRow?.hasPartialCOGS && cogsCoverageRatio > 0;
+  const profitReportable = profitAvailable || profitIsEstimated;
+  const marginRatio = profitReportable ? divideOrNull(trueNetProfit, netRevenue) : null;
   const refundRateRatio = divideOrNull(refunds, revenue);
   const cogsShareRatio = divideOrNull(cogsWithShipping, netRevenue);
   const roasRatio = divideOrNull(netRevenue, adSpendKrw);
@@ -270,6 +287,8 @@ function buildDailyReportTotals(latestData, reportDate) {
     paymentFees,
     trueNetProfit,
     profitAvailable,
+    profitIsEstimated,
+    cogsCoverageRatio,
     marginPct: marginRatio == null ? null : marginRatio * 100,
     refundRatePct: refundRateRatio == null ? null : refundRateRatio * 100,
     cogsSharePct: cogsShareRatio == null ? null : cogsShareRatio * 100,
@@ -427,6 +446,13 @@ function getReportMood(totals, latestData = {}) {
       'Pipeline needs a look',
     ]);
   }
+  if (totals.profitIsEstimated) {
+    return chooseDateVariant(totals.reportDate, [
+      'Estimated profit',
+      'Partial COGS estimate',
+      'Profit estimate active',
+    ]);
+  }
   if (!totals.profitAvailable) {
     return chooseDateVariant(totals.reportDate, [
       'COGS pending',
@@ -479,7 +505,9 @@ function buildDailyReportInsights(totals, latestData = {}) {
   if (orderAudit?.status === 'failed') {
     insights.push(`⚠️ <b>Telegram audit:</b> ${formatWholeNumber(orderAuditIssues)} order alert issue${orderAuditIssues === 1 ? '' : 's'}`);
   }
-  if (!totals.profitAvailable) {
+  if (totals.profitIsEstimated) {
+    insights.push(`⏳ <b>Watch:</b> profit is estimated until final COGS coverage (${formatCoveragePercent(totals.cogsCoverageRatio)} covered)`);
+  } else if (!totals.profitAvailable) {
     insights.push('⏳ <b>Watch:</b> profit is pending final COGS coverage');
   } else if (totals.orders <= 0 || totals.revenue <= 0) {
     insights.push('ℹ️ <b>Readout:</b> no revenue activity recorded for the day');
@@ -498,9 +526,15 @@ function buildDailyReportInsights(totals, latestData = {}) {
 function buildDailyReportMessage(totals, latestData = {}) {
   const profitText = totals.profitAvailable
     ? formatKrw(totals.trueNetProfit)
+    : totals.profitIsEstimated
+    ? `${formatKrw(totals.trueNetProfit)} est. (${formatCoveragePercent(totals.cogsCoverageRatio)} COGS)`
     : 'N/A (COGS pending)';
   const totalCosts = totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees;
-  const marginText = totals.profitAvailable ? formatPercent(totals.marginPct) : 'N/A';
+  const marginText = totals.profitAvailable
+    ? formatPercent(totals.marginPct)
+    : totals.profitIsEstimated
+    ? `${formatPercent(totals.marginPct)} est.`
+    : 'N/A';
   const insights = buildDailyReportInsights(totals, latestData);
   const insightSection = insights.length > 0
     ? `\n\n${insights.join('\n')}`

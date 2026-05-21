@@ -7,6 +7,24 @@ const {
   buildRevenueSnapshots,
 } = require('../server/db/financialLedgerRepository');
 
+function clearModule(modulePath) {
+  try {
+    delete require.cache[require.resolve(modulePath)];
+  } catch (_) {
+    // Module was not loaded.
+  }
+}
+
+function installMockModule(modulePath, exports) {
+  const resolved = require.resolve(modulePath);
+  require.cache[resolved] = {
+    id: resolved,
+    filename: resolved,
+    loaded: true,
+    exports,
+  };
+}
+
 test('financial ledger builds daily source snapshots without recalculating UI metrics', () => {
   const latestData = {
     revenueData: {
@@ -66,4 +84,43 @@ test('financial ledger builds daily source snapshots without recalculating UI me
       },
     },
   ]);
+});
+
+test('financial ledger includes estimated daily reports in COGS correction candidates', async () => {
+  const queries = [];
+  const postgres = {
+    isConfigured: () => true,
+    query: async (text, params) => {
+      queries.push({ text, params });
+      return {
+        rows: [{
+          report_date: '2026-04-30',
+          status: 'sent',
+          payload: '📈 <b>Total Profits:</b> ₩6,882,764 est. (50% COGS)',
+          metadata: { profitIsEstimated: true, telegramMessageId: 89 },
+        }],
+      };
+    },
+  };
+
+  clearModule('../server/db/financialLedgerRepository');
+  installMockModule('../server/db/postgres', postgres);
+
+  try {
+    const { listPendingCogsDailyReportDeliveries } = require('../server/db/financialLedgerRepository');
+    const result = await listPendingCogsDailyReportDeliveries({ limit: 200 });
+
+    assert.equal(result.ok, true);
+    assert.equal(queries.length, 1);
+    assert.equal(queries[0].params[0], 120);
+    assert.ok(queries[0].text.includes("payload like '%N/A (COGS pending)%'"));
+    assert.ok(queries[0].text.includes("metadata->>'profitIsEstimated' = 'true'"));
+    assert.deepEqual(result.reports[0].metadata, {
+      profitIsEstimated: true,
+      telegramMessageId: 89,
+    });
+  } finally {
+    clearModule('../server/db/financialLedgerRepository');
+    clearModule('../server/db/postgres');
+  }
 });

@@ -286,7 +286,10 @@ async function listPendingCogsDailyReportDeliveries(options = {}) {
       updated_at
     from telegram_report_deliveries
     where status = 'sent'
-      and payload like '%N/A (COGS pending)%'
+      and (
+        payload like '%N/A (COGS pending)%'
+        or metadata->>'profitIsEstimated' = 'true'
+      )
     order by report_date asc
     limit $1`,
     [normalizeTelegramReportLimit(options.limit)]

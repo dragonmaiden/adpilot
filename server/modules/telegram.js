@@ -345,7 +345,7 @@ function getTelegramMessageId(metadata = {}) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function buildCorrectionMetadata(report, delivery, result) {
+function buildCorrectionMetadata(report, delivery, result, plan) {
   const existing = report?.metadata && typeof report.metadata === 'object'
     ? report.metadata
     : {};
@@ -358,9 +358,25 @@ function buildCorrectionMetadata(report, delivery, result) {
     ...existing,
     telegramMessageId: telegramMessageId || null,
     originalTelegramMessageId: existing.originalTelegramMessageId || previousTelegramMessageId || null,
+    profitAvailable: plan?.totals?.profitAvailable === true,
+    profitIsEstimated: plan?.totals?.profitIsEstimated === true,
+    cogsCoverageRatio: Number.isFinite(Number(plan?.totals?.cogsCoverageRatio))
+      ? Number(plan.totals.cogsCoverageRatio)
+      : existing.cogsCoverageRatio ?? null,
     correctionDelivery: delivery,
     correctedAt: nowIso(),
     correctionReason: 'cogs-complete',
+  };
+}
+
+function buildDailyReportMetadata(plan, telegramMessageId) {
+  return {
+    telegramMessageId: telegramMessageId || null,
+    profitAvailable: plan?.totals?.profitAvailable === true,
+    profitIsEstimated: plan?.totals?.profitIsEstimated === true,
+    cogsCoverageRatio: Number.isFinite(Number(plan?.totals?.cogsCoverageRatio))
+      ? Number(plan.totals.cogsCoverageRatio)
+      : null,
   };
 }
 
@@ -415,7 +431,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
         payload: plan.text,
         sentAt: report.sentAt || null,
         error: null,
-        metadata: buildCorrectionMetadata(report, delivery, result),
+        metadata: buildCorrectionMetadata(report, delivery, result, plan),
       });
       reports.push({
         reportDate: report.reportDate,
@@ -461,9 +477,7 @@ async function sendDailySummaryReport(latestData = null, options = {}) {
     await recordDailyReportDelivery(plan, {
       status: 'sent',
       sentAt: options.sentAt || sentAt,
-      metadata: {
-        telegramMessageId: result.result?.message_id || null,
-      },
+      metadata: buildDailyReportMetadata(plan, result.result?.message_id),
     });
   } else {
     await recordDailyReportDelivery(plan, {
