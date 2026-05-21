@@ -174,7 +174,7 @@ test('daily report labels partial COGS profit as an estimate instead of N/A', ()
   assert.equal(plan.totals.profitAvailable, false);
   assert.equal(plan.totals.profitIsEstimated, true);
   assert.equal(plan.totals.cogsCoverageRatio, 0.5);
-  assert.match(plan.text, /📈 <b>Total Profits:<\/b> ₩6,882,764 est\. \(50% COGS\)/);
+  assert.match(plan.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
   assert.match(plan.text, /📐 <b>Net Profit Margin:<\/b> 59% est\./);
   assert.match(plan.text, /⏳ <b>Watch:<\/b> profit is estimated until final COGS coverage \(50% covered\)/);
   assert.doesNotMatch(plan.text, /N\/A \(COGS pending\)/);
@@ -194,6 +194,23 @@ test('daily report correction waits for complete COGS before replacing a pending
 
   assert.equal(pending.shouldCorrect, false);
   assert.equal(pending.reason, 'profit-still-pending-cogs');
+
+  const estimated = buildDailyReportCorrectionPlan(
+    buildLatestData({
+      cogsData: {
+        dailyCOGS: {
+          '2026-04-30': { cost: 4000000, shipping: 50000, purchases: 6, costCoverageRatio: 0.5 },
+        },
+      },
+    }),
+    '2026-04-30',
+    { allowEstimated: true }
+  );
+
+  assert.equal(estimated.shouldCorrect, true);
+  assert.equal(estimated.reason, 'cogs-partial-estimate');
+  assert.equal(estimated.totals.profitIsEstimated, true);
+  assert.match(estimated.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
 
   const corrected = buildDailyReportCorrectionPlan(buildLatestData(), '2026-04-30');
 

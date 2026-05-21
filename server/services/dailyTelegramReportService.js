@@ -527,7 +527,7 @@ function buildDailyReportMessage(totals, latestData = {}) {
   const profitText = totals.profitAvailable
     ? formatKrw(totals.trueNetProfit)
     : totals.profitIsEstimated
-    ? `${formatKrw(totals.trueNetProfit)} est. (${formatCoveragePercent(totals.cogsCoverageRatio)} COGS)`
+    ? `⚠️ ${formatKrw(totals.trueNetProfit)} est. (${formatCoveragePercent(totals.cogsCoverageRatio)} COGS)`
     : 'N/A (COGS pending)';
   const totalCosts = totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees;
   const marginText = totals.profitAvailable
@@ -587,7 +587,7 @@ function buildDailySummaryReportPlan(latestData, state, now = new Date()) {
   };
 }
 
-function buildDailyReportCorrectionPlan(latestData, reportDate) {
+function buildDailyReportCorrectionPlan(latestData, reportDate, options = {}) {
   if (!parseDateKey(reportDate)) {
     return { shouldCorrect: false, reason: 'invalid-report-date', reportDate: null, text: null };
   }
@@ -604,6 +604,17 @@ function buildDailyReportCorrectionPlan(latestData, reportDate) {
   }
 
   const totals = buildDailyReportTotals(latestData, reportDate);
+  if (totals.profitIsEstimated && options.allowEstimated === true) {
+    return {
+      shouldCorrect: true,
+      reason: 'cogs-partial-estimate',
+      reportDate,
+      text: buildDailyReportMessage(totals, latestData),
+      totals,
+      diagnostics,
+    };
+  }
+
   if (!totals.profitAvailable) {
     return {
       shouldCorrect: false,

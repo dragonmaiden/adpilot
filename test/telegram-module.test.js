@@ -179,7 +179,7 @@ test('sendDailySummaryReport records partial COGS metadata for the correction sw
 
     assert.equal(result.ok, true);
     assert.equal(requests.length, 1);
-    assert.match(requests[0].body.text, /₩6,882,764 est\. \(50% COGS\)/);
+    assert.match(requests[0].body.text, /⚠️ ₩6,882,764 est\. \(50% COGS\)/);
     assert.equal(records.length, 1);
     assert.equal(records[0].status, 'sent');
     assert.equal(records[0].metadata.telegramMessageId, 88);
@@ -232,6 +232,53 @@ test('refreshPendingDailyReports edits stale COGS-pending reports once profit is
     assert.equal(records[0].sentAt, '2026-04-30T14:30:00.000Z');
     assert.equal(records[0].metadata.correctionDelivery, 'edited_message');
     assert.equal(records[0].metadata.telegramMessageId, 77);
+  }, { financialLedgerRepository });
+});
+
+test('refreshPendingDailyReports edits stale COGS-pending reports once partial COGS is available', async () => {
+  const requests = [];
+  const records = [];
+  const financialLedgerRepository = {
+    listPendingCogsDailyReportDeliveries: async () => ({
+      ok: true,
+      reports: [{
+        reportDate: '2026-04-30',
+        status: 'sent',
+        payload: '📈 <b>Total Profits:</b> N/A (COGS pending)',
+        sentAt: '2026-04-30T14:30:00.000Z',
+        metadata: { telegramMessageId: 87 },
+      }],
+    }),
+    recordTelegramReportDelivery: async payload => {
+      records.push(payload);
+      return { ok: true };
+    },
+  };
+
+  await withTelegramModule(validEnv(), async (url, options = {}) => {
+    requests.push({ url, body: JSON.parse(options.body) });
+    return { ok: true, json: async () => ({ ok: true, result: { message_id: 87 } }) };
+  }, async telegram => {
+    const result = await telegram.refreshPendingDailyReports(buildDailyReportLatestData({
+      cost: 4000000,
+      shipping: 50000,
+      purchases: 6,
+      costCoverageRatio: 0.5,
+    }));
+
+    assert.equal(result.corrected, 1);
+    assert.equal(result.failed, 0);
+    assert.equal(requests.length, 1);
+    assert.match(requests[0].url, /editMessageText$/);
+    assert.equal(requests[0].body.message_id, 87);
+    assert.match(requests[0].body.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
+    assert.doesNotMatch(requests[0].body.text, /N\/A \(COGS pending\)/);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].status, 'corrected');
+    assert.equal(records[0].metadata.correctionReason, 'cogs-partial-estimate');
+    assert.equal(records[0].metadata.profitAvailable, false);
+    assert.equal(records[0].metadata.profitIsEstimated, true);
+    assert.equal(records[0].metadata.cogsCoverageRatio, 0.5);
   }, { financialLedgerRepository });
 });
 

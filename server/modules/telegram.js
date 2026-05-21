@@ -365,7 +365,7 @@ function buildCorrectionMetadata(report, delivery, result, plan) {
       : existing.cogsCoverageRatio ?? null,
     correctionDelivery: delivery,
     correctedAt: nowIso(),
-    correctionReason: 'cogs-complete',
+    correctionReason: plan?.reason || 'cogs-complete',
   };
 }
 
@@ -378,6 +378,11 @@ function buildDailyReportMetadata(plan, telegramMessageId) {
       ? Number(plan.totals.cogsCoverageRatio)
       : null,
   };
+}
+
+function isEstimatedDailyReport(report = {}) {
+  if (report?.metadata?.profitIsEstimated === true) return true;
+  return /\best\.\s*\(\d+% COGS\)/i.test(String(report.payload || ''));
 }
 
 async function refreshPendingDailyReports(latestData = null, options = {}) {
@@ -394,7 +399,9 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
   let waiting = 0;
 
   for (const report of pending.reports || []) {
-    const plan = buildDailyReportCorrectionPlan(latestData || {}, report.reportDate);
+    const plan = buildDailyReportCorrectionPlan(latestData || {}, report.reportDate, {
+      allowEstimated: !isEstimatedDailyReport(report),
+    });
     if (!plan.shouldCorrect || !plan.text) {
       waiting += 1;
       reports.push({

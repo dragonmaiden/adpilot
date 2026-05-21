@@ -113,6 +113,7 @@ test('financial ledger includes estimated daily reports in COGS correction candi
     assert.equal(result.ok, true);
     assert.equal(queries.length, 1);
     assert.equal(queries[0].params[0], 120);
+    assert.ok(queries[0].text.includes("status in ('sent', 'corrected')"));
     assert.ok(queries[0].text.includes("payload like '%N/A (COGS pending)%'"));
     assert.ok(queries[0].text.includes("metadata->>'profitIsEstimated' = 'true'"));
     assert.deepEqual(result.reports[0].metadata, {

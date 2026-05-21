@@ -285,7 +285,7 @@ async function listPendingCogsDailyReportDeliveries(options = {}) {
       metadata,
       updated_at
     from telegram_report_deliveries
-    where status = 'sent'
+    where status in ('sent', 'corrected')
       and (
         payload like '%N/A (COGS pending)%'
         or metadata->>'profitIsEstimated' = 'true'
