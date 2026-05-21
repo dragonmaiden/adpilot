@@ -32,8 +32,12 @@ function buildFeaturedProfitSummary(profitWaterfall, coverage, todayStr) {
   const rows = Array.isArray(profitWaterfall) ? profitWaterfall : [];
   if (rows.length === 0) return null;
 
+  const isEstimatedProfitRow = row => Boolean(row)
+    && !row.hasCOGS
+    && (row.hasPartialCOGS || Number(row.cogsCoverageRatio) > 0);
   const todayRow = rows.find(row => row.date === todayStr) || null;
   const latestCoveredRow = rows.slice().reverse().find(row => row.hasCOGS) || null;
+  const latestEstimatedRow = rows.slice().reverse().find(isEstimatedProfitRow) || null;
   const fallbackRow = rows[rows.length - 1] || null;
 
   let row = fallbackRow;
@@ -42,9 +46,12 @@ function buildFeaturedProfitSummary(profitWaterfall, coverage, todayStr) {
   if (todayRow && todayRow.hasCOGS) {
     row = todayRow;
     summaryType = 'today';
-  } else if (todayRow && (todayRow.hasPartialCOGS || Number(todayRow.cogsCoverageRatio) > 0)) {
+  } else if (isEstimatedProfitRow(todayRow)) {
     row = todayRow;
     summaryType = 'estimated';
+  } else if (latestEstimatedRow && (!latestCoveredRow || latestEstimatedRow.date > latestCoveredRow.date)) {
+    row = latestEstimatedRow;
+    summaryType = latestEstimatedRow.date === todayStr ? 'estimated' : 'latest_estimated';
   } else if (latestCoveredRow) {
     row = latestCoveredRow;
     summaryType = latestCoveredRow.date === todayStr ? 'today' : 'latest_completed';

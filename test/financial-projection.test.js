@@ -63,7 +63,7 @@ test('economics ledger uses the same explicit FX rate for Meta spend rows', () =
 });
 
 test('featured profit summary prefers today partial COGS estimate over older completed profit', () => {
-  const summary = buildFeaturedProfitSummary([
+  const rows = [
     {
       date: '2026-05-19',
       trueNetProfit: 265434,
@@ -85,9 +85,11 @@ test('featured profit summary prefers today partial COGS estimate over older com
       hasPartialCOGS: true,
       cogsCoverageRatio: 0.8,
     },
-  ], {
+  ];
+  const coverage = {
     confidence: { level: 'high', label: 'High confidence', color: '#4ade80' },
-  }, '2026-05-21');
+  };
+  const summary = buildFeaturedProfitSummary(rows, coverage, '2026-05-21');
 
   assert.equal(summary.date, '2026-05-21');
   assert.equal(summary.trueNetProfit, 650616);
@@ -95,4 +97,13 @@ test('featured profit summary prefers today partial COGS estimate over older com
   assert.equal(summary.isEstimated, true);
   assert.equal(summary.hasPartialCOGS, true);
   assert.equal(summary.cogsCoverageRatio, 0.8);
+
+  const afterMidnightSummary = buildFeaturedProfitSummary(rows, coverage, '2026-05-22');
+
+  assert.equal(afterMidnightSummary.date, '2026-05-21');
+  assert.equal(afterMidnightSummary.trueNetProfit, 650616);
+  assert.equal(afterMidnightSummary.summaryType, 'latest_estimated');
+  assert.equal(afterMidnightSummary.isEstimated, true);
+  assert.equal(afterMidnightSummary.hasPartialCOGS, true);
+  assert.equal(afterMidnightSummary.cogsCoverageRatio, 0.8);
 });
