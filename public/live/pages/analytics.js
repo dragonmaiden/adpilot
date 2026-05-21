@@ -35,6 +35,22 @@
     return hasNumericValue(value) ? formatCount(Number(value)) : '—';
   }
 
+  function getCoverageRatio(coverage) {
+    const ratio = Number(coverage?.coverageRatio);
+    return Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : null;
+  }
+
+  function formatCoveragePercentLabel(coverage) {
+    const ratio = getCoverageRatio(coverage);
+    return ratio == null ? '—' : `${Math.round(ratio * 100)}%`;
+  }
+
+  function hasPartialCogsCoverage(coverage) {
+    const partialDays = Number(coverage?.daysWithPartialCOGS || 0);
+    const ratio = getCoverageRatio(coverage);
+    return partialDays > 0 || (ratio != null && ratio > 0 && ratio < 1);
+  }
+
   function emptyCoverage() {
     return {
       totalDays: 0,
@@ -258,19 +274,31 @@
     return 'day';
   }
 
-  function updateProfitInputCard(key, value, detail, tone = 'neutral') {
+  const PROFIT_INPUT_CARD_ICONS = {
+    grossRevenue: 'receipt',
+    refunds: 'rotate-ccw',
+    totalCosts: 'package',
+    trueNetProfit: 'trending-up',
+  };
+
+  function updateProfitInputCard(key, value, detail, tone = 'neutral', iconName = null) {
     const card = document.querySelector(`[data-profit-source-kpi="${key}"]`);
     if (!card) return;
 
     const valueEl = card.querySelector('.kpi-value');
     const detailEl = card.querySelector('.kpi-delta span');
     const detailWrap = card.querySelector('.kpi-delta');
+    const resolvedIconName = iconName || PROFIT_INPUT_CARD_ICONS[key] || null;
 
     if (valueEl) valueEl.textContent = value;
     if (detailEl) detailEl.textContent = detail;
     if (detailWrap) {
-      detailWrap.classList.remove('positive', 'negative', 'neutral');
+      detailWrap.classList.remove('positive', 'negative', 'warning', 'neutral');
       detailWrap.classList.add(tone);
+      if (resolvedIconName) {
+        detailWrap.innerHTML = `<i data-lucide="${esc(resolvedIconName)}"></i><span>${esc(detail)}</span>`;
+        if (window.lucide) lucide.createIcons({ nodes: [detailWrap] });
+      }
     }
   }
 
@@ -350,6 +378,10 @@
     const avgDailyProfit = daysShown > 0 && hasNumericValue(totalProfit)
       ? Math.round(Number(totalProfit) / daysShown)
       : null;
+    const partialCogs = hasPartialCogsCoverage(coverage);
+    const coverageLabel = formatCoveragePercentLabel(coverage);
+    const costsShareLabel = formatNullablePercent(costsShare);
+    const marginLabel = formatNullablePercent(blendedMargin, 1);
 
     const heroEl = document.getElementById('profitHero');
     const heroKickerEl = document.getElementById('profitHeroKicker');
@@ -426,14 +458,20 @@
     updateProfitInputCard(
       'totalCosts',
       formatNullableKrw(totalCosts),
-      tr(`${formatNullablePercent(costsShare)} of net revenue`, `순매출 대비 ${formatNullablePercent(costsShare)}`),
-      totalCosts > 0 ? 'negative' : 'neutral'
+      partialCogs
+        ? tr(`${coverageLabel} COGS · ${costsShareLabel} costs`, `COGS ${coverageLabel} · 비용 ${costsShareLabel}`)
+        : tr(`${costsShareLabel} of net revenue`, `순매출 대비 ${costsShareLabel}`),
+      partialCogs ? 'warning' : totalCosts > 0 ? 'negative' : 'neutral',
+      partialCogs ? 'triangle-alert' : 'package'
     );
     updateProfitInputCard(
       'trueNetProfit',
       formatNullableSignedKrw(totalProfit),
-      tr(`${formatNullablePercent(blendedMargin, 1)} margin`, `마진 ${formatNullablePercent(blendedMargin, 1)}`),
-      totalProfit > 0 ? 'positive' : totalProfit < 0 ? 'negative' : 'neutral'
+      partialCogs
+        ? tr(`${coverageLabel} COGS · ${marginLabel} margin`, `COGS ${coverageLabel} · 마진 ${marginLabel}`)
+        : tr(`${marginLabel} margin`, `마진 ${marginLabel}`),
+      partialCogs ? 'warning' : totalProfit > 0 ? 'positive' : totalProfit < 0 ? 'negative' : 'neutral',
+      partialCogs ? 'triangle-alert' : 'trending-up'
     );
 
     if (netProfitSummaryEl) {

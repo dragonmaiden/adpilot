@@ -29,6 +29,14 @@ test('profit summary renderer is driven by the calendar selected range', () => {
   assert.match(calendarJs, /orderPatterns: calendarState\.data\?\.orderPatterns \|\| null/);
 });
 
+test('profit summary cards warn when selected COGS coverage is partial', () => {
+  assert.match(analyticsJs, /function hasPartialCogsCoverage\(coverage\)/);
+  assert.match(analyticsJs, /partialCogs\s*\?\s*'warning'/);
+  assert.match(analyticsJs, /partialCogs\s*\?\s*'triangle-alert'/);
+  assert.match(analyticsJs, /\$\{coverageLabel\} COGS · \$\{marginLabel\} margin/);
+  assert.match(analyticsJs, /\$\{coverageLabel\} COGS · \$\{costsShareLabel\} costs/);
+});
+
 test('order pattern charts use the all-time calendar-analysis payload', () => {
   assert.match(analyticsJs, /function updatePatternCharts\(orderPatterns\)/);
   assert.match(analyticsJs, /normalizeOrderPatternWeekday\(orderPatterns\?\.weekday\)/);
