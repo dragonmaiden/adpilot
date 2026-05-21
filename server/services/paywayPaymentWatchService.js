@@ -8,6 +8,7 @@ const { asString } = require('./privacyService');
 
 const STATE_FILE = path.join(runtimePaths.dataDir, 'payway_payment_watch_state.json');
 const HANDLED_TRANSACTION_RETENTION_HOURS = 24;
+const PAYMENT_COMPLETION_RETRY_HOURS = 24;
 
 let pollTimer = null;
 let started = false;
@@ -103,7 +104,17 @@ function parseDate(value) {
 }
 
 function isTerminalWatchStatus(status) {
-  return ['paid', 'expired', 'cancelled'].includes(asString(status));
+  return ['paid', 'expired', 'cancelled', 'completion_failed'].includes(asString(status));
+}
+
+function getCompletionRetryExpiresAt(watch) {
+  const explicitExpiry = parseDate(watch?.completionRetryExpiresAt);
+  if (explicitExpiry) return explicitExpiry;
+
+  const detectedAt = parseDate(watch?.paymentDetectedAt);
+  if (!detectedAt) return null;
+
+  return new Date(detectedAt.getTime() + (PAYMENT_COMPLETION_RETRY_HOURS * 60 * 60 * 1000));
 }
 
 function getActiveWatches(state, now = new Date()) {
@@ -111,6 +122,10 @@ function getActiveWatches(state, now = new Date()) {
   return Object.values(state.watchedOrders || {})
     .filter(watch => {
       if (!watch || isTerminalWatchStatus(watch.status)) return false;
+      if (watch.status === 'payment_detected') {
+        const completionRetryExpiresAt = getCompletionRetryExpiresAt(watch);
+        return !completionRetryExpiresAt || completionRetryExpiresAt.getTime() >= nowMs;
+      }
       const expiresAt = parseDate(watch.expiresAt);
       return !expiresAt || expiresAt.getTime() >= nowMs;
     })
@@ -127,6 +142,16 @@ function expireOldWatches(state, now = new Date()) {
 
   for (const watch of Object.values(state.watchedOrders || {})) {
     if (!watch || isTerminalWatchStatus(watch.status)) continue;
+    if (watch.status === 'payment_detected') {
+      const completionRetryExpiresAt = getCompletionRetryExpiresAt(watch);
+      if (completionRetryExpiresAt && completionRetryExpiresAt.getTime() < nowMs) {
+        watch.status = 'completion_failed';
+        watch.completionFailedAt = nowIso(now);
+        expired += 1;
+      }
+      continue;
+    }
+
     const expiresAt = parseDate(watch.expiresAt);
     if (expiresAt && expiresAt.getTime() < nowMs) {
       watch.status = 'expired';
@@ -237,10 +262,11 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
 
   if (delivery?.ok) {
     watch.status = 'paid';
-    watch.paymentDetectedAt = nowIso(now);
+    watch.paymentDetectedAt = watch.paymentDetectedAt || nowIso(now);
     watch.paywayTransactionId = payment.transactionId;
     watch.matchedPayment = payment;
     watch.lastDeliveryError = null;
+    watch.lastCompletionAttemptAt = nowIso(now);
     state.handledTransactions[payment.transactionId] = {
       orderNo: watch.orderNo,
       handledAt: nowIso(now),
@@ -254,6 +280,11 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
   watch.paywayTransactionId = payment.transactionId;
   watch.matchedPayment = payment;
   watch.lastDeliveryError = describeDeliveryFailure(delivery);
+  watch.completionRetryStartedAt = watch.completionRetryStartedAt || nowIso(now);
+  watch.completionRetryExpiresAt = watch.completionRetryExpiresAt
+    || new Date(now.getTime() + (PAYMENT_COMPLETION_RETRY_HOURS * 60 * 60 * 1000)).toISOString();
+  watch.lastCompletionAttemptAt = nowIso(now);
+  watch.completionAttempts = Number(watch.completionAttempts || 0) + 1;
   if (payment.transactionId) {
     state.handledTransactions[payment.transactionId] = {
       orderNo: watch.orderNo,

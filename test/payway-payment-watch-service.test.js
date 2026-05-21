@@ -261,3 +261,82 @@ test('Payway watcher matches the Imweb payable amount instead of the display ord
     assert.equal(state.watchedOrders['202605208943494'].status, 'paid');
   });
 });
+
+test('Payway watcher retries original card completion after the payment watch window expires', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+  const payment = {
+    transactionId: 'TMN009889:31201111:2026-05-21 08:33:24:118000',
+    transactionAt: '2026-05-21 08:33:24',
+    transactionAtIso: '2026-05-20T23:33:24.000Z',
+    status: '승인',
+    terminal: 'TMN009889',
+    approvalNo: '31201111',
+    transactionAmount: 118000,
+    approvedAmount: 118000,
+    cancelAmount: 0,
+  };
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: candidate => candidate.status === '승인' && candidate.transactionAmount > 0,
+      fetchPaymentHistory: async () => [payment],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, matchedPayment) => {
+        deliveries.push({ result, payment: matchedPayment });
+        if (deliveries.length === 1) {
+          return {
+            ok: false,
+            reason: 'completion_failed',
+            paymentMessage: { ok: true, messageId: 8801 },
+            completion: { ok: false, reason: 'edit_failed' },
+          };
+        }
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202605210303073',
+      orderDate: '2026-05-21',
+      customerName: '구지은',
+      orderValue: 118000,
+      paymentState: 'awaiting_check',
+      productNames: ['테스트 상품'],
+    }, {
+      now: new Date('2026-05-20T23:33:43.000Z'),
+      messageId: 1281,
+    });
+
+    const detected = await service.runDueChecks({
+      now: new Date('2026-05-20T23:34:16.000Z'),
+    });
+
+    assert.equal(detected.ok, false);
+    assert.equal(detected.detected, 1);
+    assert.equal(detected.failedDeliveries, 1);
+
+    let state = service.loadState();
+    assert.equal(state.watchedOrders['202605210303073'].status, 'payment_detected');
+    assert.equal(state.watchedOrders['202605210303073'].completionAttempts, 1);
+    assert.equal(state.watchedOrders['202605210303073'].completionRetryExpiresAt, '2026-05-21T23:34:16.000Z');
+
+    const retried = await service.runDueChecks({
+      now: new Date('2026-05-20T23:45:00.000Z'),
+    });
+
+    assert.equal(retried.ok, true);
+    assert.equal(retried.detected, 0);
+    assert.equal(retried.delivered, 1);
+    assert.equal(deliveries.length, 2);
+
+    state = service.loadState();
+    assert.equal(state.watchedOrders['202605210303073'].status, 'paid');
+    assert.equal(state.watchedOrders['202605210303073'].paywayTransactionId, payment.transactionId);
+  });
+});
