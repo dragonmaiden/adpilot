@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const runtimePaths = require('../runtime/paths');
+const runtimeSettings = require('../runtime/runtimeSettings');
 const paywayClient = require('../modules/paywayClient');
 const orderNotificationService = require('./orderNotificationService');
 const { asString } = require('./privacyService');
@@ -64,9 +65,17 @@ function getPollIntervalMs() {
   return getPositiveInteger(config.payway?.pollIntervalSeconds, 30) * 1000;
 }
 
+function getSchedulerScanIntervalMinutes() {
+  const runtimeInterval = Number(runtimeSettings.getSchedulerSettings?.()?.scanIntervalMinutes);
+  if (Number.isFinite(runtimeInterval) && runtimeInterval > 0) {
+    return Math.floor(runtimeInterval);
+  }
+  return getPositiveInteger(config.scheduler?.scanIntervalMinutes, 3);
+}
+
 function getMatchLeadMinutes() {
   const configuredLead = getPositiveInteger(config.payway?.matchLeadMinutes, 5);
-  const scanInterval = getPositiveInteger(config.scheduler?.scanIntervalMinutes, 3);
+  const scanInterval = getSchedulerScanIntervalMinutes();
   return Math.max(configuredLead, scanInterval + MATCH_LEAD_SCAN_BUFFER_MINUTES);
 }
 
@@ -235,7 +244,7 @@ function matchesWatch(watch, payment) {
   return true;
 }
 
-function findMatchingPayment(watch, payments, handledTransactions) {
+function getMatchingPayments(watch, payments, handledTransactions) {
   return payments
     .filter(payment => !handledTransactions[payment.transactionId])
     .filter(payment => matchesWatch(watch, payment))
@@ -243,7 +252,60 @@ function findMatchingPayment(watch, payments, handledTransactions) {
       const leftTime = paymentTimestampMs(left) || 0;
       const rightTime = paymentTimestampMs(right) || 0;
       return leftTime - rightTime;
-    })[0] || null;
+    });
+}
+
+function getPaymentMatchingWatches(payment, watches) {
+  return watches.filter(watch => matchesWatch(watch, payment));
+}
+
+function findMatchingPayment(watch, payments, handledTransactions, activeWatches = []) {
+  const matchingPayments = getMatchingPayments(watch, payments, handledTransactions || {});
+  if (matchingPayments.length === 0) {
+    return { payment: null };
+  }
+
+  if (matchingPayments.length > 1) {
+    return {
+      payment: null,
+      ambiguous: true,
+      reason: 'ambiguous_multiple_payway_payments',
+      candidateCount: matchingPayments.length,
+    };
+  }
+
+  const [payment] = matchingPayments;
+  const matchingWatches = getPaymentMatchingWatches(payment, activeWatches);
+  if (matchingWatches.length > 1) {
+    return {
+      payment: null,
+      ambiguous: true,
+      reason: 'ambiguous_multiple_order_watches',
+      candidateCount: matchingWatches.length,
+      competingOrderNos: matchingWatches
+        .map(candidate => asString(candidate.orderNo))
+        .filter(Boolean)
+        .filter(orderNo => orderNo !== watch.orderNo),
+    };
+  }
+
+  return { payment };
+}
+
+function recordAmbiguousMatch(watch, match, now = new Date()) {
+  const reason = match?.reason || 'ambiguous_payway_payment_match';
+  const previousError = watch.lastPollError;
+  watch.lastPollError = reason;
+  watch.lastAmbiguousMatchAt = nowIso(now);
+  watch.ambiguousMatch = {
+    reason,
+    candidateCount: Number(match?.candidateCount || 0) || null,
+    competingOrderNos: Array.isArray(match?.competingOrderNos) ? match.competingOrderNos : [],
+  };
+
+  if (previousError !== reason) {
+    console.warn(`[PAYWAY] Ambiguous payment match for order ${watch.orderNo}: ${reason}`);
+  }
 }
 
 function describeDeliveryFailure(delivery) {
@@ -370,6 +432,7 @@ async function runDueChecks(options = {}) {
     let detected = 0;
     let delivered = 0;
     let failedDeliveries = 0;
+    let ambiguousMatches = 0;
     const existingDetected = activeWatches.filter(watch => watch.status === 'payment_detected' && watch.matchedPayment);
 
     for (const watch of existingDetected) {
@@ -407,12 +470,24 @@ async function runDueChecks(options = {}) {
       for (const watch of remainingWatches) {
         watch.lastPollAt = nowIso(now);
         watch.pollAttempts = Number(watch.pollAttempts || 0) + 1;
-        watch.lastPollError = null;
-        const payment = findMatchingPayment(watch, payments, state.handledTransactions);
-        if (!payment) continue;
+        const match = findMatchingPayment(watch, payments, state.handledTransactions, remainingWatches);
+        if (!match.payment) {
+          if (match.ambiguous) {
+            ambiguousMatches += 1;
+            recordAmbiguousMatch(watch, match, now);
+          } else {
+            watch.lastPollError = null;
+            delete watch.ambiguousMatch;
+            delete watch.lastAmbiguousMatchAt;
+          }
+          continue;
+        }
 
+        watch.lastPollError = null;
+        delete watch.ambiguousMatch;
+        delete watch.lastAmbiguousMatchAt;
         detected += 1;
-        const result = await deliverDetectedPayment(state, watch, payment, now);
+        const result = await deliverDetectedPayment(state, watch, match.payment, now);
         if (result.delivered) {
           delivered += 1;
         } else {
@@ -430,11 +505,12 @@ async function runDueChecks(options = {}) {
     }
 
     return {
-      ok: failedDeliveries === 0,
+      ok: failedDeliveries === 0 && ambiguousMatches === 0,
       activeWatches: activeWatches.length,
       detected,
       delivered,
       failedDeliveries,
+      ambiguousMatches,
     };
   })();
 

@@ -9,6 +9,9 @@ async function withMockedWatchService(overrides, run) {
   const dependencyEntries = [
     [require.resolve('../server/config'), overrides.config],
     [require.resolve('../server/runtime/paths'), overrides.runtimePaths],
+    [require.resolve('../server/runtime/runtimeSettings'), overrides.runtimeSettings || {
+      getSchedulerSettings: () => overrides.config?.scheduler || {},
+    }],
     [require.resolve('../server/modules/paywayClient'), overrides.paywayClient],
     [require.resolve('../server/services/orderNotificationService'), overrides.orderNotificationService],
   ];
@@ -186,6 +189,284 @@ test('Payway watcher lead window covers scheduler lag before the watch starts', 
     assert.equal(deliveries.length, 1);
     assert.equal(deliveries[0].result.orderNo, '202605252918860');
     assert.equal(deliveries[0].payment.transactionAmount, 316800);
+  });
+});
+
+test('Payway watcher lead window follows runtime scheduler overrides', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    runtimeSettings: {
+      getSchedulerSettings: () => ({ scanIntervalMinutes: 10 }),
+    },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN009889:77773333:2026-05-25 19:47:45:129000',
+          transactionAt: '2026-05-25 19:47:45',
+          transactionAtIso: '2026-05-25T10:47:45.000Z',
+          status: '승인',
+          terminal: 'TMN009889',
+          approvalNo: '77773333',
+          transactionAmount: 129000,
+          approvedAmount: 129000,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202605252918861',
+      orderDate: '2026-05-25',
+      customerName: '이지은',
+      orderValue: 129000,
+      paymentState: 'awaiting_check',
+      productNames: ['숄더백'],
+    }, {
+      now: new Date('2026-05-25T10:58:32.000Z'),
+      messageId: 1365,
+    });
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-05-25T10:58:33.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(deliveries.length, 1);
+  });
+});
+
+test('Payway watcher fails closed when one payment matches multiple pending orders', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN009889:22221111:2026-05-25 20:01:00:118000',
+          transactionAt: '2026-05-25 20:01:00',
+          transactionAtIso: '2026-05-25T11:01:00.000Z',
+          status: '승인',
+          terminal: 'TMN009889',
+          approvalNo: '22221111',
+          transactionAmount: 118000,
+          approvedAmount: 118000,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202605252918862',
+      orderDate: '2026-05-25',
+      customerName: '김서연',
+      orderValue: 118000,
+      paymentState: 'awaiting_check',
+      productNames: ['지갑'],
+    }, {
+      now: new Date('2026-05-25T11:00:00.000Z'),
+      messageId: 1366,
+    });
+    service.watchOrder({
+      orderNo: '202605252918863',
+      orderDate: '2026-05-25',
+      customerName: '박민지',
+      orderValue: 118000,
+      paymentState: 'awaiting_check',
+      productNames: ['지갑'],
+    }, {
+      now: new Date('2026-05-25T11:00:30.000Z'),
+      messageId: 1367,
+    });
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-05-25T11:01:30.000Z'),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.detected, 0);
+    assert.equal(result.delivered, 0);
+    assert.equal(result.ambiguousMatches, 2);
+    assert.equal(deliveries.length, 0);
+
+    const state = service.loadState();
+    assert.equal(state.watchedOrders['202605252918862'].status, 'watching');
+    assert.equal(state.watchedOrders['202605252918863'].status, 'watching');
+    assert.equal(state.watchedOrders['202605252918862'].lastPollError, 'ambiguous_multiple_order_watches');
+    assert.equal(state.watchedOrders['202605252918863'].lastPollError, 'ambiguous_multiple_order_watches');
+  });
+});
+
+test('Payway watcher fails closed when one order matches multiple payments', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN009889:33331111:2026-05-25 20:01:00:88000',
+          transactionAt: '2026-05-25 20:01:00',
+          transactionAtIso: '2026-05-25T11:01:00.000Z',
+          status: '승인',
+          terminal: 'TMN009889',
+          approvalNo: '33331111',
+          transactionAmount: 88000,
+          approvedAmount: 88000,
+          cancelAmount: 0,
+        },
+        {
+          transactionId: 'TMN009889:33332222:2026-05-25 20:01:20:88000',
+          transactionAt: '2026-05-25 20:01:20',
+          transactionAtIso: '2026-05-25T11:01:20.000Z',
+          status: '승인',
+          terminal: 'TMN009889',
+          approvalNo: '33332222',
+          transactionAmount: 88000,
+          approvedAmount: 88000,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202605252918864',
+      orderDate: '2026-05-25',
+      customerName: '최유리',
+      orderValue: 88000,
+      paymentState: 'awaiting_check',
+      productNames: ['파우치'],
+    }, {
+      now: new Date('2026-05-25T11:00:00.000Z'),
+      messageId: 1368,
+    });
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-05-25T11:01:30.000Z'),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.detected, 0);
+    assert.equal(result.delivered, 0);
+    assert.equal(result.ambiguousMatches, 1);
+    assert.equal(deliveries.length, 0);
+
+    const state = service.loadState();
+    assert.equal(state.watchedOrders['202605252918864'].status, 'watching');
+    assert.equal(state.watchedOrders['202605252918864'].lastPollError, 'ambiguous_multiple_payway_payments');
+  });
+});
+
+test('Payway watcher retries after a temporary payment history failure', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+  let fetchAttempts = 0;
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => {
+        fetchAttempts += 1;
+        if (fetchAttempts === 1) {
+          throw new Error('Payway timeout');
+        }
+        return [
+          {
+            transactionId: 'TMN009889:44441111:2026-05-25 20:01:00:158000',
+            transactionAt: '2026-05-25 20:01:00',
+            transactionAtIso: '2026-05-25T11:01:00.000Z',
+            status: '승인',
+            terminal: 'TMN009889',
+            approvalNo: '44441111',
+            transactionAmount: 158000,
+            approvedAmount: 158000,
+            cancelAmount: 0,
+          },
+        ];
+      },
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202605252918865',
+      orderDate: '2026-05-25',
+      customerName: '정다은',
+      orderValue: 158000,
+      paymentState: 'awaiting_check',
+      productNames: ['토트백'],
+    }, {
+      now: new Date('2026-05-25T11:00:00.000Z'),
+      messageId: 1369,
+    });
+
+    const failed = await service.runDueChecks({
+      now: new Date('2026-05-25T11:01:30.000Z'),
+    });
+
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error, 'Payway timeout');
+    assert.equal(deliveries.length, 0);
+    let state = service.loadState();
+    assert.equal(state.watchedOrders['202605252918865'].status, 'watching');
+    assert.equal(state.watchedOrders['202605252918865'].lastPollError, 'Payway timeout');
+
+    const recovered = await service.runDueChecks({
+      now: new Date('2026-05-25T11:02:00.000Z'),
+    });
+
+    assert.equal(recovered.ok, true);
+    assert.equal(recovered.detected, 1);
+    assert.equal(recovered.delivered, 1);
+    assert.equal(deliveries.length, 1);
+    state = service.loadState();
+    assert.equal(state.watchedOrders['202605252918865'].status, 'paid');
+    assert.equal(state.watchedOrders['202605252918865'].lastPollError, null);
   });
 });
 
