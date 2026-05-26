@@ -122,7 +122,7 @@ const config = {
     historyPath: process.env.PAYWAY_HISTORY_PATH || '/pay',
     watchMinutes: parseInt(process.env.PAYWAY_WATCH_MINUTES || '10', 10),
     pollIntervalSeconds: parseInt(process.env.PAYWAY_POLL_INTERVAL_SECONDS || '30', 10),
-    matchLeadMinutes: parseInt(process.env.PAYWAY_MATCH_LEAD_MINUTES || '2', 10),
+    matchLeadMinutes: parseInt(process.env.PAYWAY_MATCH_LEAD_MINUTES || '5', 10),
     requestTimeoutMs: parseInt(process.env.PAYWAY_REQUEST_TIMEOUT_MS || '10000', 10),
   },
 

@@ -115,7 +115,7 @@ function getStatus() {
     historyPath: asString(payway.historyPath) || '/pay',
     watchMinutes: getPositiveInteger(payway.watchMinutes, 10),
     pollIntervalSeconds: getPositiveInteger(payway.pollIntervalSeconds, 30),
-    matchLeadMinutes: getPositiveInteger(payway.matchLeadMinutes, 2),
+    matchLeadMinutes: getPositiveInteger(payway.matchLeadMinutes, 5),
   };
 }
 

@@ -53,6 +53,9 @@ function createTempDataDir() {
 
 function createConfig() {
   return {
+    scheduler: {
+      scanIntervalMinutes: 3,
+    },
     payway: {
       enabled: true,
       mid: 'TMN009889',
@@ -124,6 +127,65 @@ test('Payway watcher detects a matching approved payment and triggers the Payway
     const state = service.loadState();
     assert.equal(state.watchedOrders['202603150001'].status, 'paid');
     assert.ok(state.handledTransactions['TMN009889:87654321:2026-03-15 12:30:20:111000']);
+  });
+});
+
+test('Payway watcher lead window covers scheduler lag before the watch starts', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN009889:55554444:2026-05-25 19:56:17:316800',
+          transactionAt: '2026-05-25 19:56:17',
+          transactionAtIso: '2026-05-25T10:56:17.000Z',
+          status: '승인',
+          terminal: 'TMN009889',
+          approvalNo: '55554444',
+          transactionAmount: 316800,
+          approvedAmount: 316800,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202605252918860',
+      orderDate: '2026-05-25',
+      customerName: '송현지',
+      orderValue: 344000,
+      paymentDueAmount: 316800,
+      paywayMatchAmount: 316800,
+      paymentState: 'awaiting_check',
+      productNames: ['백팩'],
+    }, {
+      now: new Date('2026-05-25T10:58:32.000Z'),
+      messageId: 1364,
+    });
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-05-25T10:58:33.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].result.orderNo, '202605252918860');
+    assert.equal(deliveries[0].payment.transactionAmount, 316800);
   });
 });
 

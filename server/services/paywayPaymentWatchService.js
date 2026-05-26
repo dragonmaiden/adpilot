@@ -9,6 +9,7 @@ const { asString } = require('./privacyService');
 const STATE_FILE = path.join(runtimePaths.dataDir, 'payway_payment_watch_state.json');
 const HANDLED_TRANSACTION_RETENTION_HOURS = 24;
 const PAYMENT_COMPLETION_RETRY_HOURS = 24;
+const MATCH_LEAD_SCAN_BUFFER_MINUTES = 2;
 
 let pollTimer = null;
 let started = false;
@@ -63,8 +64,14 @@ function getPollIntervalMs() {
   return getPositiveInteger(config.payway?.pollIntervalSeconds, 30) * 1000;
 }
 
+function getMatchLeadMinutes() {
+  const configuredLead = getPositiveInteger(config.payway?.matchLeadMinutes, 5);
+  const scanInterval = getPositiveInteger(config.scheduler?.scanIntervalMinutes, 3);
+  return Math.max(configuredLead, scanInterval + MATCH_LEAD_SCAN_BUFFER_MINUTES);
+}
+
 function getMatchLeadMs() {
-  return getPositiveInteger(config.payway?.matchLeadMinutes, 2) * 60 * 1000;
+  return getMatchLeadMinutes() * 60 * 1000;
 }
 
 function getOrderAmount(result) {
