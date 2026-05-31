@@ -279,6 +279,18 @@ async function deliverPaywayPaymentNotification(result, payment = {}) {
   };
 }
 
+async function deliverPaywayAmbiguousPaymentWarning(payload = {}) {
+  const response = await telegram.sendMessage(
+    cogsAutofillService.buildPaywayAmbiguousPaymentNotification(payload)
+  );
+
+  return {
+    ok: Boolean(response?.ok),
+    response,
+    messageId: getTelegramMessageId(response),
+  };
+}
+
 async function deliverClosedOrderNotification(result) {
   const closed = await closeExistingOrderNotification(result);
   return {
@@ -292,6 +304,7 @@ module.exports = {
   completeExistingOrderNotification,
   deliverPaidOrderNotification,
   deliverPaywayPaymentNotification,
+  deliverPaywayAmbiguousPaymentWarning,
   closeExistingOrderNotification,
   deliverClosedOrderNotification,
 };

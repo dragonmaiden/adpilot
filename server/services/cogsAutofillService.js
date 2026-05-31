@@ -21,6 +21,9 @@ const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const MAX_NEW_ORDER_BACKFILL_HOURS = 1;
 const BIG_FISH_THRESHOLD_KRW = 200000;
+const DEFAULT_PAYWAY_WATCH_MINUTES = 10;
+const DEFAULT_PAYWAY_MATCH_LEAD_MINUTES = 5;
+const DEFAULT_SCAN_INTERVAL_MINUTES = 3;
 const MONTH_ONLY_SHEET_RE = /^\s*\d{1,2}\s*월\s*$/;
 const TERMINAL_ORDER_STATUS_TOKENS = [
   'CANCEL',
@@ -905,6 +908,71 @@ function buildPaywayPaymentReceivedNotification(result, payment = {}) {
   return sections.join('\n');
 }
 
+function buildPaywayAmbiguousPaymentNotification(payload = {}) {
+  const reason = asString(payload?.reason);
+  const orders = Array.isArray(payload?.orders) ? payload.orders : [];
+  const orderNos = orders.length > 0
+    ? orders.map(order => asString(order?.orderNo)).filter(Boolean)
+    : (Array.isArray(payload?.orderNos) ? payload.orderNos.map(asString).filter(Boolean) : []);
+  const payments = Array.isArray(payload?.candidatePayments) ? payload.candidatePayments : [];
+  const amount = Number(
+    payload?.amount
+      || orders.find(order => Number(order?.amount || 0) > 0)?.amount
+      || payments.find(payment => Number(payment?.transactionAmount || payment?.approvedAmount || 0) > 0)?.transactionAmount
+      || 0
+  );
+  const reasonLabel = reason === 'ambiguous_multiple_order_watches'
+    ? 'One Payway payment matches multiple pending order cards'
+    : reason === 'ambiguous_multiple_payway_payments'
+      ? 'One order card matches multiple Payway payments'
+      : 'Payway payment match is ambiguous';
+
+  const sections = [
+    '⚠️ <b>Payway payment needs manual check</b>',
+    '',
+    `Reason: ${escapeHtml(reasonLabel)}`,
+  ];
+
+  if (amount > 0) {
+    sections.push(`Amount: ${escapeHtml(formatStoreMoney(amount))}`);
+  }
+
+  if (orderNos.length > 0) {
+    sections.push('', 'Candidate orders:');
+    for (const order of orders.slice(0, 6)) {
+      const orderNo = asString(order?.orderNo);
+      if (!orderNo) continue;
+      const customer = asString(order?.customerName);
+      sections.push(`• ${escapeHtml(orderNo)}${customer ? ` · ${escapeHtml(customer)}` : ''}`);
+    }
+    if (orders.length === 0) {
+      for (const orderNo of orderNos.slice(0, 6)) {
+        sections.push(`• ${escapeHtml(orderNo)}`);
+      }
+    }
+    if (orderNos.length > 6) {
+      sections.push(`• +${orderNos.length - 6} more`);
+    }
+  }
+
+  if (payments.length > 0) {
+    sections.push('', 'Candidate Payway payments:');
+    for (const payment of payments.slice(0, 4)) {
+      const approvedAt = asString(payment?.transactionAt || payment?.transactionAtIso) || 'time unavailable';
+      const approvalNo = asString(payment?.approvalNo);
+      const paymentAmount = Number(payment?.transactionAmount || payment?.approvedAmount || amount || 0);
+      const amountLabel = paymentAmount > 0 ? `${formatStoreMoney(paymentAmount)} · ` : '';
+      sections.push(`• ${escapeHtml(amountLabel + approvedAt)}${approvalNo ? ` · ${escapeHtml(approvalNo)}` : ''}`);
+    }
+    if (payments.length > 4) {
+      sections.push(`• +${payments.length - 4} more`);
+    }
+  }
+
+  sections.push('', 'Action: confirm the correct order manually in Imweb/Payway.');
+  return sections.join('\n');
+}
+
 function buildAutofillNotification(result) {
   const revenue = Number(result?.netRevenue || result?.approvedAmount || 0);
   const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
@@ -1264,7 +1332,29 @@ function shouldBackfillNewOrderNotification(order) {
   return shouldSendNewOrderNotification(order);
 }
 
-function shouldRefreshPaywayPaymentWatch(order) {
+function getPositiveInteger(value, fallback) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
+}
+
+function getPaywayWatchRefreshWindowMs() {
+  const watchMinutes = getPositiveInteger(config.payway?.watchMinutes, DEFAULT_PAYWAY_WATCH_MINUTES);
+  const configuredLeadMinutes = getPositiveInteger(config.payway?.matchLeadMinutes, DEFAULT_PAYWAY_MATCH_LEAD_MINUTES);
+  const scanIntervalMinutes = getPositiveInteger(config.scheduler?.scanIntervalMinutes, DEFAULT_SCAN_INTERVAL_MINUTES);
+  const effectiveLeadMinutes = Math.max(configuredLeadMinutes, scanIntervalMinutes + 2);
+  return (watchMinutes + effectiveLeadMinutes + scanIntervalMinutes) * 60 * 1000;
+}
+
+function isWithinPaywayWatchRefreshWindow(order, notification, now = new Date()) {
+  const anchor = parseTimestamp(notification?.notifiedAt) || getOrderCreationTimestamp(order);
+  if (!anchor) {
+    return false;
+  }
+
+  return now.getTime() - anchor.getTime() <= getPaywayWatchRefreshWindowMs();
+}
+
+function shouldRefreshPaywayPaymentWatch(order, options = {}) {
   const normalizedOrderNo = asString(order?.orderNo);
   if (!normalizedOrderNo) {
     return false;
@@ -1284,7 +1374,9 @@ function shouldRefreshPaywayPaymentWatch(order) {
     return false;
   }
 
-  return shouldSendNewOrderNotification(order);
+  const now = options.now instanceof Date ? options.now : new Date();
+  return shouldSendNewOrderNotification(order)
+    && isWithinPaywayWatchRefreshWindow(order, notification, now);
 }
 
 function shouldCloseExistingOrderNotification(order) {
@@ -1351,6 +1443,7 @@ function collectRecentNewOrderNotifications(orders, options = {}) {
 
 function collectRecentPaywayPaymentWatchCandidates(orders, options = {}) {
   const windowStart = resolveNewOrderBackfillWindowStart(options);
+  const now = options.now instanceof Date ? options.now : new Date();
   const seenOrderNos = new Set();
 
   const eligibleOrders = (Array.isArray(orders) ? orders : [])
@@ -1360,7 +1453,7 @@ function collectRecentPaywayPaymentWatchCandidates(orders, options = {}) {
         return false;
       }
 
-      if (!shouldRefreshPaywayPaymentWatch(order)) {
+      if (!shouldRefreshPaywayPaymentWatch(order, { now })) {
         return false;
       }
 
@@ -1601,6 +1694,7 @@ module.exports = {
   resolveTargetSheet,
   buildNewOrderNotification,
   buildPaywayPaymentReceivedNotification,
+  buildPaywayAmbiguousPaymentNotification,
   buildAutofillNotification,
   buildAutofillPrivateNotification,
   sanitizeAutofillResultForResponse,

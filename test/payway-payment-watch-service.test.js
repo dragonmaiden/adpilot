@@ -323,6 +323,88 @@ test('Payway watcher fails closed when one payment matches multiple pending orde
   });
 });
 
+test('Payway watcher sends one deduped warning for ambiguous Payway matches', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+  const warnings = [];
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN009889:22221111:2026-05-25 20:01:00:118000',
+          transactionAt: '2026-05-25 20:01:00',
+          transactionAtIso: '2026-05-25T11:01:00.000Z',
+          status: '승인',
+          terminal: 'TMN009889',
+          approvalNo: '22221111',
+          transactionAmount: 118000,
+          approvedAmount: 118000,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+      deliverPaywayAmbiguousPaymentWarning: async payload => {
+        warnings.push(payload);
+        return { ok: true, messageId: 9001 };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202605252918862',
+      orderDate: '2026-05-25',
+      customerName: '김서연',
+      orderValue: 118000,
+      paymentState: 'awaiting_check',
+      productNames: ['지갑'],
+    }, {
+      now: new Date('2026-05-25T11:00:00.000Z'),
+      messageId: 1366,
+    });
+    service.watchOrder({
+      orderNo: '202605252918863',
+      orderDate: '2026-05-25',
+      customerName: '박민지',
+      orderValue: 118000,
+      paymentState: 'awaiting_check',
+      productNames: ['지갑'],
+    }, {
+      now: new Date('2026-05-25T11:00:30.000Z'),
+      messageId: 1367,
+    });
+
+    const first = await service.runDueChecks({
+      now: new Date('2026-05-25T11:01:30.000Z'),
+    });
+    const second = await service.runDueChecks({
+      now: new Date('2026-05-25T11:02:00.000Z'),
+    });
+
+    assert.equal(first.ok, false);
+    assert.equal(first.ambiguousMatches, 2);
+    assert.equal(first.ambiguousWarningsSent, 1);
+    assert.equal(second.ambiguousWarningsSent, 0);
+    assert.equal(warnings.length, 1);
+    assert.equal(deliveries.length, 0);
+    assert.deepEqual(warnings[0].orderNos, ['202605252918862', '202605252918863']);
+    assert.equal(warnings[0].amount, 118000);
+
+    const state = service.loadState();
+    assert.equal(Object.keys(state.ambiguityWarnings).length, 1);
+    assert.equal(Object.values(state.ambiguityWarnings)[0].messageId, 9001);
+  });
+});
+
 test('Payway watcher fails closed when one order matches multiple payments', async () => {
   const dataDir = createTempDataDir();
   const deliveries = [];

@@ -1019,6 +1019,13 @@ test('collectRecentPaywayPaymentWatchCandidates refreshes recent pending Telegra
         messageId: 4323,
         paywayPaymentReceivedMessageId: 8801,
       },
+      '20260313009': {
+        orderNo: '20260313009',
+        notifiedAt: new Date(now - (25 * 60 * 1000)).toISOString(),
+        source: 'scan_backstop',
+        notificationStage: 'payment_pending',
+        messageId: 4324,
+      },
     },
   }, null, 2));
 
@@ -1091,6 +1098,14 @@ test('collectRecentPaywayPaymentWatchCandidates refreshes recent pending Telegra
             method: 'CARD',
           },
         ],
+      }),
+      createOrder({
+        orderNo: '20260313009',
+        wtime: new Date(now - (25 * 60 * 1000)).toISOString(),
+        orderStatus: 'OPEN',
+        totalPrice: 111000,
+        totalPaymentPrice: 0,
+        payments: [],
       }),
     ], {
       sinceTime: new Date(now - (30 * 60 * 1000)),

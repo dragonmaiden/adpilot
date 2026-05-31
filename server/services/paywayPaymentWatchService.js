@@ -24,6 +24,7 @@ function createEmptyState() {
   return {
     watchedOrders: {},
     handledTransactions: {},
+    ambiguityWarnings: {},
   };
 }
 
@@ -40,6 +41,9 @@ function loadState() {
         : {},
       handledTransactions: raw?.handledTransactions && typeof raw.handledTransactions === 'object'
         ? raw.handledTransactions
+        : {},
+      ambiguityWarnings: raw?.ambiguityWarnings && typeof raw.ambiguityWarnings === 'object'
+        ? raw.ambiguityWarnings
         : {},
     };
   } catch (_) {
@@ -190,6 +194,17 @@ function pruneHandledTransactions(state, now = new Date()) {
   }
 }
 
+function pruneAmbiguityWarnings(state, now = new Date()) {
+  const cutoffMs = now.getTime() - (HANDLED_TRANSACTION_RETENTION_HOURS * 60 * 60 * 1000);
+
+  for (const [warningKey, metadata] of Object.entries(state.ambiguityWarnings || {})) {
+    const warnedAt = parseDate(metadata?.warnedAt || metadata?.lastAttemptAt);
+    if (warnedAt && warnedAt.getTime() < cutoffMs) {
+      delete state.ambiguityWarnings[warningKey];
+    }
+  }
+}
+
 function clearPollTimer() {
   if (pollTimer) {
     clearTimeout(pollTimer);
@@ -259,6 +274,47 @@ function getPaymentMatchingWatches(payment, watches) {
   return watches.filter(watch => matchesWatch(watch, payment));
 }
 
+function buildAmbiguousOrderSummary(watch) {
+  return {
+    orderNo: asString(watch?.orderNo),
+    customerName: asString(watch?.orderResult?.customerName),
+    amount: Number(watch?.amount || 0) || null,
+  };
+}
+
+function buildAmbiguousPaymentSummary(payment) {
+  return {
+    transactionId: asString(payment?.transactionId),
+    transactionAt: asString(payment?.transactionAt || payment?.transactionAtIso),
+    approvalNo: asString(payment?.approvalNo),
+    transactionAmount: Number(payment?.transactionAmount || payment?.approvedAmount || 0) || null,
+  };
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.map(asString).filter(Boolean))].sort();
+}
+
+function buildAmbiguityWarningKey(watch, match) {
+  const orderNos = uniqueSorted(
+    Array.isArray(match?.orders) && match.orders.length > 0
+      ? match.orders.map(order => order.orderNo)
+      : [watch?.orderNo, ...(Array.isArray(match?.competingOrderNos) ? match.competingOrderNos : [])]
+  );
+  const transactionIds = uniqueSorted(
+    Array.isArray(match?.candidatePayments)
+      ? match.candidatePayments.map(payment => payment.transactionId)
+      : []
+  );
+  const amount = Number(match?.amount || watch?.amount || 0) || '';
+  return [
+    asString(match?.reason || 'ambiguous_payway_payment_match'),
+    orderNos.join(','),
+    transactionIds.join(','),
+    amount,
+  ].join('|');
+}
+
 function findMatchingPayment(watch, payments, handledTransactions, activeWatches = []) {
   const matchingPayments = getMatchingPayments(watch, payments, handledTransactions || {});
   if (matchingPayments.length === 0) {
@@ -271,6 +327,9 @@ function findMatchingPayment(watch, payments, handledTransactions, activeWatches
       ambiguous: true,
       reason: 'ambiguous_multiple_payway_payments',
       candidateCount: matchingPayments.length,
+      orders: [buildAmbiguousOrderSummary(watch)],
+      amount: Number(watch?.amount || 0) || null,
+      candidatePayments: matchingPayments.map(buildAmbiguousPaymentSummary),
     };
   }
 
@@ -282,6 +341,9 @@ function findMatchingPayment(watch, payments, handledTransactions, activeWatches
       ambiguous: true,
       reason: 'ambiguous_multiple_order_watches',
       candidateCount: matchingWatches.length,
+      amount: Number(payment?.transactionAmount || payment?.approvedAmount || watch?.amount || 0) || null,
+      orders: matchingWatches.map(buildAmbiguousOrderSummary),
+      candidatePayments: [buildAmbiguousPaymentSummary(payment)],
       competingOrderNos: matchingWatches
         .map(candidate => asString(candidate.orderNo))
         .filter(Boolean)
@@ -295,17 +357,81 @@ function findMatchingPayment(watch, payments, handledTransactions, activeWatches
 function recordAmbiguousMatch(watch, match, now = new Date()) {
   const reason = match?.reason || 'ambiguous_payway_payment_match';
   const previousError = watch.lastPollError;
+  const warningKey = buildAmbiguityWarningKey(watch, match);
   watch.lastPollError = reason;
   watch.lastAmbiguousMatchAt = nowIso(now);
   watch.ambiguousMatch = {
     reason,
     candidateCount: Number(match?.candidateCount || 0) || null,
+    warningKey,
     competingOrderNos: Array.isArray(match?.competingOrderNos) ? match.competingOrderNos : [],
   };
 
   if (previousError !== reason) {
     console.warn(`[PAYWAY] Ambiguous payment match for order ${watch.orderNo}: ${reason}`);
   }
+
+  return {
+    key: warningKey,
+    payload: {
+      reason,
+      candidateCount: Number(match?.candidateCount || 0) || null,
+      amount: Number(match?.amount || watch?.amount || 0) || null,
+      orderNos: uniqueSorted(
+        Array.isArray(match?.orders) && match.orders.length > 0
+          ? match.orders.map(order => order.orderNo)
+          : [watch?.orderNo, ...(Array.isArray(match?.competingOrderNos) ? match.competingOrderNos : [])]
+      ),
+      orders: Array.isArray(match?.orders) ? match.orders : [buildAmbiguousOrderSummary(watch)],
+      candidatePayments: Array.isArray(match?.candidatePayments) ? match.candidatePayments : [],
+    },
+  };
+}
+
+async function deliverAmbiguousMatchWarnings(state, warnings, now = new Date()) {
+  if (!Array.isArray(warnings) || warnings.length === 0) {
+    return { sent: 0, failed: 0 };
+  }
+  if (typeof orderNotificationService.deliverPaywayAmbiguousPaymentWarning !== 'function') {
+    return { sent: 0, failed: 0 };
+  }
+
+  state.ambiguityWarnings = state.ambiguityWarnings || {};
+  const uniqueWarnings = new Map();
+  for (const warning of warnings) {
+    if (!warning?.key) continue;
+    uniqueWarnings.set(warning.key, warning.payload);
+  }
+
+  let sent = 0;
+  let failed = 0;
+  for (const [key, payload] of uniqueWarnings.entries()) {
+    if (state.ambiguityWarnings[key]?.warnedAt) {
+      continue;
+    }
+
+    const delivery = await orderNotificationService.deliverPaywayAmbiguousPaymentWarning(payload);
+    if (delivery?.ok) {
+      state.ambiguityWarnings[key] = {
+        warnedAt: nowIso(now),
+        reason: payload.reason,
+        orderNos: payload.orderNos,
+        messageId: Number.isFinite(Number(delivery.messageId)) ? Number(delivery.messageId) : null,
+      };
+      sent += 1;
+    } else {
+      state.ambiguityWarnings[key] = {
+        ...(state.ambiguityWarnings[key] || {}),
+        reason: payload.reason,
+        orderNos: payload.orderNos,
+        lastAttemptAt: nowIso(now),
+        lastError: delivery?.reason || delivery?.response?.description || 'telegram_warning_failed',
+      };
+      failed += 1;
+    }
+  }
+
+  return { sent, failed };
 }
 
 function describeDeliveryFailure(delivery) {
@@ -421,6 +547,7 @@ async function runDueChecks(options = {}) {
     const state = loadState();
     expireOldWatches(state, now);
     pruneHandledTransactions(state, now);
+    pruneAmbiguityWarnings(state, now);
 
     const activeWatches = getActiveWatches(state, now);
     if (activeWatches.length === 0) {
@@ -433,6 +560,7 @@ async function runDueChecks(options = {}) {
     let delivered = 0;
     let failedDeliveries = 0;
     let ambiguousMatches = 0;
+    const ambiguousWarnings = [];
     const existingDetected = activeWatches.filter(watch => watch.status === 'payment_detected' && watch.matchedPayment);
 
     for (const watch of existingDetected) {
@@ -474,7 +602,10 @@ async function runDueChecks(options = {}) {
         if (!match.payment) {
           if (match.ambiguous) {
             ambiguousMatches += 1;
-            recordAmbiguousMatch(watch, match, now);
+            const warning = recordAmbiguousMatch(watch, match, now);
+            if (warning) {
+              ambiguousWarnings.push(warning);
+            }
           } else {
             watch.lastPollError = null;
             delete watch.ambiguousMatch;
@@ -496,6 +627,8 @@ async function runDueChecks(options = {}) {
       }
     }
 
+    const warningResult = await deliverAmbiguousMatchWarnings(state, ambiguousWarnings, now);
+
     saveState(state);
 
     if (getActiveWatches(state, now).length > 0) {
@@ -511,6 +644,8 @@ async function runDueChecks(options = {}) {
       delivered,
       failedDeliveries,
       ambiguousMatches,
+      ambiguousWarningsSent: warningResult.sent,
+      ambiguousWarningsFailed: warningResult.failed,
     };
   })();
 

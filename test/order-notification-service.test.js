@@ -272,6 +272,33 @@ test('deliverPaywayPaymentNotification does not resend the payment received mess
   });
 });
 
+test('deliverPaywayAmbiguousPaymentWarning sends the manual-check alert', async () => {
+  const sentMessages = [];
+
+  await withMockedOrderNotificationService({
+    telegram: {
+      sendMessage: async (text, parseMode = 'HTML', options = {}) => {
+        sentMessages.push({ text, parseMode, options });
+        return { ok: true, result: { message_id: 9001 } };
+      },
+    },
+    cogsAutofillService: {
+      buildPaywayAmbiguousPaymentNotification: payload => `ambiguous:${payload.reason}:${payload.orderNos.join(',')}`,
+    },
+  }, async service => {
+    const result = await service.deliverPaywayAmbiguousPaymentWarning({
+      reason: 'ambiguous_multiple_order_watches',
+      orderNos: ['202605252918862', '202605252918863'],
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.messageId, 9001);
+    assert.deepEqual(sentMessages.map(message => message.text), [
+      'ambiguous:ambiguous_multiple_order_watches:202605252918862,202605252918863',
+    ]);
+  });
+});
+
 test('deliverPaidOrderNotification stays silent when an existing order card cannot be edited yet', async () => {
   const sentMessages = [];
 
