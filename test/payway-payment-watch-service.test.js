@@ -133,6 +133,67 @@ test('Payway watcher detects a matching approved payment and triggers the Payway
   });
 });
 
+test('Payway watcher accepts payments from any configured Payway terminal id', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+  const config = createConfig();
+  config.payway.mid = 'TMN009889,TMN025656';
+
+  await withMockedWatchService({
+    config,
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN025656:55556666:2026-06-02 09:23:56:96900',
+          transactionAt: '2026-06-02 09:23:56',
+          transactionAtIso: '2026-06-02T00:23:56.000Z',
+          status: '승인',
+          terminal: 'TMN025656',
+          approvalNo: '55556666',
+          transactionAmount: 96900,
+          approvedAmount: 96900,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202606020001',
+      orderDate: '2026-06-02',
+      customerName: '김민지',
+      orderValue: 96900,
+      paymentState: 'awaiting_check',
+      productNames: ['니트백'],
+    }, {
+      now: new Date('2026-06-02T00:20:00.000Z'),
+      messageId: 5001,
+    });
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-06-02T00:24:00.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].payment.terminal, 'TMN025656');
+
+    const state = service.loadState();
+    assert.equal(state.watchedOrders['202606020001'].status, 'paid');
+  });
+});
+
 test('Payway watcher lead window covers scheduler lag before the watch starts', async () => {
   const dataDir = createTempDataDir();
   const deliveries = [];

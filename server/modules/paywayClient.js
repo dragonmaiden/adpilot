@@ -14,6 +14,14 @@ function getPaywayConfig() {
   return config.payway || {};
 }
 
+function getConfiguredTerminalIds() {
+  const terminalIds = asString(getPaywayConfig().mid)
+    .split(/[\s,;]+/)
+    .map(value => value.trim())
+    .filter(Boolean);
+  return [...new Set(terminalIds)];
+}
+
 function getPositiveInteger(value, fallback) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
@@ -109,7 +117,7 @@ function getStatus() {
     enabled,
     configured,
     reason,
-    midConfigured: Boolean(asString(payway.mid)),
+    midConfigured: getConfiguredTerminalIds().length > 0,
     dashboardCredentialsConfigured,
     sessionCookieConfigured,
     historyPath: asString(payway.historyPath) || '/pay',
@@ -392,8 +400,7 @@ function getPaymentHistoryDateRange(nowInput = new Date()) {
   };
 }
 
-function buildPaymentHistoryRequestBody(options = {}) {
-  const payway = getPaywayConfig();
+function buildPaymentHistoryRequestBody(options = {}, terminalId = '') {
   const { startDate, endDate } = getPaymentHistoryDateRange(options.now);
   return new URLSearchParams({
     qry: PAYMENT_HISTORY_QUERY,
@@ -401,8 +408,8 @@ function buildPaymentHistoryRequestBody(options = {}) {
       st: startDate,
       ed: endDate,
       pay_sta: 'ALL',
-      kf: asString(payway.mid) ? 'terminal' : '',
-      k: asString(payway.mid),
+      kf: terminalId ? 'terminal' : '',
+      k: terminalId,
       rows: PAYMENT_HISTORY_ROWS,
       page: PAYMENT_HISTORY_PAGE,
       pageSize: PAYMENT_HISTORY_PAGE_SIZE,
@@ -411,7 +418,29 @@ function buildPaymentHistoryRequestBody(options = {}) {
   });
 }
 
-async function fetchPaymentHistoryViaAjax(options = {}) {
+function getPaymentHistoryRequestBodies(options = {}) {
+  const terminalIds = getConfiguredTerminalIds();
+  if (terminalIds.length === 0) {
+    return [buildPaymentHistoryRequestBody(options)];
+  }
+  return terminalIds.map(terminalId => buildPaymentHistoryRequestBody(options, terminalId));
+}
+
+function dedupePayments(payments) {
+  const seen = new Set();
+  const deduped = [];
+
+  for (const payment of payments) {
+    const key = payment.transactionId || JSON.stringify(payment);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(payment);
+  }
+
+  return deduped;
+}
+
+async function fetchPaymentHistoryAjaxBody(body) {
   const response = await requestPayway('/ajax.php', {
     method: 'POST',
     headers: {
@@ -419,7 +448,7 @@ async function fetchPaymentHistoryViaAjax(options = {}) {
       'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
       'X-Requested-With': 'XMLHttpRequest',
     },
-    body: buildPaymentHistoryRequestBody(options),
+    body,
   });
   const text = await response.text();
 
@@ -437,6 +466,14 @@ async function fetchPaymentHistoryViaAjax(options = {}) {
   }
 
   return parsePaymentHistoryAjaxResponse(payload);
+}
+
+async function fetchPaymentHistoryViaAjax(options = {}) {
+  const paymentBatches = [];
+  for (const body of getPaymentHistoryRequestBodies(options)) {
+    paymentBatches.push(await fetchPaymentHistoryAjaxBody(body));
+  }
+  return dedupePayments(paymentBatches.flat());
 }
 
 async function fetchPaymentHistory(options = {}) {
@@ -462,6 +499,7 @@ module.exports = {
   parsePaymentHistoryHtml,
   parsePaymentHistoryAjaxResponse,
   isApprovedPaywayPayment,
+  getConfiguredTerminalIds,
   parseMoney,
   parsePaywayTimestamp,
   clearSession,

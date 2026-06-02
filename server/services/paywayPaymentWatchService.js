@@ -228,10 +228,24 @@ function scheduleNextPoll(delayMs = getPollIntervalMs()) {
   return pollTimer;
 }
 
+function getConfiguredTerminalIds() {
+  if (typeof paywayClient.getConfiguredTerminalIds === 'function') {
+    return paywayClient.getConfiguredTerminalIds();
+  }
+
+  const terminalIds = asString(config.payway?.mid)
+    .split(/[\s,;]+/)
+    .map(value => value.trim())
+    .filter(Boolean);
+  return [...new Set(terminalIds)];
+}
+
 function shouldMatchTerminal(payment) {
-  const configuredMid = asString(config.payway?.mid);
+  const configuredTerminals = getConfiguredTerminalIds();
   const terminal = asString(payment?.terminal);
-  return !configuredMid || !terminal || terminal.includes(configuredMid);
+  return configuredTerminals.length === 0
+    || !terminal
+    || configuredTerminals.some(configuredTerminal => terminal.includes(configuredTerminal));
 }
 
 function paymentTimestampMs(payment) {

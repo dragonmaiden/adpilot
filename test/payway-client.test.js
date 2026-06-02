@@ -253,6 +253,69 @@ test('fetchPaymentHistory requests Payway AJAX rows for the KST payment window',
   }
 });
 
+test('fetchPaymentHistory requests each configured Payway terminal id', async () => {
+  const originalFetch = global.fetch;
+  const requestedTerminals = [];
+  global.fetch = async (url, options) => {
+    if (options.method === 'POST' && new URLSearchParams(options.body).get('cmd') === 'LOGIN') {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'set-cookie': 'PAYWAYSESSID=session-2; Path=/' }),
+        text: async () => JSON.stringify({ res: 'OK' }),
+      };
+    }
+
+    assert.equal(url, 'https://payway.kr/ajax.php');
+    const params = new URLSearchParams(options.body);
+    const jData = JSON.parse(params.get('jData'));
+    requestedTerminals.push(jData.k);
+
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => JSON.stringify({
+        T2: [
+          {
+            pay_dt: '2026-06-02 09:23:56',
+            cancel_yn: '0',
+            mc_nm: 'SHUE',
+            tmid: jData.k,
+            authno: jData.k === 'TMN025656' ? '22223333' : '11112222',
+            amt: jData.k === 'TMN025656' ? '96900' : '100800',
+          },
+        ],
+      }),
+    };
+  };
+
+  try {
+    await withMockedPaywayClient({
+      payway: {
+        enabled: true,
+        baseUrl: 'https://payway.kr',
+        mid: 'TMN009889, TMN025656, TMN009889',
+        dashboardId: 'merchant',
+        dashboardPassword: 'secret',
+        requestTimeoutMs: 1000,
+      },
+    }, async client => {
+      assert.deepEqual(client.getConfiguredTerminalIds(), ['TMN009889', 'TMN025656']);
+
+      const payments = await client.fetchPaymentHistory({
+        now: new Date('2026-06-02T00:25:00.000Z'),
+      });
+
+      assert.deepEqual(requestedTerminals, ['TMN009889', 'TMN025656']);
+      assert.deepEqual(payments.map(payment => payment.terminal), ['TMN009889', 'TMN025656']);
+      assert.deepEqual(payments.map(payment => payment.transactionAmount), [100800, 96900]);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('login fails loud when Payway returns a non-JSON dashboard response', async () => {
   const originalFetch = global.fetch;
   global.fetch = async () => ({

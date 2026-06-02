@@ -42,7 +42,7 @@ services:
       - key: PAYWAY_BASE_URL
         value: https://payway.kr
       - key: PAYWAY_MID
-        value: TMN009889
+        value: TMN009889,TMN025656
       - key: PAYWAY_DASHBOARD_ID
         sync: false
       - key: PAYWAY_DASHBOARD_PASSWORD
