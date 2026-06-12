@@ -37,6 +37,9 @@ const statusState = {
   privateChatSeparated: Boolean(PRIVATE_CHAT_ID && PRIVATE_CHAT_ID !== CHAT_ID),
   botUsername: null,
   botId: null,
+  chatAccessible: null,
+  chatType: null,
+  chatTitle: null,
   lastCheckedAt: null,
   lastOkAt: null,
   lastError: null,
@@ -148,10 +151,28 @@ function describeTelegramFailure(data, fallback = 'Telegram request failed') {
   if (description === 'Not Found') {
     return 'Telegram API returned 404 Not Found. Check TELEGRAM_BOT_TOKEN.';
   }
-  if (description.toLowerCase() === 'chat not found') {
+  if (description.toLowerCase().includes('chat not found')) {
     return 'Telegram chat not found. Check TELEGRAM_CHAT_ID and whether the bot can access that chat.';
   }
   return description;
+}
+
+async function probeConfiguredChat() {
+  const data = await requestTelegram(`getChat?chat_id=${encodeURIComponent(CHAT_ID)}`, {
+    method: 'GET',
+  });
+  if (!data.ok) {
+    return {
+      ok: false,
+      message: describeTelegramFailure(data, 'Telegram getChat failed'),
+    };
+  }
+
+  return {
+    ok: true,
+    type: data.result?.type || null,
+    title: data.result?.title || data.result?.username || null,
+  };
 }
 
 async function probeConnection() {
@@ -168,8 +189,26 @@ async function probeConnection() {
     if (!data.ok) {
       syncStatus({
         status: 'error',
+        chatAccessible: null,
+        chatType: null,
+        chatTitle: null,
         lastCheckedAt: checkedAt,
         lastError: describeTelegramFailure(data, 'Telegram getMe failed'),
+      });
+      return null;
+    }
+
+    const chat = await probeConfiguredChat();
+    if (!chat.ok) {
+      syncStatus({
+        status: 'error',
+        botUsername: data.result?.username || null,
+        botId: data.result?.id || null,
+        chatAccessible: false,
+        chatType: null,
+        chatTitle: null,
+        lastCheckedAt: checkedAt,
+        lastError: chat.message,
       });
       return null;
     }
@@ -178,6 +217,9 @@ async function probeConnection() {
       status: 'connected',
       botUsername: data.result?.username || null,
       botId: data.result?.id || null,
+      chatAccessible: true,
+      chatType: chat.type,
+      chatTitle: chat.title,
       lastCheckedAt: checkedAt,
       lastOkAt: checkedAt,
       lastError: null,
@@ -186,6 +228,9 @@ async function probeConnection() {
   } catch (err) {
     syncStatus({
       status: 'error',
+      chatAccessible: null,
+      chatType: null,
+      chatTitle: null,
       lastCheckedAt: nowIso(),
       lastError: `Telegram connectivity check failed: ${err.message}`,
     });

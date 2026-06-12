@@ -199,13 +199,15 @@ test('fetchPaymentHistory requests Payway AJAX rows for the KST payment window',
     const params = new URLSearchParams(options.body);
     assert.equal(params.get('qry'), 'asp_usr_pay_lst');
     assert.equal(params.get('rtnType'), 'json3');
+    const historyCallIndex = calls.length - 2;
+    const expectedTerminal = historyCallIndex === 0 ? '' : 'TMN009889';
     const jData = JSON.parse(params.get('jData'));
     assert.deepEqual(jData, {
       st: '2026-05-18',
       ed: '2026-05-19',
       pay_sta: 'ALL',
-      kf: 'terminal',
-      k: 'TMN009889',
+      kf: expectedTerminal ? 'terminal' : '',
+      k: expectedTerminal,
       rows: '150',
       page: 1,
       pageSize: 150,
@@ -247,6 +249,7 @@ test('fetchPaymentHistory requests Payway AJAX rows for the KST payment window',
 
       assert.equal(payments.length, 1);
       assert.equal(payments[0].transactionAmount, 254000);
+      assert.equal(calls.length, 3);
     });
   } finally {
     global.fetch = originalFetch;
@@ -270,22 +273,42 @@ test('fetchPaymentHistory requests each configured Payway terminal id', async ()
     const params = new URLSearchParams(options.body);
     const jData = JSON.parse(params.get('jData'));
     requestedTerminals.push(jData.k);
+    const rows = jData.k
+      ? [
+        {
+          pay_dt: '2026-06-02 09:23:56',
+          cancel_yn: '0',
+          mc_nm: 'SHUE',
+          tmid: jData.k,
+          authno: jData.k === 'TMN025656' ? '22223333' : '11112222',
+          amt: jData.k === 'TMN025656' ? '96900' : '100800',
+        },
+      ]
+      : [
+        {
+          pay_dt: '2026-06-02 09:23:56',
+          cancel_yn: '0',
+          mc_nm: 'SHUE',
+          tmid: 'TMN009889',
+          authno: '11112222',
+          amt: '100800',
+        },
+        {
+          pay_dt: '2026-06-02 09:23:56',
+          cancel_yn: '0',
+          mc_nm: 'SHUE',
+          tmid: 'TMN025656',
+          authno: '22223333',
+          amt: '96900',
+        },
+      ];
 
     return {
       ok: true,
       status: 200,
       headers: new Headers(),
       text: async () => JSON.stringify({
-        T2: [
-          {
-            pay_dt: '2026-06-02 09:23:56',
-            cancel_yn: '0',
-            mc_nm: 'SHUE',
-            tmid: jData.k,
-            authno: jData.k === 'TMN025656' ? '22223333' : '11112222',
-            amt: jData.k === 'TMN025656' ? '96900' : '100800',
-          },
-        ],
+        T2: rows,
       }),
     };
   };
@@ -307,11 +330,91 @@ test('fetchPaymentHistory requests each configured Payway terminal id', async ()
         now: new Date('2026-06-02T00:25:00.000Z'),
       });
 
-      assert.deepEqual(requestedTerminals, ['TMN009889', 'TMN025656']);
+      assert.deepEqual(requestedTerminals, ['', 'TMN009889', 'TMN025656']);
       assert.deepEqual(payments.map(payment => payment.terminal), ['TMN009889', 'TMN025656']);
       assert.deepEqual(payments.map(payment => payment.transactionAmount), [100800, 96900]);
     });
   } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('fetchPaymentHistory keeps successful rows when a stale terminal query fails', async () => {
+  const originalFetch = global.fetch;
+  const originalWarn = console.warn;
+  const requestedTerminals = [];
+  const warnings = [];
+
+  console.warn = message => {
+    warnings.push(String(message));
+  };
+
+  global.fetch = async (url, options) => {
+    if (options.method === 'POST' && new URLSearchParams(options.body).get('cmd') === 'LOGIN') {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'set-cookie': 'PAYWAYSESSID=session-3; Path=/' }),
+        text: async () => JSON.stringify({ res: 'OK' }),
+      };
+    }
+
+    assert.equal(url, 'https://payway.kr/ajax.php');
+    const params = new URLSearchParams(options.body);
+    const jData = JSON.parse(params.get('jData'));
+    requestedTerminals.push(jData.k);
+
+    if (jData.k === 'TMN009889') {
+      return {
+        ok: false,
+        status: 500,
+        headers: new Headers(),
+        text: async () => 'stale terminal filter failed',
+      };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => JSON.stringify({
+        T2: [
+          {
+            pay_dt: '2026-06-02 09:33:56',
+            cancel_yn: '0',
+            mc_nm: 'SHUE',
+            tmid: 'TMN777777',
+            authno: '66667777',
+            amt: '96900',
+          },
+        ],
+      }),
+    };
+  };
+
+  try {
+    await withMockedPaywayClient({
+      payway: {
+        enabled: true,
+        baseUrl: 'https://payway.kr',
+        mid: 'TMN009889',
+        dashboardId: 'merchant',
+        dashboardPassword: 'secret',
+        requestTimeoutMs: 1000,
+      },
+    }, async client => {
+      const payments = await client.fetchPaymentHistory({
+        now: new Date('2026-06-02T00:35:00.000Z'),
+      });
+
+      assert.deepEqual(requestedTerminals, ['', 'TMN009889']);
+      assert.equal(payments.length, 1);
+      assert.equal(payments[0].terminal, 'TMN777777');
+      assert.equal(payments[0].transactionAmount, 96900);
+      assert.match(warnings[0], /supplemental payment history request/);
+    });
+  } finally {
+    console.warn = originalWarn;
     global.fetch = originalFetch;
   }
 });
@@ -367,9 +470,12 @@ test('getStatus reports Payway readiness without exposing secrets', async () => 
       dashboardCredentialsConfigured: true,
       sessionCookieConfigured: false,
       historyPath: '/pay',
-      watchMinutes: 10,
+      watchMinutes: 60,
+      configuredWatchMinutes: 10,
+      minimumWatchMinutes: 60,
       pollIntervalSeconds: 30,
       matchLeadMinutes: 2,
+      strictTerminalMatch: false,
     });
   });
 });

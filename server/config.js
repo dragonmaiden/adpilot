@@ -121,9 +121,11 @@ const config = {
     sessionCookie: process.env.PAYWAY_SESSION_COOKIE || '',
     historyPath: process.env.PAYWAY_HISTORY_PATH || '/pay',
     watchMinutes: parseInt(process.env.PAYWAY_WATCH_MINUTES || '10', 10),
+    minimumWatchMinutes: parseInt(process.env.PAYWAY_MIN_WATCH_MINUTES || '60', 10),
     pollIntervalSeconds: parseInt(process.env.PAYWAY_POLL_INTERVAL_SECONDS || '30', 10),
     matchLeadMinutes: parseInt(process.env.PAYWAY_MATCH_LEAD_MINUTES || '5', 10),
     requestTimeoutMs: parseInt(process.env.PAYWAY_REQUEST_TIMEOUT_MS || '10000', 10),
+    strictTerminalMatch: process.env.PAYWAY_STRICT_TERMINAL_MATCH === 'true',
   },
 
   // Observability

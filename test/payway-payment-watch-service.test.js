@@ -194,6 +194,119 @@ test('Payway watcher accepts payments from any configured Payway terminal id', a
   });
 });
 
+test('Payway watcher accepts terminal-id drift when strict terminal matching is disabled', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN777777:66667777:2026-06-02 09:33:56:96900',
+          transactionAt: '2026-06-02 09:33:56',
+          transactionAtIso: '2026-06-02T00:33:56.000Z',
+          status: '승인',
+          terminal: 'TMN777777',
+          approvalNo: '66667777',
+          transactionAmount: 96900,
+          approvedAmount: 96900,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202606020002',
+      orderDate: '2026-06-02',
+      customerName: '김민지',
+      orderValue: 96900,
+      paymentState: 'awaiting_check',
+      productNames: ['니트백'],
+    }, {
+      now: new Date('2026-06-02T00:30:00.000Z'),
+      messageId: 5002,
+    });
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-06-02T00:34:00.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].payment.terminal, 'TMN777777');
+  });
+});
+
+test('Payway watcher enforces a 60-minute minimum watch window', async () => {
+  const dataDir = createTempDataDir();
+  const deliveries = [];
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [
+        {
+          transactionId: 'TMN009889:66668888:2026-06-02 10:15:00:96900',
+          transactionAt: '2026-06-02 10:15:00',
+          transactionAtIso: '2026-06-02T01:15:00.000Z',
+          status: '승인',
+          terminal: 'TMN009889',
+          approvalNo: '66668888',
+          transactionAmount: 96900,
+          approvedAmount: 96900,
+          cancelAmount: 0,
+        },
+      ],
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, payment) => {
+        deliveries.push({ result, payment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    const watched = service.watchOrder({
+      orderNo: '202606020003',
+      orderDate: '2026-06-02',
+      customerName: '김민지',
+      orderValue: 96900,
+      paymentState: 'awaiting_check',
+      productNames: ['니트백'],
+    }, {
+      now: new Date('2026-06-02T00:30:00.000Z'),
+      messageId: 5003,
+    });
+
+    assert.equal(watched.expiresAt, '2026-06-02T01:30:00.000Z');
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-06-02T01:15:30.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(deliveries.length, 1);
+  });
+});
+
 test('Payway watcher lead window covers scheduler lag before the watch starts', async () => {
   const dataDir = createTempDataDir();
   const deliveries = [];
@@ -616,6 +729,8 @@ test('Payway watcher retries after a temporary payment history failure', async (
 test('Payway watcher refresh keeps the original match window for missed pending cards', async () => {
   const dataDir = createTempDataDir();
   const deliveries = [];
+  const config = createConfig();
+  config.payway.minimumWatchMinutes = 10;
   const payment = {
     transactionId: 'TMN009889:87654321:2026-03-15 12:35:20:111000',
     transactionAt: '2026-03-15 12:35:20',
@@ -629,7 +744,7 @@ test('Payway watcher refresh keeps the original match window for missed pending 
   };
 
   await withMockedWatchService({
-    config: createConfig(),
+    config,
     runtimePaths: { dataDir },
     paywayClient: {
       isEnabled: () => true,

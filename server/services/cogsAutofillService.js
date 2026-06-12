@@ -22,6 +22,7 @@ const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const MAX_NEW_ORDER_BACKFILL_HOURS = 1;
 const BIG_FISH_THRESHOLD_KRW = 200000;
 const DEFAULT_PAYWAY_WATCH_MINUTES = 10;
+const DEFAULT_PAYWAY_MIN_WATCH_MINUTES = 60;
 const DEFAULT_PAYWAY_MATCH_LEAD_MINUTES = 5;
 const DEFAULT_SCAN_INTERVAL_MINUTES = 3;
 const MONTH_ONLY_SHEET_RE = /^\s*\d{1,2}\s*월\s*$/;
@@ -1338,7 +1339,9 @@ function getPositiveInteger(value, fallback) {
 }
 
 function getPaywayWatchRefreshWindowMs() {
-  const watchMinutes = getPositiveInteger(config.payway?.watchMinutes, DEFAULT_PAYWAY_WATCH_MINUTES);
+  const configuredWatchMinutes = getPositiveInteger(config.payway?.watchMinutes, DEFAULT_PAYWAY_WATCH_MINUTES);
+  const minimumWatchMinutes = getPositiveInteger(config.payway?.minimumWatchMinutes, DEFAULT_PAYWAY_MIN_WATCH_MINUTES);
+  const watchMinutes = Math.max(configuredWatchMinutes, minimumWatchMinutes);
   const configuredLeadMinutes = getPositiveInteger(config.payway?.matchLeadMinutes, DEFAULT_PAYWAY_MATCH_LEAD_MINUTES);
   const scanIntervalMinutes = getPositiveInteger(config.scheduler?.scanIntervalMinutes, DEFAULT_SCAN_INTERVAL_MINUTES);
   const effectiveLeadMinutes = Math.max(configuredLeadMinutes, scanIntervalMinutes + 2);

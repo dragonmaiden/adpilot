@@ -1112,9 +1112,10 @@ test('collectRecentPaywayPaymentWatchCandidates refreshes recent pending Telegra
     });
 
     assert.equal(result.status, 'ok');
-    assert.equal(result.eligibleOrders, 1);
-    assert.equal(result.pending[0].orderNo, '20260313003');
-    assert.equal(result.pending[0].notificationMessageId, 4321);
+    assert.equal(result.eligibleOrders, 2);
+    assert.deepEqual(result.pending.map(order => order.orderNo), ['20260313009', '20260313003']);
+    assert.equal(result.pending[0].notificationMessageId, 4324);
+    assert.equal(result.pending[1].notificationMessageId, 4321);
     assert.equal(result.pending[0].notificationSource, 'scan_payway_watch_refresh');
   });
 });

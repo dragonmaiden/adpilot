@@ -101,6 +101,8 @@ function getStatus() {
   const dashboardCredentialsConfigured = hasDashboardCredentials();
   const sessionCookieConfigured = Boolean(getConfiguredCookieHeader());
   const configured = Boolean(enabled && (sessionCookieConfigured || dashboardCredentialsConfigured));
+  const configuredWatchMinutes = getPositiveInteger(payway.watchMinutes, 10);
+  const minimumWatchMinutes = getPositiveInteger(payway.minimumWatchMinutes, 60);
   let status = 'ready';
   let reason = null;
 
@@ -121,9 +123,12 @@ function getStatus() {
     dashboardCredentialsConfigured,
     sessionCookieConfigured,
     historyPath: asString(payway.historyPath) || '/pay',
-    watchMinutes: getPositiveInteger(payway.watchMinutes, 10),
+    watchMinutes: Math.max(configuredWatchMinutes, minimumWatchMinutes),
+    configuredWatchMinutes,
+    minimumWatchMinutes,
     pollIntervalSeconds: getPositiveInteger(payway.pollIntervalSeconds, 30),
     matchLeadMinutes: getPositiveInteger(payway.matchLeadMinutes, 5),
+    strictTerminalMatch: payway.strictTerminalMatch === true,
   };
 }
 
@@ -423,7 +428,10 @@ function getPaymentHistoryRequestBodies(options = {}) {
   if (terminalIds.length === 0) {
     return [buildPaymentHistoryRequestBody(options)];
   }
-  return terminalIds.map(terminalId => buildPaymentHistoryRequestBody(options, terminalId));
+  return [
+    buildPaymentHistoryRequestBody(options),
+    ...terminalIds.map(terminalId => buildPaymentHistoryRequestBody(options, terminalId)),
+  ];
 }
 
 function dedupePayments(payments) {
@@ -470,9 +478,25 @@ async function fetchPaymentHistoryAjaxBody(body) {
 
 async function fetchPaymentHistoryViaAjax(options = {}) {
   const paymentBatches = [];
+  const failures = [];
   for (const body of getPaymentHistoryRequestBodies(options)) {
-    paymentBatches.push(await fetchPaymentHistoryAjaxBody(body));
+    try {
+      paymentBatches.push(await fetchPaymentHistoryAjaxBody(body));
+    } catch (err) {
+      failures.push(err);
+    }
   }
+
+  if (paymentBatches.length === 0 && failures.length > 0) {
+    throw failures[0];
+  }
+  if (failures.length > 0) {
+    console.warn(
+      `[PAYWAY] ${failures.length} supplemental payment history request(s) failed; `
+      + `using ${paymentBatches.length} successful response(s)`
+    );
+  }
+
   return dedupePayments(paymentBatches.flat());
 }
 

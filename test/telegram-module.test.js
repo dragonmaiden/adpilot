@@ -95,6 +95,69 @@ function buildDailyReportLatestData(cogsRow) {
   };
 }
 
+test('probeConnection verifies the configured Telegram chat', async () => {
+  const requests = [];
+  await withTelegramModule(validEnv(), async url => {
+    requests.push(url);
+    if (url.includes('/getMe')) {
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: { id: 8702525178, username: 'Shuekimchi_bot' } }),
+      };
+    }
+    if (url.includes('/getChat')) {
+      return {
+        ok: true,
+        json: async () => ({
+          ok: true,
+          result: { id: -100111222333, type: 'supergroup', title: 'Shue Orders' },
+        }),
+      };
+    }
+    throw new Error(`Unexpected Telegram endpoint: ${url}`);
+  }, async telegram => {
+    const result = await telegram.probeConnection();
+    const status = telegram.getStatus();
+
+    assert.equal(result.username, 'Shuekimchi_bot');
+    assert.equal(requests.length, 2);
+    assert.match(requests[1], /getChat\?chat_id=-100111222333$/);
+    assert.equal(status.status, 'connected');
+    assert.equal(status.chatAccessible, true);
+    assert.equal(status.chatType, 'supergroup');
+    assert.equal(status.chatTitle, 'Shue Orders');
+    assert.equal(status.lastError, null);
+  });
+});
+
+test('probeConnection reports an unreachable Telegram chat separately from bot auth', async () => {
+  await withTelegramModule(validEnv(), async url => {
+    if (url.includes('/getMe')) {
+      return {
+        ok: true,
+        json: async () => ({ ok: true, result: { id: 8702525178, username: 'Shuekimchi_bot' } }),
+      };
+    }
+    if (url.includes('/getChat')) {
+      return {
+        ok: true,
+        json: async () => ({ ok: false, description: 'Bad Request: chat not found' }),
+      };
+    }
+    throw new Error(`Unexpected Telegram endpoint: ${url}`);
+  }, async telegram => {
+    const result = await telegram.probeConnection();
+    const status = telegram.getStatus();
+
+    assert.equal(result, null);
+    assert.equal(status.status, 'error');
+    assert.equal(status.botUsername, 'Shuekimchi_bot');
+    assert.equal(status.chatAccessible, false);
+    assert.equal(status.chatType, null);
+    assert.match(status.lastError, /Telegram chat not found/);
+  });
+});
+
 test('sendMessage fails fast when Telegram does not respond', async () => {
   await withTelegramModule(validEnv(), (_url, options = {}) => new Promise((_resolve, reject) => {
     options.signal?.addEventListener('abort', () => {

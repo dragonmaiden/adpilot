@@ -11,6 +11,9 @@ const STATE_FILE = path.join(runtimePaths.dataDir, 'payway_payment_watch_state.j
 const HANDLED_TRANSACTION_RETENTION_HOURS = 24;
 const PAYMENT_COMPLETION_RETRY_HOURS = 24;
 const MATCH_LEAD_SCAN_BUFFER_MINUTES = 2;
+const DEFAULT_PAYWAY_WATCH_MINUTES = 10;
+const DEFAULT_PAYWAY_MIN_WATCH_MINUTES = 60;
+const NO_MATCH_LOG_INTERVAL_POLLS = 10;
 
 let pollTimer = null;
 let started = false;
@@ -62,7 +65,9 @@ function getPositiveInteger(value, fallback) {
 }
 
 function getWatchMinutes() {
-  return getPositiveInteger(config.payway?.watchMinutes, 10);
+  const configuredWatchMinutes = getPositiveInteger(config.payway?.watchMinutes, DEFAULT_PAYWAY_WATCH_MINUTES);
+  const minimumWatchMinutes = getPositiveInteger(config.payway?.minimumWatchMinutes, DEFAULT_PAYWAY_MIN_WATCH_MINUTES);
+  return Math.max(configuredWatchMinutes, minimumWatchMinutes);
 }
 
 function getPollIntervalMs() {
@@ -176,6 +181,10 @@ function expireOldWatches(state, now = new Date()) {
     if (expiresAt && expiresAt.getTime() < nowMs) {
       watch.status = 'expired';
       watch.expiredAt = nowIso(now);
+      console.warn(
+        `[PAYWAY] Payment watch expired for order ${watch.orderNo} after ${Number(watch.pollAttempts || 0)} poll(s); `
+        + `amount=${watch.amount || 'unknown'} last_error=${watch.lastPollError || 'none'}`
+      );
       expired += 1;
     }
   }
@@ -241,6 +250,10 @@ function getConfiguredTerminalIds() {
 }
 
 function shouldMatchTerminal(payment) {
+  if (config.payway?.strictTerminalMatch !== true) {
+    return true;
+  }
+
   const configuredTerminals = getConfiguredTerminalIds();
   const terminal = asString(payment?.terminal);
   return configuredTerminals.length === 0
@@ -457,6 +470,13 @@ function describeDeliveryFailure(delivery) {
 }
 
 async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
+  console.log(
+    `[PAYWAY] Payment matched for order ${watch.orderNo}: `
+    + `amount=${payment.transactionAmount || payment.approvedAmount || watch.amount || 'unknown'} `
+    + `terminal=${payment.terminal || 'unknown'} `
+    + `transaction=${payment.transactionId || payment.approvalNo || 'unknown'}`
+  );
+
   const notificationResult = {
     ...watch.orderResult,
     orderValue: watch.amount,
@@ -481,6 +501,7 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
       handledAt: nowIso(now),
       transactionAmount: payment.transactionAmount || payment.approvedAmount || watch.amount,
     };
+    console.log(`[PAYWAY] Payment notification delivered for order ${watch.orderNo}`);
     return { delivered: true, delivery };
   }
 
@@ -502,6 +523,7 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
       transactionAmount: payment.transactionAmount || payment.approvedAmount || watch.amount,
     };
   }
+  console.warn(`[PAYWAY] Payment notification delivery failed for order ${watch.orderNo}: ${watch.lastDeliveryError}`);
   return { delivered: false, delivery };
 }
 
@@ -548,6 +570,10 @@ function watchOrder(result, options = {}) {
   pruneHandledTransactions(state, now);
   saveState(state);
   scheduleNextPoll(0);
+  console.log(
+    `[PAYWAY] ${existing ? 'Refreshed' : 'Started'} payment watch for order ${orderNo}: `
+    + `amount=${amount} expires_at=${expiresAt}`
+  );
   return { ok: true, watching: true, orderNo, expiresAt };
 }
 
@@ -592,6 +618,7 @@ async function runDueChecks(options = {}) {
       try {
         payments = await paywayClient.fetchPaymentHistory({ now });
       } catch (err) {
+        console.warn(`[PAYWAY] Payment history fetch failed for ${remainingWatches.length} active watch(es): ${err.message}`);
         for (const watch of remainingWatches) {
           watch.lastPollAt = nowIso(now);
           watch.pollAttempts = Number(watch.pollAttempts || 0) + 1;
@@ -624,6 +651,12 @@ async function runDueChecks(options = {}) {
             watch.lastPollError = null;
             delete watch.ambiguousMatch;
             delete watch.lastAmbiguousMatchAt;
+            if (watch.pollAttempts === 1 || watch.pollAttempts % NO_MATCH_LOG_INTERVAL_POLLS === 0) {
+              console.log(
+                `[PAYWAY] No matching payment yet for order ${watch.orderNo}: `
+                + `poll=${watch.pollAttempts} amount=${watch.amount} payments_checked=${payments.length}`
+              );
+            }
           }
           continue;
         }
