@@ -3,6 +3,12 @@ const { KST_TIME_ZONE, formatDateInTimeZone } = require('../domain/time');
 const { asString } = require('../services/privacyService');
 
 let cookieJar = new Map();
+const connectionState = {
+  lastCheckedAt: null,
+  lastOkAt: null,
+  lastErrorAt: null,
+  lastError: null,
+};
 
 const PAYMENT_HISTORY_QUERY = 'asp_usr_pay_lst';
 const PAYMENT_HISTORY_ROWS = '150';
@@ -25,6 +31,25 @@ function getConfiguredTerminalIds() {
 function getPositiveInteger(value, fallback) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function recordConnectionOk() {
+  const checkedAt = nowIso();
+  connectionState.lastCheckedAt = checkedAt;
+  connectionState.lastOkAt = checkedAt;
+  connectionState.lastErrorAt = null;
+  connectionState.lastError = null;
+}
+
+function recordConnectionError(err) {
+  const checkedAt = nowIso();
+  connectionState.lastCheckedAt = checkedAt;
+  connectionState.lastErrorAt = checkedAt;
+  connectionState.lastError = err?.message || String(err || 'unknown Payway connection error');
 }
 
 function createTimeoutSignal(timeoutMs) {
@@ -129,6 +154,10 @@ function getStatus() {
     pollIntervalSeconds: getPositiveInteger(payway.pollIntervalSeconds, 30),
     matchLeadMinutes: getPositiveInteger(payway.matchLeadMinutes, 5),
     strictTerminalMatch: payway.strictTerminalMatch === true,
+    lastCheckedAt: connectionState.lastCheckedAt,
+    lastOkAt: connectionState.lastOkAt,
+    lastErrorAt: connectionState.lastErrorAt,
+    lastError: connectionState.lastError,
   };
 }
 
@@ -168,6 +197,8 @@ function clearSession() {
 }
 
 function describeLoginFailure(payload, status) {
+  const result = asString(payload?.res);
+  if (result && result !== 'OK') return result;
   const message = asString(payload?.msg || payload?.message || payload?.error);
   if (message) return message;
   if (status) return `HTTP ${status}`;
@@ -501,16 +532,44 @@ async function fetchPaymentHistoryViaAjax(options = {}) {
 }
 
 async function fetchPaymentHistory(options = {}) {
-  await ensureSession();
   try {
-    return await fetchPaymentHistoryViaAjax(options);
+    await ensureSession();
+    const payments = await fetchPaymentHistoryViaAjax(options);
+    recordConnectionOk();
+    return payments;
   } catch (err) {
     if ((err.status === 401 || err.status === 403) && !getConfiguredCookieHeader()) {
-      clearSession();
-      await login();
-      return fetchPaymentHistoryViaAjax(options);
+      try {
+        clearSession();
+        await login();
+        const payments = await fetchPaymentHistoryViaAjax(options);
+        recordConnectionOk();
+        return payments;
+      } catch (retryErr) {
+        recordConnectionError(retryErr);
+        throw retryErr;
+      }
     }
+    recordConnectionError(err);
     throw err;
+  }
+}
+
+async function probeConnection() {
+  if (!isEnabled()) {
+    return { ok: false, skipped: true, reason: 'payway_disabled' };
+  }
+  if (!isConfigured()) {
+    return { ok: false, skipped: true, reason: 'payway_not_configured' };
+  }
+
+  try {
+    const session = await ensureSession();
+    recordConnectionOk();
+    return { ok: true, source: session.source || null };
+  } catch (err) {
+    recordConnectionError(err);
+    return { ok: false, error: err.message };
   }
 }
 
@@ -518,6 +577,7 @@ module.exports = {
   isEnabled,
   isConfigured,
   getStatus,
+  probeConnection,
   login,
   fetchPaymentHistory,
   parsePaymentHistoryHtml,

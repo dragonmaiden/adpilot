@@ -448,6 +448,74 @@ test('login fails loud when Payway returns a non-JSON dashboard response', async
   }
 });
 
+test('fetchPaymentHistory reports Payway dashboard login rejection in status', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    text: async () => JSON.stringify({ res: '비밀번호가 틀렸습니다.' }),
+  });
+
+  try {
+    await withMockedPaywayClient({
+      payway: {
+        enabled: true,
+        baseUrl: 'https://payway.kr',
+        dashboardId: 'merchant',
+        dashboardPassword: 'stale',
+        requestTimeoutMs: 1000,
+      },
+    }, async client => {
+      await assert.rejects(
+        () => client.fetchPaymentHistory(),
+        /Payway login failed: 비밀번호가 틀렸습니다\./
+      );
+
+      const status = client.getStatus();
+      assert.match(status.lastError, /비밀번호가 틀렸습니다\./);
+      assert.ok(status.lastCheckedAt);
+      assert.ok(status.lastErrorAt);
+      assert.equal(status.lastOkAt, null);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('probeConnection records Payway dashboard login rejection', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    text: async () => JSON.stringify({ res: '비밀번호가 틀렸습니다.' }),
+  });
+
+  try {
+    await withMockedPaywayClient({
+      payway: {
+        enabled: true,
+        baseUrl: 'https://payway.kr',
+        dashboardId: 'merchant',
+        dashboardPassword: 'stale',
+        requestTimeoutMs: 1000,
+      },
+    }, async client => {
+      const result = await client.probeConnection();
+      const status = client.getStatus();
+
+      assert.equal(result.ok, false);
+      assert.match(result.error, /비밀번호가 틀렸습니다\./);
+      assert.match(status.lastError, /비밀번호가 틀렸습니다\./);
+      assert.ok(status.lastCheckedAt);
+      assert.ok(status.lastErrorAt);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('getStatus reports Payway readiness without exposing secrets', async () => {
   await withMockedPaywayClient({
     payway: {
@@ -476,6 +544,10 @@ test('getStatus reports Payway readiness without exposing secrets', async () => 
       pollIntervalSeconds: 30,
       matchLeadMinutes: 2,
       strictTerminalMatch: false,
+      lastCheckedAt: null,
+      lastOkAt: null,
+      lastErrorAt: null,
+      lastError: null,
     });
   });
 });

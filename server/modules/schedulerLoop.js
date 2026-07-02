@@ -1,5 +1,6 @@
 const imweb = require('./imwebClient');
 const telegram = require('./telegram');
+const paywayClient = require('./paywayClient');
 const runtimeSettings = require('../runtime/runtimeSettings');
 const { getNextDailyReportAt } = require('../services/dailyTelegramReportService');
 const paywayPaymentWatchService = require('../services/paywayPaymentWatchService');
@@ -105,6 +106,16 @@ function startScheduler(runScan, options = {}) {
   imweb.loadTokens();
   telegram.startStatusChecks();
   paywayPaymentWatchService.start();
+  paywayClient.probeConnection().then(result => {
+    if (result?.ok) return;
+    if (result?.skipped) {
+      console.warn(`[PAYWAY] Startup connection check skipped: ${result.reason}`);
+      return;
+    }
+    console.warn(`[PAYWAY] Startup connection check failed: ${result?.error || 'unknown Payway error'}`);
+  }).catch(err => {
+    console.warn(`[PAYWAY] Startup connection check failed: ${err.message}`);
+  });
 
   nextInitialRunAt = new Date(Date.now() + 5000);
   initialScanTimer = setTimeout(() => {
