@@ -14,6 +14,19 @@ let accessToken = null;
 let refreshToken = null;
 let tokenExpiry = 0;
 let tokenInitialized = false;
+let refreshInFlight = null;
+
+const TOKEN_REQUEST_TIMEOUT_MS = 15_000;
+const TOKEN_REFRESH_MAX_ATTEMPTS = 3;
+const TOKEN_REFRESH_RETRY_DELAYS_MS = Object.freeze([250, 750]);
+const SAFE_TOKEN_RETRY_CODES = new Set([
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EHOSTUNREACH',
+  'ECONNREFUSED',
+  'UND_ERR_CONNECT_TIMEOUT',
+]);
 const authState = {
   status: 'missing',
   tokenSource: 'none',
@@ -169,6 +182,66 @@ function extractImwebError(payload) {
   return '';
 }
 
+function getNetworkErrorDetails(error) {
+  const details = [];
+  const codes = new Set();
+  let current = error;
+
+  while (current && typeof current === 'object') {
+    const code = typeof current.code === 'string' ? current.code.trim() : '';
+    const message = typeof current.message === 'string' ? current.message.trim() : '';
+
+    if (code) codes.add(code);
+    if (message && !details.includes(message)) {
+      details.push(code && !message.includes(code) ? `${code}: ${message}` : message);
+    }
+
+    current = current.cause;
+  }
+
+  return {
+    codes,
+    message: details.join(' <- ') || 'unknown network failure',
+  };
+}
+
+function isSafeTokenRetry(error) {
+  const { codes } = getNetworkErrorDetails(error);
+  return [...codes].some(code => SAFE_TOKEN_RETRY_CODES.has(code));
+}
+
+function wait(delayMs) {
+  return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+async function postTokenRequest(params, { label, maxAttempts = 1 } = {}) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fetch(`${config.imweb.baseUrl}/oauth2/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+        signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
+      });
+    } catch (networkErr) {
+      const diagnostic = getNetworkErrorDetails(networkErr).message;
+      const shouldRetry = attempt < maxAttempts && isSafeTokenRetry(networkErr);
+
+      if (!shouldRetry) {
+        throw new Error(`${label} network error: ${diagnostic}`, { cause: networkErr });
+      }
+
+      const delayMs = TOKEN_REFRESH_RETRY_DELAYS_MS[attempt - 1] || 750;
+      console.warn(
+        `[IMWEB] ${label} network attempt ${attempt}/${maxAttempts} failed: ${diagnostic}; retrying in ${delayMs}ms`
+      );
+      await wait(delayMs);
+    }
+  }
+
+  throw new Error(`${label} network error: retry attempts exhausted`);
+}
+
 async function readImwebResponse(res, label) {
   const rawText = await res.text();
   let payload;
@@ -288,7 +361,7 @@ function saveTokens(data, { fallbackRefreshToken = null, source = 'disk' } = {})
 }
 
 // ── Refresh access token ──
-async function refreshAccessToken(options = {}) {
+async function performRefreshAccessToken(options = {}) {
   const candidateRefreshToken = typeof options.refreshTokenOverride === 'string'
     ? options.refreshTokenOverride.trim()
     : refreshToken;
@@ -315,22 +388,11 @@ async function refreshAccessToken(options = {}) {
   params.append('clientSecret', config.imweb.clientSecret);
   params.append('refreshToken', candidateRefreshToken);
 
-  let res;
   try {
-    res = await fetch(`${config.imweb.baseUrl}/oauth2/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
+    const res = await postTokenRequest(params, {
+      label: 'Imweb token refresh',
+      maxAttempts: TOKEN_REFRESH_MAX_ATTEMPTS,
     });
-  } catch (networkErr) {
-    const msg = `Imweb token refresh network error: ${networkErr.message}`;
-    console.error(`[IMWEB] ${msg}`);
-    syncAuthState({ lastError: msg, tokenSource: source });
-    sendTokenAlert(msg);
-    throw new Error(msg, { cause: networkErr });
-  }
-
-  try {
     const data = await readImwebResponse(res, 'Imweb token refresh');
     saveTokens(data, { fallbackRefreshToken: candidateRefreshToken, source });
     console.log('[IMWEB] Token refreshed successfully');
@@ -342,6 +404,30 @@ async function refreshAccessToken(options = {}) {
     sendTokenAlert(msg);
     throw err;
   }
+}
+
+async function refreshAccessToken(options = {}) {
+  const candidateRefreshToken = typeof options.refreshTokenOverride === 'string'
+    ? options.refreshTokenOverride.trim()
+    : refreshToken;
+
+  if (refreshInFlight) {
+    if (candidateRefreshToken === refreshInFlight.candidateRefreshToken) {
+      return refreshInFlight.promise;
+    }
+
+    await refreshInFlight.promise.catch(() => {});
+    return refreshAccessToken(options);
+  }
+
+  const promise = performRefreshAccessToken(options).finally(() => {
+    if (refreshInFlight?.promise === promise) {
+      refreshInFlight = null;
+    }
+  });
+
+  refreshInFlight = { candidateRefreshToken, promise };
+  return promise;
 }
 
 // ── External seed (called by /api/seed-token endpoint) ──
@@ -380,24 +466,20 @@ async function exchangeAuthorizationCode(code, redirectUri) {
   params.append('redirectUri', normalizedRedirectUri);
   params.append('code', authorizationCode);
 
-  let res;
   try {
-    res = await fetch(`${config.imweb.baseUrl}/oauth2/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
+    const res = await postTokenRequest(params, {
+      label: 'Imweb authorization-code exchange',
     });
-  } catch (networkErr) {
-    const msg = `Imweb authorization-code exchange network error: ${networkErr.message}`;
+    const data = await readImwebResponse(res, 'Imweb authorization-code exchange');
+    saveTokens(data, { source: 'seed' });
+    console.log('[IMWEB] Authorization code exchanged successfully');
+    return true;
+  } catch (err) {
+    const msg = err.message || 'Imweb authorization-code exchange failed';
     console.error(`[IMWEB] ${msg}`);
     syncAuthState({ lastError: msg, tokenSource: 'oauth_callback' });
-    throw new Error(msg, { cause: networkErr });
+    throw err;
   }
-
-  const data = await readImwebResponse(res, 'Imweb authorization-code exchange');
-  saveTokens(data, { source: 'seed' });
-  console.log('[IMWEB] Authorization code exchanged successfully');
-  return true;
 }
 
 /**
@@ -445,10 +527,7 @@ async function ensureToken() {
     if (!refreshToken) {
       throw new Error('No Imweb refresh token available');
     }
-    await refreshAccessToken({
-      refreshTokenOverride: refreshToken,
-      source: authState.tokenSource || 'memory',
-    });
+    await refreshAccessToken({ source: authState.tokenSource || 'memory' });
   }
 }
 
