@@ -69,7 +69,8 @@ test('parsePaymentHistoryHtml extracts approved Payway card rows', () => {
   assert.equal(payments[0].transactionAmount, 111000);
   assert.equal(payments[0].cancelAmount, 0);
   assert.equal(payments[0].transactionAtIso, '2026-03-15T03:30:45.000Z');
-  assert.equal(paywayClient.isApprovedPaywayPayment(payments[0]), true);
+  assert.equal(payments[0].merchantOrderNo, '');
+  assert.equal(paywayClient.isApprovedPaywayPayment(payments[0]), false);
 });
 
 test('parsePaymentHistoryHtml ignores the static Payway table header', () => {
@@ -107,6 +108,7 @@ test('parsePaymentHistoryAjaxResponse extracts Payway AJAX payment rows', () => 
         cancel_yn: '0',
         mc_nm: 'SHUE',
         tmid: 'TMN009889',
+        odrno: '202605192180770',
         card_nm: '신한',
         cardno: '1234********5678',
         authno: '87654321',
@@ -121,6 +123,7 @@ test('parsePaymentHistoryAjaxResponse extracts Payway AJAX payment rows', () => 
   assert.equal(payments[0].status, '승인');
   assert.equal(payments[0].terminal, 'TMN009889');
   assert.equal(payments[0].approvalNo, '87654321');
+  assert.equal(payments[0].merchantOrderNo, '202605192180770');
   assert.equal(payments[0].transactionAmount, 254000);
   assert.equal(payments[0].cancelAmount, 0);
   assert.equal(payments[0].feeAmount, 7620);
@@ -137,6 +140,8 @@ test('parsePaymentHistoryAjaxResponse handles compact Payway payment timestamps'
         cancel_yn: 0,
         mc_nm: 'SHUE',
         tmid: 'TMN009889',
+        odrno: '202605192180771',
+        cardno: '4321********8765',
         authno: 'A1234567',
         amt: '171000.0000',
         fee: '10260',
@@ -150,6 +155,15 @@ test('parsePaymentHistoryAjaxResponse handles compact Payway payment timestamps'
   assert.equal(payments[0].transactionAmount, 171000);
   assert.equal(payments[0].feeAmount, 10260);
   assert.equal(paywayClient.isApprovedPaywayPayment(payments[0]), true);
+});
+
+test('isApprovedPaywayPayment rejects approvals without exact order and card evidence', () => {
+  assert.equal(paywayClient.isApprovedPaywayPayment({
+    status: '승인',
+    transactionAmount: 171000,
+    cancelAmount: 0,
+    approvalNo: 'A1234567',
+  }), false);
 });
 
 test('isApprovedPaywayPayment rejects cancelled approval rows', () => {

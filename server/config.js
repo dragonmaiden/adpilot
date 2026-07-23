@@ -111,7 +111,7 @@ const config = {
     requestTimeoutMs: parseInt(process.env.TELEGRAM_REQUEST_TIMEOUT_MS || '10000', 10),
   },
 
-  // Payway dashboard polling fallback for payment recognition
+  // Payway card-payment monitoring and exact-order Imweb reconciliation
   payway: {
     enabled: process.env.PAYWAY_ENABLED === 'true',
     baseUrl: process.env.PAYWAY_BASE_URL || 'https://payway.kr',

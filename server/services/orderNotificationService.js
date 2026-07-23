@@ -269,6 +269,26 @@ async function deliverPaywayPaymentNotification(result, payment = {}) {
       completion: completed,
     };
   }
+  if (completed.reason === 'missing_message_id' || completed.reason === 'missing_notification') {
+    cogsAutofillService.markOrderNotificationCompleted(completionResult.orderNo, {
+      messageId: paymentMessage.messageId,
+      paymentState: 'paid',
+      paymentSource: 'payway',
+      paywayTransactionId: payment?.transactionId || completionResult.paywayTransactionId,
+      paywayApprovedAt: payment?.transactionAt || payment?.transactionAtIso || completionResult.paywayApprovedAt,
+    });
+    return {
+      kind: 'payway_completed_without_pending_card',
+      ok: true,
+      paymentMessage,
+      completion: {
+        ok: true,
+        updated: false,
+        reason: 'payment_message_became_completion_card',
+        messageId: paymentMessage.messageId,
+      },
+    };
+  }
 
   return {
     kind: 'payway_payment_detected',

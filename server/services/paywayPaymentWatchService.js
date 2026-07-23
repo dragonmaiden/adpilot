@@ -5,6 +5,7 @@ const runtimePaths = require('../runtime/paths');
 const runtimeSettings = require('../runtime/runtimeSettings');
 const paywayClient = require('../modules/paywayClient');
 const imwebClient = require('../modules/imwebClient');
+const cogsAutofillService = require('./cogsAutofillService');
 const orderNotificationService = require('./orderNotificationService');
 const { asString } = require('./privacyService');
 
@@ -15,6 +16,7 @@ const MATCH_LEAD_SCAN_BUFFER_MINUTES = 2;
 const DEFAULT_PAYWAY_WATCH_MINUTES = 10;
 const DEFAULT_PAYWAY_MIN_WATCH_MINUTES = 60;
 const NO_MATCH_LOG_INTERVAL_POLLS = 10;
+const PAYMENT_MONITOR_OVERLAP_MS = 60 * 1000;
 
 let pollTimer = null;
 let started = false;
@@ -29,6 +31,7 @@ function createEmptyState() {
     watchedOrders: {},
     handledTransactions: {},
     ambiguityWarnings: {},
+    paymentMonitorCursorAt: null,
   };
 }
 
@@ -49,6 +52,7 @@ function loadState() {
       ambiguityWarnings: raw?.ambiguityWarnings && typeof raw.ambiguityWarnings === 'object'
         ? raw.ambiguityWarnings
         : {},
+      paymentMonitorCursorAt: asString(raw?.paymentMonitorCursorAt) || null,
     };
   } catch (_) {
     return createEmptyState();
@@ -118,10 +122,22 @@ function buildStoredOrderResult(result) {
     paymentState: asString(result?.paymentState),
     paymentLabel: asString(result?.paymentLabel),
     paymentMethod: asString(result?.paymentMethod),
+    paymentChannel: asString(result?.paymentChannel),
     notificationSource: asString(result?.notificationSource),
     sheetName: asString(result?.sheetName),
     rowCount: Number.isFinite(Number(result?.rowCount)) ? Number(result.rowCount) : null,
   };
+}
+
+function isPendingBankTransferResult(result) {
+  return asString(result?.paymentState) === 'awaiting_check'
+    && asString(result?.paymentChannel) === 'bank_transfer';
+}
+
+function shouldMonitorDirectPaywayPayments() {
+  return config.payway?.autoConfirmImwebPayment === true
+    && paywayClient.isEnabled()
+    && paywayClient.isConfigured();
 }
 
 function parseDate(value) {
@@ -267,9 +283,36 @@ function paymentTimestampMs(payment) {
   return parsed ? parsed.getTime() : null;
 }
 
+function getPaymentOrderNo(payment) {
+  return asString(payment?.merchantOrderNo);
+}
+
+function isImwebOrderReference(value) {
+  return /^\d{12,20}$/.test(asString(value));
+}
+
+function ensurePaymentMonitorCursor(state, now = new Date()) {
+  const existing = parseDate(state.paymentMonitorCursorAt);
+  if (existing) {
+    return existing;
+  }
+
+  const initialCursor = new Date(now.getTime() - getMatchLeadMs());
+  state.paymentMonitorCursorAt = nowIso(initialCursor);
+  return initialCursor;
+}
+
+function isWithinPaymentMonitorWindow(state, payment, now = new Date()) {
+  const paidAtMs = paymentTimestampMs(payment);
+  if (!paidAtMs) return false;
+  const cursor = ensurePaymentMonitorCursor(state, now);
+  return paidAtMs >= cursor.getTime() - PAYMENT_MONITOR_OVERLAP_MS;
+}
+
 function matchesWatch(watch, payment) {
   if (!paywayClient.isApprovedPaywayPayment(payment)) return false;
   if (!shouldMatchTerminal(payment)) return false;
+  if (getPaymentOrderNo(payment) !== asString(watch?.orderNo)) return false;
 
   const paymentAmount = Math.round(Number(payment.transactionAmount || payment.approvedAmount || 0));
   if (paymentAmount !== Number(watch.amount)) return false;
@@ -470,6 +513,129 @@ function describeDeliveryFailure(delivery) {
     || 'unknown_delivery_failure';
 }
 
+function recordHandledTransaction(state, payment, orderNo, now, status, reason = null) {
+  state.handledTransactions[payment.transactionId] = {
+    orderNo,
+    handledAt: nowIso(now),
+    status,
+    reason,
+    transactionAmount: payment.transactionAmount || payment.approvedAmount || null,
+  };
+}
+
+function recordDirectManualReview(state, payment, orderNo, now, reason) {
+  recordHandledTransaction(state, payment, orderNo, now, 'manual_review', reason);
+  console.warn(
+    `[PAYWAY] Direct auto-confirm skipped for order ${orderNo}: ${reason} `
+    + `(transaction=${payment.transactionId || payment.approvalNo || 'unknown'})`
+  );
+}
+
+async function reconcileDirectPayment(state, payment, now = new Date()) {
+  const orderNo = getPaymentOrderNo(payment);
+  const order = await imwebClient.getOrder(orderNo);
+  const orderResult = cogsAutofillService.buildOrderNotificationResult(order, {
+    notificationKind: 'new_order',
+    notificationSource: 'payway_direct',
+  });
+  const paymentAmount = Math.round(Number(payment.transactionAmount || payment.approvedAmount || 0));
+  const orderAmount = getOrderAmount(orderResult);
+
+  if (asString(orderResult.paymentState) === 'paid') {
+    recordHandledTransaction(state, payment, orderNo, now, 'already_confirmed');
+    return { reconciled: true, delivered: false, alreadyConfirmed: true };
+  }
+
+  if (!isPendingBankTransferResult(orderResult)) {
+    recordDirectManualReview(state, payment, orderNo, now, 'imweb_order_not_pending_bank_transfer');
+    return { reconciled: false, delivered: false, manualReview: true };
+  }
+
+  if (!orderAmount || paymentAmount !== orderAmount) {
+    recordDirectManualReview(state, payment, orderNo, now, 'payway_imweb_amount_mismatch');
+    return { reconciled: false, delivered: false, manualReview: true };
+  }
+
+  const existing = state.watchedOrders[orderNo];
+  const watchStartedAt = existing?.watchStartedAt || nowIso(now);
+  const expiresAt = existing?.expiresAt
+    || new Date(now.getTime() + (getWatchMinutes() * 60 * 1000)).toISOString();
+  const watch = {
+    ...(existing || {}),
+    orderNo,
+    amount: orderAmount,
+    status: 'payment_detected',
+    watchStartedAt,
+    expiresAt,
+    orderResult: buildStoredOrderResult(orderResult),
+    paymentDetectedAt: existing?.paymentDetectedAt || nowIso(now),
+    paywayTransactionId: payment.transactionId,
+    matchedPayment: payment,
+    lastPollAt: nowIso(now),
+    pollAttempts: Number(existing?.pollAttempts || 0) + 1,
+  };
+  state.watchedOrders[orderNo] = watch;
+
+  const result = await deliverDetectedPayment(state, watch, payment, now);
+  return {
+    reconciled: true,
+    delivered: result.delivered,
+    alreadyConfirmed: Boolean(result.confirmation?.alreadyConfirmed),
+  };
+}
+
+async function reconcileDirectPayments(state, payments, now = new Date()) {
+  if (!shouldMonitorDirectPaywayPayments()) {
+    return { detected: 0, delivered: 0, manualReview: 0, unresolved: 0 };
+  }
+
+  const candidates = payments
+    .filter(payment => paywayClient.isApprovedPaywayPayment(payment))
+    .filter(payment => shouldMatchTerminal(payment))
+    .filter(payment => isImwebOrderReference(getPaymentOrderNo(payment)))
+    .filter(payment => !state.handledTransactions[payment.transactionId])
+    .filter(payment => isWithinPaymentMonitorWindow(state, payment, now));
+  const candidatesByOrder = new Map();
+
+  for (const payment of candidates) {
+    const orderNo = getPaymentOrderNo(payment);
+    const orderPayments = candidatesByOrder.get(orderNo) || [];
+    orderPayments.push(payment);
+    candidatesByOrder.set(orderNo, orderPayments);
+  }
+
+  let detected = 0;
+  let delivered = 0;
+  let manualReview = 0;
+  let unresolved = 0;
+
+  for (const [orderNo, orderPayments] of candidatesByOrder.entries()) {
+    if (orderPayments.length > 1) {
+      for (const payment of orderPayments) {
+        recordDirectManualReview(state, payment, orderNo, now, 'multiple_payway_payments_for_order');
+      }
+      manualReview += orderPayments.length;
+      continue;
+    }
+
+    try {
+      const result = await reconcileDirectPayment(state, orderPayments[0], now);
+      if (result.reconciled) detected += 1;
+      if (result.delivered) delivered += 1;
+      if (result.manualReview) manualReview += 1;
+    } catch (err) {
+      unresolved += 1;
+      console.warn(`[PAYWAY] Direct auto-confirm deferred for order ${orderNo}: ${err.message}`);
+    }
+  }
+
+  if (unresolved === 0) {
+    state.paymentMonitorCursorAt = nowIso(now);
+  }
+
+  return { detected, delivered, manualReview, unresolved };
+}
+
 async function confirmMatchedImwebPayment(watch, now = new Date()) {
   if (config.payway?.autoConfirmImwebPayment !== true) {
     return { ok: true, skipped: true, reason: 'auto_confirmation_disabled' };
@@ -591,6 +757,9 @@ function watchOrder(result, options = {}) {
   if (!paywayClient.isConfigured()) {
     return { ok: false, skipped: true, reason: 'payway_not_configured' };
   }
+  if (!isPendingBankTransferResult(result)) {
+    return { ok: false, skipped: true, reason: 'not_pending_bank_transfer' };
+  }
 
   const orderNo = asString(result?.orderNo);
   if (!orderNo) {
@@ -647,7 +816,11 @@ async function runDueChecks(options = {}) {
     pruneAmbiguityWarnings(state, now);
 
     const activeWatches = getActiveWatches(state, now);
-    if (activeWatches.length === 0) {
+    const directMonitoring = shouldMonitorDirectPaywayPayments();
+    if (directMonitoring) {
+      ensurePaymentMonitorCursor(state, now);
+    }
+    if (activeWatches.length === 0 && !directMonitoring) {
       saveState(state);
       clearPollTimer();
       return { ok: true, activeWatches: 0, detected: 0, delivered: 0, failedDeliveries: 0 };
@@ -657,6 +830,8 @@ async function runDueChecks(options = {}) {
     let delivered = 0;
     let failedDeliveries = 0;
     let ambiguousMatches = 0;
+    let directManualReview = 0;
+    let directUnresolved = 0;
     const ambiguousWarnings = [];
     const existingDetected = activeWatches.filter(watch => watch.status === 'payment_detected' && watch.matchedPayment);
 
@@ -670,12 +845,15 @@ async function runDueChecks(options = {}) {
     }
 
     const remainingWatches = getActiveWatches(state, now).filter(watch => watch.status !== 'payment_detected');
-    if (remainingWatches.length > 0) {
+    if (remainingWatches.length > 0 || directMonitoring) {
       let payments;
       try {
         payments = await paywayClient.fetchPaymentHistory({ now });
       } catch (err) {
-        console.warn(`[PAYWAY] Payment history fetch failed for ${remainingWatches.length} active watch(es): ${err.message}`);
+        console.warn(
+          `[PAYWAY] Payment history fetch failed `
+          + `(${remainingWatches.length} active watch${remainingWatches.length === 1 ? '' : 'es'}): ${err.message}`
+        );
         for (const watch of remainingWatches) {
           watch.lastPollAt = nowIso(now);
           watch.pollAttempts = Number(watch.pollAttempts || 0) + 1;
@@ -729,20 +907,26 @@ async function runDueChecks(options = {}) {
           failedDeliveries += 1;
         }
       }
+
+      const directResult = await reconcileDirectPayments(state, payments, now);
+      detected += directResult.detected;
+      delivered += directResult.delivered;
+      directManualReview += directResult.manualReview;
+      directUnresolved += directResult.unresolved;
     }
 
     const warningResult = await deliverAmbiguousMatchWarnings(state, ambiguousWarnings, now);
 
     saveState(state);
 
-    if (getActiveWatches(state, now).length > 0) {
+    if (directMonitoring || getActiveWatches(state, now).length > 0) {
       scheduleNextPoll(getPollIntervalMs());
     } else {
       clearPollTimer();
     }
 
     return {
-      ok: failedDeliveries === 0 && ambiguousMatches === 0,
+      ok: failedDeliveries === 0 && ambiguousMatches === 0 && directUnresolved === 0,
       activeWatches: activeWatches.length,
       detected,
       delivered,
@@ -750,6 +934,8 @@ async function runDueChecks(options = {}) {
       ambiguousMatches,
       ambiguousWarningsSent: warningResult.sent,
       ambiguousWarningsFailed: warningResult.failed,
+      directManualReview,
+      directUnresolved,
     };
   })();
 
@@ -764,11 +950,19 @@ function start() {
   started = true;
   const state = loadState();
   const activeCount = getActiveWatches(state).length;
-  if (activeCount > 0) {
-    console.log(`[PAYWAY] Starting payment watcher with ${activeCount} active order${activeCount === 1 ? '' : 's'}`);
+  const directMonitoring = shouldMonitorDirectPaywayPayments();
+  if (directMonitoring) {
+    ensurePaymentMonitorCursor(state);
+    saveState(state);
+  }
+  if (activeCount > 0 || directMonitoring) {
+    console.log(
+      `[PAYWAY] Starting payment watcher with ${activeCount} active order${activeCount === 1 ? '' : 's'}`
+      + `${directMonitoring ? ' and direct Payway-to-Imweb reconciliation' : ''}`
+    );
     scheduleNextPoll(0);
   }
-  return { ok: true, activeWatches: activeCount };
+  return { ok: true, activeWatches: activeCount, directMonitoring };
 }
 
 function stop() {

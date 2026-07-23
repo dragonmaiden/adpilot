@@ -1166,6 +1166,7 @@ test('collectRecentNewOrderNotifications carries the payable amount for Payway m
     assert.equal(result.pending[0].orderValue, 239000);
     assert.equal(result.pending[0].paymentDueAmount, 217050);
     assert.equal(result.pending[0].paywayMatchAmount, 217050);
+    assert.equal(result.pending[0].paymentChannel, 'bank_transfer');
   });
 });
 

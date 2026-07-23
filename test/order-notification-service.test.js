@@ -272,6 +272,48 @@ test('deliverPaywayPaymentNotification does not resend the payment received mess
   });
 });
 
+test('deliverPaywayPaymentNotification completes from the Payway message when no pending card exists yet', async () => {
+  const completionMarks = [];
+
+  await withMockedOrderNotificationService({
+    telegram: {
+      sendMessage: async () => ({ ok: true, result: { message_id: 9901 } }),
+    },
+    cogsAutofillService: {
+      getNotifiedOrderMetadata: () => null,
+      buildPaywayPaymentReceivedNotification: result => `payway:${result.orderNo}`,
+      recordOrderNotificationDelivery: () => ({}),
+      markOrderNotificationCompleted: (orderNo, metadata) => {
+        completionMarks.push({ orderNo, metadata });
+        return { orderNo, ...metadata };
+      },
+    },
+  }, async service => {
+    const result = await service.deliverPaywayPaymentNotification({
+      orderNo: '202607237401269',
+      orderValue: 245000,
+    }, {
+      transactionId: 'payway:tmn:approval:245000',
+      transactionAt: '2026-07-23 17:00:20',
+      transactionAmount: 245000,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.kind, 'payway_completed_without_pending_card');
+    assert.equal(result.completion.messageId, 9901);
+    assert.deepEqual(completionMarks, [{
+      orderNo: '202607237401269',
+      metadata: {
+        messageId: 9901,
+        paymentState: 'paid',
+        paymentSource: 'payway',
+        paywayTransactionId: 'payway:tmn:approval:245000',
+        paywayApprovedAt: '2026-07-23 17:00:20',
+      },
+    }]);
+  });
+});
+
 test('deliverPaywayAmbiguousPaymentWarning sends the manual-check alert', async () => {
   const sentMessages = [];
 

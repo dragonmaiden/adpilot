@@ -10,6 +10,7 @@ const { formatDateInTimeZone } = require('../domain/time');
 const {
   getImwebOrderPaymentState,
   getOrderCashTotals,
+  normalizeChannelGroup,
   normalizeImwebPayments,
 } = require('../domain/imwebPayments');
 const {
@@ -723,6 +724,11 @@ function summarizeOrderPayment(order) {
     paymentStatuses,
   } = getImwebOrderPaymentState(order);
   const paymentMethod = getPaymentMethodLabel(order);
+  const firstPayment = Array.isArray(order?.payments) ? order.payments[0] : null;
+  const paymentChannel = normalizeChannelGroup(
+    firstPayment?.method || order?.paymentMethod,
+    firstPayment?.pgName
+  );
   const rawStatus = paymentStatuses.join(', ');
 
   if (hasCompletedPayment) {
@@ -730,6 +736,7 @@ function summarizeOrderPayment(order) {
       paymentState: 'paid',
       paymentLabel: 'Paid confirmed',
       paymentMethod,
+      paymentChannel,
       paymentStatusDetail: rawStatus,
     };
   }
@@ -738,6 +745,7 @@ function summarizeOrderPayment(order) {
     paymentState: hasAwaitingStatus ? 'awaiting_check' : 'check_now',
     paymentLabel: hasAwaitingStatus ? 'Awaiting payment check' : 'Check payment now',
     paymentMethod,
+    paymentChannel,
     paymentStatusDetail: rawStatus,
   };
 }
@@ -1690,6 +1698,7 @@ module.exports = {
   findTargetForMonth,
   resolveTargetSheet,
   buildNewOrderNotification,
+  buildOrderNotificationResult,
   buildPaywayPaymentReceivedNotification,
   buildPaywayAmbiguousPaymentNotification,
   buildAutofillNotification,

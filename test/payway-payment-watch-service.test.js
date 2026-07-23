@@ -14,7 +14,29 @@ async function withMockedWatchService(overrides, run) {
     }],
     [require.resolve('../server/modules/paywayClient'), overrides.paywayClient],
     [require.resolve('../server/modules/imwebClient'), overrides.imwebClient || {
+      getOrder: async orderNo => {
+        throw new Error(`Unexpected direct Imweb lookup for ${orderNo}`);
+      },
       confirmBankTransferPayment: async () => ({ confirmed: true, alreadyConfirmed: false }),
+    }],
+    [require.resolve('../server/services/cogsAutofillService'), overrides.cogsAutofillService || {
+      buildOrderNotificationResult: order => {
+        const payment = Array.isArray(order?.payments) ? order.payments[0] : null;
+        const amount = Number(payment?.paidPrice || order?.totalPaymentPrice || order?.totalPrice || 0);
+        const isPaid = String(payment?.paymentStatus || '').includes('COMPLETE');
+        return {
+          orderNo: String(order?.orderNo || ''),
+          orderDate: order?.wtime || '',
+          customerName: order?.ordererName || '',
+          productNames: [],
+          orderValue: amount,
+          paymentDueAmount: amount,
+          paywayMatchAmount: amount,
+          paymentState: isPaid ? 'paid' : 'awaiting_check',
+          paymentMethod: payment?.method || '',
+          paymentChannel: payment?.method === 'BANKTRANSFER' ? 'bank_transfer' : 'other',
+        };
+      },
     }],
     [require.resolve('../server/services/orderNotificationService'), overrides.orderNotificationService],
   ];
@@ -35,6 +57,11 @@ async function withMockedWatchService(overrides, run) {
 
   try {
     const service = require(servicePath);
+    const watchOrder = service.watchOrder;
+    service.watchOrder = (result, options) => watchOrder({
+      paymentChannel: 'bank_transfer',
+      ...result,
+    }, options);
     return await run(service);
   } finally {
     delete require.cache[servicePath];
@@ -87,6 +114,7 @@ test('Payway watcher detects a matching approved payment and triggers the Payway
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN009889:87654321:2026-03-15 12:30:20:111000',
+          merchantOrderNo: '202603150001',
           transactionAt: '2026-03-15 12:30:20',
           transactionAtIso: '2026-03-15T03:30:20.000Z',
           status: '승인',
@@ -153,6 +181,7 @@ test('Payway watcher accepts payments from any configured Payway terminal id', a
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN025656:55556666:2026-06-02 09:23:56:96900',
+          merchantOrderNo: '202606020001',
           transactionAt: '2026-06-02 09:23:56',
           transactionAtIso: '2026-06-02T00:23:56.000Z',
           status: '승인',
@@ -212,6 +241,7 @@ test('Payway watcher accepts terminal-id drift when strict terminal matching is 
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN777777:66667777:2026-06-02 09:33:56:96900',
+          merchantOrderNo: '202606020002',
           transactionAt: '2026-06-02 09:33:56',
           transactionAtIso: '2026-06-02T00:33:56.000Z',
           status: '승인',
@@ -268,6 +298,7 @@ test('Payway watcher enforces a 60-minute minimum watch window', async () => {
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN009889:66668888:2026-06-02 10:15:00:96900',
+          merchantOrderNo: '202606020003',
           transactionAt: '2026-06-02 10:15:00',
           transactionAtIso: '2026-06-02T01:15:00.000Z',
           status: '승인',
@@ -325,6 +356,7 @@ test('Payway watcher lead window covers scheduler lag before the watch starts', 
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN009889:55554444:2026-05-25 19:56:17:316800',
+          merchantOrderNo: '202605252918860',
           transactionAt: '2026-05-25 19:56:17',
           transactionAtIso: '2026-05-25T10:56:17.000Z',
           status: '승인',
@@ -387,6 +419,7 @@ test('Payway watcher lead window follows runtime scheduler overrides', async () 
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN009889:77773333:2026-05-25 19:47:45:129000',
+          merchantOrderNo: '202605252918861',
           transactionAt: '2026-05-25 19:47:45',
           transactionAtIso: '2026-05-25T10:47:45.000Z',
           status: '승인',
@@ -428,7 +461,7 @@ test('Payway watcher lead window follows runtime scheduler overrides', async () 
   });
 });
 
-test('Payway watcher fails closed when one payment matches multiple pending orders', async () => {
+test('Payway watcher uses the exact merchant order number instead of amount-only matching', async () => {
   const dataDir = createTempDataDir();
   const deliveries = [];
 
@@ -442,6 +475,7 @@ test('Payway watcher fails closed when one payment matches multiple pending orde
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN009889:22221111:2026-05-25 20:01:00:118000',
+          merchantOrderNo: '202605252918862',
           transactionAt: '2026-05-25 20:01:00',
           transactionAtIso: '2026-05-25T11:01:00.000Z',
           status: '승인',
@@ -487,99 +521,17 @@ test('Payway watcher fails closed when one payment matches multiple pending orde
       now: new Date('2026-05-25T11:01:30.000Z'),
     });
 
-    assert.equal(result.ok, false);
-    assert.equal(result.detected, 0);
-    assert.equal(result.delivered, 0);
-    assert.equal(result.ambiguousMatches, 2);
-    assert.equal(deliveries.length, 0);
+    assert.equal(result.ok, true);
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(result.ambiguousMatches, 0);
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].result.orderNo, '202605252918862');
 
     const state = service.loadState();
-    assert.equal(state.watchedOrders['202605252918862'].status, 'watching');
+    assert.equal(state.watchedOrders['202605252918862'].status, 'paid');
     assert.equal(state.watchedOrders['202605252918863'].status, 'watching');
-    assert.equal(state.watchedOrders['202605252918862'].lastPollError, 'ambiguous_multiple_order_watches');
-    assert.equal(state.watchedOrders['202605252918863'].lastPollError, 'ambiguous_multiple_order_watches');
-  });
-});
-
-test('Payway watcher sends one deduped warning for ambiguous Payway matches', async () => {
-  const dataDir = createTempDataDir();
-  const deliveries = [];
-  const warnings = [];
-
-  await withMockedWatchService({
-    config: createConfig(),
-    runtimePaths: { dataDir },
-    paywayClient: {
-      isEnabled: () => true,
-      isConfigured: () => true,
-      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
-      fetchPaymentHistory: async () => [
-        {
-          transactionId: 'TMN009889:22221111:2026-05-25 20:01:00:118000',
-          transactionAt: '2026-05-25 20:01:00',
-          transactionAtIso: '2026-05-25T11:01:00.000Z',
-          status: '승인',
-          terminal: 'TMN009889',
-          approvalNo: '22221111',
-          transactionAmount: 118000,
-          approvedAmount: 118000,
-          cancelAmount: 0,
-        },
-      ],
-    },
-    orderNotificationService: {
-      deliverPaywayPaymentNotification: async (result, payment) => {
-        deliveries.push({ result, payment });
-        return { ok: true };
-      },
-      deliverPaywayAmbiguousPaymentWarning: async payload => {
-        warnings.push(payload);
-        return { ok: true, messageId: 9001 };
-      },
-    },
-  }, async service => {
-    service.watchOrder({
-      orderNo: '202605252918862',
-      orderDate: '2026-05-25',
-      customerName: '김서연',
-      orderValue: 118000,
-      paymentState: 'awaiting_check',
-      productNames: ['지갑'],
-    }, {
-      now: new Date('2026-05-25T11:00:00.000Z'),
-      messageId: 1366,
-    });
-    service.watchOrder({
-      orderNo: '202605252918863',
-      orderDate: '2026-05-25',
-      customerName: '박민지',
-      orderValue: 118000,
-      paymentState: 'awaiting_check',
-      productNames: ['지갑'],
-    }, {
-      now: new Date('2026-05-25T11:00:30.000Z'),
-      messageId: 1367,
-    });
-
-    const first = await service.runDueChecks({
-      now: new Date('2026-05-25T11:01:30.000Z'),
-    });
-    const second = await service.runDueChecks({
-      now: new Date('2026-05-25T11:02:00.000Z'),
-    });
-
-    assert.equal(first.ok, false);
-    assert.equal(first.ambiguousMatches, 2);
-    assert.equal(first.ambiguousWarningsSent, 1);
-    assert.equal(second.ambiguousWarningsSent, 0);
-    assert.equal(warnings.length, 1);
-    assert.equal(deliveries.length, 0);
-    assert.deepEqual(warnings[0].orderNos, ['202605252918862', '202605252918863']);
-    assert.equal(warnings[0].amount, 118000);
-
-    const state = service.loadState();
-    assert.equal(Object.keys(state.ambiguityWarnings).length, 1);
-    assert.equal(Object.values(state.ambiguityWarnings)[0].messageId, 9001);
+    assert.equal(state.watchedOrders['202605252918863'].lastPollError, null);
   });
 });
 
@@ -597,6 +549,7 @@ test('Payway watcher fails closed when one order matches multiple payments', asy
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN009889:33331111:2026-05-25 20:01:00:88000',
+          merchantOrderNo: '202605252918864',
           transactionAt: '2026-05-25 20:01:00',
           transactionAtIso: '2026-05-25T11:01:00.000Z',
           status: '승인',
@@ -608,6 +561,7 @@ test('Payway watcher fails closed when one order matches multiple payments', asy
         },
         {
           transactionId: 'TMN009889:33332222:2026-05-25 20:01:20:88000',
+          merchantOrderNo: '202605252918864',
           transactionAt: '2026-05-25 20:01:20',
           transactionAtIso: '2026-05-25T11:01:20.000Z',
           status: '승인',
@@ -674,6 +628,7 @@ test('Payway watcher retries after a temporary payment history failure', async (
         return [
           {
             transactionId: 'TMN009889:44441111:2026-05-25 20:01:00:158000',
+            merchantOrderNo: '202605252918865',
             transactionAt: '2026-05-25 20:01:00',
             transactionAtIso: '2026-05-25T11:01:00.000Z',
             status: '승인',
@@ -737,6 +692,7 @@ test('Payway watcher refresh keeps the original match window for missed pending 
   config.payway.minimumWatchMinutes = 10;
   const payment = {
     transactionId: 'TMN009889:87654321:2026-03-15 12:35:20:111000',
+    merchantOrderNo: '202603150001',
     transactionAt: '2026-03-15 12:35:20',
     transactionAtIso: '2026-03-15T03:35:20.000Z',
     status: '승인',
@@ -814,6 +770,7 @@ test('Payway watcher matches the Imweb payable amount instead of the display ord
       fetchPaymentHistory: async () => [
         {
           transactionId: 'TMN009889:40895600:2026-05-20 12:25:28:217050',
+          merchantOrderNo: '202605208943494',
           transactionAt: '2026-05-20 12:25:28',
           transactionAtIso: '2026-05-20T03:25:28.000Z',
           status: '승인',
@@ -872,6 +829,7 @@ test('Payway watcher retries original card completion after the payment watch wi
   const deliveries = [];
   const payment = {
     transactionId: 'TMN009889:31201111:2026-05-21 08:33:24:118000',
+    merchantOrderNo: '202605210303073',
     transactionAt: '2026-05-21 08:33:24',
     transactionAtIso: '2026-05-20T23:33:24.000Z',
     status: '승인',
@@ -954,6 +912,7 @@ test('Payway watcher confirms a uniquely matched card payment in Imweb before co
   config.payway.autoConfirmImwebPayment = true;
   const payment = {
     transactionId: 'TMN009889:55667788:2026-07-23 15:50:20:245000',
+    merchantOrderNo: '202607237401269',
     transactionAt: '2026-07-23 15:50:20',
     transactionAtIso: '2026-07-23T06:50:20.000Z',
     status: '승인',
@@ -1021,6 +980,7 @@ test('Payway watcher does not repeat a successful Imweb write while retrying Tel
   config.payway.autoConfirmImwebPayment = true;
   const payment = {
     transactionId: 'TMN009889:99887766:2026-07-23 16:10:20:118000',
+    merchantOrderNo: '202607230001',
     transactionAt: '2026-07-23 16:10:20',
     transactionAtIso: '2026-07-23T07:10:20.000Z',
     status: '승인',
@@ -1099,6 +1059,7 @@ test('Payway watcher keeps the workflow pending when Imweb confirmation fails', 
       isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
       fetchPaymentHistory: async () => [{
         transactionId: 'TMN009889:11223344:2026-07-23 16:30:20:99000',
+        merchantOrderNo: '202607230002',
         transactionAt: '2026-07-23 16:30:20',
         transactionAtIso: '2026-07-23T07:30:20.000Z',
         status: '승인',
@@ -1140,5 +1101,159 @@ test('Payway watcher keeps the workflow pending when Imweb confirmation fails', 
     assert.equal(state.watchedOrders['202607230002'].status, 'payment_detected');
     assert.equal(state.watchedOrders['202607230002'].imwebConfirmation.status, 'failed');
     assert.match(state.watchedOrders['202607230002'].lastDeliveryError, /30103/);
+  });
+});
+
+test('Payway direct monitor confirms an exact Payway card order without waiting for an Imweb scan', async () => {
+  const dataDir = createTempDataDir();
+  const operations = [];
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+
+  await withMockedWatchService({
+    config,
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => (
+        payment.status === '승인'
+        && payment.merchantOrderNo
+        && payment.approvalNo
+        && payment.maskedCardNumber
+      ),
+      fetchPaymentHistory: async () => [{
+        transactionId: 'TMN009889:44332211:2026-07-23 17:00:20:245000',
+        merchantOrderNo: '202607237401269',
+        transactionAt: '2026-07-23 17:00:20',
+        transactionAtIso: '2026-07-23T08:00:20.000Z',
+        status: '승인',
+        terminal: 'TMN009889',
+        approvalNo: '44332211',
+        maskedCardNumber: '1234********5678',
+        transactionAmount: 245000,
+        cancelAmount: 0,
+      }],
+    },
+    imwebClient: {
+      getOrder: async orderNo => {
+        operations.push(`lookup:${orderNo}`);
+        return {
+          orderNo,
+          wtime: '2026-07-23T07:59:50.000Z',
+          ordererName: '이현숙',
+          totalPrice: 245000,
+          totalPaymentPrice: 245000,
+          payments: [{
+            paidPrice: 245000,
+            paymentStatus: 'PAYMENT_PREPARATION',
+            method: 'BANKTRANSFER',
+          }],
+        };
+      },
+      confirmBankTransferPayment: async orderNo => {
+        operations.push(`confirm:${orderNo}`);
+        return { confirmed: true, alreadyConfirmed: false };
+      },
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async result => {
+        operations.push(`notify:${result.orderNo}`);
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    const result = await service.runDueChecks({
+      now: new Date('2026-07-23T08:00:30.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.activeWatches, 0);
+    assert.equal(result.detected, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(result.directManualReview, 0);
+    assert.deepEqual(operations, [
+      'lookup:202607237401269',
+      'confirm:202607237401269',
+      'notify:202607237401269',
+    ]);
+    assert.equal(service.loadState().watchedOrders['202607237401269'].status, 'paid');
+  });
+});
+
+test('Payway direct monitor ignores approvals without an exact Imweb order reference', async () => {
+  const dataDir = createTempDataDir();
+  let imwebCalls = 0;
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+
+  await withMockedWatchService({
+    config,
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: () => true,
+      fetchPaymentHistory: async () => [{
+        transactionId: 'TMN009889:55443322:2026-07-23 17:10:20:245000',
+        merchantOrderNo: '',
+        transactionAtIso: '2026-07-23T08:10:20.000Z',
+        status: '승인',
+        approvalNo: '55443322',
+        maskedCardNumber: '1234********5678',
+        transactionAmount: 245000,
+      }],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        imwebCalls += 1;
+        throw new Error('must not look up an unlinked payment');
+      },
+      confirmBankTransferPayment: async () => {
+        imwebCalls += 1;
+        throw new Error('must not confirm an unlinked payment');
+      },
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async () => {
+        throw new Error('must not notify an unlinked payment');
+      },
+    },
+  }, async service => {
+    const result = await service.runDueChecks({
+      now: new Date('2026-07-23T08:10:30.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.detected, 0);
+    assert.equal(result.delivered, 0);
+    assert.equal(imwebCalls, 0);
+  });
+});
+
+test('Payway watcher does not watch non-bank-transfer Imweb orders', async () => {
+  const dataDir = createTempDataDir();
+
+  await withMockedWatchService({
+    config: createConfig(),
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: () => true,
+      fetchPaymentHistory: async () => [],
+    },
+    orderNotificationService: {},
+  }, async service => {
+    const result = service.watchOrder({
+      orderNo: '202607230003',
+      orderValue: 99000,
+      paymentState: 'awaiting_check',
+      paymentChannel: 'card',
+    });
+
+    assert.equal(result.skipped, true);
+    assert.equal(result.reason, 'not_pending_bank_transfer');
+    assert.deepEqual(service.loadState().watchedOrders, {});
   });
 });

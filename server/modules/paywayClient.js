@@ -331,6 +331,7 @@ function pickField(row, fieldNames) {
 function normalizePaymentRow(cells) {
   const payment = {
     no: asString(cells[0]),
+    merchantOrderNo: '',
     transactionAt: asString(cells[1]),
     status: asString(cells[2]),
     merchantName: asString(cells[3]),
@@ -367,11 +368,12 @@ function normalizePaymentJsonRow(row) {
   const approvedAmount = cancelled ? 0 : amount;
   const payment = {
     no: asString(pickField(row, ['no', 'NO', 'rownum'])),
+    merchantOrderNo: asString(pickField(row, ['odrno', 'order_no', 'orderNo', 'merchantOrderNo'])),
     transactionAt,
     status: cancelled ? '취소' : '승인',
     merchantName: asString(pickField(row, ['mc_nm', 'merchantName', 'store_nm'])),
     terminal: asString(pickField(row, ['tmid', 'tid', 'terminal', 'mid'])),
-    acquirer: asString(pickField(row, ['card_nm', 'acquirer', 'issuer'])),
+    acquirer: asString(pickField(row, ['buy_comp', 'card_nm', 'acquirer', 'issuer'])),
     installment: asString(pickField(row, ['installment', 'halbu', 'quota'])),
     maskedCardNumber: asString(pickField(row, ['cardno', 'card_no', 'maskedCardNumber'])),
     approvalNo: asString(pickField(row, ['authno', 'auth_no', 'approvalNo', 'appr_no'])),
@@ -423,7 +425,15 @@ function isApprovedPaywayPayment(payment) {
   const status = asString(payment?.status);
   const amount = Number(payment?.transactionAmount || payment?.approvedAmount || 0);
   const cancelAmount = Number(payment?.cancelAmount || 0);
-  return status === '승인' && amount > 0 && cancelAmount <= 0;
+  const merchantOrderNo = asString(payment?.merchantOrderNo);
+  const approvalNo = asString(payment?.approvalNo);
+  const maskedCardNumber = asString(payment?.maskedCardNumber);
+  return status === '승인'
+    && amount > 0
+    && cancelAmount <= 0
+    && Boolean(merchantOrderNo)
+    && Boolean(approvalNo)
+    && Boolean(maskedCardNumber);
 }
 
 function getPaymentHistoryDateRange(nowInput = new Date()) {
