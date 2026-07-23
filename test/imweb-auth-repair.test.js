@@ -27,6 +27,7 @@ test('buildAuthorizeUrl creates the canonical Imweb repair URL with required sco
   assert.equal(url.searchParams.get('state'), 'fixed-state');
   assert.equal(url.searchParams.get('redirectUri'), `https://adpilot-6bxs.onrender.com${IMWEB_AUTH_CALLBACK_PATH}`);
   assert.equal(url.searchParams.get('scope'), IMWEB_AUTH_REPAIR_SCOPES.join(' '));
+  assert.equal(IMWEB_AUTH_REPAIR_SCOPES.includes('payment:write'), true);
 });
 
 test('parseOAuthError understands Imweb callback errorCode/message responses', () => {

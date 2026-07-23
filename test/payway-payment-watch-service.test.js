@@ -13,6 +13,9 @@ async function withMockedWatchService(overrides, run) {
       getSchedulerSettings: () => overrides.config?.scheduler || {},
     }],
     [require.resolve('../server/modules/paywayClient'), overrides.paywayClient],
+    [require.resolve('../server/modules/imwebClient'), overrides.imwebClient || {
+      confirmBankTransferPayment: async () => ({ confirmed: true, alreadyConfirmed: false }),
+    }],
     [require.resolve('../server/services/orderNotificationService'), overrides.orderNotificationService],
   ];
 
@@ -65,6 +68,7 @@ function createConfig() {
       watchMinutes: 10,
       pollIntervalSeconds: 30,
       matchLeadMinutes: 2,
+      autoConfirmImwebPayment: false,
     },
   };
 }
@@ -939,5 +943,202 @@ test('Payway watcher retries original card completion after the payment watch wi
     state = service.loadState();
     assert.equal(state.watchedOrders['202605210303073'].status, 'paid');
     assert.equal(state.watchedOrders['202605210303073'].paywayTransactionId, payment.transactionId);
+  });
+});
+
+test('Payway watcher confirms a uniquely matched card payment in Imweb before completing the workflow', async () => {
+  const dataDir = createTempDataDir();
+  const confirmations = [];
+  const deliveries = [];
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  const payment = {
+    transactionId: 'TMN009889:55667788:2026-07-23 15:50:20:245000',
+    transactionAt: '2026-07-23 15:50:20',
+    transactionAtIso: '2026-07-23T06:50:20.000Z',
+    status: '승인',
+    terminal: 'TMN009889',
+    approvalNo: '55667788',
+    transactionAmount: 245000,
+    approvedAmount: 245000,
+    cancelAmount: 0,
+  };
+
+  await withMockedWatchService({
+    config,
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: candidate => candidate.status === '승인' && candidate.transactionAmount > 0,
+      fetchPaymentHistory: async () => [payment],
+    },
+    imwebClient: {
+      confirmBankTransferPayment: async orderNo => {
+        confirmations.push(orderNo);
+        return { confirmed: true, alreadyConfirmed: false };
+      },
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async (result, matchedPayment) => {
+        deliveries.push({ result, payment: matchedPayment });
+        return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202607237401269',
+      orderDate: '2026-07-23',
+      customerName: '이현숙',
+      orderValue: 245000,
+      paymentState: 'awaiting_check',
+      paymentMethod: 'BANKTRANSFER',
+      productNames: ['코튼 블렌드 트렌치 재킷'],
+    }, {
+      now: new Date('2026-07-23T06:50:00.000Z'),
+      messageId: 9001,
+    });
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-07-23T06:50:30.000Z'),
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(confirmations, ['202607237401269']);
+    assert.equal(deliveries.length, 1);
+    const state = service.loadState();
+    assert.equal(state.watchedOrders['202607237401269'].status, 'paid');
+    assert.equal(state.watchedOrders['202607237401269'].imwebConfirmation.status, 'confirmed');
+    assert.equal(state.watchedOrders['202607237401269'].imwebConfirmation.attempts, 1);
+  });
+});
+
+test('Payway watcher does not repeat a successful Imweb write while retrying Telegram completion', async () => {
+  const dataDir = createTempDataDir();
+  let confirmationCalls = 0;
+  let deliveryCalls = 0;
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  const payment = {
+    transactionId: 'TMN009889:99887766:2026-07-23 16:10:20:118000',
+    transactionAt: '2026-07-23 16:10:20',
+    transactionAtIso: '2026-07-23T07:10:20.000Z',
+    status: '승인',
+    terminal: 'TMN009889',
+    approvalNo: '99887766',
+    transactionAmount: 118000,
+    approvedAmount: 118000,
+    cancelAmount: 0,
+  };
+
+  await withMockedWatchService({
+    config,
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: candidate => candidate.status === '승인' && candidate.transactionAmount > 0,
+      fetchPaymentHistory: async () => [payment],
+    },
+    imwebClient: {
+      confirmBankTransferPayment: async () => {
+        confirmationCalls += 1;
+        return { confirmed: true, alreadyConfirmed: false };
+      },
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async () => {
+        deliveryCalls += 1;
+        return deliveryCalls === 1
+          ? { ok: false, reason: 'edit_failed' }
+          : { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202607230001',
+      orderDate: '2026-07-23',
+      customerName: '테스트',
+      orderValue: 118000,
+      paymentState: 'awaiting_check',
+      paymentMethod: 'BANKTRANSFER',
+      productNames: ['테스트 상품'],
+    }, {
+      now: new Date('2026-07-23T07:10:00.000Z'),
+      messageId: 9002,
+    });
+
+    const first = await service.runDueChecks({
+      now: new Date('2026-07-23T07:10:30.000Z'),
+    });
+    assert.equal(first.ok, false);
+    assert.equal(confirmationCalls, 1);
+    assert.equal(service.loadState().watchedOrders['202607230001'].status, 'payment_detected');
+
+    const second = await service.runDueChecks({
+      now: new Date('2026-07-23T07:11:00.000Z'),
+    });
+    assert.equal(second.ok, true);
+    assert.equal(confirmationCalls, 1);
+    assert.equal(deliveryCalls, 2);
+    assert.equal(service.loadState().watchedOrders['202607230001'].status, 'paid');
+  });
+});
+
+test('Payway watcher keeps the workflow pending when Imweb confirmation fails', async () => {
+  const dataDir = createTempDataDir();
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+
+  await withMockedWatchService({
+    config,
+    runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true,
+      isConfigured: () => true,
+      isApprovedPaywayPayment: payment => payment.status === '승인' && payment.transactionAmount > 0,
+      fetchPaymentHistory: async () => [{
+        transactionId: 'TMN009889:11223344:2026-07-23 16:30:20:99000',
+        transactionAt: '2026-07-23 16:30:20',
+        transactionAtIso: '2026-07-23T07:30:20.000Z',
+        status: '승인',
+        terminal: 'TMN009889',
+        approvalNo: '11223344',
+        transactionAmount: 99000,
+        approvedAmount: 99000,
+        cancelAmount: 0,
+      }],
+    },
+    imwebClient: {
+      confirmBankTransferPayment: async () => {
+        throw new Error('30103: insufficient permission');
+      },
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async () => ({ ok: true }),
+    },
+  }, async service => {
+    service.watchOrder({
+      orderNo: '202607230002',
+      orderDate: '2026-07-23',
+      customerName: '테스트',
+      orderValue: 99000,
+      paymentState: 'awaiting_check',
+      paymentMethod: 'BANKTRANSFER',
+      productNames: ['테스트 상품'],
+    }, {
+      now: new Date('2026-07-23T07:30:00.000Z'),
+      messageId: 9003,
+    });
+
+    const result = await service.runDueChecks({
+      now: new Date('2026-07-23T07:30:30.000Z'),
+    });
+
+    assert.equal(result.ok, false);
+    const state = service.loadState();
+    assert.equal(state.watchedOrders['202607230002'].status, 'payment_detected');
+    assert.equal(state.watchedOrders['202607230002'].imwebConfirmation.status, 'failed');
+    assert.match(state.watchedOrders['202607230002'].lastDeliveryError, /30103/);
   });
 });

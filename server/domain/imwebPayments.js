@@ -8,13 +8,44 @@ const NON_CASH_PAYMENT_STATUS_TOKENS = [
   'WAIT',
 ];
 
+function getImwebOrderPaymentState(order) {
+  const payments = Array.isArray(order?.payments) ? order.payments : [];
+  const paymentStatuses = [...new Set(
+    payments
+      .map(payment => String(payment?.paymentStatus || '').trim().toUpperCase())
+      .filter(Boolean)
+  )];
+  const hasAwaitingStatus = paymentStatuses.some(status => (
+    NON_CASH_PAYMENT_STATUS_TOKENS.some(token => status.includes(token))
+      || status.includes('REQUEST')
+  ));
+  const hasAwaitingBankTransfer = payments.some(payment => {
+    const status = String(payment?.paymentStatus || '').trim().toUpperCase();
+    const isAwaiting = NON_CASH_PAYMENT_STATUS_TOKENS.some(token => status.includes(token))
+      || status.includes('REQUEST');
+    return isAwaiting && normalizeChannelGroup(payment?.method, payment?.pgName) === 'bank_transfer';
+  });
+
+  return {
+    hasCompletedPayment: normalizeImwebPayments([order]).some(payment => payment.type === 'approval'),
+    hasAwaitingStatus,
+    hasAwaitingBankTransfer,
+    paymentStatuses,
+  };
+}
+
 function normalizeChannelGroup(method, pgName) {
   const methodLabel = String(method || '').toUpperCase();
   const pgLabel = String(pgName || '').toUpperCase();
 
   if (methodLabel.includes('CARD') || pgLabel.includes('CARD')) return 'card';
+  if (
+    methodLabel.includes('VBANK')
+      || methodLabel.includes('VIRTUAL')
+      || pgLabel.includes('VBANK')
+      || pgLabel.includes('VIRTUAL')
+  ) return 'virtual_account';
   if (methodLabel.includes('BANK') || pgLabel.includes('BANK')) return 'bank_transfer';
-  if (methodLabel.includes('VBANK') || methodLabel.includes('VIRTUAL')) return 'virtual_account';
   if (!methodLabel && !pgLabel) return 'unknown';
   return 'other';
 }
@@ -142,6 +173,7 @@ function normalizeImwebPayments(orders, options = {}) {
 
 module.exports = {
   getOrderCashTotals,
+  getImwebOrderPaymentState,
   getPaymentTimestamp,
   normalizeChannelGroup,
   normalizeImwebPayments,

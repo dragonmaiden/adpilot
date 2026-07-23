@@ -7,7 +7,11 @@ const cogsClient = require('../modules/cogsClient');
 const imweb = require('../modules/imwebClient');
 const { getOrderItems } = require('../domain/imwebAttribution');
 const { formatDateInTimeZone } = require('../domain/time');
-const { getOrderCashTotals, normalizeImwebPayments } = require('../domain/imwebPayments');
+const {
+  getImwebOrderPaymentState,
+  getOrderCashTotals,
+  normalizeImwebPayments,
+} = require('../domain/imwebPayments');
 const {
   asString,
   getOrderContactSnapshot,
@@ -713,12 +717,11 @@ function getOrderPaymentDueAmount(order) {
 }
 
 function summarizeOrderPayment(order) {
-  const hasCompletedPayment = normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
-  const paymentStatuses = [...new Set(
-    (Array.isArray(order?.payments) ? order.payments : [])
-      .map(payment => asString(payment?.paymentStatus).toUpperCase())
-      .filter(Boolean)
-  )];
+  const {
+    hasCompletedPayment,
+    hasAwaitingStatus,
+    paymentStatuses,
+  } = getImwebOrderPaymentState(order);
   const paymentMethod = getPaymentMethodLabel(order);
   const rawStatus = paymentStatuses.join(', ');
 
@@ -730,15 +733,6 @@ function summarizeOrderPayment(order) {
       paymentStatusDetail: rawStatus,
     };
   }
-
-  const hasAwaitingStatus = paymentStatuses.some(status => (
-    status.includes('WAIT')
-      || status.includes('PENDING')
-      || status.includes('READY')
-      || status.includes('REQUEST')
-      || status.includes('PREPARATION')
-      || status.includes('OVERDUE')
-  ));
 
   return {
     paymentState: hasAwaitingStatus ? 'awaiting_check' : 'check_now',

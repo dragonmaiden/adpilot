@@ -4,6 +4,7 @@ const config = require('../config');
 const runtimePaths = require('../runtime/paths');
 const runtimeSettings = require('../runtime/runtimeSettings');
 const paywayClient = require('../modules/paywayClient');
+const imwebClient = require('../modules/imwebClient');
 const orderNotificationService = require('./orderNotificationService');
 const { asString } = require('./privacyService');
 
@@ -469,6 +470,61 @@ function describeDeliveryFailure(delivery) {
     || 'unknown_delivery_failure';
 }
 
+async function confirmMatchedImwebPayment(watch, now = new Date()) {
+  if (config.payway?.autoConfirmImwebPayment !== true) {
+    return { ok: true, skipped: true, reason: 'auto_confirmation_disabled' };
+  }
+  if (watch.imwebConfirmation?.status === 'confirmed') {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'already_confirmed',
+      alreadyConfirmed: Boolean(watch.imwebConfirmation.alreadyConfirmed),
+    };
+  }
+
+  const attemptedAt = nowIso(now);
+  const attempts = Number(watch.imwebConfirmation?.attempts || 0) + 1;
+
+  try {
+    const result = await imwebClient.confirmBankTransferPayment(watch.orderNo);
+    watch.imwebConfirmation = {
+      status: 'confirmed',
+      attempts,
+      lastAttemptAt: attemptedAt,
+      confirmedAt: attemptedAt,
+      alreadyConfirmed: Boolean(result?.alreadyConfirmed),
+      lastError: null,
+    };
+    return {
+      ok: true,
+      alreadyConfirmed: Boolean(result?.alreadyConfirmed),
+    };
+  } catch (err) {
+    const error = err?.message || 'unknown Imweb confirmation failure';
+    watch.imwebConfirmation = {
+      status: 'failed',
+      attempts,
+      lastAttemptAt: attemptedAt,
+      confirmedAt: null,
+      alreadyConfirmed: false,
+      lastError: error,
+    };
+    return {
+      ok: false,
+      reason: 'imweb_confirmation_failed',
+      error,
+    };
+  }
+}
+
+function describeCompletionFailure(confirmation, delivery) {
+  if (!confirmation?.ok) {
+    return `${confirmation?.reason || 'imweb_confirmation_failed'}: ${confirmation?.error || 'unknown failure'}`;
+  }
+  return describeDeliveryFailure(delivery);
+}
+
 async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
   console.log(
     `[PAYWAY] Payment matched for order ${watch.orderNo}: `
@@ -487,9 +543,10 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
     paywayTransactionId: payment.transactionId,
     paywayApprovedAt: payment.transactionAt || payment.transactionAtIso,
   };
+  const confirmation = await confirmMatchedImwebPayment(watch, now);
   const delivery = await orderNotificationService.deliverPaywayPaymentNotification(notificationResult, payment);
 
-  if (delivery?.ok) {
+  if (confirmation.ok && delivery?.ok) {
     watch.status = 'paid';
     watch.paymentDetectedAt = watch.paymentDetectedAt || nowIso(now);
     watch.paywayTransactionId = payment.transactionId;
@@ -502,14 +559,14 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
       transactionAmount: payment.transactionAmount || payment.approvedAmount || watch.amount,
     };
     console.log(`[PAYWAY] Payment notification delivered for order ${watch.orderNo}`);
-    return { delivered: true, delivery };
+    return { delivered: true, confirmation, delivery };
   }
 
   watch.status = 'payment_detected';
   watch.paymentDetectedAt = watch.paymentDetectedAt || nowIso(now);
   watch.paywayTransactionId = payment.transactionId;
   watch.matchedPayment = payment;
-  watch.lastDeliveryError = describeDeliveryFailure(delivery);
+  watch.lastDeliveryError = describeCompletionFailure(confirmation, delivery);
   watch.completionRetryStartedAt = watch.completionRetryStartedAt || nowIso(now);
   watch.completionRetryExpiresAt = watch.completionRetryExpiresAt
     || new Date(now.getTime() + (PAYMENT_COMPLETION_RETRY_HOURS * 60 * 60 * 1000)).toISOString();
@@ -523,8 +580,8 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
       transactionAmount: payment.transactionAmount || payment.approvedAmount || watch.amount,
     };
   }
-  console.warn(`[PAYWAY] Payment notification delivery failed for order ${watch.orderNo}: ${watch.lastDeliveryError}`);
-  return { delivered: false, delivery };
+  console.warn(`[PAYWAY] Payment completion failed for order ${watch.orderNo}: ${watch.lastDeliveryError}`);
+  return { delivered: false, confirmation, delivery };
 }
 
 function watchOrder(result, options = {}) {

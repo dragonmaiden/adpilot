@@ -126,6 +126,7 @@ const config = {
     matchLeadMinutes: parseInt(process.env.PAYWAY_MATCH_LEAD_MINUTES || '5', 10),
     requestTimeoutMs: parseInt(process.env.PAYWAY_REQUEST_TIMEOUT_MS || '10000', 10),
     strictTerminalMatch: process.env.PAYWAY_STRICT_TERMINAL_MATCH === 'true',
+    autoConfirmImwebPayment: process.env.PAYWAY_AUTO_CONFIRM_IMWEB_PAYMENT === 'true',
   },
 
   // Observability

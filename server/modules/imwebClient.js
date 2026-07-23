@@ -6,7 +6,7 @@ const fs = require('fs');
 const config = require('../config');
 const { formatDateInTimeZone, getHourInTimeZone } = require('../domain/time');
 const { summarizeOrderAttribution } = require('../domain/imwebAttribution');
-const { getOrderCashTotals } = require('../domain/imwebPayments');
+const { getImwebOrderPaymentState, getOrderCashTotals } = require('../domain/imwebPayments');
 const { sanitizeImwebOrder, sanitizeImwebOrders } = require('../services/privacyService');
 const runtimePaths = require('../runtime/paths');
 
@@ -659,6 +659,46 @@ async function getOrder(orderNo) {
   }
 }
 
+async function confirmBankTransferPayment(orderNo) {
+  const normalizedOrderNo = String(orderNo || '').trim();
+  if (!normalizedOrderNo) {
+    throw new Error('orderNo is required');
+  }
+
+  const order = await getOrder(normalizedOrderNo);
+  const paymentState = getImwebOrderPaymentState(order);
+  if (paymentState.hasCompletedPayment) {
+    return {
+      confirmed: true,
+      alreadyConfirmed: true,
+      orderNo: normalizedOrderNo,
+    };
+  }
+  if (!paymentState.hasAwaitingBankTransfer) {
+    const status = paymentState.paymentStatuses.join(', ') || 'unknown';
+    throw new Error(
+      `Order ${normalizedOrderNo} is not awaiting a bank-transfer payment (status: ${status})`
+    );
+  }
+
+  const payload = await imwebApi(
+    `/payments/${encodeURIComponent(normalizedOrderNo)}/bank-transfer/confirm`,
+    'PATCH',
+    null
+  );
+  if (payload?.data !== true) {
+    throw new Error(
+      `Imweb bank-transfer confirmation returned an unexpected result for order ${normalizedOrderNo}`
+    );
+  }
+
+  return {
+    confirmed: true,
+    alreadyConfirmed: false,
+    orderNo: normalizedOrderNo,
+  };
+}
+
 // Process orders into revenue metrics
 function processOrders(orders) {
   let totalRevenue = 0;
@@ -728,5 +768,6 @@ module.exports = {
   getAuthState,
   getAllOrders,
   getOrder,
+  confirmBankTransferPayment,
   processOrders,
 };

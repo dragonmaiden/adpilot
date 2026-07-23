@@ -59,5 +59,7 @@ services:
         value: "2"
       - key: PAYWAY_REQUEST_TIMEOUT_MS
         value: "10000"
+      - key: PAYWAY_AUTO_CONFIRM_IMWEB_PAYMENT
+        value: "true"
       - key: SCAN_INTERVAL_MINUTES
         value: "3"
