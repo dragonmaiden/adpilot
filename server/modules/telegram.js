@@ -18,9 +18,6 @@ const BOT_TOKEN = typeof config.telegram.botToken === 'string'
 const CHAT_ID = config.telegram.chatId != null
   ? String(config.telegram.chatId).trim()
   : '';
-const PRIVATE_CHAT_ID = config.telegram.privateChatId != null
-  ? String(config.telegram.privateChatId).trim()
-  : '';
 const REQUEST_TIMEOUT_MS = Number.isFinite(config.telegram.requestTimeoutMs) && config.telegram.requestTimeoutMs > 0
   ? config.telegram.requestTimeoutMs
   : 10000;
@@ -33,8 +30,6 @@ const statusState = {
   chatIdConfigured: Boolean(CHAT_ID),
   botTokenFormatValid: BOT_TOKEN_PATTERN.test(BOT_TOKEN),
   chatId: CHAT_ID || null,
-  privateChatIdConfigured: Boolean(PRIVATE_CHAT_ID),
-  privateChatSeparated: Boolean(PRIVATE_CHAT_ID && PRIVATE_CHAT_ID !== CHAT_ID),
   botUsername: null,
   botId: null,
   chatAccessible: null,
@@ -62,8 +57,6 @@ function syncStatus(patch = {}) {
     chatIdConfigured: Boolean(CHAT_ID),
     botTokenFormatValid: BOT_TOKEN_PATTERN.test(BOT_TOKEN),
     chatId: CHAT_ID || null,
-    privateChatIdConfigured: Boolean(PRIVATE_CHAT_ID),
-    privateChatSeparated: Boolean(PRIVATE_CHAT_ID && PRIVATE_CHAT_ID !== CHAT_ID),
   });
 
   const configError = getConfigurationError();
@@ -75,12 +68,6 @@ function syncStatus(patch = {}) {
   }
 
   return statusState;
-}
-
-function getPrivateDeliveryError() {
-  const configError = getConfigurationError();
-  if (configError) return configError;
-  return null;
 }
 
 function getStatus() {
@@ -287,21 +274,6 @@ async function sendMessage(text, parseMode = 'HTML', options = {}) {
     console.error('[TELEGRAM] Send error:', err.message);
     return null;
   }
-}
-
-async function sendPrivateMessage(text, parseMode = 'HTML', options = {}) {
-  const privateError = getPrivateDeliveryError();
-  if (privateError) {
-    syncStatus({ status: 'error', lastCheckedAt: nowIso(), lastError: privateError });
-    console.warn('[TELEGRAM] Private send skipped:', privateError);
-    return { ok: false, skipped: true, reason: privateError };
-  }
-
-  return sendMessage(text, parseMode, {
-    ...options,
-    chatId: PRIVATE_CHAT_ID || CHAT_ID,
-    protectContent: true,
-  });
 }
 
 async function editMessageText(messageId, text, parseMode = 'HTML') {
@@ -570,13 +542,11 @@ function stopStatusChecks() {
 
 module.exports = {
   sendMessage,
-  sendPrivateMessage,
   editMessageText,
   sendScanSummary,
   sendDailySummaryReport,
   refreshPendingDailyReports,
   getStatus,
-  getPrivateDeliveryError,
   probeConnection,
   startStatusChecks,
   stopStatusChecks,

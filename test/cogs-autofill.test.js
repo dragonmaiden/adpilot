@@ -492,44 +492,6 @@ test('buildAutofillNotification formats the paid-order COGS summary', async () =
   });
 });
 
-test('buildAutofillPrivateNotification formats spoiler-wrapped customer fields and detailed products', async () => {
-  const dataDir = createTempDataDir();
-  const privateKey = createPrivateKeyPem();
-
-  await withMockedService({
-    config: createConfig(privateKey),
-    runtimePaths: { dataDir },
-    cogsClient: {
-      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
-      buildSheetTargets: () => [],
-      fetchSheetCSV: async () => [],
-    },
-    imwebClient: {
-      getOrder: async () => {
-        throw new Error('not used');
-      },
-    },
-  }, async service => {
-    const message = service.buildAutofillPrivateNotification({
-      orderNo: '202603145648900',
-      customerName: '홍신희',
-      customerPhone: '01012341234',
-      deliveryAddress: '서울 강남구 테헤란로 123 5층',
-      deliveryNote: '문 앞에 놓아주세요',
-      productLines: ['실크 모노그램 방도', '에르 스카프 (od202601302d5ef0d5fc48b)'],
-    });
-
-    assert.match(message, /🔒 <b>Customer Details<\/b>/);
-    assert.match(message, /<b>Order ID<\/b>\n<tg-spoiler>202603145648900<\/tg-spoiler>/);
-    assert.match(message, /<b>Name<\/b>\n<tg-spoiler>홍신희<\/tg-spoiler>/);
-    assert.match(message, /<b>Phone number<\/b>\n<tg-spoiler>01012341234<\/tg-spoiler>/);
-    assert.match(message, /<b>Address<\/b>\n<tg-spoiler>서울 강남구 테헤란로 123 5층<\/tg-spoiler>/);
-    assert.match(message, /<b>Delivery note<\/b>\n<tg-spoiler>문 앞에 놓아주세요<\/tg-spoiler>/);
-    assert.match(message, /• 실크 모노그램 방도/);
-    assert.match(message, /• 에르 스카프 \(od202601302d5ef0d5fc48b\)/);
-  });
-});
-
 test('syncOrderToCogsSheet skips appending when the order number already exists in the target sheet', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();

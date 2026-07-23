@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const ENV_KEYS = [
   'TELEGRAM_BOT_TOKEN',
   'TELEGRAM_CHAT_ID',
-  'TELEGRAM_PRIVATE_CHAT_ID',
   'TELEGRAM_REQUEST_TIMEOUT_MS',
 ];
 
@@ -174,38 +173,6 @@ test('sendMessage fails fast when Telegram does not respond', async () => {
     assert.match(result.description, /timed out after 5ms/);
     assert.ok(Date.now() - startedAt < 500);
     assert.equal(telegram.getStatus().status, 'error');
-  });
-});
-
-test('sendPrivateMessage keeps existing group-chat delivery when no private chat is configured', async () => {
-  const requests = [];
-  await withTelegramModule(validEnv(), async (_url, options = {}) => {
-    requests.push(JSON.parse(options.body));
-    return { ok: true, json: async () => ({ ok: true, result: { message_id: 1 } }) };
-  }, async telegram => {
-    const result = await telegram.sendPrivateMessage('secret');
-
-    assert.equal(result.ok, true);
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].chat_id, '-100111222333');
-    assert.equal(requests[0].protect_content, true);
-  });
-});
-
-test('sendPrivateMessage uses the configured private chat boundary', async () => {
-  const requests = [];
-  await withTelegramModule(validEnv({
-    TELEGRAM_PRIVATE_CHAT_ID: '-100999888777',
-  }), async (_url, options = {}) => {
-    requests.push(JSON.parse(options.body));
-    return { ok: true, json: async () => ({ ok: true, result: { message_id: 44 } }) };
-  }, async telegram => {
-    const result = await telegram.sendPrivateMessage('secret');
-
-    assert.equal(result.ok, true);
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].chat_id, '-100999888777');
-    assert.equal(requests[0].protect_content, true);
   });
 });
 

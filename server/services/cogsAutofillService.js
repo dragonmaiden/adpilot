@@ -794,10 +794,6 @@ function buildOrderNotificationResult(order, overrides = {}) {
   const orderDate = order?.wtime ? formatDateInTimeZone(order.wtime) : '';
   const customerName = asString(order?.ordererName || order?.memberName);
   const productNames = getOrderProductNames(order).filter(Boolean);
-  const contact = getOrderContactSnapshot(order);
-  const deliveryAddress = contact.address || '';
-  const firstSection = getOrderSections(order)[0] || null;
-  const deliveryNote = asString(firstSection?.delivery?.memo || firstSection?.pickupMemo);
   const cashTotals = getOrderCashTotals(order);
   const paymentSummary = summarizeOrderPayment(order);
   const paymentDueAmount = getOrderPaymentDueAmount(order);
@@ -813,10 +809,6 @@ function buildOrderNotificationResult(order, overrides = {}) {
     orderDate,
     customerName,
     productNames,
-    productLines: buildNotificationProductLines(order),
-    customerPhone: contact.receiverPhone || contact.ordererPhone,
-    deliveryAddress,
-    deliveryNote,
     approvedAmount: cashTotals.approvedAmount,
     netRevenue: cashTotals.netPaidAmount,
     refundedAmount: cashTotals.refundedAmount,
@@ -999,44 +991,6 @@ function buildAutofillNotification(result) {
   return sections.join('\n');
 }
 
-function buildAutofillPrivateNotification(result) {
-  const productLines = Array.isArray(result?.productLines) && result.productLines.length > 0
-    ? result.productLines.map(line => `• ${escapeHtml(line)}`).join('\n')
-    : '• Product name unavailable';
-
-  const spoiler = value => (
-    value
-      ? `<tg-spoiler>${escapeHtml(value)}</tg-spoiler>`
-      : `<tg-spoiler>${escapeHtml('Unavailable')}</tg-spoiler>`
-  );
-
-  const sections = [
-    '🔒 <b>Customer Details</b>',
-    '',
-    '<i>Tap the hidden fields to reveal customer details.</i>',
-    '',
-    '<b>Order ID</b>',
-    spoiler(result?.orderNo),
-    '',
-    '<b>Name</b>',
-    spoiler(result?.customerName),
-    '',
-    '<b>Phone number</b>',
-    spoiler(result?.customerPhone),
-    '',
-    '<b>Address</b>',
-    spoiler(result?.deliveryAddress),
-  ];
-
-  if (result?.deliveryNote) {
-    sections.push('', '<b>Delivery note</b>', spoiler(result.deliveryNote));
-  }
-
-  sections.push('', '<b>Products</b>', productLines);
-
-  return sections.join('\n');
-}
-
 function sanitizeAutofillResultForResponse(result) {
   if (!result || typeof result !== 'object') {
     return result;
@@ -1049,32 +1003,6 @@ function sanitizeAutofillResultForResponse(result) {
     deliveryAddress: undefined,
     deliveryNote: undefined,
   };
-}
-
-function getItemOptionDetails(item) {
-  const productInfo = item?.productInfo || {};
-  const rawDetails = [
-    asString(productInfo.optionName),
-    asString(productInfo.optionValue),
-    asString(productInfo.optionDetailName),
-    asString(productInfo.optionDetailCode),
-    asString(productInfo.customProdCode),
-  ].filter(Boolean);
-
-  const uniqueDetails = [...new Set(rawDetails)];
-  return uniqueDetails.length > 0 ? uniqueDetails.join(' / ') : '';
-}
-
-function buildNotificationProductLines(order) {
-  return getOrderItems(order).map(item => {
-    const productName = asString(item?.productInfo?.prodName || item?.productName || item?.name) || 'Product name unavailable';
-    const optionDetails = getItemOptionDetails(item);
-    const qty = Math.max(1, Number(item?.qty || 1));
-    const qtyLabel = qty > 1 ? ` x${qty}` : '';
-    return optionDetails
-      ? `${productName}${qtyLabel} (${optionDetails})`
-      : `${productName}${qtyLabel}`;
-  });
 }
 
 function buildCompactDeliveryDetails(details = {}) {
@@ -1702,7 +1630,6 @@ module.exports = {
   buildPaywayPaymentReceivedNotification,
   buildPaywayAmbiguousPaymentNotification,
   buildAutofillNotification,
-  buildAutofillPrivateNotification,
   sanitizeAutofillResultForResponse,
   getImportedOrderMetadata,
   getNotifiedOrderMetadata,

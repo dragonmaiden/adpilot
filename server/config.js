@@ -107,7 +107,6 @@ const config = {
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
     chatId: process.env.TELEGRAM_CHAT_ID,
-    privateChatId: process.env.TELEGRAM_PRIVATE_CHAT_ID,
     requestTimeoutMs: parseInt(process.env.TELEGRAM_REQUEST_TIMEOUT_MS || '10000', 10),
   },
 

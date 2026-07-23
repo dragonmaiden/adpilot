@@ -10,17 +10,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-async function sendPrivateOrderDetails(result) {
-  if (typeof telegram.sendPrivateMessage !== 'function') {
-    return { ok: false, skipped: true, reason: 'private_delivery_unavailable' };
-  }
-
-  return telegram.sendPrivateMessage(
-    cogsAutofillService.buildAutofillPrivateNotification(result),
-    'HTML'
-  );
-}
-
 async function deliverNewOrderNotification(result) {
   const publicMessage = await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification(result));
   const messageId = getTelegramMessageId(publicMessage);
@@ -35,14 +24,8 @@ async function deliverNewOrderNotification(result) {
     });
   }
 
-  let privateMessage = null;
-  if (publicMessage?.ok) {
-    privateMessage = await sendPrivateOrderDetails(result);
-  }
-
   return {
     publicMessage,
-    privateMessage,
     messageId,
   };
 }
@@ -225,10 +208,6 @@ async function deliverPaidOrderNotification(result) {
     ...result,
     notificationStage: 'payment_confirmed',
   }));
-  let privateMessage = null;
-  if (publicMessage?.ok) {
-    privateMessage = await sendPrivateOrderDetails(result);
-  }
 
   if (result?.orderNo && publicMessage?.ok) {
     cogsAutofillService.markOrderNotificationCompleted(result.orderNo, {
@@ -243,7 +222,6 @@ async function deliverPaidOrderNotification(result) {
     kind: 'sent_paid_fallback',
     ok: Boolean(publicMessage?.ok),
     publicMessage,
-    privateMessage,
   };
 }
 
