@@ -908,9 +908,9 @@ function buildNewOrderNotification(result) {
   sections.push(
     '',
     'Checklist:',
-    `${paymentReceived ? '✅' : '☐'} Payment received`,
-    `${imwebPaymentConfirmed ? '✅' : '☐'} Imweb “Confirm Payment” completed`,
-    `${cogsLogged ? '✅' : '☐'} COGS logged${cogsLogged ? ` in ${escapeHtml(result.sheetName)}` : ''}`
+    `${paymentReceived ? '✅' : '☐'} 💳 Payment received`,
+    `${imwebPaymentConfirmed ? '✅' : '☐'} 💰 Imweb “Confirm Payment” completed`,
+    `${cogsLogged ? '✅' : '☐'} 📊 COGS logged${cogsLogged ? ` in ${escapeHtml(result.sheetName)}` : ''}`
   );
 
   return sections.join('\n');

@@ -336,7 +336,7 @@ test('buildNewOrderNotification formats the pre-payment order alert', async () =
     assert.match(message, /Products:\n• 실크 모노그램 방도/);
     assert.match(
       message,
-      /Checklist:\n☐ Payment received\n☐ Imweb “Confirm Payment” completed\n☐ COGS logged/
+      /Checklist:\n☐ 💳 Payment received\n☐ 💰 Imweb “Confirm Payment” completed\n☐ 📊 COGS logged/
     );
   });
 });
@@ -376,7 +376,7 @@ test('buildNewOrderNotification formats the completed checklist state after paym
     assert.match(message, /Payment: Paid confirmed · CARD/);
     assert.match(
       message,
-      /Checklist:\n✅ Payment received\n✅ Imweb “Confirm Payment” completed\n✅ COGS logged in 3월 주문/
+      /Checklist:\n✅ 💳 Payment received\n✅ 💰 Imweb “Confirm Payment” completed\n✅ 📊 COGS logged in 3월 주문/
     );
   });
 });
@@ -419,13 +419,13 @@ test('buildNewOrderNotification keeps Payway audit details in the single complet
     assert.match(message, /Payment: Payway card approved · Payway card/);
     assert.match(
       message,
-      /Checklist:\n✅ Payment received\n✅ Imweb “Confirm Payment” completed\n☐ COGS logged/
+      /Checklist:\n✅ 💳 Payment received\n✅ 💰 Imweb “Confirm Payment” completed\n☐ 📊 COGS logged/
     );
     assert.match(message, /Payway: 12345678 · 1234\*{8}5678/);
     assert.match(message, /Approved: 2026-03-13 18:45:10/);
     assert.equal(
       message.endsWith(
-        'Checklist:\n✅ Payment received\n✅ Imweb “Confirm Payment” completed\n☐ COGS logged'
+        'Checklist:\n✅ 💳 Payment received\n✅ 💰 Imweb “Confirm Payment” completed\n☐ 📊 COGS logged'
       ),
       true
     );
@@ -465,7 +465,7 @@ test('buildNewOrderNotification shows received payment while Imweb confirmation 
     assert.match(message, /🛎️ <b>New Imweb Order<\/b> 🎉🎉/);
     assert.match(
       message,
-      /Checklist:\n✅ Payment received\n☐ Imweb “Confirm Payment” completed\n☐ COGS logged/
+      /Checklist:\n✅ 💳 Payment received\n☐ 💰 Imweb “Confirm Payment” completed\n☐ 📊 COGS logged/
     );
   });
 });
