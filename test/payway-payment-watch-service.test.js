@@ -713,8 +713,8 @@ test('Payway watcher refresh keeps the original match window for missed pending 
       fetchPaymentHistory: async () => [payment],
     },
     orderNotificationService: {
-      deliverPaywayPaymentNotification: async (result, matchedPayment) => {
-        deliveries.push({ result, payment: matchedPayment });
+      deliverPaywayPaymentNotification: async (result, matchedPayment, options) => {
+        deliveries.push({ result, payment: matchedPayment, options });
         return { ok: true };
       },
     },
@@ -939,8 +939,8 @@ test('Payway watcher confirms a uniquely matched card payment in Imweb before co
       },
     },
     orderNotificationService: {
-      deliverPaywayPaymentNotification: async (result, matchedPayment) => {
-        deliveries.push({ result, payment: matchedPayment });
+      deliverPaywayPaymentNotification: async (result, matchedPayment, options) => {
+        deliveries.push({ result, payment: matchedPayment, options });
         return { ok: true };
       },
     },
@@ -965,6 +965,8 @@ test('Payway watcher confirms a uniquely matched card payment in Imweb before co
     assert.equal(result.ok, true);
     assert.deepEqual(confirmations, ['202607237401269']);
     assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].options.imwebPaymentConfirmed, true);
+    assert.equal(deliveries[0].options.imwebPaymentConfirmedAt, '2026-07-23T06:50:30.000Z');
     const state = service.loadState();
     assert.equal(state.watchedOrders['202607237401269'].status, 'paid');
     assert.equal(state.watchedOrders['202607237401269'].imwebConfirmation.status, 'confirmed');
@@ -1047,6 +1049,7 @@ test('Payway watcher does not repeat a successful Imweb write while retrying Tel
 
 test('Payway watcher keeps the workflow pending when Imweb confirmation fails', async () => {
   const dataDir = createTempDataDir();
+  const deliveries = [];
   const config = createConfig();
   config.payway.autoConfirmImwebPayment = true;
 
@@ -1076,7 +1079,10 @@ test('Payway watcher keeps the workflow pending when Imweb confirmation fails', 
       },
     },
     orderNotificationService: {
-      deliverPaywayPaymentNotification: async () => ({ ok: true }),
+      deliverPaywayPaymentNotification: async (_result, _payment, options) => {
+        deliveries.push(options);
+        return { ok: true };
+      },
     },
   }, async service => {
     service.watchOrder({
@@ -1101,6 +1107,8 @@ test('Payway watcher keeps the workflow pending when Imweb confirmation fails', 
     assert.equal(state.watchedOrders['202607230002'].status, 'payment_detected');
     assert.equal(state.watchedOrders['202607230002'].imwebConfirmation.status, 'failed');
     assert.match(state.watchedOrders['202607230002'].lastDeliveryError, /30103/);
+    assert.equal(deliveries.length, 1);
+    assert.equal(deliveries[0].imwebPaymentConfirmed, false);
   });
 });
 

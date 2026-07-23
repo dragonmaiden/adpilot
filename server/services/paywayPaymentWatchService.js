@@ -710,7 +710,16 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
     paywayApprovedAt: payment.transactionAt || payment.transactionAtIso,
   };
   const confirmation = await confirmMatchedImwebPayment(watch, now);
-  const delivery = await orderNotificationService.deliverPaywayPaymentNotification(notificationResult, payment);
+  const imwebPaymentConfirmed = confirmation.ok
+    && confirmation.reason !== 'auto_confirmation_disabled';
+  const delivery = await orderNotificationService.deliverPaywayPaymentNotification(
+    notificationResult,
+    payment,
+    {
+      imwebPaymentConfirmed,
+      imwebPaymentConfirmedAt: watch.imwebConfirmation?.confirmedAt || null,
+    }
+  );
 
   if (confirmation.ok && delivery?.ok) {
     watch.status = 'paid';

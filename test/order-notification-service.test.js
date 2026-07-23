@@ -57,6 +57,7 @@ test('deliverNewOrderNotification stores the public Telegram message id for late
       },
     },
     cogsAutofillService: {
+      getNotifiedOrderMetadata: () => null,
       buildNewOrderNotification: result => `new:${result.orderNo}`,
       recordOrderNotificationDelivery: (orderNo, metadata) => {
         recordedDeliveries.push({ orderNo, metadata });
@@ -85,6 +86,92 @@ test('deliverNewOrderNotification stores the public Telegram message id for late
         },
       },
     ]);
+  });
+});
+
+test('concurrent scan and Payway delivery keep one canonical order card', async () => {
+  const sentMessages = [];
+  const editedMessages = [];
+  let metadata = null;
+  let releaseSend;
+  let markSendStarted;
+  const sendGate = new Promise(resolve => {
+    releaseSend = resolve;
+  });
+  const sendStarted = new Promise(resolve => {
+    markSendStarted = resolve;
+  });
+
+  await withMockedOrderNotificationService({
+    telegram: {
+      sendMessage: async text => {
+        sentMessages.push(text);
+        markSendStarted();
+        await sendGate;
+        return { ok: true, result: { message_id: 4321 } };
+      },
+      editMessageText: async (messageId, text) => {
+        editedMessages.push({ messageId, text });
+        return { ok: true, result: { message_id: messageId } };
+      },
+    },
+    cogsAutofillService: {
+      getNotifiedOrderMetadata: () => metadata,
+      buildNewOrderNotification: result => [
+        result.orderNo,
+        result.notificationStage,
+        result.paymentReceived,
+        result.imwebPaymentConfirmed,
+      ].join(':'),
+      recordOrderNotificationDelivery: (orderNo, patch) => {
+        metadata = { ...(metadata || {}), orderNo, ...patch };
+        return metadata;
+      },
+      markOrderNotificationCompleted: (orderNo, patch) => {
+        metadata = {
+          ...(metadata || {}),
+          orderNo,
+          notificationStage: 'payment_confirmed',
+          ...patch,
+        };
+        return metadata;
+      },
+    },
+  }, async service => {
+    const pendingDelivery = service.deliverNewOrderNotification({
+      orderNo: '202607232920239',
+      orderDate: '2026-07-23',
+      paymentState: 'awaiting_check',
+      notificationSource: 'scan_backstop',
+    });
+    await sendStarted;
+    const paywayDelivery = service.deliverPaywayPaymentNotification({
+      orderNo: '202607232920239',
+      orderDate: '2026-07-23',
+      orderValue: 93600,
+      notificationSource: 'payway_direct',
+    }, {
+      transactionId: 'payway:tmn:00207109:93600',
+      transactionAt: '2026-07-23 23:30:28',
+      transactionAmount: 93600,
+      approvalNo: '00207109',
+      maskedCardNumber: '516526****651*',
+    }, {
+      imwebPaymentConfirmed: true,
+      imwebPaymentConfirmedAt: '2026-07-23T14:30:29.000Z',
+    });
+    releaseSend();
+
+    const [pendingResult, paidResult] = await Promise.all([pendingDelivery, paywayDelivery]);
+    assert.equal(pendingResult.messageId, 4321);
+    assert.equal(paidResult.messageId, 4321);
+    assert.equal(sentMessages.length, 1);
+    assert.deepEqual(editedMessages, [{
+      messageId: 4321,
+      text: '202607232920239:payment_confirmed:true:true',
+    }]);
+    assert.equal(metadata.notificationStage, 'payment_confirmed');
+    assert.equal(metadata.paywayApprovalNo, '00207109');
   });
 });
 
@@ -134,16 +221,17 @@ test('completeExistingOrderNotification edits the original alert and marks the c
           paymentState: 'paid',
           sheetName: '3월 주문',
           rowCount: 2,
+          imwebPaymentConfirmedAt: completionMarks[0].metadata.imwebPaymentConfirmedAt,
         },
       },
     ]);
+    assert.match(completionMarks[0].metadata.imwebPaymentConfirmedAt, /^\d{4}-\d{2}-\d{2}T/);
   });
 });
 
-test('deliverPaywayPaymentNotification sends one payment received message before completing the original card', async () => {
+test('deliverPaywayPaymentNotification updates only the original order card', async () => {
   const sentMessages = [];
   const editedMessages = [];
-  const recordedDeliveries = [];
   const completionMarks = [];
 
   await withMockedOrderNotificationService({
@@ -163,12 +251,14 @@ test('deliverPaywayPaymentNotification sends one payment received message before
         messageId: 4321,
         notificationStage: 'payment_pending',
       }),
-      buildPaywayPaymentReceivedNotification: (result, payment) => `payway:${result.orderNo}:${payment.transactionId}`,
-      buildNewOrderNotification: result => `completed:${result.orderNo}:${result.notificationStage}:${result.paymentSource}`,
-      recordOrderNotificationDelivery: (orderNo, metadata) => {
-        recordedDeliveries.push({ orderNo, metadata });
-        return { orderNo, ...metadata };
-      },
+      buildNewOrderNotification: result => [
+        result.orderNo,
+        result.notificationStage,
+        result.paymentSource,
+        result.paymentReceived,
+        result.imwebPaymentConfirmed,
+        result.paywayApprovalNo,
+      ].join(':'),
       markOrderNotificationCompleted: (orderNo, metadata) => {
         completionMarks.push({ orderNo, metadata });
         return { orderNo, ...metadata };
@@ -182,40 +272,44 @@ test('deliverPaywayPaymentNotification sends one payment received message before
       transactionId: 'payway:tmn:appr:111000',
       transactionAt: '2026-03-15 12:30:00',
       transactionAmount: 111000,
+      approvalNo: '12345678',
+      maskedCardNumber: '1234********5678',
+    }, {
+      imwebPaymentConfirmed: true,
+      imwebPaymentConfirmedAt: '2026-03-15T03:30:01.000Z',
     });
 
     assert.equal(result.ok, true);
-    assert.equal(result.kind, 'payway_updated_existing');
-    assert.deepEqual(sentMessages.map(message => message.text), ['payway:202603150001:payway:tmn:appr:111000']);
+    assert.equal(result.kind, 'payway_order_card_updated');
+    assert.equal(sentMessages.length, 0);
     assert.deepEqual(editedMessages, [
       {
         messageId: 4321,
-        text: 'completed:202603150001:payment_confirmed:payway',
+        text: '202603150001:payment_confirmed:payway:true:true:12345678',
       },
     ]);
-    assert.equal(recordedDeliveries.length, 1);
-    assert.equal(recordedDeliveries[0].orderNo, '202603150001');
-    assert.equal(recordedDeliveries[0].metadata.paywayPaymentReceivedMessageId, 8801);
-    assert.equal(recordedDeliveries[0].metadata.paywayTransactionId, 'payway:tmn:appr:111000');
-    assert.equal(recordedDeliveries[0].metadata.paymentSource, 'payway');
-    assert.deepEqual(completionMarks, [
-      {
-        orderNo: '202603150001',
-        metadata: {
-          messageId: 4321,
-          paymentState: 'paid',
-          paymentSource: 'payway',
-          paywayTransactionId: 'payway:tmn:appr:111000',
-          paywayApprovedAt: '2026-03-15 12:30:00',
-          sheetName: undefined,
-          rowCount: undefined,
-        },
-      },
-    ]);
+    assert.equal(completionMarks.length, 1);
+    assert.equal(completionMarks[0].orderNo, '202603150001');
+    assert.deepEqual(completionMarks[0].metadata, {
+      messageId: 4321,
+      notificationStage: 'payment_confirmed',
+      paymentState: 'paid',
+      paymentSource: 'payway',
+      paywayPaymentReceivedAt: completionMarks[0].metadata.paywayPaymentReceivedAt,
+      paywayTransactionId: 'payway:tmn:appr:111000',
+      paywayApprovedAt: '2026-03-15 12:30:00',
+      paywayApprovalNo: '12345678',
+      paywayMaskedCardNumber: '1234********5678',
+      paywayAmount: 111000,
+      orderDate: undefined,
+      source: 'payway_direct',
+      imwebPaymentConfirmedAt: '2026-03-15T03:30:01.000Z',
+    });
+    assert.match(completionMarks[0].metadata.paywayPaymentReceivedAt, /^\d{4}-\d{2}-\d{2}T/);
   });
 });
 
-test('deliverPaywayPaymentNotification does not resend the payment received message for the same order', async () => {
+test('deliverPaywayPaymentNotification skips an already-current single order card', async () => {
   const sentMessages = [];
   const editedMessages = [];
 
@@ -234,13 +328,13 @@ test('deliverPaywayPaymentNotification does not resend the payment received mess
       getNotifiedOrderMetadata: () => ({
         orderNo: '202603150001',
         messageId: 4321,
-        notificationStage: 'payment_pending',
-        paywayPaymentReceivedMessageId: 8801,
+        notificationStage: 'payment_confirmed',
+        paywayTransactionId: 'payway:tmn:appr:111000',
+        imwebPaymentConfirmedAt: '2026-03-15T03:30:01.000Z',
       }),
-      buildPaywayPaymentReceivedNotification: () => {
-        throw new Error('payment received message should not be rebuilt');
+      buildNewOrderNotification: () => {
+        throw new Error('already-current order card should not be rebuilt');
       },
-      buildNewOrderNotification: result => `completed:${result.orderNo}:${result.notificationStage}:${result.paymentSource}`,
       markOrderNotificationCompleted: () => ({}),
     },
   }, async service => {
@@ -250,31 +344,36 @@ test('deliverPaywayPaymentNotification does not resend the payment received mess
     }, {
       transactionId: 'payway:tmn:appr:111000',
       transactionAmount: 111000,
+    }, {
+      imwebPaymentConfirmed: true,
     });
 
     assert.equal(result.ok, true);
+    assert.equal(result.kind, 'payway_order_card_already_current');
     assert.equal(sentMessages.length, 0);
-    assert.equal(result.paymentMessage.reason, 'already_sent');
-    assert.deepEqual(editedMessages, [
-      {
-        messageId: 4321,
-        text: 'completed:202603150001:payment_confirmed:payway',
-      },
-    ]);
+    assert.equal(editedMessages.length, 0);
   });
 });
 
-test('deliverPaywayPaymentNotification completes from the Payway message when no pending card exists yet', async () => {
+test('deliverPaywayPaymentNotification creates one completed order card when no pending card exists yet', async () => {
+  const sentMessages = [];
   const completionMarks = [];
 
   await withMockedOrderNotificationService({
     telegram: {
-      sendMessage: async () => ({ ok: true, result: { message_id: 9901 } }),
+      sendMessage: async text => {
+        sentMessages.push(text);
+        return { ok: true, result: { message_id: 9901 } };
+      },
     },
     cogsAutofillService: {
       getNotifiedOrderMetadata: () => null,
-      buildPaywayPaymentReceivedNotification: result => `payway:${result.orderNo}`,
-      recordOrderNotificationDelivery: () => ({}),
+      buildNewOrderNotification: result => [
+        result.orderNo,
+        result.notificationStage,
+        result.paymentReceived,
+        result.imwebPaymentConfirmed,
+      ].join(':'),
       markOrderNotificationCompleted: (orderNo, metadata) => {
         completionMarks.push({ orderNo, metadata });
         return { orderNo, ...metadata };
@@ -288,21 +387,96 @@ test('deliverPaywayPaymentNotification completes from the Payway message when no
       transactionId: 'payway:tmn:approval:245000',
       transactionAt: '2026-07-23 17:00:20',
       transactionAmount: 245000,
+      approvalNo: '44332211',
+      maskedCardNumber: '1234********5678',
+    }, {
+      imwebPaymentConfirmed: true,
+      imwebPaymentConfirmedAt: '2026-07-23T08:00:21.000Z',
     });
 
     assert.equal(result.ok, true);
-    assert.equal(result.kind, 'payway_completed_without_pending_card');
-    assert.equal(result.completion.messageId, 9901);
-    assert.deepEqual(completionMarks, [{
-      orderNo: '202607237401269',
-      metadata: {
-        messageId: 9901,
-        paymentState: 'paid',
-        paymentSource: 'payway',
-        paywayTransactionId: 'payway:tmn:approval:245000',
-        paywayApprovedAt: '2026-07-23 17:00:20',
+    assert.equal(result.kind, 'payway_order_card_created');
+    assert.equal(result.messageId, 9901);
+    assert.deepEqual(sentMessages, ['202607237401269:payment_confirmed:true:true']);
+    assert.equal(completionMarks.length, 1);
+    assert.equal(completionMarks[0].metadata.messageId, 9901);
+    assert.equal(completionMarks[0].metadata.paywayTransactionId, 'payway:tmn:approval:245000');
+    assert.equal(completionMarks[0].metadata.imwebPaymentConfirmedAt, '2026-07-23T08:00:21.000Z');
+  });
+});
+
+test('Payway completion adds COGS to the same order card after the sheet sync', async () => {
+  const sentMessages = [];
+  const editedMessages = [];
+  let metadata = {
+    orderNo: '202607232920239',
+    messageId: 4321,
+    notificationStage: 'payment_pending',
+  };
+
+  await withMockedOrderNotificationService({
+    telegram: {
+      sendMessage: async text => {
+        sentMessages.push(text);
+        return { ok: true, result: { message_id: 9901 } };
       },
-    }]);
+      editMessageText: async (messageId, text) => {
+        editedMessages.push({ messageId, text });
+        return { ok: true, result: { message_id: messageId } };
+      },
+    },
+    cogsAutofillService: {
+      getNotifiedOrderMetadata: () => metadata,
+      buildNewOrderNotification: result => [
+        result.notificationStage,
+        result.paymentSource,
+        result.sheetName || 'no-cogs',
+        result.paywayApprovalNo,
+      ].join(':'),
+      markOrderNotificationCompleted: (orderNo, patch) => {
+        metadata = {
+          ...metadata,
+          orderNo,
+          notificationStage: 'payment_confirmed',
+          ...patch,
+        };
+        return metadata;
+      },
+    },
+  }, async service => {
+    const paymentResult = await service.deliverPaywayPaymentNotification({
+      orderNo: '202607232920239',
+      orderValue: 93600,
+    }, {
+      transactionId: 'payway:tmn:00207109:93600',
+      transactionAmount: 93600,
+      approvalNo: '00207109',
+    }, {
+      imwebPaymentConfirmed: true,
+      imwebPaymentConfirmedAt: '2026-07-23T14:30:29.000Z',
+    });
+    const cogsResult = await service.deliverPaidOrderNotification({
+      orderNo: '202607232920239',
+      paymentState: 'paid',
+      sheetName: 'July',
+      rowCount: 1,
+    });
+
+    assert.equal(paymentResult.ok, true);
+    assert.equal(cogsResult.updated, true);
+    assert.equal(sentMessages.length, 0);
+    assert.deepEqual(editedMessages, [
+      {
+        messageId: 4321,
+        text: 'payment_confirmed:payway:no-cogs:00207109',
+      },
+      {
+        messageId: 4321,
+        text: 'payment_confirmed:payway:July:00207109',
+      },
+    ]);
+    assert.equal(metadata.sheetName, 'July');
+    assert.equal(metadata.paywayApprovalNo, '00207109');
   });
 });
 
@@ -428,17 +602,17 @@ test('deliverPaidOrderNotification still falls back to a completed card when no 
     assert.equal(result.kind, 'sent_paid_fallback');
     assert.equal(sentMessages.length, 1);
     assert.equal(sentMessages[0].text, 'completed:202603150001:payment_confirmed');
-    assert.deepEqual(completionMarks, [
-      {
-        orderNo: '202603150001',
-        metadata: {
-          messageId: 7001,
-          paymentState: 'paid',
-          sheetName: '3월 주문',
-          rowCount: 1,
-        },
-      },
-    ]);
+    assert.equal(completionMarks.length, 1);
+    assert.equal(completionMarks[0].orderNo, '202603150001');
+    assert.deepEqual(completionMarks[0].metadata, {
+      messageId: 7001,
+      paymentState: 'paid',
+      imwebPaymentConfirmedAt: completionMarks[0].metadata.imwebPaymentConfirmedAt,
+      sheetName: '3월 주문',
+      rowCount: 1,
+      source: 'cogs_autofill_fallback',
+    });
+    assert.match(completionMarks[0].metadata.imwebPaymentConfirmedAt, /^\d{4}-\d{2}-\d{2}T/);
   });
 });
 

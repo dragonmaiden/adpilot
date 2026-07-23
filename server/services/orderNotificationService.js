@@ -1,6 +1,8 @@
 const telegram = require('../modules/telegram');
 const cogsAutofillService = require('./cogsAutofillService');
 
+const orderNotificationQueues = new Map();
+
 function getTelegramMessageId(response) {
   const messageId = response?.result?.message_id;
   return Number.isFinite(Number(messageId)) ? Number(messageId) : null;
@@ -10,27 +12,116 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-async function deliverNewOrderNotification(result) {
-  const publicMessage = await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification(result));
-  const messageId = getTelegramMessageId(publicMessage);
-
-  if (messageId && result?.orderNo) {
-    cogsAutofillService.recordOrderNotificationDelivery(result.orderNo, {
-      messageId,
-      notificationStage: 'payment_pending',
-      paymentState: result.paymentState,
-      orderDate: result.orderDate,
-      source: result.notificationSource || 'scan_backstop',
-    });
+async function withOrderNotificationLock(orderNo, command) {
+  const key = String(orderNo || '').trim();
+  if (!key) {
+    return command();
   }
 
-  return {
-    publicMessage,
-    messageId,
+  const previous = orderNotificationQueues.get(key) || Promise.resolve();
+  let release;
+  const current = new Promise(resolve => {
+    release = resolve;
+  });
+  const queued = previous.catch(() => {}).then(() => current);
+  orderNotificationQueues.set(key, queued);
+
+  await previous.catch(() => {});
+  try {
+    return await command();
+  } finally {
+    release();
+    if (orderNotificationQueues.get(key) === queued) {
+      orderNotificationQueues.delete(key);
+    }
+  }
+}
+
+function buildOrderCardResult(result, metadata = {}, overrides = {}) {
+  const merged = {
+    ...result,
+    paymentState: result?.paymentState || metadata?.paymentState,
+    paymentSource: result?.paymentSource || metadata?.paymentSource,
+    paywayTransactionId: result?.paywayTransactionId || metadata?.paywayTransactionId,
+    paywayApprovedAt: result?.paywayApprovedAt || metadata?.paywayApprovedAt,
+    paywayApprovalNo: result?.paywayApprovalNo || metadata?.paywayApprovalNo,
+    paywayMaskedCardNumber: result?.paywayMaskedCardNumber || metadata?.paywayMaskedCardNumber,
+    paywayAmount: result?.paywayAmount || metadata?.paywayAmount,
+    sheetName: result?.sheetName || metadata?.sheetName,
+    rowCount: result?.rowCount ?? metadata?.rowCount,
+    notificationStage: result?.notificationStage || metadata?.notificationStage,
+    ...overrides,
   };
+
+  if (typeof merged.paymentReceived !== 'boolean') {
+    merged.paymentReceived = Boolean(
+      metadata?.paywayPaymentReceivedAt
+      || metadata?.paymentConfirmedAt
+      || merged.paymentState === 'paid'
+      || merged.notificationStage === 'payment_received'
+      || merged.notificationStage === 'payment_confirmed'
+    );
+  }
+  if (typeof merged.imwebPaymentConfirmed !== 'boolean') {
+    merged.imwebPaymentConfirmed = Boolean(
+      metadata?.imwebPaymentConfirmedAt
+      || merged.notificationStage === 'payment_confirmed'
+    );
+  }
+
+  return merged;
+}
+
+async function deliverNewOrderNotification(result) {
+  return withOrderNotificationLock(result?.orderNo, async () => {
+    const metadata = cogsAutofillService.getNotifiedOrderMetadata(result?.orderNo);
+    if (metadata?.messageId) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'already_delivered',
+        publicMessage: null,
+        messageId: metadata.messageId,
+      };
+    }
+
+    const publicMessage = await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification(
+      buildOrderCardResult(result, metadata, {
+        notificationStage: 'payment_pending',
+        paymentReceived: false,
+        imwebPaymentConfirmed: false,
+      })
+    ));
+    const messageId = getTelegramMessageId(publicMessage);
+
+    if (messageId && result?.orderNo) {
+      cogsAutofillService.recordOrderNotificationDelivery(result.orderNo, {
+        messageId,
+        notificationStage: 'payment_pending',
+        paymentState: result.paymentState,
+        orderDate: result.orderDate,
+        source: result.notificationSource || 'scan_backstop',
+      });
+    }
+
+    return {
+      ok: Boolean(publicMessage?.ok),
+      publicMessage,
+      messageId,
+    };
+  });
 }
 
 function buildPaywayCompletionResult(result, payment = {}) {
+  const amount = Number(
+    payment?.transactionAmount
+    || payment?.approvedAmount
+    || result?.orderValue
+    || result?.netRevenue
+    || result?.approvedAmount
+    || 0
+  );
+
   return {
     ...result,
     paymentState: 'paid',
@@ -39,46 +130,13 @@ function buildPaywayCompletionResult(result, payment = {}) {
     paymentSource: 'payway',
     paywayTransactionId: payment?.transactionId || result?.paywayTransactionId,
     paywayApprovedAt: payment?.transactionAt || payment?.transactionAtIso || result?.paywayApprovedAt,
+    paywayApprovalNo: payment?.approvalNo || result?.paywayApprovalNo,
+    paywayMaskedCardNumber: payment?.maskedCardNumber || result?.paywayMaskedCardNumber,
+    paywayAmount: amount || result?.paywayAmount,
   };
 }
 
-async function sendPaywayPaymentReceivedMessage(result, payment = {}) {
-  if (!result?.orderNo) {
-    return { ok: false, skipped: true, reason: 'missing_order_no' };
-  }
-
-  const metadata = cogsAutofillService.getNotifiedOrderMetadata(result.orderNo);
-  if (metadata?.paywayPaymentReceivedMessageId) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: 'already_sent',
-      messageId: metadata.paywayPaymentReceivedMessageId,
-    };
-  }
-
-  const response = await telegram.sendMessage(
-    cogsAutofillService.buildPaywayPaymentReceivedNotification(result, payment)
-  );
-  const messageId = getTelegramMessageId(response);
-
-  if (response?.ok && messageId) {
-    cogsAutofillService.recordOrderNotificationDelivery(result.orderNo, {
-      paywayPaymentReceivedMessageId: messageId,
-      paywayPaymentReceivedAt: nowIso(),
-      paywayTransactionId: payment?.transactionId || result?.paywayTransactionId || null,
-      paymentSource: 'payway',
-    });
-  }
-
-  return {
-    ok: Boolean(response?.ok),
-    response,
-    messageId,
-  };
-}
-
-async function completeExistingOrderNotification(result) {
+async function completeExistingOrderNotificationUnlocked(result) {
   if (!result?.orderNo) {
     return { ok: false, updated: false, reason: 'missing_order_no' };
   }
@@ -98,10 +156,11 @@ async function completeExistingOrderNotification(result) {
 
   const editResult = await telegram.editMessageText(
     metadata.messageId,
-    cogsAutofillService.buildNewOrderNotification({
-      ...result,
+    cogsAutofillService.buildNewOrderNotification(buildOrderCardResult(result, metadata, {
       notificationStage: 'payment_confirmed',
-    })
+      paymentReceived: true,
+      imwebPaymentConfirmed: true,
+    }))
   );
 
   if (editResult?.ok) {
@@ -110,6 +169,7 @@ async function completeExistingOrderNotification(result) {
       paymentState: result.paymentState || 'paid',
       sheetName: result.sheetName || metadata.sheetName,
       rowCount: result.rowCount ?? metadata.rowCount,
+      imwebPaymentConfirmedAt: metadata.imwebPaymentConfirmedAt || nowIso(),
     };
     const paymentSource = result.paymentSource || metadata.paymentSource;
     const paywayTransactionId = result.paywayTransactionId || metadata.paywayTransactionId;
@@ -129,7 +189,14 @@ async function completeExistingOrderNotification(result) {
   return { ok: false, updated: false, reason: 'edit_failed' };
 }
 
-async function closeExistingOrderNotification(result) {
+async function completeExistingOrderNotification(result) {
+  return withOrderNotificationLock(
+    result?.orderNo,
+    () => completeExistingOrderNotificationUnlocked(result)
+  );
+}
+
+async function closeExistingOrderNotificationUnlocked(result) {
   if (!result?.orderNo) {
     return { ok: false, updated: false, reason: 'missing_order_no' };
   }
@@ -158,10 +225,9 @@ async function closeExistingOrderNotification(result) {
 
   const editResult = await telegram.editMessageText(
     metadata.messageId,
-    cogsAutofillService.buildNewOrderNotification({
-      ...result,
+    cogsAutofillService.buildNewOrderNotification(buildOrderCardResult(result, metadata, {
       notificationStage: 'order_closed',
-    })
+    }))
   );
 
   if (editResult?.ok) {
@@ -181,100 +247,158 @@ async function closeExistingOrderNotification(result) {
   return { ok: false, updated: false, reason: 'edit_failed' };
 }
 
-async function deliverPaidOrderNotification(result) {
-  const completed = await completeExistingOrderNotification(result);
-  if (completed.updated) {
-    return {
-      kind: 'updated_existing',
-      ...completed,
-    };
-  }
-
-  if (completed.reason === 'already_completed') {
-    return {
-      kind: 'already_completed',
-      ...completed,
-    };
-  }
-
-  if (completed.reason === 'missing_message_id' || completed.reason === 'edit_failed') {
-    return {
-      kind: 'awaiting_existing_update',
-      ...completed,
-    };
-  }
-
-  const publicMessage = await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification({
-    ...result,
-    notificationStage: 'payment_confirmed',
-  }));
-
-  if (result?.orderNo && publicMessage?.ok) {
-    cogsAutofillService.markOrderNotificationCompleted(result.orderNo, {
-      messageId: getTelegramMessageId(publicMessage),
-      paymentState: result.paymentState || 'paid',
-      sheetName: result.sheetName,
-      rowCount: result.rowCount,
-    });
-  }
-
-  return {
-    kind: 'sent_paid_fallback',
-    ok: Boolean(publicMessage?.ok),
-    publicMessage,
-  };
+async function closeExistingOrderNotification(result) {
+  return withOrderNotificationLock(
+    result?.orderNo,
+    () => closeExistingOrderNotificationUnlocked(result)
+  );
 }
 
-async function deliverPaywayPaymentNotification(result, payment = {}) {
+async function deliverPaidOrderNotification(result) {
+  return withOrderNotificationLock(result?.orderNo, async () => {
+    const completed = await completeExistingOrderNotificationUnlocked(result);
+    if (completed.updated) {
+      return {
+        kind: 'updated_existing',
+        ...completed,
+      };
+    }
+
+    if (completed.reason === 'already_completed') {
+      return {
+        kind: 'already_completed',
+        ...completed,
+      };
+    }
+
+    if (completed.reason === 'missing_message_id' || completed.reason === 'edit_failed') {
+      return {
+        kind: 'awaiting_existing_update',
+        ...completed,
+      };
+    }
+
+    const publicMessage = await telegram.sendMessage(cogsAutofillService.buildNewOrderNotification(
+      buildOrderCardResult(result, {}, {
+        notificationStage: 'payment_confirmed',
+        paymentReceived: true,
+        imwebPaymentConfirmed: true,
+      })
+    ));
+    const messageId = getTelegramMessageId(publicMessage);
+
+    if (result?.orderNo && publicMessage?.ok) {
+      cogsAutofillService.markOrderNotificationCompleted(result.orderNo, {
+        messageId,
+        paymentState: result.paymentState || 'paid',
+        imwebPaymentConfirmedAt: nowIso(),
+        sheetName: result.sheetName,
+        rowCount: result.rowCount,
+        source: result.notificationSource || 'cogs_autofill_fallback',
+      });
+    }
+
+    return {
+      kind: 'sent_paid_fallback',
+      ok: Boolean(publicMessage?.ok),
+      publicMessage,
+      messageId,
+    };
+  });
+}
+
+async function deliverPaywayPaymentNotification(result, payment = {}, options = {}) {
   const completionResult = buildPaywayCompletionResult(result, payment);
-  const paymentMessage = await sendPaywayPaymentReceivedMessage(completionResult, payment);
-
-  if (!paymentMessage?.ok) {
-    return {
-      kind: 'payway_payment_detected',
-      ok: false,
-      reason: paymentMessage?.reason || 'payment_message_failed',
-      paymentMessage,
-    };
+  if (!completionResult?.orderNo) {
+    return { kind: 'payway_order_card', ok: false, reason: 'missing_order_no' };
   }
 
-  const completed = await completeExistingOrderNotification(completionResult);
-  if (completed.updated || completed.reason === 'already_completed') {
-    return {
-      kind: completed.updated ? 'payway_updated_existing' : 'payway_already_completed',
-      ok: true,
-      paymentMessage,
-      completion: completed,
-    };
-  }
-  if (completed.reason === 'missing_message_id' || completed.reason === 'missing_notification') {
-    cogsAutofillService.markOrderNotificationCompleted(completionResult.orderNo, {
-      messageId: paymentMessage.messageId,
-      paymentState: 'paid',
-      paymentSource: 'payway',
-      paywayTransactionId: payment?.transactionId || completionResult.paywayTransactionId,
-      paywayApprovedAt: payment?.transactionAt || payment?.transactionAtIso || completionResult.paywayApprovedAt,
+  return withOrderNotificationLock(completionResult.orderNo, async () => {
+    const metadata = cogsAutofillService.getNotifiedOrderMetadata(completionResult.orderNo);
+    const imwebPaymentConfirmed = options.imwebPaymentConfirmed === true
+      || metadata?.notificationStage === 'payment_confirmed';
+    const notificationStage = imwebPaymentConfirmed ? 'payment_confirmed' : 'payment_received';
+    const notificationResult = buildOrderCardResult(completionResult, metadata, {
+      notificationStage,
+      paymentReceived: true,
+      imwebPaymentConfirmed,
     });
-    return {
-      kind: 'payway_completed_without_pending_card',
-      ok: true,
-      paymentMessage,
-      completion: {
+    const targetAlreadyRecorded = metadata?.messageId
+      && metadata.notificationStage === notificationStage
+      && metadata.paywayTransactionId === completionResult.paywayTransactionId
+      && (!imwebPaymentConfirmed || metadata.imwebPaymentConfirmedAt);
+
+    if (targetAlreadyRecorded) {
+      return {
+        kind: 'payway_order_card_already_current',
         ok: true,
         updated: false,
-        reason: 'payment_message_became_completion_card',
-        messageId: paymentMessage.messageId,
-      },
-    };
-  }
+        messageId: metadata.messageId,
+      };
+    }
 
-  return {
-    kind: 'payway_payment_detected',
-    ok: false,
-    reason: completed.reason || 'completion_failed',
-    paymentMessage,
-    completion: completed,
-  };
+    let response;
+    let messageId = Number.isFinite(Number(metadata?.messageId))
+      ? Number(metadata.messageId)
+      : null;
+    if (messageId) {
+      response = await telegram.editMessageText(
+        messageId,
+        cogsAutofillService.buildNewOrderNotification(notificationResult)
+      );
+    } else {
+      response = await telegram.sendMessage(
+        cogsAutofillService.buildNewOrderNotification(notificationResult)
+      );
+      messageId = getTelegramMessageId(response);
+    }
+
+    if (!response?.ok || !messageId) {
+      return {
+        kind: 'payway_order_card',
+        ok: false,
+        updated: false,
+        reason: messageId ? 'edit_failed' : 'send_failed',
+        messageId,
+      };
+    }
+
+    const metadataPatch = {
+      messageId,
+      notificationStage,
+      paymentState: 'paid',
+      paymentSource: 'payway',
+      paywayPaymentReceivedAt: metadata?.paywayPaymentReceivedAt || nowIso(),
+      paywayTransactionId: completionResult.paywayTransactionId || null,
+      paywayApprovedAt: completionResult.paywayApprovedAt || null,
+      paywayApprovalNo: completionResult.paywayApprovalNo || null,
+      paywayMaskedCardNumber: completionResult.paywayMaskedCardNumber || null,
+      paywayAmount: completionResult.paywayAmount || null,
+      orderDate: completionResult.orderDate,
+      source: metadata?.source || completionResult.notificationSource || 'payway_direct',
+    };
+
+    if (imwebPaymentConfirmed) {
+      cogsAutofillService.markOrderNotificationCompleted(completionResult.orderNo, {
+        ...metadataPatch,
+        imwebPaymentConfirmedAt: metadata?.imwebPaymentConfirmedAt
+          || options.imwebPaymentConfirmedAt
+          || nowIso(),
+      });
+    } else {
+      cogsAutofillService.recordOrderNotificationDelivery(
+        completionResult.orderNo,
+        metadataPatch
+      );
+    }
+
+    return {
+      kind: metadata?.messageId ? 'payway_order_card_updated' : 'payway_order_card_created',
+      ok: true,
+      updated: Boolean(metadata?.messageId),
+      messageId,
+    };
+  });
 }
 
 async function deliverPaywayAmbiguousPaymentWarning(payload = {}) {
@@ -290,11 +414,13 @@ async function deliverPaywayAmbiguousPaymentWarning(payload = {}) {
 }
 
 async function deliverClosedOrderNotification(result) {
-  const closed = await closeExistingOrderNotification(result);
-  return {
-    kind: closed.updated ? 'updated_existing' : closed.reason,
-    ...closed,
-  };
+  return withOrderNotificationLock(result?.orderNo, async () => {
+    const closed = await closeExistingOrderNotificationUnlocked(result);
+    return {
+      kind: closed.updated ? 'updated_existing' : closed.reason,
+      ...closed,
+    };
+  });
 }
 
 module.exports = {

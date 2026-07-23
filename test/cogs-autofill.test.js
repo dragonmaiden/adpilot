@@ -333,8 +333,11 @@ test('buildNewOrderNotification formats the pre-payment order alert', async () =
     assert.match(message, /Customer: 홍신희/);
     assert.match(message, /Revenue: ₩111,000 · 🐟 small fish ₩₩/);
     assert.match(message, /Payment: Awaiting payment check · BANK_TRANSFER/);
-    assert.match(message, /Checklist: Check payment in Imweb ☐/);
     assert.match(message, /Products:\n• 실크 모노그램 방도/);
+    assert.match(
+      message,
+      /Checklist:\n☐ Payment received\n☐ Imweb “Confirm Payment” completed\n☐ COGS logged/
+    );
   });
 });
 
@@ -369,13 +372,16 @@ test('buildNewOrderNotification formats the completed checklist state after paym
       productNames: ['실크 모노그램 방도'],
     });
 
-    assert.match(message, /✅ <b>New Imweb Order<\/b>/);
+    assert.match(message, /🛎️ <b>New Imweb Order<\/b> 🎉🎉/);
     assert.match(message, /Payment: Paid confirmed · CARD/);
-    assert.match(message, /Checklist: Payment recognized in Imweb ✅\n✅ COGS logged in 3월 주문/);
+    assert.match(
+      message,
+      /Checklist:\n✅ Payment received\n✅ Imweb “Confirm Payment” completed\n✅ COGS logged in 3월 주문/
+    );
   });
 });
 
-test('buildNewOrderNotification names Payway when the completed payment came from Payway polling', async () => {
+test('buildNewOrderNotification keeps Payway audit details in the single completed order card', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
 
@@ -403,15 +409,30 @@ test('buildNewOrderNotification names Payway when the completed payment came fro
       paymentState: 'paid',
       paymentSource: 'payway',
       notificationStage: 'payment_confirmed',
+      paywayApprovedAt: '2026-03-13 18:45:10',
+      paywayApprovalNo: '12345678',
+      paywayMaskedCardNumber: '1234********5678',
       productNames: ['실크 모노그램 방도'],
     });
 
+    assert.match(message, /🛎️ <b>New Imweb Order<\/b> 🎉🎉/);
     assert.match(message, /Payment: Payway card approved · Payway card/);
-    assert.match(message, /Checklist: Payment recognized in Payway ✅/);
+    assert.match(
+      message,
+      /Checklist:\n✅ Payment received\n✅ Imweb “Confirm Payment” completed\n☐ COGS logged/
+    );
+    assert.match(message, /Payway: 12345678 · 1234\*{8}5678/);
+    assert.match(message, /Approved: 2026-03-13 18:45:10/);
+    assert.equal(
+      message.endsWith(
+        'Checklist:\n✅ Payment received\n✅ Imweb “Confirm Payment” completed\n☐ COGS logged'
+      ),
+      true
+    );
   });
 });
 
-test('buildPaywayPaymentReceivedNotification formats the extra card-payment alert', async () => {
+test('buildNewOrderNotification shows received payment while Imweb confirmation is still pending', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
 
@@ -429,22 +450,23 @@ test('buildPaywayPaymentReceivedNotification formats the extra card-payment aler
       },
     },
   }, async service => {
-    const message = service.buildPaywayPaymentReceivedNotification({
+    const message = service.buildNewOrderNotification({
       orderNo: '202603145648900',
+      orderDate: '2026-03-13',
       customerName: '홍신희',
       orderValue: 111000,
-    }, {
-      transactionAt: '2026-03-13 18:45:10',
-      transactionAmount: 111000,
-      approvalNo: '12345678',
-      maskedCardNumber: '1234********5678',
+      paymentState: 'paid',
+      paymentSource: 'payway',
+      notificationStage: 'payment_received',
+      imwebPaymentConfirmed: false,
+      productNames: ['실크 모노그램 방도'],
     });
 
-    assert.match(message, /💳 <b>Payment received<\/b>/);
-    assert.match(message, /Order: 202603145648900/);
-    assert.match(message, /Amount: ₩111,000/);
-    assert.match(message, /Provider: Payway/);
-    assert.match(message, /Approval no: 12345678/);
+    assert.match(message, /🛎️ <b>New Imweb Order<\/b> 🎉🎉/);
+    assert.match(
+      message,
+      /Checklist:\n✅ Payment received\n☐ Imweb “Confirm Payment” completed\n☐ COGS logged/
+    );
   });
 });
 

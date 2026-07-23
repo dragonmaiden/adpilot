@@ -167,7 +167,7 @@ function buildNotificationBehaviorInference(metadata) {
   const source = asString(metadata.source);
   const stage = asString(metadata.notificationStage);
   const hasMessageId = Number.isFinite(Number(metadata.messageId));
-  const isInitialAlertSource = source === 'scan_backstop';
+  const isInitialAlertSource = source === 'scan_backstop' || source === 'payway_direct';
   const isFallbackSource = source === 'cogs_autofill_fallback' || !source;
 
   if (stage === 'delivery_pending') {
@@ -191,6 +191,18 @@ function buildNotificationBehaviorInference(metadata) {
       completedFallbackLikelyUsed: false,
       customerDetailsLikelyResentOnCompletion: false,
       summary: 'The initial bell card was delivered and is still waiting for payment recognition.',
+    };
+  }
+
+  if (isInitialAlertSource && hasMessageId && stage === 'payment_received') {
+    return {
+      initialAlertStatus: 'sent_then_payment_received',
+      initialBellCardLikelySent: true,
+      completedCardLikelyEditedInPlace: true,
+      closedCardLikelyEditedInPlace: false,
+      completedFallbackLikelyUsed: false,
+      customerDetailsLikelyResentOnCompletion: false,
+      summary: 'The order card records the Payway payment and is still waiting for Imweb confirmation.',
     };
   }
 
@@ -261,6 +273,11 @@ function sanitizeNotificationMetadata(metadata) {
     paymentSource: asString(metadata.paymentSource) || null,
     paywayTransactionId: asString(metadata.paywayTransactionId) || null,
     paywayPaymentReceivedAt: asString(metadata.paywayPaymentReceivedAt) || null,
+    imwebPaymentConfirmedAt: asString(metadata.imwebPaymentConfirmedAt) || null,
+    paywayApprovedAt: asString(metadata.paywayApprovedAt) || null,
+    paywayApprovalNo: asString(metadata.paywayApprovalNo) || null,
+    paywayMaskedCardNumber: asString(metadata.paywayMaskedCardNumber) || null,
+    paywayAmount: Number.isFinite(Number(metadata.paywayAmount)) ? Number(metadata.paywayAmount) : null,
     sheetName: asString(metadata.sheetName) || null,
     messageId: Number.isFinite(Number(metadata.messageId)) ? Number(metadata.messageId) : null,
     paywayPaymentReceivedMessageId: Number.isFinite(Number(metadata.paywayPaymentReceivedMessageId))
@@ -831,74 +848,70 @@ function buildClosedOrderNotificationResult(order, overrides = {}) {
 function buildNewOrderNotification(result) {
   const isClosed = result?.notificationStage === 'order_closed'
     || ['cancelled', 'returned', 'exchanged', 'refunded', 'closed'].includes(asString(result?.paymentState).toLowerCase());
-  const isCompleted = result?.paymentState === 'paid' || result?.notificationStage === 'payment_confirmed';
   const paymentSource = asString(result?.paymentSource).toLowerCase();
+  const paymentReceived = typeof result?.paymentReceived === 'boolean'
+    ? result.paymentReceived
+    : result?.paymentState === 'paid'
+      || result?.notificationStage === 'payment_received'
+      || result?.notificationStage === 'payment_confirmed';
+  const imwebPaymentConfirmed = typeof result?.imwebPaymentConfirmed === 'boolean'
+    ? result.imwebPaymentConfirmed
+    : result?.notificationStage === 'payment_confirmed'
+      || (paymentReceived && paymentSource !== 'payway');
+  const cogsLogged = Boolean(result?.sheetName);
   const orderValue = Number(result?.orderValue || result?.netRevenue || result?.approvedAmount || 0);
   const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
     ? result.productNames.map(line => `• ${escapeHtml(line)}`).join('\n')
     : '• Product name unavailable';
-  const paymentLabel = [
-    result?.paymentLabel,
-    result?.paymentMethod,
-  ].filter(Boolean).map(value => escapeHtml(value)).join(' · ');
-  const checklistLine = isClosed
-    ? `Checklist: ${escapeHtml(getClosedChecklistLabel(result))}`
-    : isCompleted
-      ? `Checklist: Payment recognized in ${paymentSource === 'payway' ? 'Payway' : 'Imweb'} ✅`
-      : 'Checklist: Check payment in Imweb ☐';
+  const paymentLabel = paymentSource === 'payway'
+    ? 'Payway card approved · Payway card'
+    : [
+      result?.paymentLabel,
+      result?.paymentMethod,
+    ].filter(Boolean).map(value => escapeHtml(value)).join(' · ');
 
   const sections = [
     isClosed
       ? `❌ <b>${escapeHtml(getClosedCardTitle(result))}</b>`
-      : isCompleted
-        ? '✅ <b>New Imweb Order</b>'
-        : '🛎️ <b>New Imweb Order</b> 🎉🎉',
+      : '🛎️ <b>New Imweb Order</b> 🎉🎉',
     '',
     `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
     `Date: ${escapeHtml(result?.orderDate || 'Unavailable')}`,
     `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
     `Revenue: ${escapeHtml(formatStoreMoney(orderValue))} · ${escapeHtml(getOrderSizeLabel(orderValue))}`,
-    `Payment: ${paymentLabel || (isClosed ? getClosedPaymentFallback(result) : (isCompleted ? 'Paid confirmed' : 'Check payment now'))}`,
-    checklistLine,
-  ];
-
-  if (isCompleted && result?.sheetName) {
-    sections.push(`✅ COGS logged in ${escapeHtml(result.sheetName)}`);
-  }
-
-  sections.push('', 'Products:', productLines);
-  return sections.join('\n');
-}
-
-function buildPaywayPaymentReceivedNotification(result, payment = {}) {
-  const amount = Number(
-    payment?.transactionAmount
-    || payment?.approvedAmount
-    || result?.orderValue
-    || result?.netRevenue
-    || result?.approvedAmount
-    || 0
-  );
-  const approvedAt = asString(payment?.transactionAt || payment?.transactionAtIso) || 'Unavailable';
-  const approvalNo = asString(payment?.approvalNo);
-  const card = asString(payment?.maskedCardNumber);
-
-  const sections = [
-    '💳 <b>Payment received</b>',
+    `Payment: ${paymentLabel || (isClosed ? getClosedPaymentFallback(result) : (paymentReceived ? 'Paid confirmed' : 'Check payment now'))}`,
     '',
-    `Order: ${escapeHtml(result?.orderNo || 'Unavailable')}`,
-    `Customer: ${escapeHtml(result?.customerName || 'Unavailable')}`,
-    `Amount: ${escapeHtml(formatStoreMoney(amount))}`,
-    'Provider: Payway',
-    `Approved at: ${escapeHtml(approvedAt)}`,
+    'Products:',
+    productLines,
   ];
 
-  if (approvalNo) {
-    sections.push(`Approval no: ${escapeHtml(approvalNo)}`);
+  if (isClosed) {
+    sections.push('', `Checklist: ${escapeHtml(getClosedChecklistLabel(result))}`);
+    return sections.join('\n');
   }
-  if (card) {
-    sections.push(`Card: ${escapeHtml(card)}`);
+
+  if (paymentSource === 'payway') {
+    const approvalDetails = [
+      asString(result?.paywayApprovalNo),
+      asString(result?.paywayMaskedCardNumber),
+    ].filter(Boolean).map(escapeHtml);
+    const approvedAt = asString(result?.paywayApprovedAt);
+
+    if (approvalDetails.length > 0) {
+      sections.push('', `Payway: ${approvalDetails.join(' · ')}`);
+    }
+    if (approvedAt) {
+      sections.push(`Approved: ${escapeHtml(approvedAt)}`);
+    }
   }
+
+  sections.push(
+    '',
+    'Checklist:',
+    `${paymentReceived ? '✅' : '☐'} Payment received`,
+    `${imwebPaymentConfirmed ? '✅' : '☐'} Imweb “Confirm Payment” completed`,
+    `${cogsLogged ? '✅' : '☐'} COGS logged${cogsLogged ? ` in ${escapeHtml(result.sheetName)}` : ''}`
+  );
 
   return sections.join('\n');
 }
@@ -1627,7 +1640,6 @@ module.exports = {
   resolveTargetSheet,
   buildNewOrderNotification,
   buildOrderNotificationResult,
-  buildPaywayPaymentReceivedNotification,
   buildPaywayAmbiguousPaymentNotification,
   buildAutofillNotification,
   sanitizeAutofillResultForResponse,
