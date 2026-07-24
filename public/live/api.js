@@ -83,6 +83,11 @@
     if (!hasArray(payload.selection, 'days')) return failContract('calendar-analysis', 'missing selection.days array');
     if (!hasObject(payload.selection, 'paymentChannels')) return failContract('calendar-analysis', 'missing selection.paymentChannels object');
     if (!hasArray(payload.selection.paymentChannels, 'rows')) return failContract('calendar-analysis', 'missing selection.paymentChannels.rows array');
+    if (typeof payload.selection.paymentChannels.ready !== 'boolean') return failContract('calendar-analysis', 'missing selection.paymentChannels.ready boolean');
+    if (payload.selection.paymentChannels.basis !== 'net_receipts') return failContract('calendar-analysis', 'unexpected selection.paymentChannels.basis');
+    if (typeof payload.selection.paymentChannels.totalNetRevenue !== 'number') return failContract('calendar-analysis', 'missing selection.paymentChannels.totalNetRevenue number');
+    if (!hasObject(payload.selection.paymentChannels, 'reconciliation')) return failContract('calendar-analysis', 'missing selection.paymentChannels.reconciliation object');
+    if (payload.selection.paymentChannels.ready && !hasObject(payload.selection.paymentChannels, 'payway')) return failContract('calendar-analysis', 'missing selection.paymentChannels.payway object');
     if (payload.sourceAudit != null && !isPlainObject(payload.sourceAudit)) return failContract('calendar-analysis', 'sourceAudit must be an object or null');
     return passContract();
   }

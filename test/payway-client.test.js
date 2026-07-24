@@ -157,6 +157,21 @@ test('parsePaymentHistoryAjaxResponse handles compact Payway payment timestamps'
   assert.equal(paywayClient.isApprovedPaywayPayment(payments[0]), true);
 });
 
+test('parsePaymentHistoryAjaxResponse preserves a missing fee as unavailable', () => {
+  const [payment] = paywayClient.parsePaymentHistoryAjaxResponse({
+    T2: [{
+      pay_dt: '20260724120000',
+      cancel_yn: 0,
+      tmid: 'TMN009889',
+      authno: '87654322',
+      amt: '100000',
+    }],
+  });
+
+  assert.equal(payment.feeAmount, null);
+  assert.equal(payment.settlementAmount, null);
+});
+
 test('isApprovedPaywayPayment rejects approvals without exact order and card evidence', () => {
   assert.equal(paywayClient.isApprovedPaywayPayment({
     status: '승인',
@@ -353,6 +368,69 @@ test('fetchPaymentHistory requests each configured Payway terminal id', async ()
   }
 });
 
+test('fetchPaymentHistory paginates a full selected date range', async () => {
+  const originalFetch = global.fetch;
+  const requestedPages = [];
+
+  global.fetch = async (url, options) => {
+    const params = new URLSearchParams(options.body);
+    if (params.get('cmd') === 'LOGIN') {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'set-cookie': 'PAYWAYSESSID=session-pages; Path=/' }),
+        text: async () => JSON.stringify({ res: 'OK' }),
+      };
+    }
+
+    assert.equal(url, 'https://payway.kr/ajax.php');
+    const jData = JSON.parse(params.get('jData'));
+    requestedPages.push(jData.page);
+    assert.equal(jData.st, '2026-07-01');
+    assert.equal(jData.ed, '2026-07-24');
+
+    const rowCount = jData.page === 1 ? 150 : 35;
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => JSON.stringify({
+        T2: Array.from({ length: rowCount }, (_, index) => ({
+          pay_dt: `20260724${String(100000 + index).padStart(6, '0')}`,
+          cancel_yn: 0,
+          tmid: 'TMN009889',
+          authno: `${jData.page}-${index}`,
+          amt: '100000',
+          fee: '6000',
+        })),
+      }),
+    };
+  };
+
+  try {
+    await withMockedPaywayClient({
+      payway: {
+        enabled: true,
+        baseUrl: 'https://payway.kr',
+        mid: '',
+        dashboardId: 'merchant',
+        dashboardPassword: 'secret',
+        requestTimeoutMs: 1000,
+      },
+    }, async client => {
+      const payments = await client.fetchPaymentHistory({
+        startDate: '2026-07-01',
+        endDate: '2026-07-24',
+      });
+
+      assert.deepEqual(requestedPages, [1, 2]);
+      assert.equal(payments.length, 185);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('fetchPaymentHistory keeps successful rows when a stale terminal query fails', async () => {
   const originalFetch = global.fetch;
   const originalWarn = console.warn;
@@ -429,6 +507,57 @@ test('fetchPaymentHistory keeps successful rows when a stale terminal query fail
     });
   } finally {
     console.warn = originalWarn;
+    global.fetch = originalFetch;
+  }
+});
+
+test('fetchPaymentHistory fails closed when the all-terminal query fails', async () => {
+  const originalFetch = global.fetch;
+  const requestedTerminals = [];
+
+  global.fetch = async (url, options) => {
+    const params = new URLSearchParams(options.body);
+    if (params.get('cmd') === 'LOGIN') {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'set-cookie': 'PAYWAYSESSID=session-primary; Path=/' }),
+        text: async () => JSON.stringify({ res: 'OK' }),
+      };
+    }
+
+    assert.equal(url, 'https://payway.kr/ajax.php');
+    const jData = JSON.parse(params.get('jData'));
+    requestedTerminals.push(jData.k);
+    return {
+      ok: false,
+      status: 500,
+      headers: new Headers(),
+      text: async () => 'all-terminal history failed',
+    };
+  };
+
+  try {
+    await withMockedPaywayClient({
+      payway: {
+        enabled: true,
+        baseUrl: 'https://payway.kr',
+        mid: 'TMN009889',
+        dashboardId: 'merchant',
+        dashboardPassword: 'secret',
+        requestTimeoutMs: 1000,
+      },
+    }, async client => {
+      await assert.rejects(
+        () => client.fetchPaymentHistory({
+          startDate: '2026-07-01',
+          endDate: '2026-07-24',
+        }),
+        /Payway payment history request failed: HTTP 500/
+      );
+      assert.deepEqual(requestedTerminals, ['']);
+    });
+  } finally {
     global.fetch = originalFetch;
   }
 });

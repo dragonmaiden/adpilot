@@ -117,7 +117,16 @@ test('live API client rejects source audit shape drift on calendar payloads', as
     viewport: {},
     calendarDays: [],
     orderPatterns: { range: {}, weekday: [], hourly: [] },
-    selection: { days: [], paymentChannels: { rows: [] } },
+    selection: {
+      days: [],
+      paymentChannels: {
+        ready: false,
+        basis: 'net_receipts',
+        totalNetRevenue: 0,
+        rows: [],
+        reconciliation: {},
+      },
+    },
     sourceAudit: 'mismatch',
   });
 
@@ -138,7 +147,16 @@ test('live API client rejects calendar payloads without all-time order patterns'
     ready: true,
     viewport: {},
     calendarDays: [],
-    selection: { days: [], paymentChannels: { rows: [] } },
+    selection: {
+      days: [],
+      paymentChannels: {
+        ready: false,
+        basis: 'net_receipts',
+        totalNetRevenue: 0,
+        rows: [],
+        reconciliation: {},
+      },
+    },
     sourceAudit: null,
   });
 

@@ -7,14 +7,6 @@ const NON_CASH_PAYMENT_STATUS_TOKENS = [
   'PENDING',
   'WAIT',
 ];
-const PAYMENT_REVENUE_CHANNELS = [
-  'card',
-  'bank_transfer',
-  'virtual_account',
-  'other',
-  'unknown',
-];
-
 function getImwebOrderPaymentState(order) {
   const payments = Array.isArray(order?.payments) ? order.payments : [];
   const paymentStatuses = [...new Set(
@@ -178,88 +170,7 @@ function normalizeImwebPayments(orders, options = {}) {
   });
 }
 
-function getOrderRevenueChannel(order, cardOrderNos) {
-  const orderNo = String(order?.orderNo || '').trim();
-  if (orderNo && cardOrderNos.has(orderNo)) {
-    return 'card';
-  }
-
-  const normalizedChannels = new Set(
-    normalizeImwebPayments([order])
-      .filter(payment => payment.type === 'approval')
-      .map(payment => payment.channelGroup)
-      .filter(channel => channel && channel !== 'unknown')
-  );
-  if (normalizedChannels.size === 1) {
-    return Array.from(normalizedChannels)[0];
-  }
-  if (normalizedChannels.size > 1) {
-    return 'other';
-  }
-
-  const declaredChannels = new Set(
-    (Array.isArray(order?.payments) ? order.payments : [])
-      .map(payment => normalizeChannelGroup(payment?.method, payment?.pgName))
-      .filter(channel => channel !== 'unknown')
-  );
-  if (declaredChannels.size === 1) {
-    return Array.from(declaredChannels)[0];
-  }
-  if (declaredChannels.size > 1) {
-    return 'other';
-  }
-
-  return normalizeChannelGroup(order?.paymentMethod, order?.pgName);
-}
-
-function buildPaymentChannelRevenue(orders, options = {}) {
-  const cardOrderNos = options.cardOrderNos instanceof Set
-    ? options.cardOrderNos
-    : new Set(Array.isArray(options.cardOrderNos) ? options.cardOrderNos.map(String) : []);
-  const bankTransferAsRemainder = options.bankTransferAsRemainder === true;
-  const channelTotals = new Map(
-    PAYMENT_REVENUE_CHANNELS.map(channel => [channel, {
-      channel,
-      revenue: 0,
-      orderCount: 0,
-    }])
-  );
-  let totalGrossRevenue = 0;
-  let totalOrderCount = 0;
-
-  for (const order of Array.isArray(orders) ? orders : []) {
-    const grossRevenue = Math.max(0, Math.round(getOrderCashTotals(order).approvedAmount));
-    if (grossRevenue <= 0) continue;
-
-    totalGrossRevenue += grossRevenue;
-    totalOrderCount += 1;
-    const channel = getOrderRevenueChannel(order, cardOrderNos);
-    if (bankTransferAsRemainder && channel !== 'card') {
-      continue;
-    }
-
-    const row = channelTotals.get(channel) || channelTotals.get('other');
-    row.revenue += grossRevenue;
-    row.orderCount += 1;
-  }
-
-  if (bankTransferAsRemainder) {
-    const card = channelTotals.get('card');
-    const bankTransfer = channelTotals.get('bank_transfer');
-    bankTransfer.revenue = totalGrossRevenue - card.revenue;
-    bankTransfer.orderCount = totalOrderCount - card.orderCount;
-  }
-
-  const rows = PAYMENT_REVENUE_CHANNELS.map(channel => channelTotals.get(channel));
-  return {
-    totalGrossRevenue,
-    totalOrderCount,
-    rows,
-  };
-}
-
 module.exports = {
-  buildPaymentChannelRevenue,
   getOrderCashTotals,
   getImwebOrderPaymentState,
   getPaymentTimestamp,

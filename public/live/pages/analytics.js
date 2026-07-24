@@ -394,6 +394,15 @@
     }
 
     const selection = payload.selection || {};
+    if (selection.summary?.paymentFeeCoverage?.complete !== true) {
+      renderProfitSummaryPlaceholder(
+        tr(
+          'Net profit is waiting for complete Payway fee data.',
+          '완전한 Payway 수수료 데이터를 기다리는 중입니다.'
+        )
+      );
+      return;
+    }
     const rows = normalizeCalendarRows(payload.rows || selection.days || []);
     const summary = buildSelectionSummary(rows, selection);
     const windowLabel =

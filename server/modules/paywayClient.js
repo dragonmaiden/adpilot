@@ -15,6 +15,7 @@ const PAYMENT_HISTORY_ROWS = '150';
 const PAYMENT_HISTORY_PAGE = 1;
 const PAYMENT_HISTORY_PAGE_SIZE = Number(PAYMENT_HISTORY_ROWS);
 const PAYMENT_HISTORY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const MAX_PAYMENT_HISTORY_PAGES = 100;
 
 function getPaywayConfig() {
   return config.payway || {};
@@ -280,6 +281,14 @@ function parseMoney(value) {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function parseOptionalMoney(value) {
+  const text = asString(value).replace(/,/g, '');
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const numeric = Number(match[0]);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function formatCompactPaywayTimestamp(value) {
   const match = asString(value).trim().match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})?$/);
   if (!match) return null;
@@ -343,8 +352,8 @@ function normalizePaymentRow(cells) {
     approvedAmount: parseMoney(cells[9]),
     cancelAmount: parseMoney(cells[10]),
     transactionAmount: parseMoney(cells[11]),
-    feeAmount: parseMoney(cells[12]),
-    settlementAmount: parseMoney(cells[13]),
+    feeAmount: parseOptionalMoney(cells[12]),
+    settlementAmount: parseOptionalMoney(cells[13]),
     settlementDue: asString(cells[14]),
     pg: asString(cells[15]),
     agent: asString(cells[16]),
@@ -380,8 +389,8 @@ function normalizePaymentJsonRow(row) {
     approvedAmount,
     cancelAmount,
     transactionAmount: cancelled ? 0 : amount,
-    feeAmount: parseMoney(pickField(row, ['fee', 'fee_amt', 'feeAmount'])),
-    settlementAmount: parseMoney(pickField(row, ['settle_amt', 'settlementAmount'])),
+    feeAmount: parseOptionalMoney(pickField(row, ['fee', 'fee_amt', 'feeAmount'])),
+    settlementAmount: parseOptionalMoney(pickField(row, ['settle_amt', 'settlementAmount'])),
     settlementDue: asString(pickField(row, ['settle_dt', 'settlementDue'])),
     pg: asString(pickField(row, ['pg', 'pg_nm'])),
     agent: asString(pickField(row, ['agent', 'agent_nm'])),
@@ -436,7 +445,18 @@ function isApprovedPaywayPayment(payment) {
     && Boolean(maskedCardNumber);
 }
 
-function getPaymentHistoryDateRange(nowInput = new Date()) {
+function isDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(asString(value));
+}
+
+function getPaymentHistoryDateRange(options = {}) {
+  const startDate = asString(options.startDate);
+  const endDate = asString(options.endDate);
+  if (isDateKey(startDate) && isDateKey(endDate) && startDate <= endDate) {
+    return { startDate, endDate };
+  }
+
+  const nowInput = options.now ?? new Date();
   const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
   const end = Number.isNaN(now.getTime()) ? new Date() : now;
   const start = new Date(end.getTime() - PAYMENT_HISTORY_LOOKBACK_MS);
@@ -446,8 +466,8 @@ function getPaymentHistoryDateRange(nowInput = new Date()) {
   };
 }
 
-function buildPaymentHistoryRequestBody(options = {}, terminalId = '') {
-  const { startDate, endDate } = getPaymentHistoryDateRange(options.now);
+function buildPaymentHistoryRequestBody(options = {}, terminalId = '', page = PAYMENT_HISTORY_PAGE) {
+  const { startDate, endDate } = getPaymentHistoryDateRange(options);
   return new URLSearchParams({
     qry: PAYMENT_HISTORY_QUERY,
     jData: JSON.stringify({
@@ -457,22 +477,16 @@ function buildPaymentHistoryRequestBody(options = {}, terminalId = '') {
       kf: terminalId ? 'terminal' : '',
       k: terminalId,
       rows: PAYMENT_HISTORY_ROWS,
-      page: PAYMENT_HISTORY_PAGE,
+      page,
       pageSize: PAYMENT_HISTORY_PAGE_SIZE,
     }),
     rtnType: 'json3',
   });
 }
 
-function getPaymentHistoryRequestBodies(options = {}) {
+function getPaymentHistoryQueryTargets() {
   const terminalIds = getConfiguredTerminalIds();
-  if (terminalIds.length === 0) {
-    return [buildPaymentHistoryRequestBody(options)];
-  }
-  return [
-    buildPaymentHistoryRequestBody(options),
-    ...terminalIds.map(terminalId => buildPaymentHistoryRequestBody(options, terminalId)),
-  ];
+  return ['', ...terminalIds];
 }
 
 function dedupePayments(payments) {
@@ -489,7 +503,7 @@ function dedupePayments(payments) {
   return deduped;
 }
 
-async function fetchPaymentHistoryAjaxBody(body) {
+async function fetchPaymentHistoryAjaxPage(body) {
   const response = await requestPayway('/ajax.php', {
     method: 'POST',
     headers: {
@@ -517,13 +531,36 @@ async function fetchPaymentHistoryAjaxBody(body) {
   return parsePaymentHistoryAjaxResponse(payload);
 }
 
+async function fetchPaymentHistoryForTarget(options, terminalId) {
+  const payments = [];
+
+  for (let page = PAYMENT_HISTORY_PAGE; page <= MAX_PAYMENT_HISTORY_PAGES; page += 1) {
+    const rows = await fetchPaymentHistoryAjaxPage(
+      buildPaymentHistoryRequestBody(options, terminalId, page)
+    );
+    payments.push(...rows);
+
+    if (rows.length < PAYMENT_HISTORY_PAGE_SIZE) {
+      return payments;
+    }
+  }
+
+  throw new Error(
+    `Payway payment history exceeded ${MAX_PAYMENT_HISTORY_PAGES} pages for `
+    + `${terminalId || 'all terminals'}`
+  );
+}
+
 async function fetchPaymentHistoryViaAjax(options = {}) {
   const paymentBatches = [];
   const failures = [];
-  for (const body of getPaymentHistoryRequestBodies(options)) {
+  for (const terminalId of getPaymentHistoryQueryTargets()) {
     try {
-      paymentBatches.push(await fetchPaymentHistoryAjaxBody(body));
+      paymentBatches.push(await fetchPaymentHistoryForTarget(options, terminalId));
     } catch (err) {
+      if (!terminalId) {
+        throw err;
+      }
       failures.push(err);
     }
   }

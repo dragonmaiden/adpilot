@@ -1,8 +1,8 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const transforms = require('../transforms/charts');
-const cogsAutofillService = require('./cogsAutofillService');
 const reconciliationService = require('./reconciliationService');
+const paywayFinancialService = require('./paywayFinancialService');
 const { buildFinancialProjection } = require('./financialProjectionService');
 const {
   calcAOV,
@@ -10,9 +10,12 @@ const {
 } = require('../domain/metrics');
 const { divideOrNull } = require('../domain/profitWindowMetrics');
 const {
-  buildPaymentChannelRevenue,
   getOrderCashTotals,
 } = require('../domain/imwebPayments');
+const {
+  applyPaywayFeesToFinancialDays,
+  buildNetPaymentChannels,
+} = require('../domain/paywayFinancials');
 const { buildProductCategoryRevenue } = require('../domain/productCategories');
 const {
   KST_TIME_ZONE,
@@ -633,7 +636,7 @@ function buildOperationEvents({ scanHistory, latestScanResult, optimizations, re
   });
 }
 
-function buildSelectionSummary(selectionDays, selectionOrders, coverage) {
+function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywaySummary) {
   const dayTotals = (Array.isArray(selectionDays) ? selectionDays : []).reduce((summary, day) => {
     summary.grossRevenue += Number(day?.revenue || 0);
     summary.refundedAmount += Number(day?.refunded || 0);
@@ -642,8 +645,12 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage) {
     summary.adSpendKRW += Number(day?.adSpendKRW || 0);
     summary.cogs += Number(day?.cogs || 0);
     summary.shipping += Number(day?.shipping || 0);
-    summary.paymentFees += Number(day?.paymentFees || 0);
-    summary.trueNetProfit += Number(day?.trueNetProfit || 0);
+    if (day?.paymentFees == null || day?.trueNetProfit == null) {
+      summary.paymentFeesComplete = false;
+    } else {
+      summary.paymentFees += Number(day.paymentFees);
+      summary.trueNetProfit += Number(day.trueNetProfit);
+    }
     summary.metaPurchases += Number(day?.metaPurchases || 0);
     return summary;
   }, {
@@ -657,13 +664,18 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage) {
     paymentFees: 0,
     trueNetProfit: 0,
     metaPurchases: 0,
+    paymentFeesComplete: true,
   });
 
   const orderMetrics = buildOrderMetrics(selectionOrders);
+  const paymentFees = dayTotals.paymentFeesComplete ? dayTotals.paymentFees : null;
+  const trueNetProfit = dayTotals.paymentFeesComplete ? dayTotals.trueNetProfit : null;
 
   return {
     ...dayTotals,
-    margin: ratioPercentOrNull(dayTotals.trueNetProfit, dayTotals.netRevenue),
+    paymentFees,
+    trueNetProfit,
+    margin: trueNetProfit == null ? null : ratioPercentOrNull(trueNetProfit, dayTotals.netRevenue),
     roas: ratioOrNull(dayTotals.netRevenue, dayTotals.adSpendKRW),
     recognizedOrders: orderMetrics.recognizedOrders,
     refundRate: ratioPercentOrNull(dayTotals.refundedAmount, dayTotals.grossRevenue),
@@ -676,6 +688,19 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage) {
     daysWithCOGS: coverage?.daysWithCOGS ?? 0,
     daysWithPartialCOGS: coverage?.daysWithPartialCOGS ?? 0,
     totalDays: coverage?.totalDays ?? 0,
+    paymentFeeSource: 'payway',
+    paymentFeeFetchedAt: paywaySummary?.fetchedAt || null,
+    paymentFeeStale: Boolean(paywaySummary?.stale),
+    paymentFeeError: paywaySummary?.error || null,
+    paymentFeeCoverage: paywaySummary?.ready === true ? {
+      complete: paywaySummary?.totals?.feesComplete === true,
+      feeRows: Number(paywaySummary?.totals?.feeRows || 0),
+      financialRows: Number(paywaySummary?.totals?.financialRows || 0),
+    } : {
+      complete: false,
+      feeRows: 0,
+      financialRows: 0,
+    },
   };
 }
 
@@ -900,30 +925,31 @@ async function getCalendarAnalysisResponse(query = {}) {
     }).filter(([monthKey]) => /^\d{4}-\d{2}$/.test(String(monthKey || '')))
   );
 
-  const selectionDayRows = visibleDayRows.filter(day =>
+  const unadjustedSelectionDayRows = visibleDayRows.filter(day =>
     compareDateKeys(day.date, viewport.selectionStart) >= 0 && compareDateKeys(day.date, viewport.selectionEnd) <= 0
+  );
+  const paywayFinancials = await paywayFinancialService.getPaywayFinancialSummary({
+    startDate: viewport.selectionStart,
+    endDate: viewport.selectionEnd,
+  });
+  const selectionDayRows = applyPaywayFeesToFinancialDays(
+    unadjustedSelectionDayRows,
+    paywayFinancials
   );
   const selectionCoverage = transforms.buildDataCoverage(
     selectionDayRows.map(day => ({ date: day.date })),
     cogs.dailyCOGS || {}
   );
-  const selectionSummary = buildSelectionSummary(selectionDayRows, selectionOrders, selectionCoverage);
-  const settlementCardOrderNos = new Set(
-    (reconciliationReport.matches || [])
-      .filter(match => match?.type === 'approval')
-      .map(match => String(match?.imwebPayment?.orderNo || '').trim())
-      .filter(Boolean)
+  const selectionSummary = buildSelectionSummary(
+    selectionDayRows,
+    selectionOrders,
+    selectionCoverage,
+    paywayFinancials
   );
-  const paywayCardOrderNos = cogsAutofillService.getPaywayCardOrderNos(
-    selectionOrders.map(order => order?.orderNo)
-  );
-  const cardOrderNos = new Set([
-    ...settlementCardOrderNos,
-    ...paywayCardOrderNos,
-  ]);
-  const paymentChannels = buildPaymentChannelRevenue(selectionOrders, {
-    cardOrderNos,
-    bankTransferAsRemainder: true,
+  const paymentChannels = buildNetPaymentChannels({
+    totalNetRevenue: selectionSummary.netRevenue,
+    totalOrderCount: selectionSummary.recognizedOrders,
+    paywaySummary: paywayFinancials,
   });
   const selectionInsights = (Array.isArray(data.campaignInsights) ? data.campaignInsights : []).filter(row =>
     row?.date_start &&

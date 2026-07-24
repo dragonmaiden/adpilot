@@ -107,13 +107,14 @@ test('calendar payload owns selected-range revenue by payment channel', () => {
   assert.match(contractsJs, /categoryRevenueByMonth:\s*categoryRevenueByMonth\s*\?\?\s*\{\}/);
   assert.match(contractsJs, /categoryRevenue:\s*selection\?\.categoryRevenue\s*\?\?\s*\[\]/);
   assert.match(contractsJs, /paymentChannels:\s*\{/);
-  assert.match(contractsJs, /totalGrossRevenue:\s*selection\?\.paymentChannels\?\.totalGrossRevenue\s*\?\?\s*0/);
+  assert.match(contractsJs, /basis:\s*selection\?\.paymentChannels\?\.basis\s*\?\?\s*'net_receipts'/);
+  assert.match(contractsJs, /totalNetRevenue:\s*selection\?\.paymentChannels\?\.totalNetRevenue\s*\?\?\s*0/);
   assert.match(contractsJs, /rows:\s*\(selection\?\.paymentChannels\?\.rows\s*\?\?\s*\[\]\)\.map/);
-  assert.match(calendarServiceJs, /cogsAutofillService\.getPaywayCardOrderNos/);
-  assert.match(calendarServiceJs, /buildPaymentChannelRevenue\(selectionOrders,\s*\{\s*cardOrderNos,\s*bankTransferAsRemainder:\s*true/);
+  assert.match(calendarServiceJs, /paywayFinancialService\.getPaywayFinancialSummary/);
+  assert.match(calendarServiceJs, /buildNetPaymentChannels\(\{\s*totalNetRevenue:\s*selectionSummary\.netRevenue/);
   assert.match(calendarJs, /const paymentChannels = selection\?\.paymentChannels \|\| \{\};/);
-  assert.match(calendarJs, /label:\s*tr\('Credit card revenue'/);
-  assert.match(calendarJs, /label:\s*tr\('Bank transfer revenue'/);
+  assert.match(calendarJs, /label:\s*tr\('Credit card net receipts'/);
+  assert.match(calendarJs, /label:\s*tr\('Bank transfer net revenue'/);
 });
 
 test('calendar payload preserves all-time order patterns for API compatibility', () => {
@@ -126,20 +127,31 @@ test('calendar payload preserves all-time order patterns for API compatibility',
 });
 
 test('calendar income statement renders the financial sequence and every canonical cost', () => {
-  const revenueIndex = calendarJs.indexOf("label: tr('Credit card revenue'");
-  const totalRevenueIndex = calendarJs.indexOf("label: tr('Total revenue'");
-  const refundsIndex = calendarJs.indexOf("label: tr('Refunds and cancellations'");
-  const netRevenueIndex = calendarJs.indexOf("label: tr('Net revenue'");
+  const paymentRowsSource = calendarJs.slice(
+    calendarJs.indexOf('const paymentRows = ['),
+    calendarJs.indexOf('const paymentChannelGap')
+  );
+  const revenueLinesSource = calendarJs.slice(
+    calendarJs.indexOf('revenueLines: ['),
+    calendarJs.indexOf('costLines: [')
+  );
+  const cardRevenueIndex = paymentRowsSource.indexOf("label: tr('Credit card net receipts'");
+  const bankRevenueIndex = paymentRowsSource.indexOf("label: tr('Bank transfer net revenue'");
+  const totalRevenueIndex = revenueLinesSource.indexOf("label: tr('Total revenue'");
+  const refundsIndex = revenueLinesSource.indexOf("label: tr('Refunds and cancellations'");
+  const paymentRowsIndex = revenueLinesSource.indexOf('...paymentRows.map');
+  const netRevenueIndex = revenueLinesSource.indexOf("label: tr('Net revenue'");
   const cogsIndex = calendarJs.indexOf("label: 'COGS'");
   const shippingIndex = calendarJs.indexOf("label: tr('Shipping costs'");
   const paymentFeesIndex = calendarJs.indexOf("label: tr('Payment processing fees'");
   const advertisingIndex = calendarJs.indexOf("label: tr('Advertising costs'");
   const totalCostsIndex = calendarJs.indexOf("label: tr('Total costs'");
 
-  assert.ok(revenueIndex >= 0);
-  assert.ok(revenueIndex < totalRevenueIndex);
+  assert.ok(cardRevenueIndex >= 0);
+  assert.ok(cardRevenueIndex < bankRevenueIndex);
   assert.ok(totalRevenueIndex < refundsIndex);
-  assert.ok(refundsIndex < netRevenueIndex);
+  assert.ok(refundsIndex < paymentRowsIndex);
+  assert.ok(paymentRowsIndex < netRevenueIndex);
   assert.ok(netRevenueIndex < cogsIndex);
   assert.ok(cogsIndex < shippingIndex);
   assert.ok(shippingIndex < paymentFeesIndex);
@@ -150,8 +162,10 @@ test('calendar income statement renders the financial sequence and every canonic
 });
 
 test('calendar income statement exposes financial incompleteness instead of hiding it', () => {
-  assert.match(calendarJs, /const paymentChannelGap = Math\.round\(summary\.grossRevenue - reportedChannelRevenue\);/);
-  assert.match(calendarJs, /Payment-channel revenue differs from total revenue by/);
+  assert.match(calendarJs, /paymentChannels\?\.reconciliation\?\.gap/);
+  assert.match(calendarJs, /Payment-channel net revenue differs from Imweb net revenue by/);
+  assert.match(calendarJs, /Some Payway transactions are missing fee values/);
+  assert.match(calendarJs, /Net profit unavailable/);
   assert.match(calendarJs, /COGS coverage is incomplete/);
   assert.match(calendarJs, /Net profit reflects only costs currently logged/);
   assert.match(calendarJs, /daysRequiringCOGS/);
@@ -172,7 +186,6 @@ test('calendar no longer loads or renders Sankey dependencies', () => {
 });
 
 test('calendar income statement keeps Meta ad spend visible as an explicit cost row', () => {
-  assert.match(calendarJs, /summary\.adSpendKRW \+= toFiniteNumber\(day\.adSpendKRW\)/);
   assert.match(calendarJs, /label:\s*tr\('Advertising costs', '광고비'\)/);
   assert.match(calendarJs, /amount:\s*-summary\.adSpendKRW/);
   assert.match(calendarJs, /COGS \+ shipping \+ fees \+ advertising/);

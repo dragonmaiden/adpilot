@@ -26,7 +26,7 @@ test('profit summary no longer exposes independent timeframe window controls', (
 
 test('profit summary renderer is driven by the calendar selected range', () => {
   assert.match(analyticsJs, /renderCalendarSelectionProfitSummary\(payload = \{\}\)/);
-  assert.match(calendarJs, /rows: getCalendarWaterfallRows\(selection\)/);
+  assert.match(calendarJs, /rows: Array\.isArray\(selection\.days\) \? selection\.days : \[\]/);
   assert.match(calendarJs, /contextLabel: getCalendarWaterfallContextLabel\(\)/);
   assert.match(calendarJs, /sourceAudit: calendarState\.data\?\.sourceAudit \|\| null/);
   assert.doesNotMatch(calendarJs, /orderPatterns:/);

@@ -151,37 +151,6 @@ function getNotifiedOrderMetadata(orderNo) {
   return state.notifiedOrders[normalizedOrderNo] || null;
 }
 
-function hasPaywayCardPaymentEvidence(metadata) {
-  if (asString(metadata?.paymentSource).toLowerCase() !== 'payway') {
-    return false;
-  }
-
-  return Boolean(
-    asString(metadata?.paywayTransactionId)
-    || asString(metadata?.paywayApprovalNo)
-    || asString(metadata?.paywayMaskedCardNumber)
-    || asString(metadata?.paywayApprovedAt)
-  );
-}
-
-function getPaywayCardOrderNos(orderNos) {
-  const requestedOrderNos = new Set(
-    (Array.isArray(orderNos) ? orderNos : [])
-      .map(asString)
-      .filter(Boolean)
-  );
-  if (requestedOrderNos.size === 0) {
-    return new Set();
-  }
-
-  const notifiedOrders = loadState().notifiedOrders;
-  return new Set(
-    [...requestedOrderNos].filter(orderNo => (
-      hasPaywayCardPaymentEvidence(notifiedOrders[orderNo])
-    ))
-  );
-}
-
 function buildNotificationBehaviorInference(metadata) {
   if (!metadata) {
     return {
@@ -1726,7 +1695,6 @@ module.exports = {
   sanitizeAutofillResultForResponse,
   getImportedOrderMetadata,
   getNotifiedOrderMetadata,
-  getPaywayCardOrderNos,
   getOrderNotificationDiagnostics,
   recordOrderNotificationDelivery,
   markOrderNotificationCompleted,

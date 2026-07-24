@@ -4,7 +4,6 @@
   const { fetchCalendarAnalysis } = live.api;
 
   const KST_TIME_ZONE = 'Asia/Seoul';
-  const DEFAULT_PAYMENT_FEE_PERCENT = 6;
   const calendarState = {
     initialized: false,
     anchorMonth: null,
@@ -17,10 +16,7 @@
     dragging: false,
     dragStart: null,
     didDrag: false,
-    paymentFeePercent: null,
   };
-
-  let calendarFeeInputDebounceTimer = null;
 
   function isIsoDateKey(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
@@ -130,25 +126,12 @@
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
-  function calcCalendarPercent(numerator, denominator) {
-    return denominator > 0 ? (numerator / denominator) * 100 : null;
-  }
-
-  function roundCalendarPercent(numerator, denominator, digits = 1) {
-    const percent = calcCalendarPercent(numerator, denominator);
-    return percent == null ? null : Number(percent.toFixed(digits));
-  }
-
   function hasCalendarMetric(value) {
     return value !== null && value !== undefined && Number.isFinite(Number(value));
   }
 
   function formatCalendarPercentMetric(value, digits = 1) {
     return hasCalendarMetric(value) ? formatPercent(Number(value), digits) : '—';
-  }
-
-  function formatFeePercentLabel(value) {
-    return Number(value).toFixed(2).replace(/\.?0+$/, '');
   }
 
   function formatCalendarCellKrw(value, { signed = false } = {}) {
@@ -160,58 +143,14 @@
     return `${sign}₩${abs.toLocaleString()}`;
   }
 
-  function getCalendarPaymentFeePercent() {
-    return calendarState.paymentFeePercent == null
-      ? DEFAULT_PAYMENT_FEE_PERCENT
-      : calendarState.paymentFeePercent;
-  }
-
-  function parseCalendarPaymentFeePercent(value) {
-    const trimmed = String(value || '').trim();
-    if (!trimmed) return null;
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
-  }
-
-  function recalculateCalendarDayForFee(day, feeRate) {
-    const revenue = toFiniteNumber(day?.revenue);
-    const refunded = toFiniteNumber(day?.refunded);
-    const netRevenue = toFiniteNumber(day?.netRevenue ?? (revenue - refunded));
-    const cogs = toFiniteNumber(day?.cogs);
-    const shipping = toFiniteNumber(day?.shipping);
-    const adSpend = toFiniteNumber(day?.adSpend);
-    const adSpendKRW = toFiniteNumber(day?.adSpendKRW);
-    const paymentFees = Math.round(netRevenue * feeRate);
-    const trueNetProfit = Math.round(netRevenue - cogs - shipping - paymentFees - adSpendKRW);
-
-    return {
-      ...day,
-      revenue,
-      refunded,
-      netRevenue,
-      cogs,
-      shipping,
-      adSpend,
-      adSpendKRW,
-      paymentFees,
-      trueNetProfit,
-      margin: roundCalendarPercent(trueNetProfit, netRevenue),
-    };
-  }
-
-  function getCalendarWaterfallRows(selection) {
-    const feeRate = getCalendarPaymentFeePercent() / 100;
-    const rows = Array.isArray(selection?.days) ? selection.days : [];
-
-    return rows.map(day => recalculateCalendarDayForFee(day, feeRate));
-  }
-
   function getCalendarWaterfallContextLabel() {
     return formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd);
   }
 
-  function buildCalendarWaterfallSummary(rows) {
-    const totals = (Array.isArray(rows) ? rows : []).reduce((summary, day) => {
+  function buildCalendarWaterfallSummary(selection) {
+    const rows = Array.isArray(selection?.days) ? selection.days : [];
+    const canonical = selection?.summary || {};
+    const coverage = rows.reduce((summary, day) => {
       const grossRevenue = toFiniteNumber(day.revenue);
       const refundedAmount = toFiniteNumber(day.refunded);
       const recognizedOrders = toFiniteNumber(day.orders);
@@ -225,17 +164,6 @@
         || day.hasCOGS
         || day.hasPartialCOGS;
 
-      summary.grossRevenue += grossRevenue;
-      summary.refundedAmount += refundedAmount;
-      summary.netRevenue += toFiniteNumber(day.netRevenue);
-      summary.adSpend += toFiniteNumber(day.adSpend);
-      summary.adSpendKRW += toFiniteNumber(day.adSpendKRW);
-      summary.cogs += cogs;
-      summary.shipping += shipping;
-      summary.paymentFees += toFiniteNumber(day.paymentFees);
-      summary.trueNetProfit += toFiniteNumber(day.trueNetProfit);
-      summary.recognizedOrders += recognizedOrders;
-      summary.refundOrders += toFiniteNumber(day.refundCount);
       if (needsCOGSCoverage) {
         summary.daysRequiringCOGS += 1;
         summary.daysWithCOGS += day.hasCOGS ? 1 : 0;
@@ -243,31 +171,41 @@
       }
       return summary;
     }, {
-      grossRevenue: 0,
-      refundedAmount: 0,
-      netRevenue: 0,
-      adSpend: 0,
-      adSpendKRW: 0,
-      cogs: 0,
-      shipping: 0,
-      paymentFees: 0,
-      trueNetProfit: 0,
-      recognizedOrders: 0,
-      refundOrders: 0,
       daysRequiringCOGS: 0,
       daysWithCOGS: 0,
       daysWithPartialCOGS: 0,
     });
 
-    const dayCount = Array.isArray(rows) ? rows.length : 0;
     return {
-      ...totals,
-      dayCount,
-      refundRate: roundCalendarPercent(totals.refundedAmount, totals.grossRevenue),
-      margin: roundCalendarPercent(totals.trueNetProfit, totals.netRevenue),
-      cogsCoverageRatio: totals.daysRequiringCOGS > 0
-        ? Number((totals.daysWithCOGS / totals.daysRequiringCOGS).toFixed(3))
+      grossRevenue: toFiniteNumber(canonical.grossRevenue),
+      refundedAmount: toFiniteNumber(canonical.refundedAmount),
+      netRevenue: toFiniteNumber(canonical.netRevenue),
+      adSpend: toFiniteNumber(canonical.adSpend),
+      adSpendKRW: toFiniteNumber(canonical.adSpendKRW),
+      cogs: toFiniteNumber(canonical.cogs),
+      shipping: toFiniteNumber(canonical.shipping),
+      paymentFees: hasCalendarMetric(canonical.paymentFees)
+        ? toFiniteNumber(canonical.paymentFees)
+        : null,
+      trueNetProfit: hasCalendarMetric(canonical.trueNetProfit)
+        ? toFiniteNumber(canonical.trueNetProfit)
+        : null,
+      recognizedOrders: toFiniteNumber(canonical.recognizedOrders),
+      refundOrders: toFiniteNumber(canonical.refundOrders),
+      refundRate: hasCalendarMetric(canonical.refundRate)
+        ? Number(canonical.refundRate)
+        : null,
+      margin: hasCalendarMetric(canonical.margin)
+        ? Number(canonical.margin)
+        : null,
+      dayCount: rows.length,
+      ...coverage,
+      cogsCoverageRatio: coverage.daysRequiringCOGS > 0
+        ? Number((coverage.daysWithCOGS / coverage.daysRequiringCOGS).toFixed(3))
         : 1,
+      paymentFeesComplete: canonical.paymentFeeCoverage?.complete === true,
+      paymentFeeError: canonical.paymentFeeError || null,
+      paymentFeeStale: Boolean(canonical.paymentFeeStale),
     };
   }
 
@@ -503,60 +441,52 @@
   }
 
   function buildIncomeStatementViewModel(selection) {
-    const summary = buildCalendarWaterfallSummary(getCalendarWaterfallRows(selection));
+    const summary = buildCalendarWaterfallSummary(selection);
     const paymentChannels = selection?.paymentChannels || {};
+    const payway = paymentChannels.payway || {};
     const channelsByKey = new Map(
       (Array.isArray(paymentChannels.rows) ? paymentChannels.rows : [])
         .map(row => [String(row?.channel || 'unknown'), {
-          revenue: Math.max(0, toFiniteNumber(row?.revenue)),
-          orderCount: Math.max(0, toFiniteNumber(row?.orderCount)),
+          ...row,
+          revenue: hasCalendarMetric(row?.revenue) ? Number(row.revenue) : null,
+          orderCount: hasCalendarMetric(row?.orderCount) ? Number(row.orderCount) : null,
         }])
     );
-    const getChannel = channel => channelsByKey.get(channel) || { revenue: 0, orderCount: 0 };
-    const shareOf = (value, total) => total > 0
+    const getChannel = channel => channelsByKey.get(channel) || { revenue: null, orderCount: null };
+    const shareOf = (value, total) => hasCalendarMetric(value) && total > 0
       ? formatPercent((Math.abs(value) / total) * 100)
       : '—';
     const paymentRows = [
       {
         channel: 'card',
-        label: tr('Credit card revenue', '신용카드 매출'),
+        label: tr('Credit card net receipts', '신용카드 순수입'),
         ...getChannel('card'),
+        meta: paymentChannels.ready
+          ? tr(
+            `${formatKrw(payway.grossApprovals || 0)} approvals − ${formatKrw(payway.cancellations || 0)} cancellations`,
+            `승인 ${formatKrw(payway.grossApprovals || 0)} − 취소 ${formatKrw(payway.cancellations || 0)}`
+          )
+          : tr('Payway data unavailable', 'Payway 데이터를 사용할 수 없음'),
       },
       {
         channel: 'bank_transfer',
-        label: tr('Bank transfer revenue', '계좌이체 매출'),
+        label: tr('Bank transfer net revenue', '계좌이체 순매출'),
         ...getChannel('bank_transfer'),
+        meta: tr(
+          'Imweb net revenue less Payway card receipts',
+          'Imweb 순매출에서 Payway 카드 수입 차감'
+        ),
       },
-      {
-        channel: 'virtual_account',
-        label: tr('Virtual account revenue', '가상계좌 매출'),
-        ...getChannel('virtual_account'),
-      },
-      {
-        channel: 'other',
-        label: tr('Other payment revenue', '기타 결제 매출'),
-        ...getChannel('other'),
-      },
-      {
-        channel: 'unknown',
-        label: tr('Unclassified revenue', '미분류 매출'),
-        ...getChannel('unknown'),
-      },
-    ].filter(row => (
-      row.channel === 'card'
-        || row.channel === 'bank_transfer'
-        || row.revenue > 0
-        || row.orderCount > 0
-    )).map(row => ({
-      ...row,
-      meta: tr(
-        `${formatCount(row.orderCount)} orders`,
-        `주문 ${formatCount(row.orderCount)}건`
-      ),
-    }));
-    const reportedChannelRevenue = toFiniteNumber(paymentChannels.totalGrossRevenue);
-    const paymentChannelGap = Math.round(summary.grossRevenue - reportedChannelRevenue);
-    const totalCosts = summary.cogs + summary.shipping + summary.paymentFees + summary.adSpendKRW;
+    ];
+    const paymentChannelGap = hasCalendarMetric(paymentChannels?.reconciliation?.gap)
+      ? Math.round(Number(paymentChannels.reconciliation.gap))
+      : null;
+    const invalidNegativeBankRemainder = Boolean(
+      paymentChannels?.reconciliation?.invalidNegativeBankRemainder
+    );
+    const totalCosts = summary.paymentFees == null
+      ? null
+      : summary.cogs + summary.shipping + summary.paymentFees + summary.adSpendKRW;
     const orderCount = summary.recognizedOrders || toFiniteNumber(paymentChannels.totalOrderCount);
     const shippingPerOrder = orderCount > 0 ? Math.round(summary.shipping / orderCount) : 0;
     const daysRequiringCOGS = summary.daysRequiringCOGS || 0;
@@ -568,26 +498,40 @@
       `${formatCount(fullCoverage)} complete · ${formatCount(partialCoverage)} partial · ${formatCount(missingCoverage)} missing`,
       `완료 ${formatCount(fullCoverage)}일 · 부분 ${formatCount(partialCoverage)}일 · 누락 ${formatCount(missingCoverage)}일`
     );
-    const feePercent = formatFeePercentLabel(getCalendarPaymentFeePercent());
+    const paymentDataWarning = !paymentChannels.ready
+      ? tr(
+        `Payway card totals are unavailable${paymentChannels.error ? `: ${paymentChannels.error}` : '.'}`,
+        `Payway 카드 합계를 사용할 수 없습니다${paymentChannels.error ? `: ${paymentChannels.error}` : '.'}`
+      )
+      : paymentChannels.stale
+        ? tr(
+          'Payway totals are temporarily stale. The last successful result is shown.',
+          'Payway 합계가 일시적으로 오래되었습니다. 마지막 성공 결과가 표시됩니다.'
+        )
+        : !summary.paymentFeesComplete
+          ? tr(
+            'Some Payway transactions are missing fee values, so net profit is unavailable.',
+            '일부 Payway 거래에 수수료 값이 없어 순이익을 표시할 수 없습니다.'
+          )
+          : null;
+    const feeMeta = summary.paymentFeesComplete
+      ? tr(
+        `Payway actual: ${formatKrw(payway.approvalFees || 0)} charged − ${formatKrw(payway.cancelledFees || 0)} reversed`,
+        `Payway 실제: 부과 ${formatKrw(payway.approvalFees || 0)} − 환급 ${formatKrw(payway.cancelledFees || 0)}`
+      )
+      : tr('Waiting for complete Payway fee data', '완전한 Payway 수수료 데이터를 기다리는 중');
 
     return {
       summary,
       contextLabel: getCalendarWaterfallContextLabel(),
-      feePercent,
       paymentRows,
       paymentChannelGap,
+      invalidNegativeBankRemainder,
+      paymentDataWarning,
       totalCosts,
       cogsComplete,
       coverageLabel,
       revenueLines: [
-        ...paymentRows.map(row => ({
-          key: `payment-${row.channel}`,
-          label: row.label,
-          meta: row.meta,
-          amount: row.revenue,
-          percent: shareOf(row.revenue, summary.grossRevenue),
-          kind: 'detail',
-        })),
         {
           key: 'gross-revenue',
           label: tr('Total revenue', '총매출'),
@@ -607,10 +551,18 @@
           percent: shareOf(summary.refundedAmount, summary.grossRevenue),
           kind: 'deduction',
         },
+        ...paymentRows.map(row => ({
+          key: `payment-${row.channel}`,
+          label: row.label,
+          meta: row.meta,
+          amount: row.revenue,
+          percent: shareOf(row.revenue, summary.netRevenue),
+          kind: 'detail',
+        })),
         {
           key: 'net-revenue',
           label: tr('Net revenue', '순매출'),
-          meta: tr('Revenue after refunds', '환불 차감 후 매출'),
+          meta: tr('Card receipts + bank-transfer remainder', '카드 수입 + 계좌이체 잔액'),
           amount: summary.netRevenue,
           percent: shareOf(summary.netRevenue, summary.grossRevenue),
           kind: 'total',
@@ -638,8 +590,8 @@
         {
           key: 'payment-fees',
           label: tr('Payment processing fees', '결제 처리 수수료'),
-          meta: tr(`${feePercent}% assumption on net revenue`, `순매출 기준 ${feePercent}% 가정`),
-          amount: -summary.paymentFees,
+          meta: feeMeta,
+          amount: summary.paymentFees == null ? null : -summary.paymentFees,
           percent: shareOf(summary.paymentFees, summary.netRevenue),
           kind: 'cost',
         },
@@ -658,7 +610,7 @@
           key: 'total-costs',
           label: tr('Total costs', '총비용'),
           meta: tr('COGS + shipping + fees + advertising', '원가 + 배송비 + 수수료 + 광고비'),
-          amount: -totalCosts,
+          amount: totalCosts == null ? null : -totalCosts,
           percent: shareOf(totalCosts, summary.netRevenue),
           kind: 'total-costs',
         },
@@ -667,7 +619,11 @@
   }
 
   function renderIncomeStatementLine(line) {
-    const amount = Math.abs(toFiniteNumber(line.amount)) < 0.5 ? 0 : toFiniteNumber(line.amount);
+    const hasAmount = hasCalendarMetric(line.amount);
+    const amount = hasAmount && Math.abs(Number(line.amount)) >= 0.5 ? Number(line.amount) : 0;
+    const amountLabel = hasAmount
+      ? amount < 0 ? formatSignedKrw(amount) : formatKrw(amount)
+      : '—';
 
     return `
       <div class="income-statement-line ${esc(line.kind || '')}" role="row">
@@ -676,17 +632,20 @@
           <small>${esc(line.meta || '')}</small>
         </div>
         <span class="income-statement-percent" role="cell">${esc(line.percent || '—')}</span>
-        <strong class="income-statement-amount" role="cell">${amount < 0 ? formatSignedKrw(amount) : formatKrw(amount)}</strong>
+        <strong class="income-statement-amount" role="cell">${amountLabel}</strong>
       </div>
     `;
   }
 
   function renderIncomeStatementBody(viewModel) {
     const { summary } = viewModel;
-    const resultPositive = summary.trueNetProfit >= 0;
-    const resultLabel = resultPositive
-      ? tr('Net profit', '순이익')
-      : tr('Net loss', '순손실');
+    const profitAvailable = hasCalendarMetric(summary.trueNetProfit);
+    const resultPositive = profitAvailable && summary.trueNetProfit >= 0;
+    const resultLabel = !profitAvailable
+      ? tr('Net profit unavailable', '순이익 사용 불가')
+      : resultPositive
+        ? tr('Net profit', '순이익')
+        : tr('Net loss', '순손실');
     const coverageIcon = viewModel.cogsComplete ? 'badge-check' : 'triangle-alert';
     const coverageClass = viewModel.cogsComplete ? 'complete' : 'incomplete';
     const coverageNote = viewModel.cogsComplete
@@ -702,17 +661,37 @@
         `COGS coverage is incomplete (${viewModel.coverageLabel}). Net profit reflects only costs currently logged.`,
         `원가 커버리지가 불완전합니다(${viewModel.coverageLabel}). 순이익은 현재 입력된 비용만 반영합니다.`
       );
-    const reconciliationWarning = viewModel.paymentChannelGap === 0
+    const reconciliationWarning = viewModel.paymentChannelGap == null
+      || viewModel.paymentChannelGap === 0
       ? ''
       : `
         <div class="income-statement-alert" role="status">
           <i data-lucide="circle-alert"></i>
           <span>${esc(tr(
-            `Payment-channel revenue differs from total revenue by ${formatSignedKrw(viewModel.paymentChannelGap)}.`,
-            `결제수단별 매출과 총매출의 차이는 ${formatSignedKrw(viewModel.paymentChannelGap)}입니다.`
+            `Payment-channel net revenue differs from Imweb net revenue by ${formatSignedKrw(viewModel.paymentChannelGap)}.`,
+            `결제수단별 순매출과 Imweb 순매출의 차이는 ${formatSignedKrw(viewModel.paymentChannelGap)}입니다.`
           ))}</span>
         </div>
       `;
+    const negativeRemainderWarning = viewModel.invalidNegativeBankRemainder
+      ? `
+        <div class="income-statement-alert" role="status">
+          <i data-lucide="triangle-alert"></i>
+          <span>${esc(tr(
+            'Payway card receipts exceed Imweb net revenue for this range. Check the selected date basis before using the bank-transfer remainder.',
+            '이 기간의 Payway 카드 수입이 Imweb 순매출을 초과합니다. 계좌이체 잔액을 사용하기 전에 선택한 날짜 기준을 확인하세요.'
+          ))}</span>
+        </div>
+      `
+      : '';
+    const paymentDataWarning = viewModel.paymentDataWarning
+      ? `
+        <div class="income-statement-alert" role="status">
+          <i data-lucide="database-zap"></i>
+          <span>${esc(viewModel.paymentDataWarning)}</span>
+        </div>
+      `
+      : '';
 
     return `
       <div class="income-statement-columns" aria-hidden="true">
@@ -726,6 +705,8 @@
           ${viewModel.revenueLines.map(line => renderIncomeStatementLine(line)).join('')}
         </div>
         ${reconciliationWarning}
+        ${negativeRemainderWarning}
+        ${paymentDataWarning}
       </section>
       <section class="income-statement-section costs" aria-labelledby="incomeCostsHeading">
         <div class="income-statement-section-title" id="incomeCostsHeading">${esc(tr('Costs', '비용'))}</div>
@@ -733,13 +714,13 @@
           ${viewModel.costLines.map(line => renderIncomeStatementLine(line)).join('')}
         </div>
       </section>
-      <div class="income-statement-result ${resultPositive ? 'positive' : 'negative'}">
+      <div class="income-statement-result ${!profitAvailable ? 'unavailable' : resultPositive ? 'positive' : 'negative'}">
         <div class="income-statement-result-copy">
           <strong class="income-statement-result-label">${esc(resultLabel)}</strong>
           <small>${esc(tr('Net revenue less all listed costs', '순매출에서 표시된 모든 비용 차감'))}</small>
         </div>
         <div class="income-statement-result-values">
-          <strong class="income-statement-result-amount">${formatSignedKrw(summary.trueNetProfit)}</strong>
+          <strong class="income-statement-result-amount">${profitAvailable ? formatSignedKrw(summary.trueNetProfit) : '—'}</strong>
           <span class="income-statement-result-margin">
             <span>${esc(tr('Margin', '마진'))}</span>
             <b>${esc(formatCalendarPercentMetric(summary.margin))}</b>
@@ -760,10 +741,6 @@
 
   function renderCalendarIncomeStatement(selection) {
     const viewModel = buildIncomeStatementViewModel(selection);
-    const customFeeValue = calendarState.paymentFeePercent == null
-      ? ''
-      : esc(String(calendarState.paymentFeePercent));
-    const hasCustomFee = calendarState.paymentFeePercent != null;
 
     return `
       <div class="card income-statement-card" id="calendarIncomeStatement">
@@ -774,16 +751,6 @@
               <i data-lucide="calendar-days" aria-hidden="true"></i>
               <span data-income-statement-meta>${esc(viewModel.contextLabel)}</span>
             </span>
-          </div>
-          <div class="income-statement-controls">
-            <label class="payment-fee-control ${hasCustomFee ? 'has-custom-fee' : ''}" for="calendarPaymentFeeRateInput">
-              <span>${esc(tr('Payment fee', '결제 수수료'))}</span>
-              <div class="input-with-unit">
-                <input id="calendarPaymentFeeRateInput" class="text-input payment-fee-input" type="number" min="0" step="0.1" inputmode="decimal" placeholder="${DEFAULT_PAYMENT_FEE_PERCENT}" value="${customFeeValue}" aria-label="${esc(tr('Payment fee percentage', '결제 수수료율'))}">
-                <span class="unit">%</span>
-                <button type="button" class="payment-fee-reset" data-calendar-payment-fee-reset aria-label="${esc(tr('Reset to default', '기본값으로'))}" title="${esc(tr('Reset to default', '기본값으로'))}">×</button>
-              </div>
-            </label>
           </div>
         </div>
         <div class="income-statement-body" data-income-statement-body aria-label="${esc(tr('Income statement for the selected range', '선택 범위 손익계산서'))}">
@@ -810,14 +777,7 @@
       lucide.createIcons({ nodes: [body] });
     }
 
-    syncPaymentFeeControlState();
     renderCalendarProfitSummary();
-  }
-
-  function syncPaymentFeeControlState() {
-    const ctrl = document.querySelector('.payment-fee-control');
-    if (!ctrl) return;
-    ctrl.classList.toggle('has-custom-fee', calendarState.paymentFeePercent != null);
   }
 
   function renderEmptyStateCard(title, body) {
@@ -857,7 +817,7 @@
     const selection = calendarState.data.selection || {};
     renderer({
       selection,
-      rows: getCalendarWaterfallRows(selection),
+      rows: Array.isArray(selection.days) ? selection.days : [],
       contextLabel: getCalendarWaterfallContextLabel(),
       sourceAudit: calendarState.data?.sourceAudit || null,
     });
@@ -896,8 +856,6 @@
     if (window.lucide) {
       lucide.createIcons({ nodes: [statementContainer] });
     }
-
-    syncPaymentFeeControlState();
   }
 
   async function refreshCalendarPage() {
@@ -961,7 +919,6 @@
     const nextBtn = document.getElementById('calendarNextBtn');
     const todayBtn = document.getElementById('calendarTodayBtn');
     const viewportEl = document.getElementById('calendarViewport');
-    const summaryPageEl = document.querySelector('.page[data-page="calendar"]');
 
     if (prevBtn) {
       prevBtn.addEventListener('click', async () => {
@@ -1029,26 +986,6 @@
         calendarState.selectionStart = dayEl.dataset.date;
         calendarState.selectionEnd = dayEl.dataset.date;
         await refreshCalendarPage();
-      });
-    }
-
-    if (summaryPageEl) {
-      summaryPageEl.addEventListener('click', event => {
-        const resetButton = event.target.closest('[data-calendar-payment-fee-reset]');
-        if (resetButton) {
-          calendarState.paymentFeePercent = null;
-          const input = document.getElementById('calendarPaymentFeeRateInput');
-          if (input) input.value = '';
-          updateCalendarIncomeStatement();
-        }
-      });
-
-      summaryPageEl.addEventListener('input', event => {
-        if (event.target?.id !== 'calendarPaymentFeeRateInput') return;
-
-        calendarState.paymentFeePercent = parseCalendarPaymentFeePercent(event.target.value);
-        clearTimeout(calendarFeeInputDebounceTimer);
-        calendarFeeInputDebounceTimer = setTimeout(updateCalendarIncomeStatement, 80);
       });
     }
 
