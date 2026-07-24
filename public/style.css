@@ -491,20 +491,9 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .income-statement-controls {
-  display: grid;
-  justify-items: end;
-  gap: 0.35rem;
+  display: flex;
+  align-items: center;
   min-width: 0;
-  padding-left: var(--space-6);
-  border-left: 1px solid var(--color-border);
-}
-
-.income-statement-control-label {
-  color: var(--color-text-faint);
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .payment-fee-control {
@@ -3242,70 +3231,39 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .income-statement-card {
-  --statement-rule: color-mix(in srgb, var(--color-text) 22%, var(--color-border));
-  --statement-paper: color-mix(in srgb, var(--color-surface) 94%, var(--color-bg));
-  position: relative;
-  overflow: hidden;
-  padding: clamp(var(--space-5), 3vw, var(--space-10));
-  border-color: var(--statement-rule);
-  border-radius: 3px;
-  background: var(--statement-paper);
-  box-shadow: 5px 5px 0 color-mix(in srgb, var(--color-text) 7%, transparent);
+  --statement-rule: color-mix(in srgb, var(--color-text) 18%, var(--color-border));
+  padding: clamp(var(--space-5), 2.5vw, var(--space-8));
 }
 
-.income-statement-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 4px;
-  background: var(--color-text);
+.income-statement-header,
+.income-statement-body {
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
 }
 
 .income-statement-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-8);
-  padding: var(--space-2) 0 var(--space-6);
-  border-bottom: 1px solid var(--statement-rule);
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  padding-bottom: var(--space-2);
 }
 
 .income-statement-heading {
   display: flex;
-  align-items: center;
   min-width: 0;
-  gap: var(--space-5);
-}
-
-.income-statement-document-mark {
-  display: grid;
-  width: 54px;
-  height: 54px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--statement-rule);
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .income-statement-header h2 {
-  margin: 0.15rem 0 0.45rem;
-  font-size: clamp(1.75rem, 3vw, 2.4rem);
-  font-weight: 700;
-  letter-spacing: -0.045em;
-  line-height: 1;
-}
-
-.income-statement-eyebrow {
-  display: block;
-  color: var(--color-primary);
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
 }
 
 .income-statement-period {
@@ -3314,37 +3272,29 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   gap: 0.4rem;
   color: var(--color-text-muted);
   font-size: var(--text-xs);
-  font-weight: 500;
-  white-space: nowrap;
 }
 
 .income-statement-period svg {
-  width: 14px;
-  height: 14px;
-  color: var(--color-primary);
-}
-
-.income-statement-body {
-  width: min(100%, 1160px);
-  margin: 0 auto;
-  padding-top: var(--space-6);
+  width: 13px;
+  height: 13px;
+  color: var(--color-text-faint);
 }
 
 .income-statement-columns,
 .income-statement-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px minmax(165px, 210px);
+  grid-template-columns: minmax(0, 1fr) 90px minmax(150px, 190px);
   align-items: center;
-  column-gap: var(--space-6);
+  column-gap: var(--space-5);
 }
 
 .income-statement-columns {
-  padding: 0 var(--space-4) var(--space-3);
-  border-bottom: 1px solid var(--statement-rule);
+  padding: var(--space-4) 0 var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
   color: var(--color-text-faint);
   font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.11em;
+  font-weight: 600;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
@@ -3353,80 +3303,38 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   text-align: right;
 }
 
+.income-statement-section {
+  margin-top: var(--space-5);
+}
+
 .income-statement-section + .income-statement-section {
-  margin-top: var(--space-10);
+  margin-top: var(--space-6);
 }
 
 .income-statement-section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  min-height: 48px;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--statement-rule);
-  background: var(--color-surface-2);
-}
-
-.income-statement-section-title > div {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.income-statement-section-title > div > span:last-child {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-}
-
-.income-statement-section-index {
-  color: var(--color-text-faint);
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
+  padding-bottom: var(--space-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
   font-weight: 600;
-}
-
-.income-statement-section.revenue .income-statement-section-index {
-  color: var(--color-primary);
-}
-
-.income-statement-section.costs .income-statement-section-index {
-  color: var(--color-error);
-}
-
-.income-statement-section-title small {
-  color: var(--color-text-faint);
-  font-size: 0.6875rem;
-  font-weight: 400;
+  letter-spacing: -0.01em;
 }
 
 .income-statement-line {
-  min-height: 62px;
-  padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--color-divider);
-  animation: income-statement-row-in 360ms both;
-  animation-delay: calc(var(--statement-row-index, 0) * 28ms);
-  transition: background-color var(--transition-interactive);
-}
-
-.income-statement-line.detail:hover,
-.income-statement-line.cost:hover {
-  background: var(--color-surface-2);
+  min-height: 44px;
+  padding: var(--space-2) 0;
 }
 
 .income-statement-account {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .income-statement-account > span {
   min-width: 0;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: var(--text-sm);
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
@@ -3438,28 +3346,11 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .income-statement-line.detail .income-statement-account {
-  position: relative;
-  padding-left: var(--space-6);
-}
-
-.income-statement-line.detail .income-statement-account::before {
-  content: "";
-  position: absolute;
-  top: 0.72em;
-  left: 1px;
-  width: 10px;
-  height: 1px;
-  background: var(--color-text-faint);
-  transition: width var(--transition-interactive), background-color var(--transition-interactive);
-}
-
-.income-statement-line.detail:hover .income-statement-account::before {
-  width: 16px;
-  background: var(--color-primary);
+  padding-left: var(--space-4);
 }
 
 .income-statement-percent {
-  color: var(--color-text-muted);
+  color: var(--color-text-faint);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
@@ -3469,24 +3360,18 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .income-statement-amount {
   color: var(--color-text);
   font-family: var(--font-mono);
-  font-size: var(--text-base);
-  font-weight: 600;
+  font-size: var(--text-sm);
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.01em;
   text-align: right;
   white-space: nowrap;
 }
 
-.income-statement-line.deduction .income-statement-amount,
-.income-statement-line.cost .income-statement-amount,
-.income-statement-line.total-costs .income-statement-amount {
-  color: var(--color-error);
-}
-
-.income-statement-line.subtotal {
-  margin-top: var(--space-1);
+.income-statement-line.subtotal,
+.income-statement-line.total,
+.income-statement-line.total-costs {
   border-top: 1px solid var(--statement-rule);
-  background: color-mix(in srgb, var(--color-primary-subtle) 44%, transparent);
 }
 
 .income-statement-line.subtotal .income-statement-account > span,
@@ -3495,60 +3380,38 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 .income-statement-line.total .income-statement-amount,
 .income-statement-line.total-costs .income-statement-account > span,
 .income-statement-line.total-costs .income-statement-amount {
-  font-size: var(--text-base);
-  font-weight: 700;
+  font-weight: 600;
 }
 
-.income-statement-line.total,
-.income-statement-line.total-costs {
-  min-height: 70px;
-  border-top: 3px double var(--color-text);
-  border-bottom: 1px solid var(--statement-rule);
-  background: color-mix(in srgb, var(--color-surface-2) 72%, transparent);
-}
-
-.income-statement-line.total .income-statement-amount {
-  color: var(--color-success);
-}
-
-.income-statement-alert,
-.income-statement-coverage {
+.income-statement-alert {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
   margin-top: var(--space-3);
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  line-height: 1.5;
-}
-
-.income-statement-alert {
-  padding: var(--space-3) var(--space-4);
-  border-left: 2px solid currentColor;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
   background: var(--color-warning-subtle);
   color: var(--color-warning);
+  font-size: 0.75rem;
+  line-height: 1.5;
 }
 
 .income-statement-alert svg,
 .income-statement-coverage svg {
   flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   margin-top: 2px;
 }
 
 .income-statement-result {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-8);
-  margin-top: var(--space-10);
-  padding: var(--space-6);
-  border-left: 4px solid currentColor;
-  border-top: 1px solid var(--statement-rule);
-  border-right: 1px solid var(--statement-rule);
-  border-bottom: 1px solid var(--statement-rule);
-  background: var(--color-surface-2);
+  gap: var(--space-4) var(--space-8);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 2px solid var(--color-text);
 }
 
 .income-statement-result-copy {
@@ -3556,21 +3419,14 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.2rem;
-}
-
-.income-statement-result-kicker {
-  color: var(--color-text-muted);
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  gap: 2px;
 }
 
 .income-statement-result-label {
   color: var(--color-text);
-  font-size: clamp(1.15rem, 2vw, 1.45rem);
-  letter-spacing: -0.025em;
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .income-statement-result-copy small {
@@ -3583,90 +3439,71 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   align-items: flex-end;
   min-width: 0;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 2px;
 }
 
 .income-statement-result-amount {
   font-family: var(--font-mono);
-  font-size: clamp(1.6rem, 3.6vw, 2.4rem);
+  font-size: clamp(1.35rem, 2.4vw, 1.7rem);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.055em;
-  line-height: 1;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
   white-space: nowrap;
+}
+
+.income-statement-result.positive .income-statement-result-amount {
+  color: var(--color-success);
+}
+
+.income-statement-result.negative .income-statement-result-amount {
+  color: var(--color-error);
 }
 
 .income-statement-result-margin {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   color: var(--color-text-muted);
-  font-size: 0.6875rem;
+  font-size: var(--text-xs);
 }
 
 .income-statement-result-margin b {
-  color: currentColor;
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
-}
-
-.income-statement-result.positive {
-  color: var(--color-success);
-}
-
-.income-statement-result.negative {
-  color: var(--color-error);
+  font-weight: 500;
 }
 
 .income-statement-coverage {
-  margin-top: var(--space-5);
-  padding: var(--space-4) 0 0;
-  border-top: 1px solid var(--statement-rule);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.income-statement-coverage.complete svg {
+  color: var(--color-success);
+}
+
+.income-statement-coverage.incomplete svg {
+  color: var(--color-warning);
 }
 
 .income-statement-coverage > div {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 1px;
 }
 
 .income-statement-coverage strong {
   color: var(--color-text);
-  font-size: var(--text-xs);
-}
-
-.income-statement-coverage.complete {
-  color: var(--color-success);
-}
-
-.income-statement-coverage.incomplete {
-  color: var(--color-warning);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .income-statement-coverage span {
   color: var(--color-text-muted);
-}
-
-@keyframes income-statement-row-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .income-statement-line {
-    animation: none;
-    transition: none;
-  }
-
-  .income-statement-line.detail .income-statement-account::before {
-    transition: none;
-  }
 }
 
 .calendar-card-note {
@@ -3827,32 +3664,13 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .kpi-grid.small { grid-template-columns: 1fr 1fr; }
   .charts-grid { grid-template-columns: 1fr; }
 
-  .income-statement-controls {
-    width: 100%;
-    justify-items: start;
-    padding: var(--space-4) 0 0;
-    border-top: 1px solid var(--color-border);
-    border-left: 0;
-  }
-
   .income-statement-card {
     padding: var(--space-4);
-    box-shadow: 3px 3px 0 color-mix(in srgb, var(--color-text) 7%, transparent);
-  }
-
-  .income-statement-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0;
-  }
-
-  .income-statement-heading {
-    width: 100%;
   }
 
   .income-statement-columns,
   .income-statement-line {
-    grid-template-columns: minmax(0, 1fr) 72px minmax(120px, 150px);
+    grid-template-columns: minmax(0, 1fr) 64px minmax(120px, 150px);
     column-gap: var(--space-3);
   }
 
@@ -4042,29 +3860,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     justify-content: space-between;
   }
 
-  .income-statement-heading {
-    align-items: flex-start;
-    gap: var(--space-3);
-  }
-
-  .income-statement-document-mark {
-    width: 44px;
-    height: 44px;
-  }
-
-  .income-statement-header h2 {
-    font-size: 1.6rem;
-  }
-
-  .income-statement-period {
-    align-items: flex-start;
-    white-space: normal;
-  }
-
-  .income-statement-body {
-    padding-top: var(--space-4);
-  }
-
   .income-statement-columns,
   .income-statement-line {
     grid-template-columns: minmax(0, 1fr) minmax(110px, auto);
@@ -4077,24 +3872,17 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   }
 
   .income-statement-section + .income-statement-section {
-    margin-top: var(--space-6);
-  }
-
-  .income-statement-section-title small {
-    display: none;
+    margin-top: var(--space-5);
   }
 
   .income-statement-line {
-    min-height: 64px;
-    padding-inline: var(--space-2);
+    min-height: 52px;
   }
 
   .income-statement-result {
     align-items: flex-start;
     flex-direction: column;
-    gap: var(--space-3);
-    margin-top: var(--space-6);
-    padding: var(--space-4);
+    gap: var(--space-2);
   }
 
   .income-statement-result-values {
@@ -4103,7 +3891,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   }
 
   .income-statement-result-amount {
-    font-size: clamp(1.45rem, 9vw, 2rem);
+    font-size: 1.45rem;
   }
 
   /* API rows stack */

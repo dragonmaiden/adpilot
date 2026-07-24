@@ -219,7 +219,11 @@ app.use(helmet({
 
 // ── Serve static dashboard files (frontend) ──
 const FRONTEND_DIR = path.join(__dirname, '..', 'public');
-app.use(express.static(FRONTEND_DIR));
+app.use(express.static(FRONTEND_DIR, {
+  // Force revalidation so deploys never pair new markup with stale CSS/JS;
+  // ETag 304s keep repeat loads cheap.
+  setHeaders: res => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 // ── CORS for dev ──
 app.use((req, res, next) => {

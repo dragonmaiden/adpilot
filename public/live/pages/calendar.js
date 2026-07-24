@@ -550,8 +550,8 @@
     )).map(row => ({
       ...row,
       meta: tr(
-        `${formatCount(row.orderCount)} orders · ${shareOf(row.revenue, summary.grossRevenue)} of gross`,
-        `주문 ${formatCount(row.orderCount)}건 · 총매출의 ${shareOf(row.revenue, summary.grossRevenue)}`
+        `${formatCount(row.orderCount)} orders`,
+        `주문 ${formatCount(row.orderCount)}건`
       ),
     }));
     const reportedChannelRevenue = toFiniteNumber(paymentChannels.totalGrossRevenue);
@@ -666,11 +666,11 @@
     };
   }
 
-  function renderIncomeStatementLine(line, index) {
+  function renderIncomeStatementLine(line) {
     const amount = Math.abs(toFiniteNumber(line.amount)) < 0.5 ? 0 : toFiniteNumber(line.amount);
 
     return `
-      <div class="income-statement-line ${esc(line.kind || '')}" style="--statement-row-index:${index}" role="row">
+      <div class="income-statement-line ${esc(line.kind || '')}" role="row">
         <div class="income-statement-account" role="rowheader">
           <span>${esc(line.label)}</span>
           <small>${esc(line.meta || '')}</small>
@@ -721,33 +721,20 @@
         <span>${esc(tr('Amount · KRW', '금액 · KRW'))}</span>
       </div>
       <section class="income-statement-section revenue" aria-labelledby="incomeRevenueHeading">
-        <div class="income-statement-section-title" id="incomeRevenueHeading">
-          <div>
-            <span class="income-statement-section-index" aria-hidden="true">01</span>
-            <span>${esc(tr('Revenue', '매출'))}</span>
-          </div>
-          <small>${esc(tr('Recognized payments in the selected range', '선택 범위 내 인식된 결제'))}</small>
-        </div>
+        <div class="income-statement-section-title" id="incomeRevenueHeading">${esc(tr('Revenue', '매출'))}</div>
         <div class="income-statement-lines" role="table">
-          ${viewModel.revenueLines.map((line, index) => renderIncomeStatementLine(line, index)).join('')}
+          ${viewModel.revenueLines.map(line => renderIncomeStatementLine(line)).join('')}
         </div>
         ${reconciliationWarning}
       </section>
       <section class="income-statement-section costs" aria-labelledby="incomeCostsHeading">
-        <div class="income-statement-section-title" id="incomeCostsHeading">
-          <div>
-            <span class="income-statement-section-index" aria-hidden="true">02</span>
-            <span>${esc(tr('Costs', '비용'))}</span>
-          </div>
-          <small>${esc(tr('Costs deducted from net revenue', '순매출에서 차감되는 비용'))}</small>
-        </div>
+        <div class="income-statement-section-title" id="incomeCostsHeading">${esc(tr('Costs', '비용'))}</div>
         <div class="income-statement-lines" role="table">
-          ${viewModel.costLines.map((line, index) => renderIncomeStatementLine(line, index + viewModel.revenueLines.length)).join('')}
+          ${viewModel.costLines.map(line => renderIncomeStatementLine(line)).join('')}
         </div>
       </section>
       <div class="income-statement-result ${resultPositive ? 'positive' : 'negative'}">
         <div class="income-statement-result-copy">
-          <span class="income-statement-result-kicker">${esc(tr('Closing position', '최종 손익'))}</span>
           <strong class="income-statement-result-label">${esc(resultLabel)}</strong>
           <small>${esc(tr('Net revenue less all listed costs', '순매출에서 표시된 모든 비용 차감'))}</small>
         </div>
@@ -782,18 +769,13 @@
       <div class="card income-statement-card" id="calendarIncomeStatement">
         <div class="income-statement-header">
           <div class="income-statement-heading">
-            <span class="income-statement-document-mark" aria-hidden="true">P&amp;L</span>
-            <div>
-              <span class="income-statement-eyebrow">${esc(tr('Selected performance', '선택 범위 실적'))}</span>
-              <h2>${esc(tr('Income Statement', '손익계산서'))}</h2>
-              <span class="income-statement-period">
-                <i data-lucide="calendar-days" aria-hidden="true"></i>
-                <span data-income-statement-meta>${esc(viewModel.contextLabel)}</span>
-              </span>
-            </div>
+            <h2>${esc(tr('Income Statement', '손익계산서'))}</h2>
+            <span class="income-statement-period">
+              <i data-lucide="calendar-days" aria-hidden="true"></i>
+              <span data-income-statement-meta>${esc(viewModel.contextLabel)}</span>
+            </span>
           </div>
           <div class="income-statement-controls">
-            <span class="income-statement-control-label">${esc(tr('Model assumption', '계산 가정'))}</span>
             <label class="payment-fee-control ${hasCustomFee ? 'has-custom-fee' : ''}" for="calendarPaymentFeeRateInput">
               <span>${esc(tr('Payment fee', '결제 수수료'))}</span>
               <div class="input-with-unit">
