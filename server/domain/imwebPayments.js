@@ -216,6 +216,7 @@ function buildPaymentChannelRevenue(orders, options = {}) {
   const cardOrderNos = options.cardOrderNos instanceof Set
     ? options.cardOrderNos
     : new Set(Array.isArray(options.cardOrderNos) ? options.cardOrderNos.map(String) : []);
+  const bankTransferAsRemainder = options.bankTransferAsRemainder === true;
   const channelTotals = new Map(
     PAYMENT_REVENUE_CHANNELS.map(channel => [channel, {
       channel,
@@ -223,21 +224,36 @@ function buildPaymentChannelRevenue(orders, options = {}) {
       orderCount: 0,
     }])
   );
+  let totalGrossRevenue = 0;
+  let totalOrderCount = 0;
 
   for (const order of Array.isArray(orders) ? orders : []) {
     const grossRevenue = Math.max(0, Math.round(getOrderCashTotals(order).approvedAmount));
     if (grossRevenue <= 0) continue;
 
+    totalGrossRevenue += grossRevenue;
+    totalOrderCount += 1;
     const channel = getOrderRevenueChannel(order, cardOrderNos);
+    if (bankTransferAsRemainder && channel !== 'card') {
+      continue;
+    }
+
     const row = channelTotals.get(channel) || channelTotals.get('other');
     row.revenue += grossRevenue;
     row.orderCount += 1;
   }
 
+  if (bankTransferAsRemainder) {
+    const card = channelTotals.get('card');
+    const bankTransfer = channelTotals.get('bank_transfer');
+    bankTransfer.revenue = totalGrossRevenue - card.revenue;
+    bankTransfer.orderCount = totalOrderCount - card.orderCount;
+  }
+
   const rows = PAYMENT_REVENUE_CHANNELS.map(channel => channelTotals.get(channel));
   return {
-    totalGrossRevenue: rows.reduce((sum, row) => sum + row.revenue, 0),
-    totalOrderCount: rows.reduce((sum, row) => sum + row.orderCount, 0),
+    totalGrossRevenue,
+    totalOrderCount,
     rows,
   };
 }

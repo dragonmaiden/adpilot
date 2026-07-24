@@ -109,8 +109,8 @@ test('calendar payload owns selected-range revenue by payment channel', () => {
   assert.match(contractsJs, /paymentChannels:\s*\{/);
   assert.match(contractsJs, /totalGrossRevenue:\s*selection\?\.paymentChannels\?\.totalGrossRevenue\s*\?\?\s*0/);
   assert.match(contractsJs, /rows:\s*\(selection\?\.paymentChannels\?\.rows\s*\?\?\s*\[\]\)\.map/);
-  assert.match(calendarServiceJs, /const matchedCardOrderNos = new Set\(\s*\(reconciliationReport\.matches \|\| \[\]\)/);
-  assert.match(calendarServiceJs, /buildPaymentChannelRevenue\(selectionOrders,\s*\{\s*cardOrderNos:\s*matchedCardOrderNos/);
+  assert.match(calendarServiceJs, /cogsAutofillService\.getPaywayCardOrderNos/);
+  assert.match(calendarServiceJs, /buildPaymentChannelRevenue\(selectionOrders,\s*\{\s*cardOrderNos,\s*bankTransferAsRemainder:\s*true/);
   assert.match(calendarJs, /const paymentChannels = selection\?\.paymentChannels \|\| \{\};/);
   assert.match(calendarJs, /label:\s*tr\('Credit card revenue'/);
   assert.match(calendarJs, /label:\s*tr\('Bank transfer revenue'/);

@@ -1,6 +1,7 @@
 const scheduler = require('../modules/scheduler');
 const contracts = require('../contracts/v1');
 const transforms = require('../transforms/charts');
+const cogsAutofillService = require('./cogsAutofillService');
 const reconciliationService = require('./reconciliationService');
 const { buildFinancialProjection } = require('./financialProjectionService');
 const {
@@ -907,14 +908,22 @@ async function getCalendarAnalysisResponse(query = {}) {
     cogs.dailyCOGS || {}
   );
   const selectionSummary = buildSelectionSummary(selectionDayRows, selectionOrders, selectionCoverage);
-  const matchedCardOrderNos = new Set(
+  const settlementCardOrderNos = new Set(
     (reconciliationReport.matches || [])
       .filter(match => match?.type === 'approval')
       .map(match => String(match?.imwebPayment?.orderNo || '').trim())
       .filter(Boolean)
   );
+  const paywayCardOrderNos = cogsAutofillService.getPaywayCardOrderNos(
+    selectionOrders.map(order => order?.orderNo)
+  );
+  const cardOrderNos = new Set([
+    ...settlementCardOrderNos,
+    ...paywayCardOrderNos,
+  ]);
   const paymentChannels = buildPaymentChannelRevenue(selectionOrders, {
-    cardOrderNos: matchedCardOrderNos,
+    cardOrderNos,
+    bankTransferAsRemainder: true,
   });
   const selectionInsights = (Array.isArray(data.campaignInsights) ? data.campaignInsights : []).filter(row =>
     row?.date_start &&

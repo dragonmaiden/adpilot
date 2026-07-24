@@ -26,7 +26,7 @@ function makeOrder(orderNo, {
   };
 }
 
-test('payment-channel revenue classifies Payway-matched bank-transfer records as card revenue', () => {
+test('payment-channel revenue uses identified cards and treats bank transfer as the gross-revenue remainder', () => {
   const result = buildPaymentChannelRevenue([
     makeOrder('direct-card', { netPaid: 100_000, method: 'CARD' }),
     makeOrder('payway-card', { netPaid: 200_000, method: 'BANKTRANSFER' }),
@@ -34,17 +34,23 @@ test('payment-channel revenue classifies Payway-matched bank-transfer records as
     makeOrder('unclassified', { netPaid: 50_000 }),
   ], {
     cardOrderNos: new Set(['payway-card']),
+    bankTransferAsRemainder: true,
   });
 
   const byChannel = Object.fromEntries(result.rows.map(row => [row.channel, row]));
 
   assert.equal(byChannel.card.revenue, 300_000);
   assert.equal(byChannel.card.orderCount, 2);
-  assert.equal(byChannel.bank_transfer.revenue, 300_000);
-  assert.equal(byChannel.bank_transfer.orderCount, 1);
-  assert.equal(byChannel.unknown.revenue, 50_000);
+  assert.equal(byChannel.bank_transfer.revenue, 350_000);
+  assert.equal(byChannel.bank_transfer.orderCount, 2);
+  assert.equal(byChannel.unknown.revenue, 0);
+  assert.equal(byChannel.unknown.orderCount, 0);
   assert.equal(result.totalGrossRevenue, 650_000);
   assert.equal(result.totalOrderCount, 4);
+  assert.equal(
+    byChannel.card.revenue + byChannel.bank_transfer.revenue,
+    result.totalGrossRevenue
+  );
 });
 
 test('payment-channel rows reconcile to gross approved revenue including later refunds', () => {

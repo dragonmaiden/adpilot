@@ -102,6 +102,55 @@ function createConfig(privateKey) {
   };
 }
 
+test('getPaywayCardOrderNos returns only requested orders with persisted Payway card evidence', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  fs.writeFileSync(path.join(dataDir, 'cogs_autofill_state.json'), JSON.stringify({
+    importedOrders: {},
+    notifiedOrders: {
+      'payway-card': {
+        paymentSource: 'payway',
+        paywayTransactionId: 'transaction-1',
+      },
+      'payway-approved': {
+        paymentSource: 'PAYWAY',
+        paywayApprovalNo: 'approval-2',
+      },
+      'manual-bank': {
+        paymentSource: 'imweb',
+        notificationStage: 'payment_confirmed',
+      },
+      'payway-without-payment-evidence': {
+        paymentSource: 'payway',
+      },
+      'unrequested-payway-card': {
+        paymentSource: 'payway',
+        paywayTransactionId: 'transaction-3',
+      },
+    },
+  }, null, 2));
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {},
+    imwebClient: {},
+  }, async service => {
+    const orderNos = service.getPaywayCardOrderNos([
+      'payway-card',
+      'payway-approved',
+      'manual-bank',
+      'payway-without-payment-evidence',
+    ]);
+
+    assert.deepEqual(
+      [...orderNos].sort(),
+      ['payway-approved', 'payway-card']
+    );
+  });
+});
+
 test('syncOrderToCogsSheet appends multi-item rows to the correct month tab without overwriting existing data', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
