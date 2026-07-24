@@ -180,6 +180,15 @@ function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate
       dayCount: selection?.dayCount ?? 0,
       summary: selection?.summary ?? {},
       days: selection?.days ?? [],
+      paymentChannels: {
+        totalGrossRevenue: selection?.paymentChannels?.totalGrossRevenue ?? 0,
+        totalOrderCount: selection?.paymentChannels?.totalOrderCount ?? 0,
+        rows: (selection?.paymentChannels?.rows ?? []).map(row => ({
+          channel: row?.channel ?? 'unknown',
+          revenue: row?.revenue ?? 0,
+          orderCount: row?.orderCount ?? 0,
+        })),
+      },
       categoryRevenue: selection?.categoryRevenue ?? [],
       orders: selection?.orders ?? [],
       products: selection?.products ?? [],

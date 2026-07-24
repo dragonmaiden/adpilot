@@ -81,6 +81,8 @@
     if (!hasArray(payload.orderPatterns, 'hourly')) return failContract('calendar-analysis', 'missing orderPatterns.hourly array');
     if (!hasObject(payload, 'selection')) return failContract('calendar-analysis', 'missing selection object');
     if (!hasArray(payload.selection, 'days')) return failContract('calendar-analysis', 'missing selection.days array');
+    if (!hasObject(payload.selection, 'paymentChannels')) return failContract('calendar-analysis', 'missing selection.paymentChannels object');
+    if (!hasArray(payload.selection.paymentChannels, 'rows')) return failContract('calendar-analysis', 'missing selection.paymentChannels.rows array');
     if (payload.sourceAudit != null && !isPlainObject(payload.sourceAudit)) return failContract('calendar-analysis', 'sourceAudit must be an object or null');
     return passContract();
   }

@@ -1,7 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
   const { checkBackendAvailable, api } = live.api;
-  const { initSeriesWindowControls } = live.seriesWindows;
 
   let overviewPollId = null;
   let secondaryPollId = null;
@@ -107,8 +106,6 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     live.setPageActivatedHandler(handlePageActivated);
-    initSeriesWindowControls();
-
     startLiveMode();
   });
 })();

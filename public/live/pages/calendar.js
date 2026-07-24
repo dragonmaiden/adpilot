@@ -1,6 +1,6 @@
 (function () {
   const live = window.AdPilotLive;
-  const { esc, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, humanizeEnum, tr, getLocale } = live.shared;
+  const { esc, formatSignedKrw, formatKrw, formatUsd, formatPercent, formatCount, tr, getLocale } = live.shared;
   const { fetchCalendarAnalysis } = live.api;
 
   const KST_TIME_ZONE = 'Asia/Seoul';
@@ -147,10 +147,6 @@
     return hasCalendarMetric(value) ? formatPercent(Number(value), digits) : '—';
   }
 
-  function formatCalendarRoasMetric(value) {
-    return hasCalendarMetric(value) ? `${Number(value).toFixed(2)}x` : '—';
-  }
-
   function formatFeePercentLabel(value) {
     return Number(value).toFixed(2).replace(/\.?0+$/, '');
   }
@@ -210,104 +206,41 @@
     return rows.map(day => recalculateCalendarDayForFee(day, feeRate));
   }
 
-  function getCalendarCategoryRevenueRows(selection) {
-    return Array.isArray(selection?.categoryRevenue) ? selection.categoryRevenue : [];
-  }
-
-  function normalizeSankeyCategoryRows(rows, grossRevenue) {
-    const gross = Math.max(0, Math.round(toFiniteNumber(grossRevenue)));
-    if (gross <= 0) return [];
-
-    let normalized = (Array.isArray(rows) ? rows : [])
-      .map((row, index) => {
-        const keyBase = String(row?.key || row?.label || `category_${index}`)
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9_-]+/g, '_')
-          .replace(/^_+|_+$/g, '');
-        return {
-          keyBase: keyBase || `category_${index}`,
-          label: String(row?.label || tr('Uncategorized', '미분류')).trim() || tr('Uncategorized', '미분류'),
-          revenue: Math.max(0, Math.round(toFiniteNumber(row?.revenue))),
-          orderCount: toFiniteNumber(row?.orderCount),
-          order: index,
-        };
-      })
-      .filter(row => row.revenue > 0);
-
-    const total = normalized.reduce((sum, row) => sum + row.revenue, 0);
-    if (total <= 0) {
-      normalized = [{
-        keyBase: 'uncategorized',
-        label: tr('Uncategorized', '미분류'),
-        revenue: gross,
-        orderCount: 0,
-        order: 0,
-      }];
-    } else {
-      const delta = gross - total;
-      const tolerance = Math.max(2, Math.round(gross * 0.002));
-      if (Math.abs(delta) <= tolerance && normalized.length > 0) {
-        normalized[0].revenue += delta;
-      } else if (delta > 0) {
-        normalized.push({
-          keyBase: 'uncategorized',
-          label: tr('Uncategorized', '미분류'),
-          revenue: delta,
-          orderCount: 0,
-          order: normalized.length,
-        });
-      } else if (total > gross) {
-        const scale = gross / total;
-        normalized = normalized
-          .map(row => ({
-            ...row,
-            revenue: Math.max(0, Math.round(row.revenue * scale)),
-          }))
-          .filter(row => row.revenue > 0);
-        const scaledTotal = normalized.reduce((sum, row) => sum + row.revenue, 0);
-        const scaledDelta = gross - scaledTotal;
-        if (scaledDelta !== 0 && normalized.length > 0) {
-          normalized[0].revenue += scaledDelta;
-        }
-      }
-    }
-
-    const adjustedTotal = normalized.reduce((sum, row) => sum + row.revenue, 0);
-    const usedCategoryKeys = new Map();
-    return normalized.map((row, index) => {
-      const { keyBase: rawBaseKey, ...categoryRow } = row;
-      const baseKey = rawBaseKey || `category_${index}`;
-      const duplicateIndex = usedCategoryKeys.get(baseKey) || 0;
-      usedCategoryKeys.set(baseKey, duplicateIndex + 1);
-
-      return {
-        ...categoryRow,
-        key: duplicateIndex === 0 ? baseKey : `${baseKey}_${duplicateIndex + 1}`,
-        share: adjustedTotal > 0 ? row.revenue / adjustedTotal : 0,
-      };
-    });
-  }
-
   function getCalendarWaterfallContextLabel() {
     return formatCalendarRange(calendarState.selectionStart, calendarState.selectionEnd);
   }
 
   function buildCalendarWaterfallSummary(rows) {
     const totals = (Array.isArray(rows) ? rows : []).reduce((summary, day) => {
-      summary.grossRevenue += toFiniteNumber(day.revenue);
-      summary.refundedAmount += toFiniteNumber(day.refunded);
+      const grossRevenue = toFiniteNumber(day.revenue);
+      const refundedAmount = toFiniteNumber(day.refunded);
+      const recognizedOrders = toFiniteNumber(day.orders);
+      const cogs = toFiniteNumber(day.cogs);
+      const shipping = toFiniteNumber(day.shipping);
+      const needsCOGSCoverage = grossRevenue > 0
+        || refundedAmount > 0
+        || recognizedOrders > 0
+        || cogs > 0
+        || shipping > 0
+        || day.hasCOGS
+        || day.hasPartialCOGS;
+
+      summary.grossRevenue += grossRevenue;
+      summary.refundedAmount += refundedAmount;
       summary.netRevenue += toFiniteNumber(day.netRevenue);
       summary.adSpend += toFiniteNumber(day.adSpend);
       summary.adSpendKRW += toFiniteNumber(day.adSpendKRW);
-      summary.cogs += toFiniteNumber(day.cogs);
-      summary.shipping += toFiniteNumber(day.shipping);
+      summary.cogs += cogs;
+      summary.shipping += shipping;
       summary.paymentFees += toFiniteNumber(day.paymentFees);
       summary.trueNetProfit += toFiniteNumber(day.trueNetProfit);
-      summary.recognizedOrders += toFiniteNumber(day.orders);
+      summary.recognizedOrders += recognizedOrders;
       summary.refundOrders += toFiniteNumber(day.refundCount);
-      summary.daysWithCOGS += day.hasCOGS ? 1 : 0;
-      summary.daysWithPartialCOGS += day.hasPartialCOGS ? 1 : 0;
+      if (needsCOGSCoverage) {
+        summary.daysRequiringCOGS += 1;
+        summary.daysWithCOGS += day.hasCOGS ? 1 : 0;
+        summary.daysWithPartialCOGS += day.hasPartialCOGS ? 1 : 0;
+      }
       return summary;
     }, {
       grossRevenue: 0,
@@ -321,6 +254,7 @@
       trueNetProfit: 0,
       recognizedOrders: 0,
       refundOrders: 0,
+      daysRequiringCOGS: 0,
       daysWithCOGS: 0,
       daysWithPartialCOGS: 0,
     });
@@ -331,7 +265,9 @@
       dayCount,
       refundRate: roundCalendarPercent(totals.refundedAmount, totals.grossRevenue),
       margin: roundCalendarPercent(totals.trueNetProfit, totals.netRevenue),
-      cogsCoverageRatio: dayCount > 0 ? Number((totals.daysWithCOGS / dayCount).toFixed(3)) : 0,
+      cogsCoverageRatio: totals.daysRequiringCOGS > 0
+        ? Number((totals.daysWithCOGS / totals.daysRequiringCOGS).toFixed(3))
+        : 1,
     };
   }
 
@@ -566,308 +502,298 @@
     }).join('');
   }
 
-  function buildSankeyViewModel(selection, baseSummary) {
-    const rows = getCalendarWaterfallRows(selection);
-    const summary = buildCalendarWaterfallSummary(rows);
+  function buildIncomeStatementViewModel(selection) {
+    const summary = buildCalendarWaterfallSummary(getCalendarWaterfallRows(selection));
+    const paymentChannels = selection?.paymentChannels || {};
+    const channelsByKey = new Map(
+      (Array.isArray(paymentChannels.rows) ? paymentChannels.rows : [])
+        .map(row => [String(row?.channel || 'unknown'), {
+          revenue: Math.max(0, toFiniteNumber(row?.revenue)),
+          orderCount: Math.max(0, toFiniteNumber(row?.orderCount)),
+        }])
+    );
+    const getChannel = channel => channelsByKey.get(channel) || { revenue: 0, orderCount: 0 };
+    const shareOf = (value, total) => total > 0
+      ? formatPercent((Math.abs(value) / total) * 100)
+      : '—';
+    const paymentRows = [
+      {
+        channel: 'card',
+        label: tr('Credit card revenue', '신용카드 매출'),
+        ...getChannel('card'),
+      },
+      {
+        channel: 'bank_transfer',
+        label: tr('Bank transfer revenue', '계좌이체 매출'),
+        ...getChannel('bank_transfer'),
+      },
+      {
+        channel: 'virtual_account',
+        label: tr('Virtual account revenue', '가상계좌 매출'),
+        ...getChannel('virtual_account'),
+      },
+      {
+        channel: 'other',
+        label: tr('Other payment revenue', '기타 결제 매출'),
+        ...getChannel('other'),
+      },
+      {
+        channel: 'unknown',
+        label: tr('Unclassified revenue', '미분류 매출'),
+        ...getChannel('unknown'),
+      },
+    ].filter(row => (
+      row.channel === 'card'
+        || row.channel === 'bank_transfer'
+        || row.revenue > 0
+        || row.orderCount > 0
+    )).map(row => ({
+      ...row,
+      meta: tr(
+        `${formatCount(row.orderCount)} orders · ${shareOf(row.revenue, summary.grossRevenue)} of gross`,
+        `주문 ${formatCount(row.orderCount)}건 · 총매출의 ${shareOf(row.revenue, summary.grossRevenue)}`
+      ),
+    }));
+    const reportedChannelRevenue = toFiniteNumber(paymentChannels.totalGrossRevenue);
+    const paymentChannelGap = Math.round(summary.grossRevenue - reportedChannelRevenue);
+    const totalCosts = summary.cogs + summary.shipping + summary.paymentFees + summary.adSpendKRW;
+    const orderCount = summary.recognizedOrders || toFiniteNumber(paymentChannels.totalOrderCount);
+    const shippingPerOrder = orderCount > 0 ? Math.round(summary.shipping / orderCount) : 0;
+    const daysRequiringCOGS = summary.daysRequiringCOGS || 0;
+    const fullCoverage = summary.daysWithCOGS || 0;
+    const partialCoverage = summary.daysWithPartialCOGS || 0;
+    const missingCoverage = Math.max(0, daysRequiringCOGS - fullCoverage - partialCoverage);
+    const cogsComplete = fullCoverage === daysRequiringCOGS;
+    const coverageLabel = tr(
+      `${formatCount(fullCoverage)} complete · ${formatCount(partialCoverage)} partial · ${formatCount(missingCoverage)} missing`,
+      `완료 ${formatCount(fullCoverage)}일 · 부분 ${formatCount(partialCoverage)}일 · 누락 ${formatCount(missingCoverage)}일`
+    );
     const feePercent = formatFeePercentLabel(getCalendarPaymentFeePercent());
-    const contextLabel = getCalendarWaterfallContextLabel();
-    const isProfitPositive = summary.trueNetProfit >= 0;
-    const orderCount = summary.recognizedOrders || baseSummary?.recognizedOrders || 0;
 
-    const coverageLabel = Number(summary.daysWithPartialCOGS || 0) > 0
+    return {
+      summary,
+      contextLabel: getCalendarWaterfallContextLabel(),
+      feePercent,
+      paymentRows,
+      paymentChannelGap,
+      totalCosts,
+      cogsComplete,
+      coverageLabel,
+      revenueLines: [
+        ...paymentRows.map(row => ({
+          key: `payment-${row.channel}`,
+          label: row.label,
+          meta: row.meta,
+          amount: row.revenue,
+          percent: shareOf(row.revenue, summary.grossRevenue),
+          kind: 'detail',
+        })),
+        {
+          key: 'gross-revenue',
+          label: tr('Total revenue', '총매출'),
+          meta: tr(`${formatCount(orderCount)} recognized orders`, `인식 주문 ${formatCount(orderCount)}건`),
+          amount: summary.grossRevenue,
+          percent: '100%',
+          kind: 'subtotal',
+        },
+        {
+          key: 'refunds',
+          label: tr('Refunds and cancellations', '환불 및 취소'),
+          meta: tr(
+            `${formatCalendarPercentMetric(summary.refundRate)} refund rate`,
+            `환불률 ${formatCalendarPercentMetric(summary.refundRate)}`
+          ),
+          amount: -summary.refundedAmount,
+          percent: shareOf(summary.refundedAmount, summary.grossRevenue),
+          kind: 'deduction',
+        },
+        {
+          key: 'net-revenue',
+          label: tr('Net revenue', '순매출'),
+          meta: tr('Revenue after refunds', '환불 차감 후 매출'),
+          amount: summary.netRevenue,
+          percent: shareOf(summary.netRevenue, summary.grossRevenue),
+          kind: 'total',
+        },
+      ],
+      costLines: [
+        {
+          key: 'cogs',
+          label: 'COGS',
+          meta: coverageLabel,
+          amount: -summary.cogs,
+          percent: shareOf(summary.cogs, summary.netRevenue),
+          kind: 'cost',
+        },
+        {
+          key: 'shipping',
+          label: tr('Shipping costs', '배송비'),
+          meta: orderCount > 0
+            ? tr(`${formatKrw(shippingPerOrder)} per order`, `주문당 ${formatKrw(shippingPerOrder)}`)
+            : tr('No recognized orders', '인식된 주문 없음'),
+          amount: -summary.shipping,
+          percent: shareOf(summary.shipping, summary.netRevenue),
+          kind: 'cost',
+        },
+        {
+          key: 'payment-fees',
+          label: tr('Payment processing fees', '결제 처리 수수료'),
+          meta: tr(`${feePercent}% assumption on net revenue`, `순매출 기준 ${feePercent}% 가정`),
+          amount: -summary.paymentFees,
+          percent: shareOf(summary.paymentFees, summary.netRevenue),
+          kind: 'cost',
+        },
+        {
+          key: 'ad-spend',
+          label: tr('Advertising costs', '광고비'),
+          meta: tr(
+            `${formatUsd(summary.adSpend || 0, 2)} media spend`,
+            `미디어 지출 ${formatUsd(summary.adSpend || 0, 2)}`
+          ),
+          amount: -summary.adSpendKRW,
+          percent: shareOf(summary.adSpendKRW, summary.netRevenue),
+          kind: 'cost',
+        },
+        {
+          key: 'total-costs',
+          label: tr('Total costs', '총비용'),
+          meta: tr('COGS + shipping + fees + advertising', '원가 + 배송비 + 수수료 + 광고비'),
+          amount: -totalCosts,
+          percent: shareOf(totalCosts, summary.netRevenue),
+          kind: 'total-costs',
+        },
+      ],
+    };
+  }
+
+  function renderIncomeStatementLine(line, index) {
+    const amount = Math.abs(toFiniteNumber(line.amount)) < 0.5 ? 0 : toFiniteNumber(line.amount);
+
+    return `
+      <div class="income-statement-line ${esc(line.kind || '')}" style="--statement-row-index:${index}" role="row">
+        <div class="income-statement-account" role="rowheader">
+          <span>${esc(line.label)}</span>
+          <small>${esc(line.meta || '')}</small>
+        </div>
+        <span class="income-statement-percent" role="cell">${esc(line.percent || '—')}</span>
+        <strong class="income-statement-amount" role="cell">${amount < 0 ? formatSignedKrw(amount) : formatKrw(amount)}</strong>
+      </div>
+    `;
+  }
+
+  function renderIncomeStatementBody(viewModel) {
+    const { summary } = viewModel;
+    const resultPositive = summary.trueNetProfit >= 0;
+    const resultLabel = resultPositive
+      ? tr('Net profit', '순이익')
+      : tr('Net loss', '순손실');
+    const coverageIcon = viewModel.cogsComplete ? 'badge-check' : 'triangle-alert';
+    const coverageClass = viewModel.cogsComplete ? 'complete' : 'incomplete';
+    const coverageNote = viewModel.cogsComplete
       ? tr(
-        `${formatCount(summary.daysWithCOGS || 0)} covered · ${formatCount(summary.daysWithPartialCOGS || 0)} partial`,
-        `완전 커버 ${formatCount(summary.daysWithCOGS || 0)}일 · 부분 커버 ${formatCount(summary.daysWithPartialCOGS || 0)}일`
+        viewModel.summary.daysRequiringCOGS > 0
+          ? `COGS and shipping are complete for all ${formatCount(viewModel.summary.daysRequiringCOGS)} order days.`
+          : 'No recognized order days require COGS coverage.',
+        viewModel.summary.daysRequiringCOGS > 0
+          ? `주문이 있는 ${formatCount(viewModel.summary.daysRequiringCOGS)}일의 원가와 배송비가 모두 완료되었습니다.`
+          : '원가 커버리지가 필요한 인식 주문일이 없습니다.'
       )
       : tr(
-        `${formatCount(summary.daysWithCOGS || 0)} covered days`,
-        `커버 일수 ${formatCount(summary.daysWithCOGS || 0)}일`
+        `COGS coverage is incomplete (${viewModel.coverageLabel}). Net profit reflects only costs currently logged.`,
+        `원가 커버리지가 불완전합니다(${viewModel.coverageLabel}). 순이익은 현재 입력된 비용만 반영합니다.`
       );
+    const reconciliationWarning = viewModel.paymentChannelGap === 0
+      ? ''
+      : `
+        <div class="income-statement-alert" role="status">
+          <i data-lucide="circle-alert"></i>
+          <span>${esc(tr(
+            `Payment-channel revenue differs from total revenue by ${formatSignedKrw(viewModel.paymentChannelGap)}.`,
+            `결제수단별 매출과 총매출의 차이는 ${formatSignedKrw(viewModel.paymentChannelGap)}입니다.`
+          ))}</span>
+        </div>
+      `;
 
-    const shippingPerOrder = orderCount > 0
-      ? Math.round(summary.shipping / orderCount)
-      : 0;
-    const shippingSub = orderCount > 0
-      ? tr(`${formatKrw(shippingPerOrder)} per order`, `주문당 ${formatKrw(shippingPerOrder)}`)
-      : tr('Operational shipping', '운영 배송');
-
-    const adSpendUsdLabel = formatUsd(summary.adSpend || 0, 2);
-    const adSpendUsdTitle = `${adSpendUsdLabel} media spend`;
-    const adSpendNetShare = summary.netRevenue > 0
-      ? formatPercent((summary.adSpendKRW / summary.netRevenue) * 100)
-      : '—';
-    const adSpendSub = summary.netRevenue > 0
-      ? tr(`${adSpendUsdLabel} / ${adSpendNetShare} of net rev`, `${adSpendUsdLabel} / 순매출의 ${adSpendNetShare}`)
-      : tr(`${adSpendUsdLabel} media spend`, `광고비 ${adSpendUsdLabel}`);
-
-    const profitMarginLabel = formatCalendarPercentMetric(summary.margin);
-    const resultSub = isProfitPositive
-      ? tr(`${profitMarginLabel} margin`, `마진 ${profitMarginLabel}`)
-      : tr('Loss after costs', '비용 차감 후 손실');
-    const expenseValue = value => value > 0 ? formatSignedKrw(-value) : formatKrw(0);
-
-    const grossV    = Math.max(0, summary.grossRevenue);
-    const refundedV = Math.max(0, summary.refundedAmount);
-    const netV      = Math.max(0, summary.netRevenue);
-    const cogsV     = Math.max(0, summary.cogs);
-    const shipV     = Math.max(0, summary.shipping);
-    const feesV     = Math.max(0, summary.paymentFees);
-    const adV       = Math.max(0, summary.adSpendKRW);
-    const profitV   = Math.max(0, summary.trueNetProfit);
-    const lossV     = Math.max(0, -summary.trueNetProfit);
-    const resultV   = isProfitPositive ? profitV : lossV;
-    const costsTotal = cogsV + shipV + feesV + adV;
-    const categoryRows = normalizeSankeyCategoryRows(getCalendarCategoryRevenueRows(selection), grossV);
-    const hasCategoryBreakdown = categoryRows.length > 0;
-    const grossColumn = hasCategoryBreakdown ? 1 : 0;
-    const revenueColumn = hasCategoryBreakdown ? 2 : 1;
-    const costsColumn = hasCategoryBreakdown ? 3 : 2;
-    const terminalColumn = hasCategoryBreakdown ? 4 : 3;
-    const largestCategoryValue = categoryRows.reduce((max, row) => Math.max(max, row.revenue), 0);
-    const largestValue = Math.max(grossV, refundedV, netV, costsTotal, cogsV, shipV, feesV, adV, resultV, largestCategoryValue, 1);
-    const minVisualValue = Math.max(largestValue * 0.012, 1);
-    const zeroFixedValue = value => value > 0 ? undefined : minVisualValue;
-    const netShareLabel = value => netV > 0 ? formatPercent((value / netV) * 100) : '—';
-    const costsSub = netV > 0
-      ? tr(`${formatPercent((costsTotal / netV) * 100)} of net rev`, `순매출의 ${formatPercent((costsTotal / netV) * 100)}`)
-      : tr('Cost split', '비용 분기');
-    const categoryNodes = categoryRows.map(row => ({
-      id: `category:${row.key}`,
-      key: `category:${row.key}`,
-      label: row.label,
-      displayValue: formatKrw(row.revenue),
-      sub: tr(`${formatPercent(row.share * 100, 0)} of gross`, `총매출의 ${formatPercent(row.share * 100, 0)}`),
-      tone: 'neutral',
-      column: 0,
-      order: row.order,
-      labelSide: 'left',
-      titleAttr: row.orderCount > 0
-        ? tr(`${formatCount(row.orderCount)} orders`, `주문 ${formatCount(row.orderCount)}건`)
-        : '',
-    }));
-
-    const nodes = [
-      ...categoryNodes,
-      { id: 'gross', key: 'gross', label: tr('Gross Revenue', '총매출'),
-        displayValue: formatKrw(summary.grossRevenue),
-        sub: tr(`${formatCount(orderCount)} orders`, `주문 ${formatCount(orderCount)}건`),
-        tone: grossV > 0 ? 'positive' : 'neutral', column: grossColumn, order: 1,
-        fixedValue: zeroFixedValue(grossV), hidden: grossV <= 0 },
-      { id: 'refunded', key: 'refunded', label: tr('Refunded', '환불'),
-        displayValue: expenseValue(summary.refundedAmount),
-        sub: tr(`${formatCalendarPercentMetric(summary.refundRate)} refund rate`, `환불률 ${formatCalendarPercentMetric(summary.refundRate)}`),
-        tone: refundedV > 0 ? 'negative' : 'neutral', column: revenueColumn, order: 0,
-        fixedValue: zeroFixedValue(refundedV), hidden: refundedV <= 0 },
-      { id: 'net', key: 'net', label: tr('Net Revenue', '순매출'),
-        displayValue: formatKrw(summary.netRevenue),
-        sub: tr(`${formatCount(summary.dayCount || 0)} days`, `${formatCount(summary.dayCount || 0)}일`),
-        tone: netV > 0 ? 'positive' : 'neutral', column: revenueColumn, order: 1,
-        fixedValue: zeroFixedValue(netV), hidden: netV <= 0 },
-      { id: 'costs', key: 'costs', label: tr('Costs', '비용'),
-        displayValue: expenseValue(costsTotal), sub: costsSub,
-        tone: 'negative', column: costsColumn, order: 1, labelSide: 'left',
-        fixedValue: zeroFixedValue(costsTotal + (!isProfitPositive ? lossV : 0)), hidden: costsTotal <= 0 },
-      { id: 'profit', key: 'profit',
-        label: isProfitPositive ? tr('Net Profit', '순이익') : tr('Net Loss', '순손실'),
-        displayValue: formatSignedKrw(summary.trueNetProfit), sub: resultSub,
-        tone: isProfitPositive ? 'positive' : 'negative',
-        column: terminalColumn, order: isProfitPositive ? 0 : 5, terminal: true,
-        fixedValue: zeroFixedValue(resultV), hidden: resultV <= 0 },
-      { id: 'cogs', key: 'cogs', label: 'COGS',
-        displayValue: expenseValue(summary.cogs),
-        sub: netV > 0 ? tr(`${netShareLabel(cogsV)} of net rev`, `순매출의 ${netShareLabel(cogsV)}`) : coverageLabel,
-        tone: cogsV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 1,
-        fixedValue: zeroFixedValue(cogsV), hidden: cogsV <= 0 },
-      { id: 'shipping', key: 'shipping', label: tr('Shipping', '배송비'),
-        displayValue: expenseValue(summary.shipping),
-        sub: netV > 0 ? tr(`${netShareLabel(shipV)} of net rev`, `순매출의 ${netShareLabel(shipV)}`) : shippingSub,
-        tone: shipV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 2,
-        fixedValue: zeroFixedValue(shipV), hidden: shipV <= 0 },
-      { id: 'fees', key: 'fees', label: tr('Payment Fees', '결제 수수료'),
-        displayValue: expenseValue(summary.paymentFees),
-        sub: netV > 0 ? tr(`${netShareLabel(feesV)} of net rev`, `순매출의 ${netShareLabel(feesV)}`) : tr(`${formatCount(orderCount)} transactions`, `거래 ${formatCount(orderCount)}건`),
-        tone: feesV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: 3,
-        fixedValue: zeroFixedValue(feesV), hidden: feesV <= 0 },
-      { id: 'adSpend', key: 'adSpend', label: tr('Ad Spend', '광고비'),
-        displayValue: expenseValue(summary.adSpendKRW), sub: adSpendSub,
-        tone: adV > 0 ? 'negative' : 'neutral', column: terminalColumn, order: isProfitPositive ? 5 : 4,
-        titleAttr: adSpendUsdTitle, fixedValue: zeroFixedValue(adV), hidden: adV <= 0 },
-    ];
-
-    const links = [];
-    const addLink = (source, target, value, tone, order, options = {}) => {
-      const numericValue = Number(value) || 0;
-      if (numericValue <= 0 && !options.guide) return;
-      links.push({
-        source,
-        target,
-        value: options.guide ? minVisualValue : numericValue,
-        tone,
-        order,
-        guide: Boolean(options.guide),
-      });
-    };
-
-    for (const row of categoryRows) {
-      addLink(`category:${row.key}`, 'gross', row.revenue, 'neutral', row.order);
-    }
-    addLink('gross', 'refunded', refundedV, 'negative', 0);
-    if (refundedV <= 0 && grossV > 0) {
-      addLink('gross', 'refunded', 0, 'neutral', 0, { guide: true });
-    }
-    addLink('gross', 'net', netV, grossV > 0 ? 'positive' : 'neutral', 1);
-    if (grossV <= 0 && netV <= 0) {
-      addLink('gross', 'net', 0, 'neutral', 1, { guide: true });
-    }
-
-    if (isProfitPositive) {
-      addLink('net', 'profit', profitV, 'positive', 0);
-      addLink('net', 'costs', costsTotal, costsTotal > 0 ? 'negative' : 'neutral', 1);
-    } else {
-      if (netV > 0) {
-        addLink('net', 'costs', Math.min(netV, costsTotal), 'negative', 1);
-      } else if (costsTotal > 0) {
-        addLink('net', 'costs', 0, 'neutral', 1, { guide: true });
-      }
-      addLink('costs', 'profit', lossV, 'negative', 4);
-    }
-    addLink('costs', 'cogs', cogsV, 'negative', 0);
-    addLink('costs', 'shipping', shipV, 'negative', 1);
-    addLink('costs', 'fees', feesV, 'negative', 2);
-    addLink('costs', 'adSpend', adV, 'negative', 3);
-
-    const d3Sankey = window.d3 && typeof window.d3.sankey === 'function' ? window.d3 : null;
-    const visibleLinks = links.filter(link => !link.guide);
-    const visibleNodeIds = visibleLinks.reduce((ids, link) => {
-      ids.add(link.source);
-      ids.add(link.target);
-      return ids;
-    }, new Set(nodes.filter(node => !node.hidden).map(node => node.id)));
-
-    if (visibleNodeIds.size === 0 || visibleLinks.length === 0) {
-      return { nodes: [], flows: [], summary, feePercent, contextLabel, isProfitPositive, noFinancialMovement: true };
-    }
-
-    if (!d3Sankey) {
-      return { nodes, flows: [], summary, feePercent, contextLabel, isProfitPositive, missingSankeyEngine: true };
-    }
-
-    const layout = d3Sankey.sankey()
-      .nodeId(node => node.id)
-      .nodeWidth(14)
-      .nodePadding(34)
-      .nodeSort((a, b) => (a.order || 0) - (b.order || 0))
-      .linkSort((a, b) => (a.order || 0) - (b.order || 0))
-      .nodeAlign(node => node.column)
-      .extent(hasCategoryBreakdown ? [[170, 74], [1080, 500]] : [[96, 74], [1080, 500]]);
-    const graph = layout({
-      nodes: nodes.map(node => ({ ...node })),
-      links: links.map(link => ({ ...link })),
-    });
-    const linkPath = d3Sankey.sankeyLinkHorizontal();
-    const laidOutNodes = graph.nodes.map(node => ({
-      ...node,
-      x: node.x0,
-      y: node.y0,
-      w: Math.max(1, node.x1 - node.x0),
-      h: Math.max(1, node.y1 - node.y0),
-    }));
-    const labelGroups = laidOutNodes
-      .filter(node => !node.quiet)
-      .reduce((groups, node) => {
-        const key = String(node.column ?? 0);
-        const group = groups.get(key) || [];
-        group.push(node);
-        groups.set(key, group);
-        return groups;
-      }, new Map());
-    labelGroups.forEach(group => {
-      const sorted = group.sort((left, right) => (left.order || 0) - (right.order || 0));
-      const minGap = group.length > 5 ? 54 : 60;
-      const topBound = 84;
-      const bottomBound = 492;
-      let cursor = topBound;
-      sorted.forEach(node => {
-        const naturalCenter = node.y + node.h / 2;
-        node.labelCenterY = Math.max(naturalCenter, cursor);
-        cursor = node.labelCenterY + minGap;
-      });
-      const overflow = cursor - minGap - bottomBound;
-      if (overflow > 0) {
-        sorted.forEach(node => {
-          node.labelCenterY = Math.max(topBound, node.labelCenterY - overflow);
-        });
-      }
-    });
-    const flows = graph.links.map(link => ({
-      tone: link.tone || 'neutral',
-      guide: Boolean(link.guide),
-      width: Math.max(link.guide ? 4 : 2, link.width || 1),
-      d: linkPath(link),
-    }));
-
-    return { nodes: laidOutNodes, flows, summary, feePercent, contextLabel, isProfitPositive };
-  }
-
-  function formatCalendarSankeyMeta(viewModel) {
-    return viewModel.contextLabel || tr('Selected range', '선택한 범위');
-  }
-
-  function renderSankeyNode(node) {
-    if (node.hidden) return '';
-    const titleAttr = node.titleAttr ? ` title="${esc(node.titleAttr)}"` : '';
-    const labelSide = node.labelSide || 'right';
-    const labelX = labelSide === 'left' ? node.x - 12 : node.x + node.w + 12;
-    const anchor = labelSide === 'left' ? 'end' : 'start';
-    const labelCenterY = Number.isFinite(node.labelCenterY) ? node.labelCenterY : node.y + node.h / 2;
-    const labelY = labelCenterY - 15;
-    const quietClass = node.quiet ? ' is-quiet' : '';
-    const terminalClass = node.terminal ? ' is-terminal' : '';
     return `
-      <g class="calendar-sankey-node ${esc(node.tone || 'neutral')}${terminalClass}${quietClass}" role="listitem"${titleAttr}>
-        <rect class="calendar-sankey-bar" x="${node.x}" y="${node.y.toFixed(1)}" width="${node.w}" height="${node.h.toFixed(1)}" rx="5"></rect>
-        <text class="calendar-sankey-label-title" x="${labelX}" y="${labelY.toFixed(1)}" text-anchor="${anchor}">${esc(node.label)}</text>
-        <text class="calendar-sankey-label-value" x="${labelX}" y="${(labelY + 22).toFixed(1)}" text-anchor="${anchor}">${node.displayValue}</text>
-        <text class="calendar-sankey-label-sub" x="${labelX}" y="${(labelY + 43).toFixed(1)}" text-anchor="${anchor}">${esc(node.sub || '—')}</text>
-      </g>
+      <div class="income-statement-columns" aria-hidden="true">
+        <span>${esc(tr('Account', '계정'))}</span>
+        <span>${esc(tr('% of base', '기준 비율'))}</span>
+        <span>${esc(tr('Amount · KRW', '금액 · KRW'))}</span>
+      </div>
+      <section class="income-statement-section revenue" aria-labelledby="incomeRevenueHeading">
+        <div class="income-statement-section-title" id="incomeRevenueHeading">
+          <div>
+            <span class="income-statement-section-index" aria-hidden="true">01</span>
+            <span>${esc(tr('Revenue', '매출'))}</span>
+          </div>
+          <small>${esc(tr('Recognized payments in the selected range', '선택 범위 내 인식된 결제'))}</small>
+        </div>
+        <div class="income-statement-lines" role="table">
+          ${viewModel.revenueLines.map((line, index) => renderIncomeStatementLine(line, index)).join('')}
+        </div>
+        ${reconciliationWarning}
+      </section>
+      <section class="income-statement-section costs" aria-labelledby="incomeCostsHeading">
+        <div class="income-statement-section-title" id="incomeCostsHeading">
+          <div>
+            <span class="income-statement-section-index" aria-hidden="true">02</span>
+            <span>${esc(tr('Costs', '비용'))}</span>
+          </div>
+          <small>${esc(tr('Costs deducted from net revenue', '순매출에서 차감되는 비용'))}</small>
+        </div>
+        <div class="income-statement-lines" role="table">
+          ${viewModel.costLines.map((line, index) => renderIncomeStatementLine(line, index + viewModel.revenueLines.length)).join('')}
+        </div>
+      </section>
+      <div class="income-statement-result ${resultPositive ? 'positive' : 'negative'}">
+        <div class="income-statement-result-copy">
+          <span class="income-statement-result-kicker">${esc(tr('Closing position', '최종 손익'))}</span>
+          <strong class="income-statement-result-label">${esc(resultLabel)}</strong>
+          <small>${esc(tr('Net revenue less all listed costs', '순매출에서 표시된 모든 비용 차감'))}</small>
+        </div>
+        <div class="income-statement-result-values">
+          <strong class="income-statement-result-amount">${formatSignedKrw(summary.trueNetProfit)}</strong>
+          <span class="income-statement-result-margin">
+            <span>${esc(tr('Margin', '마진'))}</span>
+            <b>${esc(formatCalendarPercentMetric(summary.margin))}</b>
+          </span>
+        </div>
+      </div>
+      <div class="income-statement-coverage ${coverageClass}">
+        <i data-lucide="${coverageIcon}"></i>
+        <div>
+          <strong>${esc(viewModel.cogsComplete
+            ? tr('Cost data complete', '비용 데이터 완료')
+            : tr('Cost data needs attention', '비용 데이터 확인 필요'))}</strong>
+          <span>${esc(coverageNote)}</span>
+        </div>
+      </div>
     `;
   }
 
-  function renderSankeyFlow(flow) {
-    if (flow.guide) return '';
-    return `<path class="calendar-sankey-flow ${esc(flow.tone || 'neutral')}" d="${flow.d}" stroke-width="${flow.width.toFixed(2)}"></path>`;
-  }
-
-  function renderSankeyBodyMarkup(viewModel) {
-    if (viewModel.noFinancialMovement) {
-      return `<div class="calendar-sankey-missing">${esc(tr('No financial movement in this selection.', '선택 범위에 재무 흐름이 없습니다.'))}</div>`;
-    }
-    if (viewModel.missingSankeyEngine) {
-      return `<div class="calendar-sankey-missing">${esc(tr('Sankey engine did not load.', 'Sankey 엔진을 불러오지 못했습니다.'))}</div>`;
-    }
-    return `
-      <svg class="calendar-sankey-svg" viewBox="0 0 1280 560" role="list" aria-label="${esc(tr('Profit Sankey with product category inflows', '상품 카테고리 유입 포함 수익 Sankey'))}">
-        ${viewModel.flows.map(renderSankeyFlow).join('')}
-        ${viewModel.nodes.map(renderSankeyNode).join('')}
-      </svg>
-    `;
-  }
-
-  function renderCalendarSankey(selection, baseSummary) {
-    const viewModel = buildSankeyViewModel(selection, baseSummary);
+  function renderCalendarIncomeStatement(selection) {
+    const viewModel = buildIncomeStatementViewModel(selection);
     const customFeeValue = calendarState.paymentFeePercent == null
       ? ''
       : esc(String(calendarState.paymentFeePercent));
     const hasCustomFee = calendarState.paymentFeePercent != null;
 
     return `
-      <div class="card calendar-sankey-card" id="calendarProfitSankey">
-        <div class="card-header calendar-sankey-header">
-          <div>
-            <h2>${esc(tr('Profit Sankey', '수익 Sankey'))}</h2>
-            <span class="card-header-meta" data-calendar-sankey-meta>${esc(formatCalendarSankeyMeta(viewModel))}</span>
+      <div class="card income-statement-card" id="calendarIncomeStatement">
+        <div class="income-statement-header">
+          <div class="income-statement-heading">
+            <span class="income-statement-document-mark" aria-hidden="true">P&amp;L</span>
+            <div>
+              <span class="income-statement-eyebrow">${esc(tr('Selected performance', '선택 범위 실적'))}</span>
+              <h2>${esc(tr('Income Statement', '손익계산서'))}</h2>
+              <span class="income-statement-period">
+                <i data-lucide="calendar-days" aria-hidden="true"></i>
+                <span data-income-statement-meta>${esc(viewModel.contextLabel)}</span>
+              </span>
+            </div>
           </div>
-          <div class="calendar-sankey-controls">
+          <div class="income-statement-controls">
+            <span class="income-statement-control-label">${esc(tr('Model assumption', '계산 가정'))}</span>
             <label class="payment-fee-control ${hasCustomFee ? 'has-custom-fee' : ''}" for="calendarPaymentFeeRateInput">
               <span>${esc(tr('Payment fee', '결제 수수료'))}</span>
               <div class="input-with-unit">
@@ -878,35 +804,31 @@
             </label>
           </div>
         </div>
-        <div class="calendar-sankey-stage">
-          <div class="calendar-sankey-canvas" role="list" aria-label="${esc(tr('Profit Sankey with product category inflows', '상품 카테고리 유입 포함 수익 Sankey'))}">
-            ${renderSankeyBodyMarkup(viewModel)}
-          </div>
+        <div class="income-statement-body" data-income-statement-body aria-label="${esc(tr('Income statement for the selected range', '선택 범위 손익계산서'))}">
+          ${renderIncomeStatementBody(viewModel)}
         </div>
       </div>
     `;
   }
 
-  function updateCalendarSankeyBody() {
-    const card = document.getElementById('calendarProfitSankey');
+  function updateCalendarIncomeStatement() {
+    const card = document.getElementById('calendarIncomeStatement');
     if (!card) return;
 
-    const canvas = card.querySelector('.calendar-sankey-canvas');
-    if (!canvas) return;
+    const body = card.querySelector('[data-income-statement-body]');
+    if (!body) return;
 
     const selection = calendarState.data?.selection || {};
-    const baseSummary = selection.summary || {};
-    const viewModel = buildSankeyViewModel(selection, baseSummary);
-    const metaEl = card.querySelector('[data-calendar-sankey-meta]');
-    if (metaEl) metaEl.textContent = formatCalendarSankeyMeta(viewModel);
+    const viewModel = buildIncomeStatementViewModel(selection);
+    const metaEl = card.querySelector('[data-income-statement-meta]');
+    if (metaEl) metaEl.textContent = viewModel.contextLabel;
 
-    canvas.innerHTML = renderSankeyBodyMarkup(viewModel);
+    body.innerHTML = renderIncomeStatementBody(viewModel);
     if (window.lucide) {
-      lucide.createIcons({ nodes: [canvas] });
+      lucide.createIcons({ nodes: [body] });
     }
 
     syncPaymentFeeControlState();
-    syncSankeyOverflow();
     renderCalendarProfitSummary();
   }
 
@@ -914,12 +836,6 @@
     const ctrl = document.querySelector('.payment-fee-control');
     if (!ctrl) return;
     ctrl.classList.toggle('has-custom-fee', calendarState.paymentFeePercent != null);
-  }
-
-  function syncSankeyOverflow() {
-    const stage = document.querySelector('.calendar-sankey-stage');
-    if (!stage) return;
-    stage.classList.toggle('has-overflow', stage.scrollWidth > stage.clientWidth + 4);
   }
 
   function renderEmptyStateCard(title, body) {
@@ -962,58 +878,12 @@
       rows: getCalendarWaterfallRows(selection),
       contextLabel: getCalendarWaterfallContextLabel(),
       sourceAudit: calendarState.data?.sourceAudit || null,
-      orderPatterns: calendarState.data?.orderPatterns || null,
     });
   }
 
-  function renderStatusBadge(status) {
-    const normalized = String(status || '').toUpperCase();
-    const badgeClass = normalized === 'ACTIVE' || normalized === 'OPEN'
-      ? 'badge-success'
-      : normalized === 'PAUSED'
-      ? 'badge-neutral'
-      : /(CANCEL|RETURN|REFUND|ERROR|FAILED)/.test(normalized)
-      ? 'badge-danger'
-      : 'badge-neutral';
-    const label = normalized === 'ACTIVE'
-      ? tr('Active', '집행중')
-      : normalized === 'OPEN'
-      ? tr('Open', '오픈')
-      : normalized === 'PAUSED'
-      ? tr('Paused', '중지')
-      : humanizeEnum(status || '—');
-    return `<span class="badge ${badgeClass}">${esc(label)}</span>`;
-  }
-
-  function renderStatusMixText(statusMix) {
-    const statusLabels = {
-      active: tr('Active', '집행중'),
-      open: tr('Open', '오픈'),
-      paused: tr('Paused', '중지'),
-      cancelled: tr('Cancelled', '취소'),
-      canceled: tr('Canceled', '취소'),
-      refund: tr('Refunded', '환불'),
-      refunded: tr('Refunded', '환불'),
-      returned: tr('Returned', '반품'),
-      pending: tr('Pending', '대기'),
-      completed: tr('Completed', '완료'),
-      paid: tr('Paid', '결제완료'),
-    };
-
-    return (Array.isArray(statusMix) ? statusMix : [])
-      .slice(0, 3)
-      .map(entry => {
-        const normalized = String(entry?.status || '').trim().toLowerCase();
-        const label = statusLabels[normalized] || humanizeEnum(entry.status);
-        return `${label} ${formatCount(entry.count)}`;
-      })
-      .join(' · ') || '—';
-  }
-
-  function renderCalendarSelectionDeck() {
-    const container = document.getElementById('calendarSelectionDeck');
-    const sankeyContainer = document.getElementById('calendarSankeyDeck');
-    if (!container || !sankeyContainer) return;
+  function renderCalendarIncomeStatementDeck() {
+    const statementContainer = document.getElementById('calendarIncomeStatementDeck');
+    if (!statementContainer) return;
 
     ensureCalendarStateInitialized();
     syncCalendarSelectionIntoViewport();
@@ -1021,182 +891,31 @@
     const hasFreshSelection = hasFreshCalendarSelectionPayload(calendarState.data);
     if (!hasFreshSelection && calendarState.loading) {
       renderCalendarProfitSummary({ loading: true });
-      sankeyContainer.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), tr('Refreshing calendar metrics for the selected date range...', '선택한 날짜 범위의 캘린더 지표를 새로고침 중...'));
-      container.innerHTML = renderEmptyStateCard(tr('Daily Breakdown', '일별 상세'), tr('Refreshing selected-range details...', '선택 범위 상세를 새로고침 중...'));
+      statementContainer.innerHTML = renderEmptyStateCard(tr('Income Statement', '손익계산서'), tr('Refreshing the selected-range statement...', '선택 범위 손익계산서를 새로고침 중...'));
       return;
     }
 
     if (!hasFreshSelection && calendarState.error) {
       renderCalendarProfitSummary({ error: calendarState.error });
-      sankeyContainer.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), calendarState.error);
-      container.innerHTML = renderEmptyStateCard(tr('Daily Breakdown', '일별 상세'), calendarState.error);
+      statementContainer.innerHTML = renderEmptyStateCard(tr('Income Statement', '손익계산서'), calendarState.error);
       return;
     }
 
     if (!calendarState.data || calendarState.data.ready === false || !hasFreshSelection) {
       renderCalendarProfitSummary();
-      sankeyContainer.innerHTML = renderEmptyStateCard(tr('Profit Sankey', '수익 Sankey'), tr('Calendar is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
-      container.innerHTML = renderEmptyStateCard(tr('Daily Breakdown', '일별 상세'), tr('Calendar is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
+      statementContainer.innerHTML = renderEmptyStateCard(tr('Income Statement', '손익계산서'), tr('Calendar is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
       return;
     }
 
     const selection = calendarState.data.selection || {};
-    const summary = selection.summary || {};
     renderCalendarProfitSummary();
-
-    const dailyRows = Array.isArray(selection.days) ? selection.days : [];
-    const orderRows = Array.isArray(selection.orders) ? selection.orders : [];
-    const productRows = Array.isArray(selection.products) ? selection.products : [];
-    const dailyBody = dailyRows.length > 0
-      ? dailyRows.map(day => `
-          <tr>
-            <td style="font-weight:600">${esc(formatUtcDate(day.date, { month: 'short', day: 'numeric' }))}</td>
-            <td>${formatKrw(day.revenue || 0)}</td>
-            <td style="color:var(--color-error)">${formatKrw(day.refunded || 0)}</td>
-            <td style="font-weight:600">${formatKrw(day.netRevenue || 0)}</td>
-            <td>${formatCount(day.orders || 0)}</td>
-            <td>${formatUsd(day.adSpend || 0, 2)}<br><span class="calendar-card-note">${formatKrw(day.adSpendKRW || 0)}</span></td>
-            <td>${formatKrw((day.cogs || 0) + (day.shipping || 0))}</td>
-            <td>${formatKrw(day.paymentFees || 0)}</td>
-            <td style="font-weight:600;color:${(day.trueNetProfit || 0) >= 0 ? 'var(--color-success)' : 'var(--color-error)'}">${formatSignedKrw(day.trueNetProfit || 0)}</td>
-            <td>${formatCalendarRoasMetric(day.roas)}</td>
-            <td>${
-              day.hasCOGS
-                ? `<span class="badge badge-success">${esc(tr('Covered', '커버됨'))}</span>`
-                : day.hasPartialCOGS
-                ? `<span class="badge badge-warning">${esc(tr('Partial', '부분 커버'))}</span>`
-                : `<span class="badge badge-warning">${esc(tr('Pending', '대기'))}</span>`
-            }</td>
-          </tr>
-        `).join('')
-      : `<tr><td colspan="11" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No daily rows in this selection.', '선택 범위에 일별 행이 없습니다.'))}</td></tr>`;
-
-    const orderBody = orderRows.length > 0
-      ? orderRows.map(row => `
-          <tr>
-            <td style="font-weight:600">${esc(formatUtcDate(row.date, { month: 'short', day: 'numeric' }))}</td>
-            <td><span style="font-family:var(--font-mono)">${esc(row.orderNo || '—')}</span></td>
-            <td>${renderStatusBadge(row.orderStatus)}</td>
-            <td>${esc(humanizeEnum(row.paymentMethod || row.pgName || tr('Unknown', '알 수 없음')))}</td>
-            <td>${formatKrw(row.paidAmount || 0)}</td>
-            <td style="color:var(--color-error)">${formatKrw(row.refundedAmount || 0)}</td>
-            <td style="font-weight:600">${formatSignedKrw(row.netRevenue || 0)}</td>
-            <td>${formatCount(row.itemCount || 0)}</td>
-            <td title="${esc(row.productSummary || '')}">${esc(row.productSummary || '—')}</td>
-          </tr>
-        `).join('')
-      : `<tr><td colspan="9" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No orders in this selection.', '선택 범위에 주문이 없습니다.'))}</td></tr>`;
-
-    const productBody = productRows.length > 0
-      ? productRows.map(row => {
-          const exactCoverage = !!row.exactCostCoverage;
-          const coverageMarkup = exactCoverage
-            ? `<span class="calendar-product-coverage exact">${esc(tr('Exact', '정확 일치'))}</span>`
-            : `<span class="calendar-product-coverage partial">${tr(`${formatPercent((row.coverageRatio || 0) * 100, 0)} covered`, `${formatPercent((row.coverageRatio || 0) * 100, 0)} 커버`)}</span>`;
-          return `
-            <tr>
-              <td style="font-weight:600">${esc(row.productName || '—')}</td>
-              <td>${esc(row.brand || '—')}</td>
-              <td>${formatCount(row.qty || 0)}</td>
-              <td>${formatCount(row.orderCount || 0)}</td>
-              <td>${formatKrw(row.itemRevenue || 0)}</td>
-              <td>${formatCount(row.refundedOrCanceledQty || 0)}</td>
-              <td title="${esc(renderStatusMixText(row.statusMix))}">${esc(renderStatusMixText(row.statusMix))}</td>
-              <td>${row.knownCogs != null ? formatKrw(row.knownCogs) : '—'}</td>
-              <td>${row.knownShipping != null ? formatKrw(row.knownShipping) : '—'}</td>
-              <td>${row.knownProfit != null ? formatSignedKrw(row.knownProfit) : coverageMarkup}</td>
-            </tr>
-          `;
-        }).join('')
-      : `<tr><td colspan="10" style="text-align:center;color:var(--color-text-faint);padding:20px">${esc(tr('No product rows in this selection.', '선택 범위에 상품 행이 없습니다.'))}</td></tr>`;
-
-    sankeyContainer.innerHTML = renderCalendarSankey(selection, summary);
-    container.innerHTML = `
-      <div class="card">
-        <div class="card-header">
-          <h2>${esc(tr('Daily Breakdown', '일별 상세'))}</h2>
-          <span class="calendar-card-note">${tr(`${formatCount(dailyRows.length)} rows`, `${formatCount(dailyRows.length)}행`)}</span>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>${esc(tr('Date', '날짜'))}</th>
-                <th>${esc(tr('Gross', '총액'))}</th>
-                <th>${esc(tr('Refunded', '환불'))}</th>
-                <th>${esc(tr('Net', '순액'))}</th>
-                <th>${esc(tr('Orders', '주문'))}</th>
-                <th>${esc(tr('Ad Spend', '광고비'))}</th>
-                <th>${esc(tr('COGS + Ship', '원가 + 배송'))}</th>
-                <th>${esc(tr('Fees', '수수료'))}</th>
-                <th>${esc(tr('Net', '순이익'))}</th>
-                <th>ROAS</th>
-                <th>${esc(tr('Coverage', '커버리지'))}</th>
-              </tr>
-            </thead>
-            <tbody>${dailyBody}</tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>${esc(tr('Orders Ledger', '주문 원장'))}</h2>
-          <span class="calendar-card-note">${tr(`${formatCount(orderRows.length)} rows · recognized and non-recognized orders in the selection`, `${formatCount(orderRows.length)}행 · 선택 범위 내 인식/비인식 주문`)}</span>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>${esc(tr('Date', '날짜'))}</th>
-                <th>${esc(tr('Order', '주문번호'))}</th>
-                <th>${esc(tr('Status', '상태'))}</th>
-                <th>${esc(tr('Payment', '결제'))}</th>
-                <th>${esc(tr('Paid', '결제금액'))}</th>
-                <th>${esc(tr('Refunded', '환불'))}</th>
-                <th>${esc(tr('Net', '순액'))}</th>
-                <th>${esc(tr('Items', '상품수'))}</th>
-                <th>${esc(tr('Products', '상품'))}</th>
-              </tr>
-            </thead>
-            <tbody>${orderBody}</tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header">
-          <h2>${esc(tr('Product Explorer', '상품 탐색'))}</h2>
-          <span class="calendar-card-note">${esc(tr('Exact COGS only appears when date + productName matches the Sheets item rows exactly.', '정확한 COGS는 date + productName이 시트 항목과 정확히 일치할 때만 표시됩니다.'))}</span>
-        </div>
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>${esc(tr('Product', '상품'))}</th>
-                <th>${esc(tr('Brand', '브랜드'))}</th>
-                <th>${esc(tr('Qty', '수량'))}</th>
-                <th>${esc(tr('Orders', '주문'))}</th>
-                <th>${esc(tr('Revenue', '매출'))}</th>
-                <th>${esc(tr('Refund / Cancel Qty', '환불 / 취소 수량'))}</th>
-                <th>${esc(tr('Status Mix', '상태 구성'))}</th>
-                <th>COGS</th>
-                <th>${esc(tr('Shipping', '배송비'))}</th>
-                <th>${esc(tr('Profit / Coverage', '이익 / 커버리지'))}</th>
-              </tr>
-            </thead>
-            <tbody>${productBody}</tbody>
-          </table>
-        </div>
-      </div>
-    `;
+    statementContainer.innerHTML = renderCalendarIncomeStatement(selection);
 
     if (window.lucide) {
-      lucide.createIcons({ nodes: [sankeyContainer, container] });
+      lucide.createIcons({ nodes: [statementContainer] });
     }
 
     syncPaymentFeeControlState();
-    syncSankeyOverflow();
   }
 
   async function refreshCalendarPage() {
@@ -1210,7 +929,7 @@
     calendarState.loading = true;
     calendarState.error = null;
     renderCalendarViewport();
-    renderCalendarSelectionDeck();
+    renderCalendarIncomeStatementDeck();
 
     const requestId = ++calendarState.requestId;
     try {
@@ -1243,7 +962,7 @@
       if (requestId === calendarState.requestId) {
         calendarState.loading = false;
         renderCalendarViewport();
-        renderCalendarSelectionDeck();
+        renderCalendarIncomeStatementDeck();
       }
     }
   }
@@ -1338,7 +1057,7 @@
           calendarState.paymentFeePercent = null;
           const input = document.getElementById('calendarPaymentFeeRateInput');
           if (input) input.value = '';
-          updateCalendarSankeyBody();
+          updateCalendarIncomeStatement();
         }
       });
 
@@ -1347,12 +1066,7 @@
 
         calendarState.paymentFeePercent = parseCalendarPaymentFeePercent(event.target.value);
         clearTimeout(calendarFeeInputDebounceTimer);
-        calendarFeeInputDebounceTimer = setTimeout(updateCalendarSankeyBody, 80);
-      });
-
-      window.addEventListener('resize', () => {
-        clearTimeout(calendarFeeInputDebounceTimer);
-        calendarFeeInputDebounceTimer = setTimeout(syncSankeyOverflow, 120);
+        calendarFeeInputDebounceTimer = setTimeout(updateCalendarIncomeStatement, 80);
       });
     }
 

@@ -8,7 +8,10 @@ const {
   getPurchases,
 } = require('../domain/metrics');
 const { divideOrNull } = require('../domain/profitWindowMetrics');
-const { getOrderCashTotals } = require('../domain/imwebPayments');
+const {
+  buildPaymentChannelRevenue,
+  getOrderCashTotals,
+} = require('../domain/imwebPayments');
 const { buildProductCategoryRevenue } = require('../domain/productCategories');
 const {
   KST_TIME_ZONE,
@@ -904,6 +907,15 @@ async function getCalendarAnalysisResponse(query = {}) {
     cogs.dailyCOGS || {}
   );
   const selectionSummary = buildSelectionSummary(selectionDayRows, selectionOrders, selectionCoverage);
+  const matchedCardOrderNos = new Set(
+    (reconciliationReport.matches || [])
+      .filter(match => match?.type === 'approval')
+      .map(match => String(match?.imwebPayment?.orderNo || '').trim())
+      .filter(Boolean)
+  );
+  const paymentChannels = buildPaymentChannelRevenue(selectionOrders, {
+    cardOrderNos: matchedCardOrderNos,
+  });
   const selectionInsights = (Array.isArray(data.campaignInsights) ? data.campaignInsights : []).filter(row =>
     row?.date_start &&
     compareDateKeys(row.date_start, viewport.selectionStart) >= 0 &&
@@ -925,6 +937,7 @@ async function getCalendarAnalysisResponse(query = {}) {
       dayCount: selectionDates.length,
       summary: selectionSummary,
       days: selectionDayRows,
+      paymentChannels,
       categoryRevenue: buildProductCategoryRevenue(selectionOrders),
       orders: buildOrderLedgerRows(selectionOrders),
       products: buildProductExplorerRows(selectionOrders, cogs.items || []),

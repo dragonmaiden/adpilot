@@ -102,21 +102,21 @@ test('product category revenue keeps known categories split before using Other',
   assert.equal(labels.includes('Other'), false);
 });
 
-test('calendar payload exposes category inflows and sankey consumes selected-range inflows', () => {
+test('calendar payload owns selected-range revenue by payment channel', () => {
   assert.match(contractsJs, /categoryRevenueByDate:\s*categoryRevenueByDate\s*\?\?\s*\{\}/);
   assert.match(contractsJs, /categoryRevenueByMonth:\s*categoryRevenueByMonth\s*\?\?\s*\{\}/);
-  assert.match(calendarServiceJs, /const monthKey = month\?\.key \|\| month\?\.month \|\| String\(month\?\.start \|\| ''\)\.slice\(0,\s*7\);/);
-  assert.doesNotMatch(calendarServiceJs, /return \[month\.key,/);
-  assert.match(calendarJs, /function getCalendarCategoryRevenueRows\(selection\)/);
-  assert.match(calendarJs, /normalizeSankeyCategoryRows\(getCalendarCategoryRevenueRows\(selection\),\s*grossV\)/);
-  assert.match(calendarJs, /addLink\(`category:\$\{row\.key\}`,\s*'gross',\s*row\.revenue,\s*'neutral'/);
-  assert.match(calendarJs, /data-calendar-sankey-meta/);
-  assert.match(calendarJs, /formatCalendarSankeyMeta\(viewModel\)/);
-  assert.doesNotMatch(calendarJs, /waterfallGranularity|data-calendar-waterfall-granularity|calendar-sankey-mode-switch/);
-  assert.doesNotMatch(css, /\.calendar-sankey-mode-switch/);
+  assert.match(contractsJs, /categoryRevenue:\s*selection\?\.categoryRevenue\s*\?\?\s*\[\]/);
+  assert.match(contractsJs, /paymentChannels:\s*\{/);
+  assert.match(contractsJs, /totalGrossRevenue:\s*selection\?\.paymentChannels\?\.totalGrossRevenue\s*\?\?\s*0/);
+  assert.match(contractsJs, /rows:\s*\(selection\?\.paymentChannels\?\.rows\s*\?\?\s*\[\]\)\.map/);
+  assert.match(calendarServiceJs, /const matchedCardOrderNos = new Set\(\s*\(reconciliationReport\.matches \|\| \[\]\)/);
+  assert.match(calendarServiceJs, /buildPaymentChannelRevenue\(selectionOrders,\s*\{\s*cardOrderNos:\s*matchedCardOrderNos/);
+  assert.match(calendarJs, /const paymentChannels = selection\?\.paymentChannels \|\| \{\};/);
+  assert.match(calendarJs, /label:\s*tr\('Credit card revenue'/);
+  assert.match(calendarJs, /label:\s*tr\('Bank transfer revenue'/);
 });
 
-test('calendar payload exposes all-time order patterns for order charts', () => {
+test('calendar payload preserves all-time order patterns for API compatibility', () => {
   assert.match(contractsJs, /orderPatterns:\s*\{/);
   assert.match(contractsJs, /weekday:\s*orderPatterns\?\.weekday\s*\?\?\s*\[\]/);
   assert.match(contractsJs, /hourly:\s*orderPatterns\?\.hourly\s*\?\?\s*\[\]/);
@@ -125,61 +125,69 @@ test('calendar payload exposes all-time order patterns for order charts', () => 
   assert.match(calendarServiceJs, /orderPatterns: buildAllTimeOrderPatterns\(projection\)/);
 });
 
-test('calendar sankey expands to the available card width before scrolling', () => {
-  assert.match(calendarJs, /viewBox="0 0 1280 560"/);
-  assert.match(calendarJs, /Profit Sankey with product category inflows/);
-  assert.match(css, /\.calendar-sankey-canvas\s*\{[\s\S]*width:\s*100%;[\s\S]*min-width:\s*min\(1120px,\s*100%\);[\s\S]*aspect-ratio:\s*1280\s*\/\s*560;/);
+test('calendar income statement renders the financial sequence and every canonical cost', () => {
+  const revenueIndex = calendarJs.indexOf("label: tr('Credit card revenue'");
+  const totalRevenueIndex = calendarJs.indexOf("label: tr('Total revenue'");
+  const refundsIndex = calendarJs.indexOf("label: tr('Refunds and cancellations'");
+  const netRevenueIndex = calendarJs.indexOf("label: tr('Net revenue'");
+  const cogsIndex = calendarJs.indexOf("label: 'COGS'");
+  const shippingIndex = calendarJs.indexOf("label: tr('Shipping costs'");
+  const paymentFeesIndex = calendarJs.indexOf("label: tr('Payment processing fees'");
+  const advertisingIndex = calendarJs.indexOf("label: tr('Advertising costs'");
+  const totalCostsIndex = calendarJs.indexOf("label: tr('Total costs'");
+
+  assert.ok(revenueIndex >= 0);
+  assert.ok(revenueIndex < totalRevenueIndex);
+  assert.ok(totalRevenueIndex < refundsIndex);
+  assert.ok(refundsIndex < netRevenueIndex);
+  assert.ok(netRevenueIndex < cogsIndex);
+  assert.ok(cogsIndex < shippingIndex);
+  assert.ok(shippingIndex < paymentFeesIndex);
+  assert.ok(paymentFeesIndex < advertisingIndex);
+  assert.ok(advertisingIndex < totalCostsIndex);
+  assert.match(calendarJs, /tr\('Net profit', '순이익'\)/);
+  assert.match(calendarJs, /summary\.trueNetProfit/);
 });
 
-test('calendar sankey uses layout-only zero guides without rendering zero labels or guide paths', () => {
-  assert.match(calendarJs, /const zeroFixedValue = value => value > 0 \? undefined : minVisualValue;/);
-  assert.match(calendarJs, /hidden: grossV <= 0/);
-  assert.match(calendarJs, /if \(node\.hidden\) return '';/);
-  assert.match(calendarJs, /if \(flow\.guide\) return '';/);
-  assert.match(calendarJs, /addLink\('gross', 'net', 0, 'neutral', 1, \{ guide: true \}\)/);
-  assert.doesNotMatch(css, /\.calendar-sankey-flow\.is-guide/);
-  assert.match(calendarJs, /noFinancialMovement/);
-  assert.match(calendarJs, /No financial movement in this selection\./);
+test('calendar income statement exposes financial incompleteness instead of hiding it', () => {
+  assert.match(calendarJs, /const paymentChannelGap = Math\.round\(summary\.grossRevenue - reportedChannelRevenue\);/);
+  assert.match(calendarJs, /Payment-channel revenue differs from total revenue by/);
+  assert.match(calendarJs, /COGS coverage is incomplete/);
+  assert.match(calendarJs, /Net profit reflects only costs currently logged/);
+  assert.match(calendarJs, /daysRequiringCOGS/);
 });
 
-test('calendar sankey owns the selected date label without the old status card', () => {
-  assert.match(indexHtml, /data-i18n="calendar\.sankeyTitle">Profit Sankey/);
-  assert.match(calendarJs, /data-calendar-sankey-meta/);
-  assert.match(calendarJs, /return viewModel\.contextLabel \|\| tr\('Selected range'/);
-  assert.doesNotMatch(calendarJs, /All dates shown in KST|Profitable time frame|Below break-even|calendar-detail-head/);
-  assert.doesNotMatch(css, /\.calendar-detail-head|\.calendar-chip/);
+test('calendar income statement is responsive without horizontal chart scrolling', () => {
+  assert.match(css, /\.income-statement-columns,\s*\.income-statement-line\s*\{[\s\S]*grid-template-columns:/);
+  assert.match(css, /@media \(max-width:\s*480px\)[\s\S]*\.income-statement-columns span:nth-child\(2\),[\s\S]*\.income-statement-line \.income-statement-percent\s*\{[\s\S]*display:\s*none;/);
+  assert.match(css, /@media \(max-width:\s*480px\)[\s\S]*\.income-statement-result\s*\{[\s\S]*flex-direction:\s*column;/);
+  assert.doesNotMatch(css, /calendar-sankey-canvas/);
 });
 
-test('calendar sankey keeps D3 as the geometry owner', () => {
-  const sankeyFlowBlock = css.match(/\.calendar-sankey-flow\s*\{[\s\S]*?\}/)?.[0] || '';
-  assert.match(calendarJs, /\.nodeAlign\(node => node\.column\)/);
-  assert.match(calendarJs, /const linkPath = d3Sankey\.sankeyLinkHorizontal\(\);/);
-  assert.match(calendarJs, /d: linkPath\(link\)/);
-  assert.match(calendarJs, /addLink\('costs', 'profit', lossV, 'negative', 4\)/);
-  assert.doesNotMatch(calendarJs, /buildSankeyFlowPath|sankeyColumn|clampSankey|SANKEY_MAX|loss-gap|isFlatWideFlow|isFlatLossGap/);
-  assert.match(sankeyFlowBlock, /stroke-linecap:\s*butt;/);
-  assert.doesNotMatch(css, /is-loss-gap/);
-  assert.doesNotMatch(sankeyFlowBlock, /stroke-linejoin/);
+test('calendar no longer loads or renders Sankey dependencies', () => {
+  assert.doesNotMatch(indexHtml, /d3(?:-sankey)?(?:\.min)?\.js/i);
+  assert.doesNotMatch(indexHtml, /Sankey/);
+  assert.doesNotMatch(calendarJs, /Sankey|d3Sankey|sankeyLinkHorizontal/);
+  assert.doesNotMatch(css, /sankey/i);
 });
 
-test('calendar sankey keeps Meta ad spend visible as an explicit cost flow', () => {
+test('calendar income statement keeps Meta ad spend visible as an explicit cost row', () => {
   assert.match(calendarJs, /summary\.adSpendKRW \+= toFiniteNumber\(day\.adSpendKRW\)/);
-  assert.match(calendarJs, /const adSpendUsdLabel = formatUsd\(summary\.adSpend \|\| 0,\s*2\);/);
-  assert.match(calendarJs, /`\$\{adSpendUsdLabel\} \/ \$\{adSpendNetShare\} of net rev`/);
-  assert.match(calendarJs, /label: tr\('Ad Spend', '광고비'\)/);
-  assert.match(calendarJs, /displayValue: expenseValue\(summary\.adSpendKRW\), sub: adSpendSub/);
-  assert.match(calendarJs, /addLink\('costs', 'adSpend', adV, 'negative', 3\)/);
+  assert.match(calendarJs, /label:\s*tr\('Advertising costs', '광고비'\)/);
+  assert.match(calendarJs, /amount:\s*-summary\.adSpendKRW/);
+  assert.match(calendarJs, /COGS \+ shipping \+ fees \+ advertising/);
 });
 
-test('calendar selection keeps the sankey as the metric owner before the detailed tables', () => {
+test('calendar selection ends after the income statement', () => {
   assert.doesNotMatch(calendarJs, /calendar-summary-grid-secondary|summaryCards|renderCalendarSummaryCard/);
   assert.doesNotMatch(css, /\.calendar-summary-grid/);
-  assert.match(indexHtml, /class="summary-profit-topline"[\s\S]*id="calendarSankeyDeck"[\s\S]*id="calendarSelectionDeck"/);
+  assert.match(indexHtml, /class="summary-profit-topline"[\s\S]*id="calendarIncomeStatementDeck"/);
+  assert.doesNotMatch(indexHtml, /summary-profit-charts|calendarSelectionDeck/);
   assert.match(css, /\.summary-profit-topline\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(0,\s*1fr\);/);
-  assert.match(css, /\.summary-profit-kpis\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
-  assert.match(calendarJs, /const sankeyContainer = document\.getElementById\('calendarSankeyDeck'\);/);
-  assert.match(calendarJs, /sankeyContainer\.innerHTML = renderCalendarSankey\(selection,\s*summary\);/);
-  assert.match(calendarJs, /container\.innerHTML = `[\s\S]*<h2>\$\{esc\(tr\('Daily Breakdown'/);
+  assert.match(css, /\.summary-profit-kpis\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(calendarJs, /const statementContainer = document\.getElementById\('calendarIncomeStatementDeck'\);/);
+  assert.match(calendarJs, /statementContainer\.innerHTML = renderCalendarIncomeStatement\(selection\);/);
+  assert.doesNotMatch(calendarJs, /Daily Breakdown|Orders Ledger|Product Explorer/);
 });
 
 test('calendar drag selection refreshes the same selected-range summary path', () => {

@@ -2,7 +2,6 @@
   const live = window.AdPilotLive;
   const { timeSince, tr, getLocale, localizeSystemText, formatKstTimestamp } = live.shared;
   const { fetchOverview } = live.api;
-  const { sliceRowsByWindow, updateSeriesWindowBadges } = live.seriesWindows;
   let cachedOverviewData = null;
 
   function initOverviewPage() {
@@ -355,83 +354,6 @@
         if (lastScanEl) lastScanEl.textContent = formatKstTimestamp(data.lastScan);
       }
 
-      const dailyMerged = sliceRowsByWindow((data.charts && data.charts.dailyMerged) || [], 'overview');
-      const dailyProfit = sliceRowsByWindow((data.charts && data.charts.dailyProfit) || [], 'overview');
-      const hourlyOrders = data.charts?.hourlyOrders || [];
-      updateSeriesWindowBadges('overview', dailyMerged);
-
-      if (dailyMerged.length > 0) {
-        const labels = dailyMerged.map(row => row.date);
-
-        if (typeof spendRevenueChart !== 'undefined' && spendRevenueChart) {
-          spendRevenueChart.data.labels = labels;
-          spendRevenueChart.data.datasets[0].data = dailyMerged.map(row => row.revenue || 0);
-          spendRevenueChart.data.datasets[1].data = dailyMerged.map(row => row.spendKrw || 0);
-          spendRevenueChart.update();
-        }
-
-        if (typeof roasChart !== 'undefined' && roasChart) {
-          const roasData = dailyMerged.map(row => row.roas || 0);
-          const colors = typeof getChartColors === 'function' ? getChartColors() : {};
-          const gold = colors.gold || '#FFC553';
-          roasChart.data.labels = labels;
-          roasChart.data.datasets[0].data = roasData;
-          roasChart.data.datasets[0].pointBackgroundColor = roasData.map(value => value >= 3 ? '#4ade80' : value >= 1 ? gold : '#ef4444');
-          roasChart.update();
-        }
-
-        if (typeof impactChart !== 'undefined' && impactChart) {
-          impactChart.data.labels = labels;
-          impactChart.data.datasets[0].data = dailyMerged.map(row => row.ctr || 0);
-          impactChart.data.datasets[1].data = dailyMerged.map(row => row.cpc || 0);
-          impactChart.update();
-        }
-      }
-
-      if (dailyProfit.length > 0 && typeof brandChart !== 'undefined' && brandChart) {
-        const profitLabels = dailyProfit.map(row => row.date);
-        const profitValues = dailyProfit.map(row => Number(row.profit || 0));
-        brandChart.data.labels = profitLabels;
-        brandChart.data.datasets[0].data = profitValues;
-        brandChart.data.datasets[0].pointBackgroundColor = profitValues.map(value => value >= 0 ? '#4ade80' : '#f87171');
-        brandChart.data.datasets[0].pointBorderColor = profitValues.map(value => value >= 0 ? '#4ade80' : '#f87171');
-        brandChart.data.datasets[0].borderColor = profitValues.some(value => value < 0) ? '#20808D' : '#4ade80';
-        brandChart.update();
-      }
-
-      const sparkIds = ['sparkRevenue', 'sparkSpend', 'sparkRoas', 'sparkPurchases', 'sparkCtr', 'sparkCpa', 'sparkCogs'];
-      sparkIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.innerHTML = '';
-      });
-
-      if (dailyMerged.length >= 2) {
-        const last12 = dailyMerged.slice(-12);
-        const colors = typeof getChartColors === 'function' ? getChartColors() : { primary: '#20808D', secondary: '#A84B2F' };
-        if (typeof createSparkline === 'function') {
-          createSparkline('sparkRevenue', last12.map(row => row.revenue || 0), '#4ade80');
-          createSparkline('sparkSpend', last12.map(row => row.spendKrw || 0), colors.primary);
-          createSparkline('sparkRoas', last12.map(row => row.roas || 0), colors.primary);
-          createSparkline('sparkPurchases', last12.map(row => row.purchases || 0), '#4ade80');
-          createSparkline('sparkCtr', last12.map(row => row.ctr || 0), colors.primary);
-          createSparkline('sparkCpa', last12.map(row => row.cpa || 0), colors.secondary);
-        }
-      }
-
-      if (hourlyOrders.length > 0 && typeof hourChartInstance !== 'undefined' && hourChartInstance) {
-        const peakHours = hourlyOrders
-          .slice()
-          .sort((left, right) => (right.orders || 0) - (left.orders || 0))
-          .slice(0, 3)
-          .map(row => row.hour);
-
-        hourChartInstance.data.labels = hourlyOrders.map(row => row.hour + ':00');
-        hourChartInstance.data.datasets[0].data = hourlyOrders.map(row => row.orders || 0);
-        hourChartInstance.data.datasets[0].backgroundColor = hourlyOrders.map(row =>
-          peakHours.includes(row.hour) ? 'rgba(22, 101, 52, 0.92)' : 'rgba(22, 101, 52, 0.56)'
-        );
-        hourChartInstance.update();
-      }
     } catch (e) {
       console.warn('[LIVE] refreshOverviewPage error:', e.message);
     }
