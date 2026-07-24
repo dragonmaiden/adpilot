@@ -176,6 +176,10 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
       assert.equal(result.sequenceNo, 102);
       assert.equal(result.netRevenue, 111000);
       assert.equal(result.approvedAmount, 111000);
+      assert.equal(result.cogsComplete, false);
+      assert.equal(result.cogsCostComplete, false);
+      assert.equal(result.cogsShippingComplete, false);
+      assert.equal(result.cogsRowCount, 2);
       assert.equal(appendRequests.length, 1);
       assert.equal(batchUpdateRequests.length, 0);
 
@@ -369,6 +373,7 @@ test('buildNewOrderNotification formats the completed checklist state after paym
       paymentState: 'paid',
       notificationStage: 'payment_confirmed',
       sheetName: '3월 주문',
+      cogsComplete: true,
       productNames: ['실크 모노그램 방도'],
     });
 
@@ -378,6 +383,43 @@ test('buildNewOrderNotification formats the completed checklist state after paym
       message,
       /Checklist:\n✅ 💳 Payment received\n✅ 💰 Imweb “Confirm Payment” completed\n✅ 📊 COGS logged in 3월 주문/
     );
+  });
+});
+
+test('buildNewOrderNotification does not treat a sheet row alone as completed COGS', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+
+  await withMockedService({
+    config: createConfig(privateKey),
+    runtimePaths: { dataDir },
+    cogsClient: {
+      fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+      buildSheetTargets: () => [],
+      fetchSheetCSV: async () => [],
+    },
+    imwebClient: {
+      getOrder: async () => {
+        throw new Error('not used');
+      },
+    },
+  }, async service => {
+    const message = service.buildNewOrderNotification({
+      orderNo: '202603145648900',
+      orderDate: '2026-03-13',
+      customerName: '홍신희',
+      orderValue: 111000,
+      paymentState: 'paid',
+      notificationStage: 'payment_confirmed',
+      sheetName: '3월 주문',
+      productNames: ['실크 모노그램 방도'],
+    });
+
+    assert.match(
+      message,
+      /Checklist:\n✅ 💳 Payment received\n✅ 💰 Imweb “Confirm Payment” completed\n☐ 📊 COGS logged/
+    );
+    assert.doesNotMatch(message, /✅ 📊 COGS logged/);
   });
 });
 
@@ -520,6 +562,12 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
   const originalFetch = global.fetch;
   let appendCount = 0;
   let headerUpdateCount = 0;
+  const sheetRows = [
+    ['번호', '날짜', '이름', '주문번호', '', '', '상품명', 'Cost', 'Shipping cost'],
+    [],
+    ['101', "'2026-03-13", '홍신희', '20260313225187', '', '', '실크 모노그램 방도', '50000', ''],
+    ['101', "'2026-03-13", '홍신희', '20260313225187', '', '', '에르 스카프', '25000', '3000'],
+  ];
 
   global.fetch = async (url) => {
     const textUrl = String(url);
@@ -556,11 +604,7 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
         buildSheetTargets: () => [
           { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
         ],
-        fetchSheetCSV: async () => [
-          ['번호', '날짜', '이름', '주문번호'],
-          [],
-          ['101', "'2026-03-13", '홍신희', '20260313225187'],
-        ],
+        fetchSheetCSV: async () => sheetRows.map(row => [...row]),
       },
       imwebClient: {
         getOrder: async () => {
@@ -574,6 +618,18 @@ test('syncOrderToCogsSheet skips appending when the order number already exists 
       assert.equal(result.orderDate, '2026-03-13');
       assert.equal(result.customerName, '홍신희');
       assert.deepEqual(result.productNames, ['실크 모노그램 방도', '에르 스카프']);
+      assert.equal(result.cogsComplete, false);
+      assert.equal(result.cogsCostComplete, true);
+      assert.equal(result.cogsShippingComplete, false);
+      assert.equal(result.cogsRowCount, 2);
+
+      sheetRows[2][8] = '3000';
+      const completedResult = await service.syncOrderToCogsSheet(createOrder());
+      assert.equal(completedResult.status, 'duplicate');
+      assert.equal(completedResult.cogsComplete, true);
+      assert.equal(completedResult.cogsCostComplete, true);
+      assert.equal(completedResult.cogsShippingComplete, true);
+      assert.equal(completedResult.cogsRowCount, 2);
       assert.equal(appendCount, 0);
       assert.equal(headerUpdateCount, 0);
     });

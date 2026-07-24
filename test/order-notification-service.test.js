@@ -222,6 +222,10 @@ test('completeExistingOrderNotification edits the original alert and marks the c
           sheetName: '3월 주문',
           rowCount: 2,
           imwebPaymentConfirmedAt: completionMarks[0].metadata.imwebPaymentConfirmedAt,
+          cogsComplete: false,
+          cogsCostComplete: false,
+          cogsShippingComplete: false,
+          cogsCompletedAt: null,
         },
       },
     ]);
@@ -302,6 +306,10 @@ test('deliverPaywayPaymentNotification updates only the original order card', as
       paywayMaskedCardNumber: '1234********5678',
       paywayAmount: 111000,
       orderDate: undefined,
+      cogsComplete: false,
+      cogsCostComplete: false,
+      cogsShippingComplete: false,
+      cogsCompletedAt: null,
       source: 'payway_direct',
       imwebPaymentConfirmedAt: '2026-03-15T03:30:01.000Z',
     });
@@ -432,6 +440,7 @@ test('Payway completion adds COGS to the same order card after the sheet sync', 
         result.paymentSource,
         result.sheetName || 'no-cogs',
         result.paywayApprovalNo,
+        result.cogsComplete,
       ].join(':'),
       markOrderNotificationCompleted: (orderNo, patch) => {
         metadata = {
@@ -460,23 +469,44 @@ test('Payway completion adds COGS to the same order card after the sheet sync', 
       paymentState: 'paid',
       sheetName: 'July',
       rowCount: 1,
+      cogsComplete: false,
+      cogsCostComplete: true,
+      cogsShippingComplete: false,
+    });
+    const completedCogsResult = await service.deliverPaidOrderNotification({
+      orderNo: '202607232920239',
+      paymentState: 'paid',
+      sheetName: 'July',
+      rowCount: 1,
+      cogsComplete: true,
+      cogsCostComplete: true,
+      cogsShippingComplete: true,
     });
 
     assert.equal(paymentResult.ok, true);
     assert.equal(cogsResult.updated, true);
+    assert.equal(completedCogsResult.updated, true);
     assert.equal(sentMessages.length, 0);
     assert.deepEqual(editedMessages, [
       {
         messageId: 4321,
-        text: 'payment_confirmed:payway:no-cogs:00207109',
+        text: 'payment_confirmed:payway:no-cogs:00207109:false',
       },
       {
         messageId: 4321,
-        text: 'payment_confirmed:payway:July:00207109',
+        text: 'payment_confirmed:payway:July:00207109:false',
+      },
+      {
+        messageId: 4321,
+        text: 'payment_confirmed:payway:July:00207109:true',
       },
     ]);
     assert.equal(metadata.sheetName, 'July');
     assert.equal(metadata.paywayApprovalNo, '00207109');
+    assert.equal(metadata.cogsComplete, true);
+    assert.equal(metadata.cogsCostComplete, true);
+    assert.equal(metadata.cogsShippingComplete, true);
+    assert.match(metadata.cogsCompletedAt, /^\d{4}-\d{2}-\d{2}T/);
   });
 });
 
@@ -556,6 +586,9 @@ test('deliverPaidOrderNotification stays silent when the order was already marke
         orderNo: '202603150001',
         notificationStage: 'payment_confirmed',
         sheetName: '3월 주문',
+        cogsComplete: false,
+        cogsCostComplete: false,
+        cogsShippingComplete: false,
       }),
       buildAutofillNotification: result => `paid:${result.orderNo}`,
     },
@@ -611,6 +644,10 @@ test('deliverPaidOrderNotification still falls back to a completed card when no 
       sheetName: '3월 주문',
       rowCount: 1,
       source: 'cogs_autofill_fallback',
+      cogsComplete: false,
+      cogsCostComplete: false,
+      cogsShippingComplete: false,
+      cogsCompletedAt: null,
     });
     assert.match(completionMarks[0].metadata.imwebPaymentConfirmedAt, /^\d{4}-\d{2}-\d{2}T/);
   });

@@ -279,6 +279,10 @@ function sanitizeNotificationMetadata(metadata) {
     paywayMaskedCardNumber: asString(metadata.paywayMaskedCardNumber) || null,
     paywayAmount: Number.isFinite(Number(metadata.paywayAmount)) ? Number(metadata.paywayAmount) : null,
     sheetName: asString(metadata.sheetName) || null,
+    cogsComplete: typeof metadata.cogsComplete === 'boolean' ? metadata.cogsComplete : null,
+    cogsCostComplete: typeof metadata.cogsCostComplete === 'boolean' ? metadata.cogsCostComplete : null,
+    cogsShippingComplete: typeof metadata.cogsShippingComplete === 'boolean' ? metadata.cogsShippingComplete : null,
+    cogsCompletedAt: asString(metadata.cogsCompletedAt) || null,
     messageId: Number.isFinite(Number(metadata.messageId)) ? Number(metadata.messageId) : null,
     paywayPaymentReceivedMessageId: Number.isFinite(Number(metadata.paywayPaymentReceivedMessageId))
       ? Number(metadata.paywayPaymentReceivedMessageId)
@@ -306,6 +310,9 @@ function getOrderNotificationDiagnostics(orderNo) {
       source: asString(imported.source) || null,
       sheetName: asString(imported.sheetName) || null,
       orderDate: asString(imported.orderDate) || null,
+      cogsComplete: typeof imported.cogsComplete === 'boolean' ? imported.cogsComplete : null,
+      cogsCostComplete: typeof imported.cogsCostComplete === 'boolean' ? imported.cogsCostComplete : null,
+      cogsShippingComplete: typeof imported.cogsShippingComplete === 'boolean' ? imported.cogsShippingComplete : null,
       rowCount: Number.isFinite(Number(imported.rowCount)) ? Number(imported.rowCount) : null,
     } : null,
     inference: buildNotificationBehaviorInference(notification),
@@ -667,6 +674,38 @@ function hasOrderNumber(rows, orderNo) {
   );
 }
 
+function inspectOrderCogsCompletion(rows, orderNo) {
+  const normalizedOrderNo = asString(orderNo);
+  const matchingRows = [];
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!Array.isArray(row)) continue;
+
+    const orderNoIndex = row.findIndex(cell => asString(cell) === normalizedOrderNo);
+    if (orderNoIndex < 0) continue;
+
+    const productIndex = orderNoIndex + (COL.PRODUCT - COL.ORDER_NO);
+    if (!asString(row[productIndex])) continue;
+
+    matchingRows.push({
+      costFilled: Boolean(asString(row[orderNoIndex + (COL.COST - COL.ORDER_NO)])),
+      shippingFilled: Boolean(asString(row[orderNoIndex + (COL.SHIPPING - COL.ORDER_NO)])),
+    });
+  }
+
+  const cogsCostComplete = matchingRows.length > 0
+    && matchingRows.every(row => row.costFilled);
+  const cogsShippingComplete = matchingRows.length > 0
+    && matchingRows.every(row => row.shippingFilled);
+
+  return {
+    cogsComplete: cogsCostComplete && cogsShippingComplete,
+    cogsCostComplete,
+    cogsShippingComplete,
+    cogsRowCount: matchingRows.length,
+  };
+}
+
 function getOrderProductNames(order) {
   const productNames = getOrderItems(order)
     .map(item => asString(item?.productInfo?.prodName || item?.productName || item?.name))
@@ -858,7 +897,7 @@ function buildNewOrderNotification(result) {
     ? result.imwebPaymentConfirmed
     : result?.notificationStage === 'payment_confirmed'
       || (paymentReceived && paymentSource !== 'payway');
-  const cogsLogged = Boolean(result?.sheetName);
+  const cogsLogged = result?.cogsComplete === true;
   const orderValue = Number(result?.orderValue || result?.netRevenue || result?.approvedAmount || 0);
   const productLines = Array.isArray(result?.productNames) && result.productNames.length > 0
     ? result.productNames.map(line => `• ${escapeHtml(line)}`).join('\n')
@@ -1494,13 +1533,16 @@ async function syncOrderToCogsSheet(order, options = {}) {
     const existingRows = options.existingRows || await getRowsForTarget(target, options.sheetCache);
     await ensureOptionalHeaders(target, existingRows);
     if (hasOrderNumber(existingRows, normalizedOrderNo)) {
+      const cogsCompletion = inspectOrderCogsCompletion(existingRows, normalizedOrderNo);
       markOrderImported(normalizedOrderNo, {
         source: importedMetadata ? (importedMetadata.source || 'sheet_duplicate') : 'sheet_duplicate',
         sheetName: target.sheetName,
         orderDate: summary.orderDate,
+        ...cogsCompletion,
       });
       return {
         ...summary,
+        ...cogsCompletion,
         ok: true,
         status: 'duplicate',
         reason: importedMetadata ? 'order already imported' : 'order already exists in sheet',
@@ -1522,6 +1564,10 @@ async function syncOrderToCogsSheet(order, options = {}) {
       sheetName: target.sheetName,
       orderDate: summary.orderDate,
       rowCount: rows.length,
+      cogsComplete: false,
+      cogsCostComplete: false,
+      cogsShippingComplete: false,
+      cogsRowCount: rows.length,
     });
 
     return {
@@ -1532,6 +1578,10 @@ async function syncOrderToCogsSheet(order, options = {}) {
       sheetName: target.sheetName,
       rowCount: rows.length,
       sequenceNo: nextSequenceNo,
+      cogsComplete: false,
+      cogsCostComplete: false,
+      cogsShippingComplete: false,
+      cogsRowCount: rows.length,
     };
   });
 }

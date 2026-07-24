@@ -12,6 +12,24 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function resolveBoolean(resultValue, metadataValue) {
+  if (typeof resultValue === 'boolean') return resultValue;
+  return typeof metadataValue === 'boolean' ? metadataValue : false;
+}
+
+function getCogsMetadataPatch(result, metadata = {}) {
+  const cogsComplete = resolveBoolean(result?.cogsComplete, metadata?.cogsComplete);
+  const cogsCostComplete = resolveBoolean(result?.cogsCostComplete, metadata?.cogsCostComplete);
+  const cogsShippingComplete = resolveBoolean(result?.cogsShippingComplete, metadata?.cogsShippingComplete);
+
+  return {
+    cogsComplete,
+    cogsCostComplete,
+    cogsShippingComplete,
+    cogsCompletedAt: cogsComplete ? (metadata?.cogsCompletedAt || nowIso()) : null,
+  };
+}
+
 async function withOrderNotificationLock(orderNo, command) {
   const key = String(orderNo || '').trim();
   if (!key) {
@@ -49,6 +67,9 @@ function buildOrderCardResult(result, metadata = {}, overrides = {}) {
     paywayAmount: result?.paywayAmount || metadata?.paywayAmount,
     sheetName: result?.sheetName || metadata?.sheetName,
     rowCount: result?.rowCount ?? metadata?.rowCount,
+    cogsComplete: resolveBoolean(result?.cogsComplete, metadata?.cogsComplete),
+    cogsCostComplete: resolveBoolean(result?.cogsCostComplete, metadata?.cogsCostComplete),
+    cogsShippingComplete: resolveBoolean(result?.cogsShippingComplete, metadata?.cogsShippingComplete),
     notificationStage: result?.notificationStage || metadata?.notificationStage,
     ...overrides,
   };
@@ -146,7 +167,16 @@ async function completeExistingOrderNotificationUnlocked(result) {
     return { ok: false, updated: false, reason: 'missing_notification' };
   }
 
-  if (metadata?.notificationStage === 'payment_confirmed' && (!result?.sheetName || metadata.sheetName === result.sheetName)) {
+  const cogsMetadataPatch = getCogsMetadataPatch(result, metadata);
+  const cogsStateAlreadyCurrent = typeof metadata.cogsComplete === 'boolean'
+    && metadata.cogsComplete === cogsMetadataPatch.cogsComplete
+    && metadata.cogsCostComplete === cogsMetadataPatch.cogsCostComplete
+    && metadata.cogsShippingComplete === cogsMetadataPatch.cogsShippingComplete;
+  if (
+    metadata?.notificationStage === 'payment_confirmed'
+    && (!result?.sheetName || metadata.sheetName === result.sheetName)
+    && cogsStateAlreadyCurrent
+  ) {
     return { ok: true, updated: false, reason: 'already_completed' };
   }
 
@@ -170,6 +200,7 @@ async function completeExistingOrderNotificationUnlocked(result) {
       sheetName: result.sheetName || metadata.sheetName,
       rowCount: result.rowCount ?? metadata.rowCount,
       imwebPaymentConfirmedAt: metadata.imwebPaymentConfirmedAt || nowIso(),
+      ...cogsMetadataPatch,
     };
     const paymentSource = result.paymentSource || metadata.paymentSource;
     const paywayTransactionId = result.paywayTransactionId || metadata.paywayTransactionId;
@@ -294,6 +325,7 @@ async function deliverPaidOrderNotification(result) {
         imwebPaymentConfirmedAt: nowIso(),
         sheetName: result.sheetName,
         rowCount: result.rowCount,
+        ...getCogsMetadataPatch(result),
         source: result.notificationSource || 'cogs_autofill_fallback',
       });
     }
@@ -375,6 +407,7 @@ async function deliverPaywayPaymentNotification(result, payment = {}, options = 
       paywayMaskedCardNumber: completionResult.paywayMaskedCardNumber || null,
       paywayAmount: completionResult.paywayAmount || null,
       orderDate: completionResult.orderDate,
+      ...getCogsMetadataPatch(notificationResult, metadata),
       source: metadata?.source || completionResult.notificationSource || 'payway_direct',
     };
 
