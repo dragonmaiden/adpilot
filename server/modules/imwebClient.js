@@ -612,14 +612,40 @@ async function imwebApi(path, method = 'GET', params = {}) {
 // ORDER & REVENUE DATA
 // ═══════════════════════════════════════════════
 
+function getOrderHistoryTimeRange(endTime = new Date()) {
+  const businessStartDate = String(config.business?.startDate || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessStartDate)) {
+    throw new Error('BUSINESS_START_DATE must use YYYY-MM-DD format');
+  }
+
+  const startTime = new Date(`${businessStartDate}T00:00:00+09:00`);
+  const normalizedEndTime = new Date(endTime);
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(normalizedEndTime.getTime())) {
+    throw new Error('Imweb order history requires valid UTC time boundaries');
+  }
+  if (startTime >= normalizedEndTime) {
+    throw new Error('BUSINESS_START_DATE must be earlier than the Imweb order history end time');
+  }
+
+  return {
+    startWtime: startTime.toISOString(),
+    endWtime: normalizedEndTime.toISOString(),
+  };
+}
+
 // Get all orders (paginated)
-async function getAllOrders() {
+async function getAllOrders({ endTime = new Date() } = {}) {
   const allOrders = [];
   let page = 1;
   const limit = 100;
+  const historyTimeRange = getOrderHistoryTimeRange(endTime);
 
   while (true) {
-    const data = await imwebApi('/orders', 'GET', { page, limit });
+    const data = await imwebApi('/orders', 'GET', {
+      page,
+      limit,
+      ...historyTimeRange,
+    });
     if (!Array.isArray(data?.data?.list)) {
       throw new Error(`Imweb GET /orders returned an unexpected shape on page ${page}`);
     }

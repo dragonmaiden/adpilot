@@ -52,6 +52,9 @@ async function withImwebClient(fetchImpl, run) {
         siteCode: 'site-code',
         baseUrl: 'https://openapi.imweb.me',
       },
+      business: {
+        startDate: '2026-02-01',
+      },
     },
   };
   require.cache[runtimePathsPath] = {
@@ -165,6 +168,62 @@ test('Imweb refresh does not retry a rejected refresh token', async () => {
 
     assert.equal(fetchCount, 1);
     assert.match(client.getAuthState().lastError, /30170/);
+  });
+});
+
+test('getAllOrders requests every page from the first KST business day through one stable end time', async () => {
+  const orderRequests = [];
+
+  await withImwebClient(async (url, options = {}) => {
+    if (url.endsWith('/oauth2/token')) return successfulTokenResponse();
+
+    orderRequests.push({ url, options });
+    const page = Number(new URL(url).searchParams.get('page'));
+    const list = page === 1
+      ? Array.from({ length: 100 }, (_, index) => ({ orderNo: `order-${index + 1}` }))
+      : [{ orderNo: 'order-101' }];
+
+    return new Response(JSON.stringify({
+      statusCode: 200,
+      data: {
+        totalCount: 101,
+        list,
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }, async client => {
+    const endTime = new Date('2026-07-25T02:30:00.000Z');
+    const orders = await client.getAllOrders({ endTime });
+
+    assert.equal(orders.length, 101);
+    assert.equal(orderRequests.length, 2);
+    for (const [index, request] of orderRequests.entries()) {
+      const url = new URL(request.url);
+      assert.equal(request.options.method, 'GET');
+      assert.equal(url.pathname, '/orders');
+      assert.equal(url.searchParams.get('page'), String(index + 1));
+      assert.equal(url.searchParams.get('limit'), '100');
+      assert.equal(url.searchParams.get('startWtime'), '2026-01-31T15:00:00.000Z');
+      assert.equal(url.searchParams.get('endWtime'), '2026-07-25T02:30:00.000Z');
+    }
+  });
+});
+
+test('getOrderHistoryTimeRange rejects a malformed business start date', async () => {
+  await withImwebClient(async url => {
+    if (url.endsWith('/oauth2/token')) return successfulTokenResponse();
+    throw new Error(`Unexpected request: ${url}`);
+  }, async client => {
+    const originalStartDate = require(configPath).business.startDate;
+    require(configPath).business.startDate = 'February 1';
+
+    try {
+      await assert.rejects(
+        client.getAllOrders({ endTime: new Date('2026-07-25T02:30:00.000Z') }),
+        /BUSINESS_START_DATE must use YYYY-MM-DD format/
+      );
+    } finally {
+      require(configPath).business.startDate = originalStartDate;
+    }
   });
 });
 
