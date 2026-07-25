@@ -705,12 +705,13 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
 }
 
 function normalizeAllTimeHourlyRows(hourlyRows) {
-  const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0 }));
+  const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0, revenue: 0 }));
 
   for (const row of Array.isArray(hourlyRows) ? hourlyRows : []) {
     const hour = Number.isInteger(row?.hour) ? row.hour : null;
     if (hour == null || hour < 0 || hour > 23) continue;
     buckets[hour].orders = toFiniteNumber(row?.orders);
+    buckets[hour].revenue = toFiniteNumber(row?.revenue);
   }
 
   return buckets;
@@ -738,16 +739,19 @@ function buildAllTimeOrderPatterns(projection) {
     const date = isValidDateKey(row?.date) ? row.date : null;
     if (!date) continue;
 
+    const revenue = toFiniteNumber(row?.revenue);
+    const refunded = toFiniteNumber(row?.refunded);
+    const net = revenue - refunded;
+    const orders = toFiniteNumber(row?.orders);
+    // dailyMerged also holds Meta-spend-only days; they carry no order signal
+    // and must not stretch the "orders since" range.
+    if (revenue <= 0 && refunded <= 0 && orders <= 0) continue;
+
     rangeStart = !rangeStart || compareDateKeys(date, rangeStart) < 0 ? date : rangeStart;
     rangeEnd = !rangeEnd || compareDateKeys(date, rangeEnd) > 0 ? date : rangeEnd;
 
     const dateObj = toUtcDate(date);
     if (!dateObj) continue;
-
-    const revenue = toFiniteNumber(row?.revenue);
-    const refunded = toFiniteNumber(row?.refunded);
-    const net = revenue - refunded;
-    const orders = toFiniteNumber(row?.orders);
     const bucket = weekday[dateObj.getUTCDay()];
     bucket.revenue += revenue;
     bucket.refunded += refunded;
@@ -986,4 +990,5 @@ async function getCalendarAnalysisResponse(query = {}) {
 
 module.exports = {
   getCalendarAnalysisResponse,
+  buildAllTimeOrderPatterns,
 };

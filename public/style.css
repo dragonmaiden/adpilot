@@ -3433,6 +3433,187 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   color: var(--color-text-muted);
 }
 
+/* ── Order patterns (weekday + hour-of-day trends) ── */
+
+.calendar-order-patterns:empty {
+  display: none;
+}
+
+.order-patterns-card {
+  padding: clamp(var(--space-5), 2.5vw, var(--space-8));
+}
+
+.order-patterns-header,
+.order-patterns-body,
+.order-patterns-empty,
+.order-patterns-footnote {
+  width: 100%;
+  max-width: 920px;
+  margin-inline: auto;
+}
+
+.order-patterns-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.order-patterns-header h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+
+.order-patterns-subtitle {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.order-patterns-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-6) var(--space-10);
+  padding-top: var(--space-5);
+}
+
+.order-patterns-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.order-patterns-panel-head {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.order-patterns-panel-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.order-patterns-weekday-rows {
+  padding-top: var(--space-2);
+}
+
+.order-patterns-weekday-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 64px minmax(110px, 130px);
+  align-items: center;
+  column-gap: var(--space-3);
+  min-height: 34px;
+}
+
+.order-patterns-weekday-label {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.order-patterns-weekday-row.peak .order-patterns-weekday-label {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.order-patterns-bar {
+  display: block;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-offset);
+  overflow: hidden;
+}
+
+.order-patterns-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--color-text) 30%, transparent);
+}
+
+.order-patterns-weekday-row.peak .order-patterns-bar > span {
+  background: var(--color-primary);
+}
+
+.order-patterns-orders {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.order-patterns-revenue {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.order-patterns-hours {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-height: 96px;
+  padding-top: var(--space-3);
+}
+
+.order-patterns-hour-slot {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1 1 0;
+  align-items: flex-end;
+}
+
+.order-patterns-hour-bar {
+  display: block;
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: color-mix(in srgb, var(--color-text) 22%, transparent);
+}
+
+.order-patterns-hour-bar.peak {
+  background: var(--color-primary);
+}
+
+.order-patterns-hour-axis {
+  display: flex;
+  gap: 3px;
+  padding-top: var(--space-1);
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+}
+
+.order-patterns-hour-tick {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: visible;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.order-patterns-empty {
+  margin: 0;
+  padding-top: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.order-patterns-footnote {
+  padding-top: var(--space-5);
+  color: var(--color-text-faint);
+  font-size: 0.75rem;
+}
+
 .calendar-card-note {
   font-size: var(--text-xs);
   color: var(--color-text-faint);
@@ -3599,6 +3780,20 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .income-statement-line {
     grid-template-columns: minmax(0, 1fr) 64px minmax(120px, 150px);
     column-gap: var(--space-3);
+  }
+
+  .order-patterns-card {
+    padding: var(--space-4);
+  }
+
+  .order-patterns-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .order-patterns-hours {
+    flex: none;
+    height: 80px;
+    min-height: 0;
   }
 
   .section-head-toolbar {

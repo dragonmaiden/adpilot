@@ -169,13 +169,18 @@ function buildWeekdayPerf(daily) {
 }
 
 /**
- * Build hourly orders from raw flat array [count_0h, count_1h, ... count_23h].
+ * Build hourly orders from raw flat arrays [count_0h ... count_23h] and
+ * optional matching revenue totals per hour.
  */
-function buildHourlyOrders(hourlyArr) {
+function buildHourlyOrders(hourlyArr, hourlyRevenueArr) {
+  const revenueAt = index => {
+    const value = Array.isArray(hourlyRevenueArr) ? Number(hourlyRevenueArr[index]) : 0;
+    return Number.isFinite(value) ? value : 0;
+  };
   if (!Array.isArray(hourlyArr) || hourlyArr.length === 0) {
-    return Array.from({ length: 24 }, (_, index) => ({ hour: index, orders: 0 }));
+    return Array.from({ length: 24 }, (_, index) => ({ hour: index, orders: 0, revenue: 0 }));
   }
-  return hourlyArr.map((count, index) => ({ hour: index, orders: count ?? 0 }));
+  return hourlyArr.map((count, index) => ({ hour: index, orders: count ?? 0, revenue: revenueAt(index) }));
 }
 
 function getWeekKey(dateKey) {

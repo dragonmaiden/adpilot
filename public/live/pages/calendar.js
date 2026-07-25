@@ -823,9 +823,178 @@
     });
   }
 
+  function formatPatternHour(hour) {
+    return `${String(hour).padStart(2, '0')}:00`;
+  }
+
+  function buildOrderPatternsViewModel(patterns) {
+    const weekdaySource = Array.isArray(patterns?.weekday) ? patterns.weekday : [];
+    const hourlySource = Array.isArray(patterns?.hourly) ? patterns.hourly : [];
+    const summary = patterns?.summary || {};
+    const totalOrders = Math.max(0, toFiniteNumber(summary.totalOrders));
+
+    const weekdayLabels = tr(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], ['월', '화', '수', '목', '금', '토', '일']);
+    const weekdayByIndex = new Map(weekdaySource.map(row => [Number(row?.dayIndex), row]));
+    const weekdayRows = [1, 2, 3, 4, 5, 6, 0].map((dayIndex, position) => {
+      const row = weekdayByIndex.get(dayIndex) || {};
+      return {
+        label: weekdayLabels[position],
+        orders: Math.max(0, toFiniteNumber(row.orders)),
+        revenue: Math.max(0, toFiniteNumber(row.revenue)),
+      };
+    });
+    const maxWeekdayOrders = weekdayRows.reduce((max, row) => Math.max(max, row.orders), 0);
+    const peakWeekday = weekdayRows.reduce(
+      (peak, row) => (row.orders > (peak?.orders || 0) ? row : peak),
+      null
+    );
+
+    const hourRows = Array.from({ length: 24 }, (_, hour) => {
+      const row = hourlySource.find(entry => Number(entry?.hour) === hour) || {};
+      return {
+        hour,
+        orders: Math.max(0, toFiniteNumber(row.orders)),
+        revenue: Math.max(0, toFiniteNumber(row.revenue)),
+      };
+    });
+    const maxHourOrders = hourRows.reduce((max, row) => Math.max(max, row.orders), 0);
+
+    let peakWindow = null;
+    if (totalOrders > 0) {
+      for (let start = 0; start < 24; start += 1) {
+        const orders = hourRows[start].orders
+          + hourRows[(start + 1) % 24].orders
+          + hourRows[(start + 2) % 24].orders;
+        if (orders > (peakWindow?.orders || 0)) {
+          peakWindow = { start, end: (start + 3) % 24, orders };
+        }
+      }
+    }
+    const peakHours = new Set(peakWindow
+      ? [peakWindow.start, (peakWindow.start + 1) % 24, (peakWindow.start + 2) % 24]
+      : []);
+
+    return {
+      totalOrders,
+      range: patterns?.range || {},
+      weekdayRows,
+      maxWeekdayOrders,
+      peakWeekday,
+      hourRows,
+      maxHourOrders,
+      peakWindow,
+      peakHours,
+    };
+  }
+
+  function renderOrderPatternsCard(viewModel) {
+    const { totalOrders, range } = viewModel;
+    const rangeLabel = range.start && range.end ? formatCalendarRange(range.start, range.end) : null;
+    const sampleNote = [
+      tr(
+        `Based on ${formatCount(totalOrders)} recognized orders`,
+        `인식 주문 ${formatCount(totalOrders)}건 기준`
+      ),
+      rangeLabel,
+      'KST',
+      totalOrders > 0
+        ? tr('Gross revenue before refunds and fees', '환불·수수료 차감 전 총매출')
+        : null,
+      totalOrders > 0 && totalOrders < 100
+        ? tr('Early data — patterns may shift', '데이터가 아직 적어 패턴이 바뀔 수 있습니다')
+        : null,
+    ].filter(Boolean).join(' · ');
+
+    const weekdayRowsHtml = viewModel.weekdayRows.map(row => {
+      const isPeak = totalOrders > 0 && viewModel.peakWeekday && row === viewModel.peakWeekday;
+      const width = viewModel.maxWeekdayOrders > 0
+        ? Math.max(row.orders > 0 ? 2 : 0, Math.round((row.orders / viewModel.maxWeekdayOrders) * 100))
+        : 0;
+      return `
+        <div class="order-patterns-weekday-row ${isPeak ? 'peak' : ''}" role="row">
+          <span class="order-patterns-weekday-label" role="rowheader">${esc(row.label)}</span>
+          <span class="order-patterns-bar" aria-hidden="true"><span style="width:${width}%"></span></span>
+          <span class="order-patterns-orders" role="cell">${formatCount(row.orders)}</span>
+          <span class="order-patterns-revenue" role="cell">${formatKrw(row.revenue)}</span>
+        </div>
+      `;
+    }).join('');
+
+    const hourlyRevenueAvailable = viewModel.hourRows.some(row => row.revenue > 0);
+    const hourBarsHtml = viewModel.hourRows.map(row => {
+      const height = viewModel.maxHourOrders > 0
+        ? Math.max(row.orders > 0 ? 4 : 0, Math.round((row.orders / viewModel.maxHourOrders) * 100))
+        : 0;
+      const revenueSuffix = hourlyRevenueAvailable ? ` · ${formatKrw(row.revenue)}` : '';
+      const tooltip = tr(
+        `${formatPatternHour(row.hour)} · ${formatCount(row.orders)} orders${revenueSuffix}`,
+        `${formatPatternHour(row.hour)} · 주문 ${formatCount(row.orders)}건${revenueSuffix}`
+      );
+      const isPeak = viewModel.peakHours.has(row.hour);
+      return `<span class="order-patterns-hour-slot" title="${esc(tooltip)}"><span class="order-patterns-hour-bar ${isPeak ? 'peak' : ''}" style="height:${height}%"></span></span>`;
+    }).join('');
+
+    const hourAxisHtml = viewModel.hourRows.map(row => {
+      const labelled = row.hour % 6 === 0 || row.hour === 23;
+      return `<span class="order-patterns-hour-tick">${labelled ? String(row.hour).padStart(2, '0') : ''}</span>`;
+    }).join('');
+
+    return `
+      <div class="card order-patterns-card">
+        <div class="order-patterns-header">
+          <h2>${esc(tr('Order Patterns', '주문 패턴'))}</h2>
+          <span class="order-patterns-subtitle">${esc(tr('When orders happen across all synced history', '전체 동기화 기간의 주문 발생 시점'))}</span>
+        </div>
+        ${totalOrders === 0 ? `
+          <p class="order-patterns-empty">${esc(tr('Order timing trends will appear once orders are synced.', '주문이 동기화되면 시점 트렌드가 표시됩니다.'))}</p>
+        ` : `
+          <div class="order-patterns-body">
+            <section class="order-patterns-panel" aria-label="${esc(tr('Orders by weekday', '요일별 주문'))}">
+              <div class="order-patterns-panel-head">
+                <span class="order-patterns-panel-title">${esc(tr('Orders by weekday', '요일별 주문'))}</span>
+              </div>
+              <div class="order-patterns-weekday-rows" role="table">
+                ${weekdayRowsHtml}
+              </div>
+            </section>
+            <section class="order-patterns-panel" aria-label="${esc(tr('Orders by hour of day', '시간대별 주문'))}">
+              <div class="order-patterns-panel-head">
+                <span class="order-patterns-panel-title">${esc(tr('Orders by hour · KST', '시간대별 주문 · KST'))}</span>
+              </div>
+              <div class="order-patterns-hours">
+                ${hourBarsHtml}
+              </div>
+              <div class="order-patterns-hour-axis" aria-hidden="true">
+                ${hourAxisHtml}
+              </div>
+            </section>
+          </div>
+        `}
+        <div class="order-patterns-footnote">${esc(sampleNote)}</div>
+      </div>
+    `;
+  }
+
+  function renderCalendarOrderPatternsSection() {
+    const container = document.getElementById('calendarOrderPatterns');
+    if (!container) return;
+
+    const data = calendarState.data;
+    if (!data || data.ready === false) {
+      if (calendarState.loading && container.childElementCount > 0) return;
+      container.innerHTML = '';
+      return;
+    }
+
+    const viewModel = buildOrderPatternsViewModel(data.orderPatterns);
+    container.innerHTML = renderOrderPatternsCard(viewModel);
+  }
+
   function renderCalendarIncomeStatementDeck() {
     const statementContainer = document.getElementById('calendarIncomeStatementDeck');
     if (!statementContainer) return;
+
+    renderCalendarOrderPatternsSection();
 
     ensureCalendarStateInitialized();
     syncCalendarSelectionIntoViewport();

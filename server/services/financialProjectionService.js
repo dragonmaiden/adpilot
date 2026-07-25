@@ -120,7 +120,7 @@ function buildFinancialProjection(data = {}, options = {}) {
     config.fees.paymentFeeRate,
     transformOptions
   );
-  const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders);
+  const hourlyOrders = transforms.buildHourlyOrders(revenue.hourlyOrders, revenue.hourlyRevenue);
   const weekdayPerf = transforms.buildWeekdayPerf(dailyMerged);
   const monthlyRefunds = transforms.buildMonthlyRefunds(dailyMerged);
   const dailyProfit = transforms.buildDailyProfit(dailyMerged, profitWaterfall);

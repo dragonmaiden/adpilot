@@ -708,6 +708,7 @@ function processOrders(orders) {
   let totalSections = 0;
   const dailyRevenue = {};
   const hourlyOrders = new Array(24).fill(0);
+  const hourlyRevenue = new Array(24).fill(0);
   const attributionSummary = summarizeOrderAttribution(orders);
 
   for (const order of orders) {
@@ -726,6 +727,7 @@ function processOrders(orders) {
       totalOrders++;
       dailyRevenue[dateKey].orders++;
       hourlyOrders[hour]++;
+      hourlyRevenue[hour] += approvedAmount;
     }
 
     totalRevenue += approvedAmount;
@@ -756,6 +758,7 @@ function processOrders(orders) {
     cancelRate: totalSections > 0 ? (cancelledSections / totalSections * 100) : 0,
     dailyRevenue,
     hourlyOrders,
+    hourlyRevenue,
     attributionSummary,
   };
 }
