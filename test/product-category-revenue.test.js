@@ -123,7 +123,8 @@ test('calendar payload preserves all-time order patterns for API compatibility',
   assert.match(contractsJs, /hourly:\s*orderPatterns\?\.hourly\s*\?\?\s*\[\]/);
   assert.match(calendarServiceJs, /function buildAllTimeOrderPatterns\(projection\)/);
   assert.match(calendarServiceJs, /const dailyRows = Array\.isArray\(projection\?\.dailyMerged\) \? projection\.dailyMerged : \[\];/);
-  assert.match(calendarServiceJs, /orderPatterns: buildAllTimeOrderPatterns\(projection\)/);
+  assert.match(calendarServiceJs, /const orderPatterns = buildAllTimeOrderPatterns\(projection\);/);
+  assert.match(calendarServiceJs, /orderPatterns,\s*\n\s*refundComparison: buildRefundRateComparison\(orderPatterns,/);
 });
 
 test('calendar income statement renders the financial sequence and every canonical cost', () => {

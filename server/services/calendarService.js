@@ -775,6 +775,52 @@ function buildAllTimeOrderPatterns(projection) {
   };
 }
 
+function buildRefundRateComparison(orderPatterns, selectedRefundRate = null) {
+  const historicalGrossRevenue = Math.max(
+    0,
+    toFiniteNumber(orderPatterns?.summary?.totalGrossRevenue)
+  );
+  const historicalRefundedAmount = Math.max(
+    0,
+    toFiniteNumber(orderPatterns?.summary?.totalRefunded)
+  );
+  const historicalRate = ratioPercentOrNull(
+    historicalRefundedAmount,
+    historicalGrossRevenue
+  );
+  const parsedSelectedRate = Number(selectedRefundRate);
+  const selectedRate = selectedRefundRate != null
+    && Number.isFinite(parsedSelectedRate)
+    && parsedSelectedRate >= 0
+    ? parsedSelectedRate
+    : null;
+  const deltaPoints = historicalRate != null && selectedRate != null
+    ? Number((selectedRate - historicalRate).toFixed(1))
+    : null;
+
+  return {
+    basis: 'gross_revenue_weighted',
+    historical: {
+      rate: historicalRate,
+      grossRevenue: Math.round(historicalGrossRevenue),
+      refundedAmount: Math.round(historicalRefundedAmount),
+      range: {
+        start: orderPatterns?.range?.start || null,
+        end: orderPatterns?.range?.end || null,
+      },
+    },
+    selected: {
+      rate: selectedRate,
+      deltaPoints,
+      status: deltaPoints == null
+        ? 'unavailable'
+        : deltaPoints <= 0
+          ? 'within_benchmark'
+          : 'above_benchmark',
+    },
+  };
+}
+
 function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, operationsByDate, reconciliationByDate) {
   return dateKeys.map(date => {
     const merged = maps.mergedByDate.get(date) || { date, revenue: 0, refunded: 0, netRevenue: 0, orders: 0, spend: 0, spendKrw: 0, purchases: 0 };
@@ -821,11 +867,13 @@ async function getCalendarAnalysisResponse(query = {}) {
   const revenue = data.revenueData || null;
 
   if (!revenue) {
+    const orderPatterns = buildAllTimeOrderPatterns({});
     return contracts.calendarAnalysis({
       ready: false,
       viewport,
       calendarDays: [],
-      orderPatterns: buildAllTimeOrderPatterns({}),
+      orderPatterns,
+      refundComparison: buildRefundRateComparison(orderPatterns),
       sourceAudit: data.sourceAudit || null,
       selection: {
         label: '',
@@ -843,6 +891,7 @@ async function getCalendarAnalysisResponse(query = {}) {
   }
 
   const projection = buildFinancialProjection(data);
+  const orderPatterns = buildAllTimeOrderPatterns(projection);
   const cogs = projection.cogs || {};
   const dailyMerged = projection.dailyMerged;
   const profitWaterfall = projection.profitWaterfall;
@@ -967,7 +1016,8 @@ async function getCalendarAnalysisResponse(query = {}) {
     calendarDays,
     categoryRevenueByDate,
     categoryRevenueByMonth,
-    orderPatterns: buildAllTimeOrderPatterns(projection),
+    orderPatterns,
+    refundComparison: buildRefundRateComparison(orderPatterns, selectionSummary.refundRate),
     sourceAudit: data.sourceAudit || null,
     selection: {
       label: viewport.selectionStart === viewport.selectionEnd
@@ -991,4 +1041,5 @@ async function getCalendarAnalysisResponse(query = {}) {
 module.exports = {
   getCalendarAnalysisResponse,
   buildAllTimeOrderPatterns,
+  buildRefundRateComparison,
 };

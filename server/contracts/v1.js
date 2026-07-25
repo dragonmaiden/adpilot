@@ -150,7 +150,7 @@ function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, m
 /**
  * Build /api/calendar-analysis response.
  */
-function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, orderPatterns, sourceAudit, selection }) {
+function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, orderPatterns, refundComparison, sourceAudit, selection }) {
   return {
     apiVersion: API_VERSION,
     ready: ready !== false,
@@ -173,6 +173,23 @@ function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate
       weekday: orderPatterns?.weekday ?? [],
       hourly: orderPatterns?.hourly ?? [],
       summary: orderPatterns?.summary ?? {},
+    },
+    refundComparison: {
+      basis: refundComparison?.basis ?? 'gross_revenue_weighted',
+      historical: {
+        rate: refundComparison?.historical?.rate ?? null,
+        grossRevenue: refundComparison?.historical?.grossRevenue ?? 0,
+        refundedAmount: refundComparison?.historical?.refundedAmount ?? 0,
+        range: {
+          start: refundComparison?.historical?.range?.start ?? null,
+          end: refundComparison?.historical?.range?.end ?? null,
+        },
+      },
+      selected: {
+        rate: refundComparison?.selected?.rate ?? null,
+        deltaPoints: refundComparison?.selected?.deltaPoints ?? null,
+        status: refundComparison?.selected?.status ?? 'unavailable',
+      },
     },
     sourceAudit: sourceAudit ?? null,
     selection: {

@@ -21,6 +21,23 @@ function createStorage() {
   };
 }
 
+function validRefundComparison() {
+  return {
+    basis: 'gross_revenue_weighted',
+    historical: {
+      rate: 5,
+      grossRevenue: 1_000_000,
+      refundedAmount: 50_000,
+      range: { start: '2026-02-01', end: '2026-07-25' },
+    },
+    selected: {
+      rate: 6,
+      deltaPoints: 1,
+      status: 'above_benchmark',
+    },
+  };
+}
+
 function loadApiClient(payload) {
   const warnings = [];
   const requests = [];
@@ -117,6 +134,7 @@ test('live API client rejects source audit shape drift on calendar payloads', as
     viewport: {},
     calendarDays: [],
     orderPatterns: { range: {}, weekday: [], hourly: [] },
+    refundComparison: validRefundComparison(),
     selection: {
       days: [],
       paymentChannels: {
@@ -178,6 +196,7 @@ test('live API client rejects calendar payloads without payment-channel revenue'
     viewport: {},
     calendarDays: [],
     orderPatterns: { range: {}, weekday: [], hourly: [] },
+    refundComparison: validRefundComparison(),
     selection: { days: [] },
     sourceAudit: null,
   });
@@ -191,4 +210,35 @@ test('live API client rejects calendar payloads without payment-channel revenue'
 
   assert.equal(data, null);
   assert.ok(warnings.some(message => message.includes('missing selection.paymentChannels object')));
+});
+
+test('live API client rejects calendar payloads without a canonical refund comparison', async () => {
+  const { api, warnings } = loadApiClient({
+    apiVersion: 'v1',
+    ready: true,
+    viewport: {},
+    calendarDays: [],
+    orderPatterns: { range: {}, weekday: [], hourly: [] },
+    selection: {
+      days: [],
+      paymentChannels: {
+        ready: false,
+        basis: 'net_receipts',
+        totalNetRevenue: 0,
+        rows: [],
+        reconciliation: {},
+      },
+    },
+    sourceAudit: null,
+  });
+
+  const data = await api.fetchCalendarAnalysis({
+    visibleStart: '2026-04-01',
+    visibleEnd: '2026-04-30',
+    selectionStart: '2026-04-30',
+    selectionEnd: '2026-04-30',
+  });
+
+  assert.equal(data, null);
+  assert.ok(warnings.some(message => message.includes('missing refundComparison object')));
 });

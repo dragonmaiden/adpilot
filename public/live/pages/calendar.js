@@ -791,6 +791,238 @@
     `;
   }
 
+  function getRefundMonitorScaleMax(historicalRate, selectedRate) {
+    const benchmark = hasCalendarMetric(historicalRate) ? Number(historicalRate) : 0;
+    const reading = hasCalendarMetric(selectedRate) ? Number(selectedRate) : 0;
+    return Math.min(100, Math.max(10, benchmark * 2.4, benchmark + 5, reading * 1.15));
+  }
+
+  function buildRefundMonitorViewModel(refundComparison, selection) {
+    const historical = refundComparison?.historical || {};
+    const selected = refundComparison?.selected || {};
+    const historicalRate = hasCalendarMetric(historical.rate)
+      ? Math.max(0, Number(historical.rate))
+      : null;
+    const selectedRate = hasCalendarMetric(selected.rate)
+      ? Math.max(0, Number(selected.rate))
+      : null;
+    const deltaPoints = hasCalendarMetric(selected.deltaPoints)
+      ? Number(selected.deltaPoints)
+      : null;
+    const scaleMax = getRefundMonitorScaleMax(historicalRate, selectedRate);
+    const historicalPosition = historicalRate == null
+      ? 0
+      : Math.min(100, (historicalRate / scaleMax) * 100);
+    const selectedPosition = selectedRate == null
+      ? null
+      : Math.min(100, (selectedRate / scaleMax) * 100);
+    const riskStrength = deltaPoints != null && deltaPoints > 0
+      ? Math.min(1, deltaPoints / Math.max(historicalRate || 0, 5))
+      : 0;
+    const isAbove = selected.status === 'above_benchmark';
+    const summary = selection?.summary || {};
+
+    let statusLabel = tr('No selected revenue', '선택 범위 매출 없음');
+    let comparisonLabel = tr(
+      'Choose a range with gross revenue to compare.',
+      '총매출이 있는 범위를 선택하면 비교할 수 있습니다.'
+    );
+    if (deltaPoints === 0) {
+      statusLabel = tr('At historical average', '과거 평균과 동일');
+      comparisonLabel = tr(
+        'Matches the historical average',
+        '과거 평균과 동일합니다'
+      );
+    } else if (deltaPoints != null && deltaPoints < 0) {
+      statusLabel = tr('Within average', '평균 이내');
+      comparisonLabel = tr(
+        `${Math.abs(deltaPoints).toFixed(1)} pp below historical average`,
+        `과거 평균보다 ${Math.abs(deltaPoints).toFixed(1)}%p 낮음`
+      );
+    } else if (deltaPoints != null && deltaPoints > 0) {
+      statusLabel = tr('Above average', '평균 초과');
+      comparisonLabel = tr(
+        `${deltaPoints.toFixed(1)} pp above historical average`,
+        `과거 평균보다 ${deltaPoints.toFixed(1)}%p 높음`
+      );
+    }
+
+    return {
+      historicalRate,
+      selectedRate,
+      deltaPoints,
+      scaleMax,
+      historicalPosition,
+      selectedPosition,
+      riskStrength,
+      tone: isAbove ? 'above' : selectedRate == null ? 'unavailable' : 'within',
+      statusLabel,
+      comparisonLabel,
+      selectedRangeLabel: getCalendarWaterfallContextLabel(),
+      historicalRangeLabel: formatCalendarRange(
+        historical?.range?.start,
+        historical?.range?.end
+      ),
+      historicalGrossRevenue: Math.max(0, toFiniteNumber(historical.grossRevenue)),
+      historicalRefundedAmount: Math.max(0, toFiniteNumber(historical.refundedAmount)),
+      selectedGrossRevenue: Math.max(0, toFiniteNumber(summary.grossRevenue)),
+      selectedRefundedAmount: Math.max(0, toFiniteNumber(summary.refundedAmount)),
+    };
+  }
+
+  function renderRefundMonitorPlaceholder(message, tone = 'neutral') {
+    const container = document.getElementById('refundRateMonitor');
+    if (!container) return;
+
+    container.setAttribute('aria-busy', 'true');
+    container.innerHTML = `
+      <div class="card refund-monitor-card refund-monitor-placeholder ${tone === 'error' ? 'is-error' : ''}">
+        <div class="refund-monitor-kicker">${esc(tr('Refund rate · selected range', '환불률 · 선택 범위'))}</div>
+        <h2>${esc(tr('Refund rate monitor', '환불률 모니터'))}</h2>
+        <p>${esc(message)}</p>
+      </div>
+    `;
+  }
+
+  function renderCalendarRefundRateMonitor(state = {}) {
+    const container = document.getElementById('refundRateMonitor');
+    if (!container) return;
+
+    if (state.loading) {
+      renderRefundMonitorPlaceholder(
+        tr('Refreshing the selected-range comparison...', '선택 범위 비교를 새로고침 중입니다...')
+      );
+      return;
+    }
+
+    if (state.error) {
+      renderRefundMonitorPlaceholder(state.error, 'error');
+      return;
+    }
+
+    if (!calendarState.data || calendarState.data.ready === false) {
+      renderRefundMonitorPlaceholder(
+        tr('Waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.')
+      );
+      return;
+    }
+
+    const refundComparison = calendarState.data.refundComparison || {};
+    const viewModel = buildRefundMonitorViewModel(
+      refundComparison,
+      calendarState.data.selection || {}
+    );
+    if (viewModel.historicalRate == null) {
+      renderRefundMonitorPlaceholder(
+        tr(
+          'The historical benchmark will appear after gross revenue is available.',
+          '총매출 데이터가 확보되면 과거 기준이 표시됩니다.'
+        )
+      );
+      return;
+    }
+
+    const readingColor = viewModel.tone === 'above'
+      ? `hsl(4 78% ${Math.round(62 - viewModel.riskStrength * 28)}%)`
+      : '#1f9d55';
+    const meterAttributes = viewModel.selectedRate == null
+      ? `aria-valuetext="${esc(tr('Selected refund rate unavailable', '선택 환불률을 계산할 수 없음'))}"`
+      : `aria-valuenow="${viewModel.selectedRate}" aria-valuetext="${esc(
+          `${formatPercent(viewModel.selectedRate, 1)} · ${viewModel.comparisonLabel}`
+        )}"`;
+    const selectedMarker = viewModel.selectedPosition == null
+      ? ''
+      : `
+        <span class="refund-monitor-reading" aria-hidden="true">
+          <span class="refund-monitor-reading-dot"></span>
+          <span class="refund-monitor-reading-label">
+            ${esc(tr('Selected', '선택'))} ${esc(formatPercent(viewModel.selectedRate, 1))}
+          </span>
+        </span>
+      `;
+
+    container.setAttribute('aria-busy', 'false');
+    container.innerHTML = `
+      <section
+        class="card refund-monitor-card tone-${esc(viewModel.tone)}"
+        style="
+          --refund-benchmark-position: ${viewModel.historicalPosition.toFixed(2)}%;
+          --refund-reading-position: ${(viewModel.selectedPosition ?? 0).toFixed(2)}%;
+          --refund-reading-color: ${readingColor};
+        "
+        aria-labelledby="refundMonitorTitle"
+      >
+        <header class="refund-monitor-header">
+          <div>
+            <div class="refund-monitor-kicker">${esc(tr('Refund rate · selected range', '환불률 · 선택 범위'))}</div>
+            <h2 id="refundMonitorTitle">${esc(tr('Refund rate monitor', '환불률 모니터'))}</h2>
+            <p>${esc(tr(
+              'Compare the selected period with the gross-revenue-weighted historical average.',
+              '선택 기간을 총매출 가중 과거 평균과 비교합니다.'
+            ))}</p>
+          </div>
+          <span class="refund-monitor-status">${esc(viewModel.statusLabel)}</span>
+        </header>
+
+        <div class="refund-monitor-summary">
+          <div class="refund-monitor-reading-copy">
+            <span>${esc(viewModel.selectedRangeLabel)}</span>
+            <strong>${viewModel.selectedRate == null ? '—' : esc(formatPercent(viewModel.selectedRate, 1))}</strong>
+            <small>${esc(viewModel.comparisonLabel)}</small>
+          </div>
+          <div class="refund-monitor-benchmark-copy">
+            <span>${esc(tr('Historical average', '과거 평균'))}</span>
+            <strong>${esc(formatPercent(viewModel.historicalRate, 1))}</strong>
+            <small>${esc(viewModel.historicalRangeLabel)}</small>
+          </div>
+        </div>
+
+        <div
+          class="refund-monitor-meter"
+          role="meter"
+          tabindex="0"
+          aria-label="${esc(tr('Selected refund rate compared with historical average', '선택 환불률과 과거 평균 비교'))}"
+          aria-valuemin="0"
+          aria-valuemax="${viewModel.scaleMax.toFixed(1)}"
+          ${meterAttributes}
+        >
+          <div class="refund-monitor-track" aria-hidden="true">
+            <span class="refund-monitor-within-zone"></span>
+            <span class="refund-monitor-risk-zone"></span>
+            <span class="refund-monitor-benchmark">
+              <span class="refund-monitor-benchmark-label">
+                ${esc(tr('Average', '평균'))} ${esc(formatPercent(viewModel.historicalRate, 1))}
+              </span>
+            </span>
+            ${selectedMarker}
+          </div>
+          <div class="refund-monitor-axis" aria-hidden="true">
+            <span>0%</span>
+            <span>${esc(tr('Within average', '평균 이내'))}</span>
+            <span>${esc(formatPercent(viewModel.scaleMax, 1))}</span>
+          </div>
+        </div>
+
+        <footer class="refund-monitor-audit">
+          <span>
+            ${esc(tr('Historical basis', '과거 기준'))}:
+            <strong>${esc(formatKrw(viewModel.historicalRefundedAmount))}</strong>
+            ${esc(tr('refunded ÷', '환불 ÷'))}
+            <strong>${esc(formatKrw(viewModel.historicalGrossRevenue))}</strong>
+            ${esc(tr('gross revenue', '총매출'))}
+          </span>
+          <span>
+            ${esc(tr('Selected', '선택'))}:
+            <strong>${esc(formatKrw(viewModel.selectedRefundedAmount))}</strong>
+            ${esc(tr('refunded ÷', '환불 ÷'))}
+            <strong>${esc(formatKrw(viewModel.selectedGrossRevenue))}</strong>
+            ${esc(tr('gross revenue', '총매출'))}
+          </span>
+        </footer>
+      </section>
+    `;
+  }
+
   function renderCalendarProfitSummary(state = {}) {
     const renderer = live.profitSummary?.renderCalendarSelection;
     if (typeof renderer !== 'function') return;
@@ -1002,24 +1234,28 @@
     const hasFreshSelection = hasFreshCalendarSelectionPayload(calendarState.data);
     if (!hasFreshSelection && calendarState.loading) {
       renderCalendarProfitSummary({ loading: true });
+      renderCalendarRefundRateMonitor({ loading: true });
       statementContainer.innerHTML = renderEmptyStateCard(tr('Income Statement', '손익계산서'), tr('Refreshing the selected-range statement...', '선택 범위 손익계산서를 새로고침 중...'));
       return;
     }
 
     if (!hasFreshSelection && calendarState.error) {
       renderCalendarProfitSummary({ error: calendarState.error });
+      renderCalendarRefundRateMonitor({ error: calendarState.error });
       statementContainer.innerHTML = renderEmptyStateCard(tr('Income Statement', '손익계산서'), calendarState.error);
       return;
     }
 
     if (!calendarState.data || calendarState.data.ready === false || !hasFreshSelection) {
       renderCalendarProfitSummary();
+      renderCalendarRefundRateMonitor();
       statementContainer.innerHTML = renderEmptyStateCard(tr('Income Statement', '손익계산서'), tr('Calendar is waiting for the first completed scan.', '첫 완료 스캔을 기다리는 중입니다.'));
       return;
     }
 
     const selection = calendarState.data.selection || {};
     renderCalendarProfitSummary();
+    renderCalendarRefundRateMonitor();
     statementContainer.innerHTML = renderCalendarIncomeStatement(selection);
 
     if (window.lucide) {

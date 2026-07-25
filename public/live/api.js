@@ -79,6 +79,20 @@
     if (!hasObject(payload.orderPatterns, 'range')) return failContract('calendar-analysis', 'missing orderPatterns.range object');
     if (!hasArray(payload.orderPatterns, 'weekday')) return failContract('calendar-analysis', 'missing orderPatterns.weekday array');
     if (!hasArray(payload.orderPatterns, 'hourly')) return failContract('calendar-analysis', 'missing orderPatterns.hourly array');
+    if (!hasObject(payload, 'refundComparison')) return failContract('calendar-analysis', 'missing refundComparison object');
+    if (payload.refundComparison.basis !== 'gross_revenue_weighted') return failContract('calendar-analysis', 'unexpected refundComparison.basis');
+    if (!hasObject(payload.refundComparison, 'historical')) return failContract('calendar-analysis', 'missing refundComparison.historical object');
+    if (!hasObject(payload.refundComparison.historical, 'range')) return failContract('calendar-analysis', 'missing refundComparison.historical.range object');
+    if (!hasObject(payload.refundComparison, 'selected')) return failContract('calendar-analysis', 'missing refundComparison.selected object');
+    if (payload.refundComparison.historical.rate != null && typeof payload.refundComparison.historical.rate !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.historical.rate must be a number or null');
+    }
+    if (payload.refundComparison.selected.rate != null && typeof payload.refundComparison.selected.rate !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.selected.rate must be a number or null');
+    }
+    if (payload.refundComparison.selected.deltaPoints != null && typeof payload.refundComparison.selected.deltaPoints !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.selected.deltaPoints must be a number or null');
+    }
     if (!hasObject(payload, 'selection')) return failContract('calendar-analysis', 'missing selection object');
     if (!hasArray(payload.selection, 'days')) return failContract('calendar-analysis', 'missing selection.days array');
     if (!hasObject(payload.selection, 'paymentChannels')) return failContract('calendar-analysis', 'missing selection.paymentChannels object');
