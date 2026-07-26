@@ -176,6 +176,7 @@ function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate
     },
     refundComparison: {
       basis: refundComparison?.basis ?? 'completed_months_arithmetic_mean',
+      scope: refundComparison?.scope ?? 'post_delivery_returns_excluding_cancellations',
       historical: {
         orderRate: refundComparison?.historical?.orderRate ?? null,
         revenueRate: refundComparison?.historical?.revenueRate ?? null,

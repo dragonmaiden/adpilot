@@ -81,6 +81,7 @@
     if (!hasArray(payload.orderPatterns, 'hourly')) return failContract('calendar-analysis', 'missing orderPatterns.hourly array');
     if (!hasObject(payload, 'refundComparison')) return failContract('calendar-analysis', 'missing refundComparison object');
     if (payload.refundComparison.basis !== 'completed_months_arithmetic_mean') return failContract('calendar-analysis', 'unexpected refundComparison.basis');
+    if (payload.refundComparison.scope !== 'post_delivery_returns_excluding_cancellations') return failContract('calendar-analysis', 'unexpected refundComparison.scope');
     if (!hasObject(payload.refundComparison, 'historical')) return failContract('calendar-analysis', 'missing refundComparison.historical object');
     if (!hasObject(payload.refundComparison.historical, 'range')) return failContract('calendar-analysis', 'missing refundComparison.historical.range object');
     if (!hasObject(payload.refundComparison, 'monthToDate')) return failContract('calendar-analysis', 'missing refundComparison.monthToDate object');

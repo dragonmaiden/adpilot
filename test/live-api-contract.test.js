@@ -24,6 +24,7 @@ function createStorage() {
 function validRefundComparison() {
   return {
     basis: 'completed_months_arithmetic_mean',
+    scope: 'post_delivery_returns_excluding_cancellations',
     historical: {
       orderRate: 14.7,
       revenueRate: 13.3,
@@ -250,4 +251,38 @@ test('live API client rejects calendar payloads without a canonical refund compa
 
   assert.equal(data, null);
   assert.ok(warnings.some(message => message.includes('missing refundComparison object')));
+});
+
+test('live API client rejects refund comparisons that do not declare return-only scope', async () => {
+  const refundComparison = validRefundComparison();
+  delete refundComparison.scope;
+  const { api, warnings } = loadApiClient({
+    apiVersion: 'v1',
+    ready: true,
+    viewport: {},
+    calendarDays: [],
+    orderPatterns: { range: {}, weekday: [], hourly: [] },
+    refundComparison,
+    selection: {
+      days: [],
+      paymentChannels: {
+        ready: false,
+        basis: 'net_receipts',
+        totalNetRevenue: 0,
+        rows: [],
+        reconciliation: {},
+      },
+    },
+    sourceAudit: null,
+  });
+
+  const data = await api.fetchCalendarAnalysis({
+    visibleStart: '2026-04-01',
+    visibleEnd: '2026-04-30',
+    selectionStart: '2026-04-30',
+    selectionEnd: '2026-04-30',
+  });
+
+  assert.equal(data, null);
+  assert.ok(warnings.some(message => message.includes('unexpected refundComparison.scope')));
 });

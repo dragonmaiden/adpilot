@@ -46,25 +46,30 @@ function monthToDateSummary(overrides = {}) {
   };
 }
 
-function ordersForMonth(month, refundCount, totalCount) {
+function ordersForMonth(month, refundCount, totalCount, refundedAmount) {
+  const baseRefund = refundCount > 0 ? Math.floor(refundedAmount / refundCount) : 0;
+  const refundRemainder = refundCount > 0 ? refundedAmount % refundCount : 0;
+
   return Array.from({ length: totalCount }, (_, index) => ({
     wtime: `${month}-${String((index % 20) + 1).padStart(2, '0')}T01:00:00.000Z`,
-    totalPaymentPrice: index < refundCount ? 0 : 1_000,
-    totalRefundedPrice: index < refundCount ? 1_000 : 0,
+    totalPaymentPrice: index < refundCount
+      ? 1_000 - baseRefund - (index < refundRemainder ? 1 : 0)
+      : 1_000,
+    totalRefundedPrice: index < refundCount
+      ? baseRefund + (index < refundRemainder ? 1 : 0)
+      : 0,
+    sections: [{
+      orderSectionStatus: index < refundCount ? 'RETURN_COMPLETE' : 'PURCHASE_CONFIRMATION',
+    }],
   }));
 }
 
 test('completed historical months use arithmetic averages for order and revenue refund rates', () => {
   const average = buildHistoricalMonthlyRefundAverage({
-    dailyRows: [
-      { date: '2026-01-31', revenue: 100_000, refunded: 12_000 },
-      { date: '2026-02-28', revenue: 100_000, refunded: 15_000 },
-      { date: '2026-03-31', revenue: 100_000, refunded: 13_000 },
-    ],
     orders: [
-      ...ordersForMonth('2026-01', 14, 100),
-      ...ordersForMonth('2026-02', 18, 120),
-      ...ordersForMonth('2026-03', 12, 80),
+      ...ordersForMonth('2026-01', 14, 100, 12_000),
+      ...ordersForMonth('2026-02', 18, 120, 18_000),
+      ...ordersForMonth('2026-03', 12, 80, 10_400),
     ],
     start: '2026-01-01',
     end: '2026-03-31',
@@ -90,6 +95,7 @@ test('historical monthly average compares with the current month to date', () =>
   );
 
   assert.equal(comparison.basis, 'completed_months_arithmetic_mean');
+  assert.equal(comparison.scope, 'post_delivery_returns_excluding_cancellations');
   assert.deepEqual(comparison.historical, {
     orderRate: 14.7,
     revenueRate: 13.3,
@@ -135,30 +141,87 @@ test('month-to-date refund rates at or below history stay within benchmark', () 
   );
 });
 
-test('refund window counts refunded orders and stays scoped to its dates', () => {
+test('refund window counts post-delivery returns and excludes free cancellations', () => {
   const summary = buildRefundWindowSummary({
-    dailyRows: [
-      { date: '2026-06-30', revenue: 500_000, refunded: 200_000 },
-      { date: '2026-07-01', revenue: 100_000, refunded: 10_000 },
-      { date: '2026-07-02', revenue: 300_000, refunded: 20_000 },
-      { date: '2026-08-01', revenue: 900_000, refunded: 900_000 },
-    ],
     orders: [
-      { wtime: '2026-07-01T01:00:00.000Z', totalPaymentPrice: 90_000, totalRefundedPrice: 10_000 },
-      { wtime: '2026-07-02T01:00:00.000Z', totalPaymentPrice: 280_000, totalRefundedPrice: 20_000 },
-      { wtime: '2026-07-03T01:00:00.000Z', totalPaymentPrice: 50_000, totalRefundedPrice: 0 },
-      { wtime: '2026-08-01T01:00:00.000Z', totalPaymentPrice: 0, totalRefundedPrice: 900_000 },
+      {
+        wtime: '2026-07-01T01:00:00.000Z',
+        totalPaymentPrice: 90_000,
+        totalRefundedPrice: 10_000,
+        sections: [{ orderSectionStatus: 'RETURN_COMPLETE' }],
+      },
+      {
+        wtime: '2026-07-02T01:00:00.000Z',
+        totalPaymentPrice: 280_000,
+        totalRefundedPrice: 20_000,
+        sections: [{ orderSectionStatus: 'RETURN_DONE' }],
+      },
+      {
+        wtime: '2026-07-03T01:00:00.000Z',
+        totalPaymentPrice: 50_000,
+        totalRefundedPrice: 0,
+        sections: [{ orderSectionStatus: 'PURCHASE_CONFIRMATION' }],
+      },
+      {
+        wtime: '2026-07-04T01:00:00.000Z',
+        totalPaymentPrice: 8_000,
+        totalRefundedPrice: 40_000,
+        sections: [{
+          orderSectionStatus: 'CANCEL_COMPLETE',
+          cancelInfo: { refundAmount: 40_000 },
+        }],
+      },
+      {
+        wtime: '2026-08-01T01:00:00.000Z',
+        totalPaymentPrice: 0,
+        totalRefundedPrice: 900_000,
+        sections: [{ orderSectionStatus: 'RETURN_COMPLETE' }],
+      },
     ],
     start: '2026-07-01',
     end: '2026-07-31',
   });
 
-  assert.equal(summary.grossRevenue, 400_000);
+  assert.equal(summary.grossRevenue, 450_000);
   assert.equal(summary.refundedAmount, 30_000);
-  assert.equal(summary.revenueRate, 7.5);
+  assert.equal(summary.revenueRate, 6.7);
   assert.equal(summary.orderRate, 66.7);
   assert.equal(summary.recognizedOrders, 3);
   assert.equal(summary.refundOrders, 2);
+});
+
+test('mixed orders subtract cancellation refunds before measuring return refunds', () => {
+  const summary = buildRefundWindowSummary({
+    orders: [
+      {
+        wtime: '2026-07-01T01:00:00.000Z',
+        totalPaymentPrice: 97_708,
+        totalRefundedPrice: 192_184,
+        sections: [
+          {
+            orderSectionStatus: 'CANCEL_COMPLETE',
+            cancelInfo: { refundAmount: 192_184 },
+          },
+          { orderSectionStatus: 'RETURN_REQUEST' },
+        ],
+      },
+      {
+        wtime: '2026-07-02T01:00:00.000Z',
+        totalPaymentPrice: 8_000,
+        totalRefundedPrice: 96_167,
+        sections: [{ orderSectionStatus: 'RETURN_COMPLETE' }],
+      },
+    ],
+    start: '2026-07-01',
+    end: '2026-07-31',
+  });
+
+  assert.equal(summary.grossRevenue, 201_875);
+  assert.equal(summary.refundedAmount, 96_167);
+  assert.equal(summary.recognizedOrders, 2);
+  assert.equal(summary.refundOrders, 1);
+  assert.equal(summary.orderRate, 50);
+  assert.equal(summary.revenueRate, 47.6);
 });
 
 test('refund comparison stays explicitly unavailable when both denominators are zero', () => {
@@ -212,13 +275,17 @@ test('calendar contract preserves nullable refund rates instead of coercing them
 
   assert.equal(payload.refundComparison.historical.orderRate, null);
   assert.equal(payload.refundComparison.historical.revenueRate, null);
+  assert.equal(
+    payload.refundComparison.scope,
+    'post_delivery_returns_excluding_cancellations'
+  );
   assert.equal(payload.refundComparison.monthToDate.orderRate, null);
   assert.equal(payload.refundComparison.monthToDate.revenueRate, null);
   assert.equal(payload.refundComparison.monthToDate.orderDeltaPoints, null);
   assert.equal(payload.refundComparison.monthToDate.revenueDeltaPoints, null);
 });
 
-test('summary shows historical and month-to-date order and revenue refund rates', () => {
+test('summary shows historical and month-to-date return refund rates', () => {
   const monitorIndex = indexHtml.indexOf('id="refundRateMonitor"');
   const statementIndex = indexHtml.indexOf('id="calendarIncomeStatementDeck"');
   const patternsIndex = indexHtml.indexOf('id="calendarOrderPatterns"');
@@ -231,11 +298,20 @@ test('summary shows historical and month-to-date order and revenue refund rates'
   assert.match(calendarJs, /renderCalendarRefundRateMonitor\(\);/);
   assert.match(calendarJs, /Historical monthly average/);
   assert.match(calendarJs, /Month to date/);
-  assert.match(calendarJs, /orders refunded/);
-  assert.match(calendarJs, /revenue refunded/);
+  assert.match(calendarJs, /Return refunds · monthly average vs month to date/);
+  assert.match(calendarJs, /returned orders/);
+  assert.match(calendarJs, /returned revenue/);
   assert.doesNotMatch(calendarJs, /refund orders \/ month/);
   assert.doesNotMatch(calendarJs, /role="meter"/);
   assert.doesNotMatch(calendarJs, /refund-monitor-(meter|track|axis|audit|benchmark)/);
+  assert.match(
+    css,
+    /\.refund-monitor-header\s*\{[\s\S]*max-width:\s*920px[\s\S]*margin-inline:\s*auto/
+  );
+  assert.match(
+    css,
+    /\.refund-monitor-comparison\s*\{[\s\S]*max-width:\s*920px[\s\S]*margin-inline:\s*auto/
+  );
   assert.match(css, /\.refund-monitor-comparison\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
   assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.refund-monitor-comparison\s*\{[\s\S]*grid-template-columns:\s*1fr/);
 });
