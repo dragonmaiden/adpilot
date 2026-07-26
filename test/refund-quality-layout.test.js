@@ -35,7 +35,7 @@ const calendarJs = fs.readFileSync(CALENDAR_JS_PATH, 'utf8');
 const analyticsServiceJs = fs.readFileSync(ANALYTICS_SERVICE_PATH, 'utf8');
 const contractsJs = fs.readFileSync(CONTRACTS_PATH, 'utf8');
 
-test('income statement is the final Summary section', () => {
+test('retired analysis sections stay removed below the income statement', () => {
   const summaryPage = indexHtml.slice(
     indexHtml.indexOf('<section class="page active" data-page="calendar">'),
     indexHtml.indexOf('<!-- Settings Page -->')

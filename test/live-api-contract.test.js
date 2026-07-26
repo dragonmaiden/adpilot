@@ -23,17 +23,26 @@ function createStorage() {
 
 function validRefundComparison() {
   return {
-    basis: 'gross_revenue_weighted',
+    basis: 'completed_months_arithmetic_mean',
     historical: {
-      rate: 5,
-      grossRevenue: 1_000_000,
-      refundedAmount: 50_000,
-      range: { start: '2026-02-01', end: '2026-07-25' },
+      orderRate: 14.7,
+      revenueRate: 13.3,
+      monthCount: 5,
+      orderRateMonthCount: 5,
+      revenueRateMonthCount: 5,
+      range: { start: '2026-02-01', end: '2026-06-30' },
     },
-    selected: {
-      rate: 6,
-      deltaPoints: 1,
-      status: 'above_benchmark',
+    monthToDate: {
+      orderRate: 5,
+      revenueRate: 6,
+      grossRevenue: 200_000,
+      refundedAmount: 12_000,
+      recognizedOrders: 20,
+      refundOrders: 1,
+      range: { start: '2026-07-01', end: '2026-07-25' },
+      orderDeltaPoints: -9.7,
+      revenueDeltaPoints: -7.3,
+      status: 'within_benchmark',
     },
   };
 }

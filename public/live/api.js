@@ -80,18 +80,43 @@
     if (!hasArray(payload.orderPatterns, 'weekday')) return failContract('calendar-analysis', 'missing orderPatterns.weekday array');
     if (!hasArray(payload.orderPatterns, 'hourly')) return failContract('calendar-analysis', 'missing orderPatterns.hourly array');
     if (!hasObject(payload, 'refundComparison')) return failContract('calendar-analysis', 'missing refundComparison object');
-    if (payload.refundComparison.basis !== 'gross_revenue_weighted') return failContract('calendar-analysis', 'unexpected refundComparison.basis');
+    if (payload.refundComparison.basis !== 'completed_months_arithmetic_mean') return failContract('calendar-analysis', 'unexpected refundComparison.basis');
     if (!hasObject(payload.refundComparison, 'historical')) return failContract('calendar-analysis', 'missing refundComparison.historical object');
     if (!hasObject(payload.refundComparison.historical, 'range')) return failContract('calendar-analysis', 'missing refundComparison.historical.range object');
-    if (!hasObject(payload.refundComparison, 'selected')) return failContract('calendar-analysis', 'missing refundComparison.selected object');
-    if (payload.refundComparison.historical.rate != null && typeof payload.refundComparison.historical.rate !== 'number') {
-      return failContract('calendar-analysis', 'refundComparison.historical.rate must be a number or null');
+    if (!hasObject(payload.refundComparison, 'monthToDate')) return failContract('calendar-analysis', 'missing refundComparison.monthToDate object');
+    if (!hasObject(payload.refundComparison.monthToDate, 'range')) return failContract('calendar-analysis', 'missing refundComparison.monthToDate.range object');
+    if (payload.refundComparison.historical.orderRate != null && typeof payload.refundComparison.historical.orderRate !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.historical.orderRate must be a number or null');
     }
-    if (payload.refundComparison.selected.rate != null && typeof payload.refundComparison.selected.rate !== 'number') {
-      return failContract('calendar-analysis', 'refundComparison.selected.rate must be a number or null');
+    if (payload.refundComparison.historical.revenueRate != null && typeof payload.refundComparison.historical.revenueRate !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.historical.revenueRate must be a number or null');
     }
-    if (payload.refundComparison.selected.deltaPoints != null && typeof payload.refundComparison.selected.deltaPoints !== 'number') {
-      return failContract('calendar-analysis', 'refundComparison.selected.deltaPoints must be a number or null');
+    if (typeof payload.refundComparison.historical.monthCount !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.historical.monthCount must be a number');
+    }
+    if (typeof payload.refundComparison.historical.orderRateMonthCount !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.historical.orderRateMonthCount must be a number');
+    }
+    if (typeof payload.refundComparison.historical.revenueRateMonthCount !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.historical.revenueRateMonthCount must be a number');
+    }
+    if (payload.refundComparison.monthToDate.orderRate != null && typeof payload.refundComparison.monthToDate.orderRate !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.monthToDate.orderRate must be a number or null');
+    }
+    if (payload.refundComparison.monthToDate.revenueRate != null && typeof payload.refundComparison.monthToDate.revenueRate !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.monthToDate.revenueRate must be a number or null');
+    }
+    if (typeof payload.refundComparison.monthToDate.recognizedOrders !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.monthToDate.recognizedOrders must be a number');
+    }
+    if (typeof payload.refundComparison.monthToDate.refundOrders !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.monthToDate.refundOrders must be a number');
+    }
+    if (payload.refundComparison.monthToDate.orderDeltaPoints != null && typeof payload.refundComparison.monthToDate.orderDeltaPoints !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.monthToDate.orderDeltaPoints must be a number or null');
+    }
+    if (payload.refundComparison.monthToDate.revenueDeltaPoints != null && typeof payload.refundComparison.monthToDate.revenueDeltaPoints !== 'number') {
+      return failContract('calendar-analysis', 'refundComparison.monthToDate.revenueDeltaPoints must be a number or null');
     }
     if (!hasObject(payload, 'selection')) return failContract('calendar-analysis', 'missing selection object');
     if (!hasArray(payload.selection, 'days')) return failContract('calendar-analysis', 'missing selection.days array');

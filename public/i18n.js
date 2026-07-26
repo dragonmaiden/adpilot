@@ -68,7 +68,7 @@ const I18N = {
   'calendar.sectionNote':     { en: 'Calendar selection controls the financial summary below · KST', kr: '캘린더 선택 범위가 아래 재무 요약을 제어합니다 · KST' },
   'calendar.date':            { en: 'Date', kr: '날짜' },
   'calendar.prev':            { en: 'Previous', kr: '이전' },
-  'calendar.today':           { en: 'Today', kr: '오늘' },
+  'calendar.monthToDate':     { en: 'Month to date', kr: '월 누계' },
   'calendar.next':            { en: 'Next', kr: '다음' },
   'calendar.loading':         { en: 'Loading calendar analysis...', kr: '캘린더 분석 불러오는 중...' },
   'calendar.incomeStatementTitle': { en: 'Income Statement', kr: '손익계산서' },

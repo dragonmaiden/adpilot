@@ -214,7 +214,7 @@
 
     const today = getKstDateKey();
     calendarState.anchorMonth = getCalendarMonthStart(today);
-    calendarState.selectionStart = today;
+    calendarState.selectionStart = getCalendarMonthStart(today);
     calendarState.selectionEnd = today;
     calendarState.initialized = true;
   }
@@ -791,82 +791,74 @@
     `;
   }
 
-  function getRefundMonitorScaleMax(historicalRate, selectedRate) {
-    const benchmark = hasCalendarMetric(historicalRate) ? Number(historicalRate) : 0;
-    const reading = hasCalendarMetric(selectedRate) ? Number(selectedRate) : 0;
-    return Math.min(100, Math.max(10, benchmark * 2.4, benchmark + 5, reading * 1.15));
-  }
-
-  function buildRefundMonitorViewModel(refundComparison, selection) {
+  function buildRefundMonitorViewModel(refundComparison) {
     const historical = refundComparison?.historical || {};
-    const selected = refundComparison?.selected || {};
-    const historicalRate = hasCalendarMetric(historical.rate)
-      ? Math.max(0, Number(historical.rate))
+    const monthToDate = refundComparison?.monthToDate || {};
+    const historicalOrderRate = hasCalendarMetric(historical.orderRate)
+      ? Math.max(0, Number(historical.orderRate))
       : null;
-    const selectedRate = hasCalendarMetric(selected.rate)
-      ? Math.max(0, Number(selected.rate))
+    const historicalRevenueRate = hasCalendarMetric(historical.revenueRate)
+      ? Math.max(0, Number(historical.revenueRate))
       : null;
-    const deltaPoints = hasCalendarMetric(selected.deltaPoints)
-      ? Number(selected.deltaPoints)
+    const monthToDateOrderRate = hasCalendarMetric(monthToDate.orderRate)
+      ? Math.max(0, Number(monthToDate.orderRate))
       : null;
-    const scaleMax = getRefundMonitorScaleMax(historicalRate, selectedRate);
-    const historicalPosition = historicalRate == null
-      ? 0
-      : Math.min(100, (historicalRate / scaleMax) * 100);
-    const selectedPosition = selectedRate == null
-      ? null
-      : Math.min(100, (selectedRate / scaleMax) * 100);
-    const riskStrength = deltaPoints != null && deltaPoints > 0
-      ? Math.min(1, deltaPoints / Math.max(historicalRate || 0, 5))
-      : 0;
-    const isAbove = selected.status === 'above_benchmark';
-    const summary = selection?.summary || {};
-
-    let statusLabel = tr('No selected revenue', '선택 범위 매출 없음');
-    let comparisonLabel = tr(
-      'Choose a range with gross revenue to compare.',
-      '총매출이 있는 범위를 선택하면 비교할 수 있습니다.'
-    );
-    if (deltaPoints === 0) {
-      statusLabel = tr('At historical average', '과거 평균과 동일');
-      comparisonLabel = tr(
-        'Matches the historical average',
-        '과거 평균과 동일합니다'
-      );
-    } else if (deltaPoints != null && deltaPoints < 0) {
-      statusLabel = tr('Within average', '평균 이내');
-      comparisonLabel = tr(
-        `${Math.abs(deltaPoints).toFixed(1)} pp below historical average`,
-        `과거 평균보다 ${Math.abs(deltaPoints).toFixed(1)}%p 낮음`
-      );
-    } else if (deltaPoints != null && deltaPoints > 0) {
-      statusLabel = tr('Above average', '평균 초과');
-      comparisonLabel = tr(
-        `${deltaPoints.toFixed(1)} pp above historical average`,
-        `과거 평균보다 ${deltaPoints.toFixed(1)}%p 높음`
-      );
-    }
+    const monthToDateRevenueRate = hasCalendarMetric(monthToDate.revenueRate)
+      ? Math.max(0, Number(monthToDate.revenueRate))
+      : null;
+    const orderDeltaPoints = hasCalendarMetric(monthToDate.orderDeltaPoints)
+      ? Number(monthToDate.orderDeltaPoints)
+      : null;
+    const revenueDeltaPoints = hasCalendarMetric(monthToDate.revenueDeltaPoints)
+      ? Number(monthToDate.revenueDeltaPoints)
+      : null;
 
     return {
-      historicalRate,
-      selectedRate,
-      deltaPoints,
-      scaleMax,
-      historicalPosition,
-      selectedPosition,
-      riskStrength,
-      tone: isAbove ? 'above' : selectedRate == null ? 'unavailable' : 'within',
-      statusLabel,
-      comparisonLabel,
-      selectedRangeLabel: getCalendarWaterfallContextLabel(),
-      historicalRangeLabel: formatCalendarRange(
-        historical?.range?.start,
-        historical?.range?.end
+      historicalOrderRate,
+      historicalRevenueRate,
+      monthToDateOrderRate,
+      monthToDateRevenueRate,
+      orderComparison: buildRefundMetricComparison(
+        tr('Orders', '주문'),
+        orderDeltaPoints,
+        tr('No recognized orders', '확인된 주문 없음')
       ),
-      historicalGrossRevenue: Math.max(0, toFiniteNumber(historical.grossRevenue)),
-      historicalRefundedAmount: Math.max(0, toFiniteNumber(historical.refundedAmount)),
-      selectedGrossRevenue: Math.max(0, toFiniteNumber(summary.grossRevenue)),
-      selectedRefundedAmount: Math.max(0, toFiniteNumber(summary.refundedAmount)),
+      revenueComparison: buildRefundMetricComparison(
+        tr('Revenue', '매출'),
+        revenueDeltaPoints,
+        tr('No revenue', '매출 없음')
+      ),
+      tone: monthToDate.status === 'above_benchmark'
+        ? 'above'
+        : monthToDateOrderRate == null && monthToDateRevenueRate == null
+          ? 'unavailable'
+          : 'within',
+    };
+  }
+
+  function buildRefundMetricComparison(metricLabel, deltaPoints, unavailableLabel) {
+    if (deltaPoints == null) {
+      return {
+        label: `${metricLabel} · ${unavailableLabel}`,
+        symbol: '—',
+        tone: 'unavailable',
+      };
+    }
+    if (deltaPoints === 0) {
+      return {
+        label: `${metricLabel} · ${tr('matches average', '평균과 동일')}`,
+        symbol: '=',
+        tone: 'within',
+      };
+    }
+
+    const direction = deltaPoints < 0
+      ? tr(`${Math.abs(deltaPoints).toFixed(1)} pp below`, `${Math.abs(deltaPoints).toFixed(1)}%p 낮음`)
+      : tr(`${deltaPoints.toFixed(1)} pp above`, `${deltaPoints.toFixed(1)}%p 높음`);
+    return {
+      label: `${metricLabel} · ${direction}`,
+      symbol: deltaPoints < 0 ? '↓' : '↑',
+      tone: deltaPoints < 0 ? 'within' : 'above',
     };
   }
 
@@ -877,8 +869,8 @@
     container.setAttribute('aria-busy', 'true');
     container.innerHTML = `
       <div class="card refund-monitor-card refund-monitor-placeholder ${tone === 'error' ? 'is-error' : ''}">
-        <div class="refund-monitor-kicker">${esc(tr('Refund rate · selected range', '환불률 · 선택 범위'))}</div>
-        <h2>${esc(tr('Refund rate monitor', '환불률 모니터'))}</h2>
+        <div class="refund-monitor-kicker">${esc(tr('Refunds', '환불'))}</div>
+        <h2>${esc(tr('Monthly average vs month to date', '월평균 대비 월 누계'))}</h2>
         <p>${esc(message)}</p>
       </div>
     `;
@@ -890,7 +882,7 @@
 
     if (state.loading) {
       renderRefundMonitorPlaceholder(
-        tr('Refreshing the selected-range comparison...', '선택 범위 비교를 새로고침 중입니다...')
+        tr('Refreshing the refund comparison...', '환불 비교를 새로고침 중입니다...')
       );
       return;
     }
@@ -908,117 +900,76 @@
     }
 
     const refundComparison = calendarState.data.refundComparison || {};
-    const viewModel = buildRefundMonitorViewModel(
-      refundComparison,
-      calendarState.data.selection || {}
-    );
-    if (viewModel.historicalRate == null) {
+    const viewModel = buildRefundMonitorViewModel(refundComparison);
+    if (viewModel.historicalOrderRate == null && viewModel.historicalRevenueRate == null) {
       renderRefundMonitorPlaceholder(
         tr(
-          'The historical benchmark will appear after gross revenue is available.',
-          '총매출 데이터가 확보되면 과거 기준이 표시됩니다.'
+          'The historical comparison will appear after recognized orders or gross revenue are available.',
+          '확인된 주문 또는 총매출 데이터가 확보되면 과거 비교가 표시됩니다.'
         )
       );
       return;
     }
-
-    const readingColor = viewModel.tone === 'above'
-      ? `hsl(4 78% ${Math.round(62 - viewModel.riskStrength * 28)}%)`
-      : '#1f9d55';
-    const meterAttributes = viewModel.selectedRate == null
-      ? `aria-valuetext="${esc(tr('Selected refund rate unavailable', '선택 환불률을 계산할 수 없음'))}"`
-      : `aria-valuenow="${viewModel.selectedRate}" aria-valuetext="${esc(
-          `${formatPercent(viewModel.selectedRate, 1)} · ${viewModel.comparisonLabel}`
-        )}"`;
-    const selectedMarker = viewModel.selectedPosition == null
-      ? ''
-      : `
-        <span class="refund-monitor-reading" aria-hidden="true">
-          <span class="refund-monitor-reading-dot"></span>
-          <span class="refund-monitor-reading-label">
-            ${esc(tr('Selected', '선택'))} ${esc(formatPercent(viewModel.selectedRate, 1))}
-          </span>
-        </span>
-      `;
+    const metricComparisons = [
+      viewModel.orderComparison,
+      viewModel.revenueComparison,
+    ];
+    const comparisonMarkup = metricComparisons.every(comparison => comparison.tone === 'unavailable')
+      ? `
+        <div class="refund-monitor-delta is-unavailable">
+          <span aria-hidden="true">—</span>
+          <strong>${esc(tr('No month-to-date comparison', '월 누계 비교 없음'))}</strong>
+        </div>
+      `
+      : metricComparisons.map(comparison => `
+        <div class="refund-monitor-delta is-${esc(comparison.tone)}" aria-label="${esc(comparison.label)}">
+          <span aria-hidden="true">${esc(comparison.symbol)}</span>
+          <strong>${esc(comparison.label)}</strong>
+        </div>
+      `).join('');
 
     container.setAttribute('aria-busy', 'false');
     container.innerHTML = `
       <section
         class="card refund-monitor-card tone-${esc(viewModel.tone)}"
-        style="
-          --refund-benchmark-position: ${viewModel.historicalPosition.toFixed(2)}%;
-          --refund-reading-position: ${(viewModel.selectedPosition ?? 0).toFixed(2)}%;
-          --refund-reading-color: ${readingColor};
-        "
         aria-labelledby="refundMonitorTitle"
       >
         <header class="refund-monitor-header">
           <div>
-            <div class="refund-monitor-kicker">${esc(tr('Refund rate · selected range', '환불률 · 선택 범위'))}</div>
-            <h2 id="refundMonitorTitle">${esc(tr('Refund rate monitor', '환불률 모니터'))}</h2>
-            <p>${esc(tr(
-              'Compare the selected period with the gross-revenue-weighted historical average.',
-              '선택 기간을 총매출 가중 과거 평균과 비교합니다.'
-            ))}</p>
+            <div class="refund-monitor-kicker">${esc(tr('Refunds', '환불'))}</div>
+            <h2 id="refundMonitorTitle">${esc(tr('Monthly average vs month to date', '월평균 대비 월 누계'))}</h2>
           </div>
-          <span class="refund-monitor-status">${esc(viewModel.statusLabel)}</span>
         </header>
 
-        <div class="refund-monitor-summary">
-          <div class="refund-monitor-reading-copy">
-            <span>${esc(viewModel.selectedRangeLabel)}</span>
-            <strong>${viewModel.selectedRate == null ? '—' : esc(formatPercent(viewModel.selectedRate, 1))}</strong>
-            <small>${esc(viewModel.comparisonLabel)}</small>
+        <div class="refund-monitor-comparison">
+          <div class="refund-monitor-period">
+            <span class="refund-monitor-period-label">${esc(tr('Historical monthly average', '과거 월평균'))}</span>
+            <div class="refund-monitor-order-total">
+              <strong>${viewModel.historicalOrderRate == null ? '—' : esc(formatPercent(viewModel.historicalOrderRate, 1))}</strong>
+              <span>${esc(tr('orders refunded', '환불 주문 비율'))}</span>
+            </div>
+            <div class="refund-monitor-rate">
+              <strong>${viewModel.historicalRevenueRate == null ? '—' : esc(formatPercent(viewModel.historicalRevenueRate, 1))}</strong>
+              <span>${esc(tr('revenue refunded', '환불 매출 비율'))}</span>
+            </div>
           </div>
-          <div class="refund-monitor-benchmark-copy">
-            <span>${esc(tr('Historical average', '과거 평균'))}</span>
-            <strong>${esc(formatPercent(viewModel.historicalRate, 1))}</strong>
-            <small>${esc(viewModel.historicalRangeLabel)}</small>
+
+          <div class="refund-monitor-deltas">
+            ${comparisonMarkup}
+          </div>
+
+          <div class="refund-monitor-period refund-monitor-period-current">
+            <span class="refund-monitor-period-label">${esc(tr('Month to date', '월 누계'))}</span>
+            <div class="refund-monitor-order-total is-${esc(viewModel.orderComparison.tone)}">
+              <strong>${viewModel.monthToDateOrderRate == null ? '—' : esc(formatPercent(viewModel.monthToDateOrderRate, 1))}</strong>
+              <span>${esc(tr('orders refunded', '환불 주문 비율'))}</span>
+            </div>
+            <div class="refund-monitor-rate is-${esc(viewModel.revenueComparison.tone)}">
+              <strong>${viewModel.monthToDateRevenueRate == null ? '—' : esc(formatPercent(viewModel.monthToDateRevenueRate, 1))}</strong>
+              <span>${esc(tr('revenue refunded', '환불 매출 비율'))}</span>
+            </div>
           </div>
         </div>
-
-        <div
-          class="refund-monitor-meter"
-          role="meter"
-          tabindex="0"
-          aria-label="${esc(tr('Selected refund rate compared with historical average', '선택 환불률과 과거 평균 비교'))}"
-          aria-valuemin="0"
-          aria-valuemax="${viewModel.scaleMax.toFixed(1)}"
-          ${meterAttributes}
-        >
-          <div class="refund-monitor-track" aria-hidden="true">
-            <span class="refund-monitor-within-zone"></span>
-            <span class="refund-monitor-risk-zone"></span>
-            <span class="refund-monitor-benchmark">
-              <span class="refund-monitor-benchmark-label">
-                ${esc(tr('Average', '평균'))} ${esc(formatPercent(viewModel.historicalRate, 1))}
-              </span>
-            </span>
-            ${selectedMarker}
-          </div>
-          <div class="refund-monitor-axis" aria-hidden="true">
-            <span>0%</span>
-            <span>${esc(tr('Within average', '평균 이내'))}</span>
-            <span>${esc(formatPercent(viewModel.scaleMax, 1))}</span>
-          </div>
-        </div>
-
-        <footer class="refund-monitor-audit">
-          <span>
-            ${esc(tr('Historical basis', '과거 기준'))}:
-            <strong>${esc(formatKrw(viewModel.historicalRefundedAmount))}</strong>
-            ${esc(tr('refunded ÷', '환불 ÷'))}
-            <strong>${esc(formatKrw(viewModel.historicalGrossRevenue))}</strong>
-            ${esc(tr('gross revenue', '총매출'))}
-          </span>
-          <span>
-            ${esc(tr('Selected', '선택'))}:
-            <strong>${esc(formatKrw(viewModel.selectedRefundedAmount))}</strong>
-            ${esc(tr('refunded ÷', '환불 ÷'))}
-            <strong>${esc(formatKrw(viewModel.selectedGrossRevenue))}</strong>
-            ${esc(tr('gross revenue', '총매출'))}
-          </span>
-        </footer>
       </section>
     `;
   }
@@ -1322,7 +1273,7 @@
 
     const prevBtn = document.getElementById('calendarPrevBtn');
     const nextBtn = document.getElementById('calendarNextBtn');
-    const todayBtn = document.getElementById('calendarTodayBtn');
+    const monthToDateBtn = document.getElementById('calendarMonthToDateBtn');
     const viewportEl = document.getElementById('calendarViewport');
 
     if (prevBtn) {
@@ -1341,11 +1292,11 @@
       });
     }
 
-    if (todayBtn) {
-      todayBtn.addEventListener('click', async () => {
+    if (monthToDateBtn) {
+      monthToDateBtn.addEventListener('click', async () => {
         const today = getKstDateKey();
         calendarState.anchorMonth = getCalendarMonthStart(today);
-        calendarState.selectionStart = today;
+        calendarState.selectionStart = getCalendarMonthStart(today);
         calendarState.selectionEnd = today;
         await refreshCalendarPage();
       });

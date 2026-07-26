@@ -95,12 +95,14 @@ test('order patterns discloses gross-revenue basis in the footnote', () => {
   assert.match(calendarJs, /Gross revenue before refunds and fees/);
 });
 
-test('order patterns section renders below the income statement deck', () => {
+test('order patterns section renders after the income statement and refund comparison', () => {
   const deckIndex = indexHtml.indexOf('id="calendarIncomeStatementDeck"');
+  const refundIndex = indexHtml.indexOf('id="refundRateMonitor"');
   const patternsIndex = indexHtml.indexOf('id="calendarOrderPatterns"');
 
   assert.ok(deckIndex >= 0);
-  assert.ok(patternsIndex > deckIndex);
+  assert.ok(refundIndex > deckIndex);
+  assert.ok(patternsIndex > refundIndex);
 });
 
 test('calendar page renders weekday and hourly order patterns from the API payload', () => {

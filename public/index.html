@@ -74,9 +74,9 @@
               <i data-lucide="chevron-left"></i>
               <span data-i18n="calendar.prev">Previous</span>
             </button>
-            <button class="btn btn-ghost btn-sm" id="calendarTodayBtn" type="button">
+            <button class="btn btn-ghost btn-sm" id="calendarMonthToDateBtn" type="button">
               <i data-lucide="locate-fixed"></i>
-              <span data-i18n="calendar.today">Today</span>
+              <span data-i18n="calendar.monthToDate">Month to date</span>
             </button>
             <button class="btn btn-ghost btn-sm" id="calendarNextBtn" type="button">
               <span data-i18n="calendar.next">Next</span>
@@ -142,19 +142,6 @@
           </div>
         </div>
 
-        <div
-          class="refund-rate-monitor"
-          id="refundRateMonitor"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <div class="card refund-monitor-card refund-monitor-placeholder">
-            <div class="refund-monitor-kicker">Refund rate · selected range</div>
-            <h2>Refund rate monitor</h2>
-            <p>Building the historical benchmark…</p>
-          </div>
-        </div>
-
         <div class="calendar-income-statement-deck" id="calendarIncomeStatementDeck">
           <div class="card">
             <div class="card-header">
@@ -162,6 +149,19 @@
               <span class="badge badge-neutral" data-i18n="calendar.selectedHint">Choose a day or drag across a period</span>
             </div>
             <p class="card-desc" data-i18n="calendar.selectedDesc">The income statement will populate for the selected KST date range.</p>
+          </div>
+        </div>
+
+        <div
+          class="refund-rate-monitor"
+          id="refundRateMonitor"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div class="card refund-monitor-card refund-monitor-placeholder">
+            <div class="refund-monitor-kicker">Refunds</div>
+            <h2>Monthly average vs month to date</h2>
+            <p>Loading refund comparison…</p>
           </div>
         </div>
 

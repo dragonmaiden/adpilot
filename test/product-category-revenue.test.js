@@ -124,7 +124,8 @@ test('calendar payload preserves all-time order patterns for API compatibility',
   assert.match(calendarServiceJs, /function buildAllTimeOrderPatterns\(projection\)/);
   assert.match(calendarServiceJs, /const dailyRows = Array\.isArray\(projection\?\.dailyMerged\) \? projection\.dailyMerged : \[\];/);
   assert.match(calendarServiceJs, /const orderPatterns = buildAllTimeOrderPatterns\(projection\);/);
-  assert.match(calendarServiceJs, /orderPatterns,\s*\n\s*refundComparison: buildRefundRateComparison\(orderPatterns,/);
+  assert.match(calendarServiceJs, /const refundComparison = buildRefundRateComparison\(/);
+  assert.match(calendarServiceJs, /orderPatterns,\s*\n\s*refundComparison,/);
 });
 
 test('calendar income statement renders the financial sequence and every canonical cost', () => {
@@ -192,7 +193,7 @@ test('calendar income statement keeps Meta ad spend visible as an explicit cost 
   assert.match(calendarJs, /COGS \+ shipping \+ fees \+ advertising/);
 });
 
-test('calendar selection ends after the income statement', () => {
+test('calendar selected-range financial sequence ends with the income statement', () => {
   assert.doesNotMatch(calendarJs, /calendar-summary-grid-secondary|summaryCards|renderCalendarSummaryCard/);
   assert.doesNotMatch(css, /\.calendar-summary-grid/);
   assert.match(indexHtml, /class="summary-profit-topline"[\s\S]*id="calendarIncomeStatementDeck"/);

@@ -144,7 +144,7 @@ function buildDefaultViewport() {
     today,
     visibleStart: previousMonthStart,
     visibleEnd: endOfMonth(today),
-    selectionStart: today,
+    selectionStart: currentMonthStart,
     selectionEnd: today,
   };
 }
@@ -775,48 +775,149 @@ function buildAllTimeOrderPatterns(projection) {
   };
 }
 
-function buildRefundRateComparison(orderPatterns, selectedRefundRate = null) {
-  const historicalGrossRevenue = Math.max(
-    0,
-    toFiniteNumber(orderPatterns?.summary?.totalGrossRevenue)
+function buildRefundWindowSummary({ dailyRows, orders, start, end }) {
+  const hasRange = isValidDateKey(start)
+    && isValidDateKey(end)
+    && compareDateKeys(start, end) <= 0;
+  if (!hasRange) {
+    return {
+      orderRate: null,
+      revenueRate: null,
+      grossRevenue: 0,
+      refundedAmount: 0,
+      recognizedOrders: 0,
+      refundOrders: 0,
+      range: { start: null, end: null },
+    };
+  }
+
+  const windowDays = (Array.isArray(dailyRows) ? dailyRows : []).filter(row =>
+    isValidDateKey(row?.date)
+    && compareDateKeys(row.date, start) >= 0
+    && compareDateKeys(row.date, end) <= 0
   );
-  const historicalRefundedAmount = Math.max(
-    0,
-    toFiniteNumber(orderPatterns?.summary?.totalRefunded)
+  const windowOrders = (Array.isArray(orders) ? orders : []).filter(order => {
+    const date = getOrderDateKey(order);
+    return date
+      && compareDateKeys(date, start) >= 0
+      && compareDateKeys(date, end) <= 0;
+  });
+  const grossRevenue = windowDays.reduce(
+    (total, row) => total + Math.max(0, toFiniteNumber(row?.revenue)),
+    0
   );
-  const historicalRate = ratioPercentOrNull(
-    historicalRefundedAmount,
-    historicalGrossRevenue
+  const refundedAmount = windowDays.reduce(
+    (total, row) => total + Math.max(0, toFiniteNumber(row?.refunded)),
+    0
   );
-  const parsedSelectedRate = Number(selectedRefundRate);
-  const selectedRate = selectedRefundRate != null
-    && Number.isFinite(parsedSelectedRate)
-    && parsedSelectedRate >= 0
-    ? parsedSelectedRate
+  const orderMetrics = buildOrderMetrics(windowOrders);
+
+  return {
+    orderRate: ratioPercentOrNull(orderMetrics.refundOrders, orderMetrics.recognizedOrders),
+    revenueRate: ratioPercentOrNull(refundedAmount, grossRevenue),
+    grossRevenue: Math.round(grossRevenue),
+    refundedAmount: Math.round(refundedAmount),
+    recognizedOrders: orderMetrics.recognizedOrders,
+    refundOrders: orderMetrics.refundOrders,
+    range: { start, end },
+  };
+}
+
+function buildHistoricalMonthlyRefundAverage({ dailyRows, orders, start, end }) {
+  const hasRange = isValidDateKey(start)
+    && isValidDateKey(end)
+    && compareDateKeys(start, end) <= 0;
+  if (!hasRange) {
+    return {
+      orderRate: null,
+      revenueRate: null,
+      monthCount: 0,
+      orderRateMonthCount: 0,
+      revenueRateMonthCount: 0,
+      range: { start: null, end: null },
+    };
+  }
+
+  const monthlySummaries = [];
+  let cursor = startOfMonth(start);
+  const lastMonth = startOfMonth(end);
+
+  while (cursor && lastMonth && compareDateKeys(cursor, lastMonth) <= 0) {
+    const monthStart = compareDateKeys(cursor, start) < 0 ? start : cursor;
+    const calendarMonthEnd = endOfMonth(cursor);
+    const monthEnd = compareDateKeys(calendarMonthEnd, end) > 0 ? end : calendarMonthEnd;
+    monthlySummaries.push(buildRefundWindowSummary({
+      dailyRows,
+      orders,
+      start: monthStart,
+      end: monthEnd,
+    }));
+    cursor = shiftMonth(cursor, 1);
+  }
+
+  const validOrderRateMonths = monthlySummaries.filter(month => month.orderRate != null);
+  const validRevenueRateMonths = monthlySummaries.filter(month => month.revenueRate != null);
+  const averageOrderRate = validOrderRateMonths.length > 0
+    ? validOrderRateMonths.reduce((total, month) => total + month.orderRate, 0) / validOrderRateMonths.length
     : null;
-  const deltaPoints = historicalRate != null && selectedRate != null
-    ? Number((selectedRate - historicalRate).toFixed(1))
+  const averageRevenueRate = validRevenueRateMonths.length > 0
+    ? validRevenueRateMonths.reduce((total, month) => total + month.revenueRate, 0) / validRevenueRateMonths.length
     : null;
 
   return {
-    basis: 'gross_revenue_weighted',
+    orderRate: averageOrderRate == null ? null : Number(averageOrderRate.toFixed(1)),
+    revenueRate: averageRevenueRate == null ? null : Number(averageRevenueRate.toFixed(1)),
+    monthCount: monthlySummaries.length,
+    orderRateMonthCount: validOrderRateMonths.length,
+    revenueRateMonthCount: validRevenueRateMonths.length,
+    range: { start, end },
+  };
+}
+
+function buildRefundRateComparison(historicalAverage = {}, monthToDateSummary = {}) {
+  const historicalOrderRate = historicalAverage?.orderRate ?? null;
+  const historicalRevenueRate = historicalAverage?.revenueRate ?? null;
+  const monthToDateOrderRate = monthToDateSummary?.orderRate ?? null;
+  const monthToDateRevenueRate = monthToDateSummary?.revenueRate ?? null;
+  const orderDeltaPoints = historicalOrderRate != null && monthToDateOrderRate != null
+    ? Number((monthToDateOrderRate - historicalOrderRate).toFixed(1))
+    : null;
+  const revenueDeltaPoints = historicalRevenueRate != null && monthToDateRevenueRate != null
+    ? Number((monthToDateRevenueRate - historicalRevenueRate).toFixed(1))
+    : null;
+  const comparableDeltas = [orderDeltaPoints, revenueDeltaPoints].filter(value => value != null);
+
+  return {
+    basis: 'completed_months_arithmetic_mean',
     historical: {
-      rate: historicalRate,
-      grossRevenue: Math.round(historicalGrossRevenue),
-      refundedAmount: Math.round(historicalRefundedAmount),
+      orderRate: historicalOrderRate,
+      revenueRate: historicalRevenueRate,
+      monthCount: Math.max(0, toFiniteNumber(historicalAverage?.monthCount)),
+      orderRateMonthCount: Math.max(0, toFiniteNumber(historicalAverage?.orderRateMonthCount)),
+      revenueRateMonthCount: Math.max(0, toFiniteNumber(historicalAverage?.revenueRateMonthCount)),
       range: {
-        start: orderPatterns?.range?.start || null,
-        end: orderPatterns?.range?.end || null,
+        start: historicalAverage?.range?.start || null,
+        end: historicalAverage?.range?.end || null,
       },
     },
-    selected: {
-      rate: selectedRate,
-      deltaPoints,
-      status: deltaPoints == null
+    monthToDate: {
+      orderRate: monthToDateOrderRate,
+      revenueRate: monthToDateRevenueRate,
+      grossRevenue: Math.max(0, toFiniteNumber(monthToDateSummary?.grossRevenue)),
+      refundedAmount: Math.max(0, toFiniteNumber(monthToDateSummary?.refundedAmount)),
+      recognizedOrders: Math.max(0, toFiniteNumber(monthToDateSummary?.recognizedOrders)),
+      refundOrders: Math.max(0, toFiniteNumber(monthToDateSummary?.refundOrders)),
+      range: {
+        start: monthToDateSummary?.range?.start || null,
+        end: monthToDateSummary?.range?.end || null,
+      },
+      orderDeltaPoints,
+      revenueDeltaPoints,
+      status: comparableDeltas.length === 0
         ? 'unavailable'
-        : deltaPoints <= 0
-          ? 'within_benchmark'
-          : 'above_benchmark',
+        : comparableDeltas.some(value => value > 0)
+          ? 'above_benchmark'
+          : 'within_benchmark',
     },
   };
 }
@@ -873,7 +974,7 @@ async function getCalendarAnalysisResponse(query = {}) {
       viewport,
       calendarDays: [],
       orderPatterns,
-      refundComparison: buildRefundRateComparison(orderPatterns),
+      refundComparison: buildRefundRateComparison(),
       sourceAudit: data.sourceAudit || null,
       selection: {
         label: '',
@@ -902,6 +1003,29 @@ async function getCalendarAnalysisResponse(query = {}) {
   const selectionDates = enumerateDateKeys(viewport.selectionStart, viewport.selectionEnd);
 
   const orders = Array.isArray(data.orders) ? data.orders : [];
+  const monthToDateStart = startOfMonth(viewport.today);
+  const historicalEndDate = (() => {
+    const date = toUtcDate(monthToDateStart);
+    if (!date) return null;
+    date.setUTCDate(date.getUTCDate() - 1);
+    return fromUtcDate(date);
+  })();
+  const historicalRefundAverage = buildHistoricalMonthlyRefundAverage({
+    dailyRows: projection.dailyMerged,
+    orders,
+    start: orderPatterns?.range?.start,
+    end: historicalEndDate,
+  });
+  const monthToDateRefundSummary = buildRefundWindowSummary({
+    dailyRows: projection.dailyMerged,
+    orders,
+    start: monthToDateStart,
+    end: viewport.today,
+  });
+  const refundComparison = buildRefundRateComparison(
+    historicalRefundAverage,
+    monthToDateRefundSummary
+  );
   const visibleOrders = orders.filter(order => {
     const date = getOrderDateKey(order);
     return date && compareDateKeys(date, viewport.visibleStart) >= 0 && compareDateKeys(date, viewport.visibleEnd) <= 0;
@@ -1017,7 +1141,7 @@ async function getCalendarAnalysisResponse(query = {}) {
     categoryRevenueByDate,
     categoryRevenueByMonth,
     orderPatterns,
-    refundComparison: buildRefundRateComparison(orderPatterns, selectionSummary.refundRate),
+    refundComparison,
     sourceAudit: data.sourceAudit || null,
     selection: {
       label: viewport.selectionStart === viewport.selectionEnd
@@ -1041,5 +1165,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 module.exports = {
   getCalendarAnalysisResponse,
   buildAllTimeOrderPatterns,
+  buildRefundWindowSummary,
+  buildHistoricalMonthlyRefundAverage,
   buildRefundRateComparison,
 };
