@@ -55,9 +55,11 @@ test('income statement pairs Meta USD spend with canonical KRW cost and the appl
   assert.doesNotMatch(calendarJs, /summary\.adSpend\s*\*\s*usdToKrwRate/);
 });
 
-test('Meta currency pair remains grouped in the amount column on desktop and mobile', () => {
+test('Meta currency amounts remain grouped without competing on one line', () => {
   assert.match(css, /\.income-statement-ad-spend-values\s*\{[\s\S]*align-items:\s*flex-end;/);
-  assert.match(css, /\.income-statement-currency-pair\s*\{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
-  assert.match(css, /@media \(max-width:\s*480px\)[\s\S]*\.income-statement-currency-pair\s*\{[\s\S]*display:\s*grid;/);
-  assert.match(css, /@media \(max-width:\s*480px\)[\s\S]*\.income-statement-currency-pair > span\s*\{[\s\S]*display:\s*none;/);
+  assert.match(css, /\.income-statement-ad-spend-values \.income-statement-amount\s*\{[\s\S]*font-weight:\s*600;/);
+  assert.match(css, /\.income-statement-source-amount\s*\{[\s\S]*font-variant-numeric:\s*tabular-nums;/);
+  assert.match(css, /\.income-statement-ad-spend-values > small\s*\{[\s\S]*max-width:\s*100%;[\s\S]*overflow-wrap:\s*anywhere;/);
+  assert.doesNotMatch(calendarJs, /income-statement-currency-pair/);
+  assert.doesNotMatch(calendarJs, /aria-hidden="true">→/);
 });

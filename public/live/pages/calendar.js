@@ -644,12 +644,13 @@
       : '—';
     const amountMarkup = line.key === 'ad-spend'
       ? `
-        <div class="income-statement-ad-spend-values" role="cell">
-          <div class="income-statement-currency-pair">
-            <strong>${esc(line.sourceAmountLabel)}</strong>
-            <span aria-hidden="true">→</span>
-            <strong class="income-statement-amount">${amountLabel}</strong>
-          </div>
+        <div
+          class="income-statement-ad-spend-values"
+          role="cell"
+          aria-label="${esc(`${amountLabel}; ${line.sourceAmountLabel}; ${line.fxRateLabel}`)}"
+        >
+          <strong class="income-statement-amount">${amountLabel}</strong>
+          <span class="income-statement-source-amount">${esc(line.sourceAmountLabel)}</span>
           <small>${esc(line.fxRateLabel)}</small>
         </div>
       `
