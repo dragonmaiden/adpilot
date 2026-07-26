@@ -1015,6 +1015,7 @@ async function getCalendarAnalysisResponse(query = {}) {
     const orderPatterns = buildAllTimeOrderPatterns({});
     return contracts.calendarAnalysis({
       ready: false,
+      fx: data.fx || null,
       viewport,
       calendarDays: [],
       orderPatterns,
@@ -1178,6 +1179,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 
   return contracts.calendarAnalysis({
     ready: true,
+    fx: projection.fx,
     viewport,
     calendarDays,
     categoryRevenueByDate,

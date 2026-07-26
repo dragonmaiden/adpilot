@@ -150,10 +150,19 @@ function analytics({ charts, revenueData, dailyInsights, adInsights, cogsData, m
 /**
  * Build /api/calendar-analysis response.
  */
-function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, orderPatterns, refundComparison, sourceAudit, selection }) {
+function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate, categoryRevenueByMonth, orderPatterns, refundComparison, sourceAudit, fx, selection }) {
   return {
     apiVersion: API_VERSION,
     ready: ready !== false,
+    fx: {
+      base: fx?.base ?? 'USD',
+      quote: fx?.quote ?? 'KRW',
+      source: fx?.source ?? 'unknown',
+      usdToKrwRate: fx?.usdToKrwRate ?? null,
+      rateDate: fx?.rateDate ?? null,
+      fetchedAt: fx?.fetchedAt ?? null,
+      stale: Boolean(fx?.stale),
+    },
     viewport: {
       today: viewport?.today ?? null,
       visibleStart: viewport?.visibleStart ?? null,

@@ -73,6 +73,14 @@
     const base = validateVersionedObject('calendar-analysis', payload);
     if (!base.valid) return base;
     if (payload.ready === false) return passContract();
+    if (!hasObject(payload, 'fx')) return failContract('calendar-analysis', 'missing fx object');
+    if (payload.fx.base !== 'USD' || payload.fx.quote !== 'KRW') {
+      return failContract('calendar-analysis', 'fx must describe USD/KRW');
+    }
+    if (payload.fx.usdToKrwRate != null && typeof payload.fx.usdToKrwRate !== 'number') {
+      return failContract('calendar-analysis', 'fx.usdToKrwRate must be a number or null');
+    }
+    if (typeof payload.fx.stale !== 'boolean') return failContract('calendar-analysis', 'missing fx.stale boolean');
     if (!hasObject(payload, 'viewport')) return failContract('calendar-analysis', 'missing viewport object');
     if (!hasArray(payload, 'calendarDays')) return failContract('calendar-analysis', 'missing calendarDays array');
     if (!hasObject(payload, 'orderPatterns')) return failContract('calendar-analysis', 'missing orderPatterns object');

@@ -146,7 +146,7 @@ test('calendar income statement renders the financial sequence and every canonic
   const cogsIndex = calendarJs.indexOf("label: 'COGS'");
   const shippingIndex = calendarJs.indexOf("label: tr('Shipping costs'");
   const paymentFeesIndex = calendarJs.indexOf("label: tr('Payment processing fees'");
-  const advertisingIndex = calendarJs.indexOf("label: tr('Advertising costs'");
+  const advertisingIndex = calendarJs.indexOf("label: tr('Meta ad spend'");
   const totalCostsIndex = calendarJs.indexOf("label: tr('Total costs'");
 
   assert.ok(cardRevenueIndex >= 0);
@@ -188,7 +188,7 @@ test('calendar no longer loads or renders Sankey dependencies', () => {
 });
 
 test('calendar income statement keeps Meta ad spend visible as an explicit cost row', () => {
-  assert.match(calendarJs, /label:\s*tr\('Advertising costs', '광고비'\)/);
+  assert.match(calendarJs, /label:\s*tr\('Meta ad spend', 'Meta 광고비'\)/);
   assert.match(calendarJs, /amount:\s*-summary\.adSpendKRW/);
   assert.match(calendarJs, /COGS \+ shipping \+ fees \+ advertising/);
 });
@@ -201,7 +201,7 @@ test('calendar selected-range financial sequence ends with the income statement'
   assert.match(css, /\.summary-profit-topline\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(0,\s*1fr\);/);
   assert.match(css, /\.summary-profit-kpis\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/);
   assert.match(calendarJs, /const statementContainer = document\.getElementById\('calendarIncomeStatementDeck'\);/);
-  assert.match(calendarJs, /statementContainer\.innerHTML = renderCalendarIncomeStatement\(selection\);/);
+  assert.match(calendarJs, /statementContainer\.innerHTML = renderCalendarIncomeStatement\(selection, calendarState\.data\.fx\);/);
   assert.doesNotMatch(calendarJs, /Daily Breakdown|Orders Ledger|Product Explorer/);
 });
 

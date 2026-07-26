@@ -134,6 +134,13 @@
     return hasCalendarMetric(value) ? formatPercent(Number(value), digits) : '—';
   }
 
+  function formatUsdToKrwRate(value) {
+    return `₩${Number(value).toLocaleString(getLocale(), {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
   function formatCalendarCellKrw(value, { signed = false } = {}) {
     const numeric = Math.round(toFiniteNumber(value));
     const abs = Math.abs(numeric);
@@ -440,8 +447,20 @@
     }).join('');
   }
 
-  function buildIncomeStatementViewModel(selection) {
+  function buildIncomeStatementViewModel(selection, fx = {}) {
     const summary = buildCalendarWaterfallSummary(selection);
+    const usdToKrwRate = hasCalendarMetric(fx?.usdToKrwRate) && Number(fx.usdToKrwRate) > 0
+      ? Number(fx.usdToKrwRate)
+      : null;
+    const fxDate = isIsoDateKey(fx?.rateDate)
+      ? formatUtcDate(fx.rateDate, { month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+    const fxRateLabel = usdToKrwRate == null
+      ? tr('FX rate unavailable', '환율 정보 없음')
+      : tr(
+        `1 USD = ${formatUsdToKrwRate(usdToKrwRate)}${fxDate ? ` · ${fx.stale ? 'cached FX' : 'FX'} ${fxDate}` : fx.stale ? ' · cached FX' : ''}`,
+        `1 USD = ${formatUsdToKrwRate(usdToKrwRate)}${fxDate ? ` · ${fx.stale ? '캐시 환율' : '환율'} ${fxDate}` : fx.stale ? ' · 캐시 환율' : ''}`
+      );
     const paymentChannels = selection?.paymentChannels || {};
     const payway = paymentChannels.payway || {};
     const channelsByKey = new Map(
@@ -597,12 +616,11 @@
         },
         {
           key: 'ad-spend',
-          label: tr('Advertising costs', '광고비'),
-          meta: tr(
-            `${formatUsd(summary.adSpend || 0, 2)} media spend`,
-            `미디어 지출 ${formatUsd(summary.adSpend || 0, 2)}`
-          ),
+          label: tr('Meta ad spend', 'Meta 광고비'),
+          meta: tr('Meta Ads · USD billing', 'Meta 광고 · USD 청구'),
           amount: -summary.adSpendKRW,
+          sourceAmountLabel: `${formatUsd(summary.adSpend || 0, 2)} USD`,
+          fxRateLabel,
           percent: shareOf(summary.adSpendKRW, summary.netRevenue),
           kind: 'cost',
         },
@@ -624,6 +642,18 @@
     const amountLabel = hasAmount
       ? amount < 0 ? formatSignedKrw(amount) : formatKrw(amount)
       : '—';
+    const amountMarkup = line.key === 'ad-spend'
+      ? `
+        <div class="income-statement-ad-spend-values" role="cell">
+          <div class="income-statement-currency-pair">
+            <strong>${esc(line.sourceAmountLabel)}</strong>
+            <span aria-hidden="true">→</span>
+            <strong class="income-statement-amount">${amountLabel}</strong>
+          </div>
+          <small>${esc(line.fxRateLabel)}</small>
+        </div>
+      `
+      : `<strong class="income-statement-amount" role="cell">${amountLabel}</strong>`;
 
     return `
       <div class="income-statement-line ${esc(line.kind || '')}" role="row">
@@ -632,7 +662,7 @@
           <small>${esc(line.meta || '')}</small>
         </div>
         <span class="income-statement-percent" role="cell">${esc(line.percent || '—')}</span>
-        <strong class="income-statement-amount" role="cell">${amountLabel}</strong>
+        ${amountMarkup}
       </div>
     `;
   }
@@ -739,8 +769,8 @@
     `;
   }
 
-  function renderCalendarIncomeStatement(selection) {
-    const viewModel = buildIncomeStatementViewModel(selection);
+  function renderCalendarIncomeStatement(selection, fx) {
+    const viewModel = buildIncomeStatementViewModel(selection, fx);
 
     return `
       <div class="card income-statement-card" id="calendarIncomeStatement">
@@ -768,7 +798,7 @@
     if (!body) return;
 
     const selection = calendarState.data?.selection || {};
-    const viewModel = buildIncomeStatementViewModel(selection);
+    const viewModel = buildIncomeStatementViewModel(selection, calendarState.data?.fx);
     const metaEl = card.querySelector('[data-income-statement-meta]');
     if (metaEl) metaEl.textContent = viewModel.contextLabel;
 
@@ -1226,7 +1256,7 @@
     const selection = calendarState.data.selection || {};
     renderCalendarProfitSummary();
     renderCalendarRefundRateMonitor();
-    statementContainer.innerHTML = renderCalendarIncomeStatement(selection);
+    statementContainer.innerHTML = renderCalendarIncomeStatement(selection, calendarState.data.fx);
 
     if (window.lucide) {
       lucide.createIcons({ nodes: [statementContainer] });

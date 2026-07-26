@@ -48,6 +48,18 @@ function validRefundComparison() {
   };
 }
 
+function validCalendarFx() {
+  return {
+    base: 'USD',
+    quote: 'KRW',
+    source: 'frankfurter.app',
+    usdToKrwRate: 1461,
+    rateDate: '2026-07-24',
+    fetchedAt: '2026-07-25T06:55:06.612Z',
+    stale: false,
+  };
+}
+
 function loadApiClient(payload) {
   const warnings = [];
   const requests = [];
@@ -141,6 +153,7 @@ test('live API client rejects source audit shape drift on calendar payloads', as
   const { api, warnings } = loadApiClient({
     apiVersion: 'v1',
     ready: true,
+    fx: validCalendarFx(),
     viewport: {},
     calendarDays: [],
     orderPatterns: { range: {}, weekday: [], hourly: [] },
@@ -173,6 +186,7 @@ test('live API client rejects calendar payloads without all-time order patterns'
   const { api, warnings } = loadApiClient({
     apiVersion: 'v1',
     ready: true,
+    fx: validCalendarFx(),
     viewport: {},
     calendarDays: [],
     selection: {
@@ -203,6 +217,7 @@ test('live API client rejects calendar payloads without payment-channel revenue'
   const { api, warnings } = loadApiClient({
     apiVersion: 'v1',
     ready: true,
+    fx: validCalendarFx(),
     viewport: {},
     calendarDays: [],
     orderPatterns: { range: {}, weekday: [], hourly: [] },
@@ -226,6 +241,7 @@ test('live API client rejects calendar payloads without a canonical refund compa
   const { api, warnings } = loadApiClient({
     apiVersion: 'v1',
     ready: true,
+    fx: validCalendarFx(),
     viewport: {},
     calendarDays: [],
     orderPatterns: { range: {}, weekday: [], hourly: [] },
@@ -259,6 +275,7 @@ test('live API client rejects refund comparisons that do not declare return-only
   const { api, warnings } = loadApiClient({
     apiVersion: 'v1',
     ready: true,
+    fx: validCalendarFx(),
     viewport: {},
     calendarDays: [],
     orderPatterns: { range: {}, weekday: [], hourly: [] },
@@ -285,4 +302,72 @@ test('live API client rejects refund comparisons that do not declare return-only
 
   assert.equal(data, null);
   assert.ok(warnings.some(message => message.includes('unexpected refundComparison.scope')));
+});
+
+test('live API client rejects calendar payloads without FX conversion context', async () => {
+  const { api, warnings } = loadApiClient({
+    apiVersion: 'v1',
+    ready: true,
+    viewport: {},
+    calendarDays: [],
+    orderPatterns: { range: {}, weekday: [], hourly: [] },
+    refundComparison: validRefundComparison(),
+    selection: {
+      days: [],
+      paymentChannels: {
+        ready: false,
+        basis: 'net_receipts',
+        totalNetRevenue: 0,
+        rows: [],
+        reconciliation: {},
+      },
+    },
+    sourceAudit: null,
+  });
+
+  const data = await api.fetchCalendarAnalysis({
+    visibleStart: '2026-04-01',
+    visibleEnd: '2026-04-30',
+    selectionStart: '2026-04-30',
+    selectionEnd: '2026-04-30',
+  });
+
+  assert.equal(data, null);
+  assert.ok(warnings.some(message => message.includes('missing fx object')));
+});
+
+test('live API client rejects calendar payloads with mismatched FX currencies', async () => {
+  const fx = validCalendarFx();
+  fx.base = 'KRW';
+  fx.quote = 'USD';
+  const { api, warnings } = loadApiClient({
+    apiVersion: 'v1',
+    ready: true,
+    fx,
+    viewport: {},
+    calendarDays: [],
+    orderPatterns: { range: {}, weekday: [], hourly: [] },
+    refundComparison: validRefundComparison(),
+    selection: {
+      days: [],
+      paymentChannels: {
+        ready: false,
+        basis: 'net_receipts',
+        totalNetRevenue: 0,
+        rows: [],
+        reconciliation: {},
+      },
+    },
+    sourceAudit: null,
+  });
+
+  const data = await api.fetchCalendarAnalysis({
+    visibleStart: '2026-04-01',
+    visibleEnd: '2026-04-30',
+    selectionStart: '2026-04-30',
+    selectionEnd: '2026-04-30',
+  });
+
+  assert.equal(data, null);
+  assert.ok(warnings.some(message => message.includes('fx must describe USD/KRW')));
 });

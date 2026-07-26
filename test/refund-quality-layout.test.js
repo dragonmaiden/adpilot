@@ -62,7 +62,7 @@ test('selected-range headline remains without retired chart renderers', () => {
   );
   assert.match(
     calendarJs,
-    /statementContainer\.innerHTML = renderCalendarIncomeStatement\(selection\);/
+    /statementContainer\.innerHTML = renderCalendarIncomeStatement\(selection, calendarState\.data\.fx\);/
   );
 });
 

@@ -3480,6 +3480,45 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   white-space: nowrap;
 }
 
+.income-statement-ad-spend-values {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+
+.income-statement-currency-pair {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.income-statement-currency-pair > strong:first-child {
+  font-weight: 500;
+}
+
+.income-statement-currency-pair > span {
+  color: var(--color-text-faint);
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+}
+
+.income-statement-ad-spend-values > small {
+  color: var(--color-text-faint);
+  font-size: 0.67rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
 .income-statement-line.subtotal,
 .income-statement-line.total,
 .income-statement-line.total-costs {
@@ -4203,6 +4242,21 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
   .income-statement-line {
     min-height: 52px;
+  }
+
+  .income-statement-currency-pair {
+    display: grid;
+    justify-items: end;
+    gap: 0;
+  }
+
+  .income-statement-currency-pair > span {
+    display: none;
+  }
+
+  .income-statement-ad-spend-values > small {
+    max-width: 11rem;
+    white-space: normal;
   }
 
   .income-statement-result {
