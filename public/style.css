@@ -639,51 +639,48 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   text-transform: uppercase;
 }
 
-.refund-monitor-order-total {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.refund-monitor-order-total strong {
-  color: var(--color-text);
-  font-size: clamp(2.25rem, 4vw, 3.25rem);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums lining-nums;
-  letter-spacing: -0.055em;
-  line-height: 1;
-}
-
-.refund-monitor-order-total span {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.refund-monitor-rate {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
+.refund-monitor-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(var(--space-3), 2vw, var(--space-5));
   margin-top: var(--space-3);
 }
 
-.refund-monitor-rate strong {
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 1.1rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
+.refund-monitor-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
-.refund-monitor-rate span {
-  color: var(--color-text-faint);
+.refund-monitor-metric + .refund-monitor-metric {
+  padding-left: clamp(var(--space-3), 2vw, var(--space-5));
+  border-left: 1px solid var(--color-divider);
+}
+
+.refund-monitor-metric strong {
+  color: var(--color-text);
+  font-size: clamp(1.85rem, 3.25vw, 2.65rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.refund-monitor-metric span {
+  color: var(--color-text-muted);
   font-size: var(--text-xs);
+  font-weight: 650;
 }
 
 .refund-monitor-period-current {
   align-items: flex-end;
   text-align: right;
+}
+
+.refund-monitor-period-current .refund-monitor-metric {
+  align-items: flex-end;
 }
 
 .refund-monitor-period-current .is-within strong {
@@ -3980,6 +3977,10 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     text-align: left;
   }
 
+  .refund-monitor-period-current .refund-monitor-metric {
+    align-items: flex-start;
+  }
+
   .refund-monitor-deltas {
     align-items: flex-start;
   }
@@ -4219,8 +4220,8 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     font-size: 1.45rem;
   }
 
-  .refund-monitor-order-total strong {
-    font-size: 2.75rem;
+  .refund-monitor-metric strong {
+    font-size: 2rem;
   }
 
   /* API rows stack */

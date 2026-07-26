@@ -304,6 +304,17 @@ test('summary shows historical and month-to-date return refund rates', () => {
   assert.doesNotMatch(calendarJs, /refund orders \/ month/);
   assert.doesNotMatch(calendarJs, /role="meter"/);
   assert.doesNotMatch(calendarJs, /refund-monitor-(meter|track|axis|audit|benchmark)/);
+  assert.doesNotMatch(calendarJs, /\bpp\b|%p/);
+  assert.match(calendarJs, /relativeDifference/);
+  assert.match(calendarJs, /% below average/);
+  assert.match(calendarJs, /% above average/);
+  assert.match(calendarJs, /refund-monitor-metrics/);
+  assert.equal((calendarJs.match(/class="refund-monitor-metric(?:\s|")/g) || []).length, 4);
+  assert.doesNotMatch(calendarJs, /refund-monitor-(order-total|rate)/);
+  assert.match(
+    css,
+    /\.refund-monitor-metric strong\s*\{[\s\S]*font-size:\s*clamp\(1\.85rem,\s*3\.25vw,\s*2\.65rem\)/
+  );
   assert.match(
     css,
     /\.refund-monitor-header\s*\{[\s\S]*max-width:\s*920px[\s\S]*margin-inline:\s*auto/

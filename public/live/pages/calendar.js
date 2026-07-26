@@ -806,12 +806,6 @@
     const monthToDateRevenueRate = hasCalendarMetric(monthToDate.revenueRate)
       ? Math.max(0, Number(monthToDate.revenueRate))
       : null;
-    const orderDeltaPoints = hasCalendarMetric(monthToDate.orderDeltaPoints)
-      ? Number(monthToDate.orderDeltaPoints)
-      : null;
-    const revenueDeltaPoints = hasCalendarMetric(monthToDate.revenueDeltaPoints)
-      ? Number(monthToDate.revenueDeltaPoints)
-      : null;
 
     return {
       historicalOrderRate,
@@ -820,12 +814,14 @@
       monthToDateRevenueRate,
       orderComparison: buildRefundMetricComparison(
         tr('Orders', '주문'),
-        orderDeltaPoints,
+        monthToDateOrderRate,
+        historicalOrderRate,
         tr('No recognized orders', '확인된 주문 없음')
       ),
       revenueComparison: buildRefundMetricComparison(
         tr('Revenue', '매출'),
-        revenueDeltaPoints,
+        monthToDateRevenueRate,
+        historicalRevenueRate,
         tr('No revenue', '매출 없음')
       ),
       tone: monthToDate.status === 'above_benchmark'
@@ -836,15 +832,15 @@
     };
   }
 
-  function buildRefundMetricComparison(metricLabel, deltaPoints, unavailableLabel) {
-    if (deltaPoints == null) {
+  function buildRefundMetricComparison(metricLabel, currentRate, historicalRate, unavailableLabel) {
+    if (currentRate == null || historicalRate == null) {
       return {
         label: `${metricLabel} · ${unavailableLabel}`,
         symbol: '—',
         tone: 'unavailable',
       };
     }
-    if (deltaPoints === 0) {
+    if (currentRate === historicalRate) {
       return {
         label: `${metricLabel} · ${tr('matches average', '평균과 동일')}`,
         symbol: '=',
@@ -852,13 +848,32 @@
       };
     }
 
-    const direction = deltaPoints < 0
-      ? tr(`${Math.abs(deltaPoints).toFixed(1)} pp below`, `${Math.abs(deltaPoints).toFixed(1)}%p 낮음`)
-      : tr(`${deltaPoints.toFixed(1)} pp above`, `${deltaPoints.toFixed(1)}%p 높음`);
+    const delta = currentRate - historicalRate;
+    if (historicalRate === 0) {
+      return {
+        label: `${metricLabel} · ${tr(
+          `${formatPercent(currentRate, 1)} vs 0.0% average`,
+          `${formatPercent(currentRate, 1)} / 평균 0.0%`
+        )}`,
+        symbol: delta < 0 ? '↓' : '↑',
+        tone: delta < 0 ? 'within' : 'above',
+      };
+    }
+
+    const relativeDifference = Math.abs((delta / historicalRate) * 100);
+    const direction = delta < 0
+      ? tr(
+        `${relativeDifference.toFixed(1)}% below average`,
+        `평균보다 ${relativeDifference.toFixed(1)}% 낮음`
+      )
+      : tr(
+        `${relativeDifference.toFixed(1)}% above average`,
+        `평균보다 ${relativeDifference.toFixed(1)}% 높음`
+      );
     return {
       label: `${metricLabel} · ${direction}`,
-      symbol: deltaPoints < 0 ? '↓' : '↑',
-      tone: deltaPoints < 0 ? 'within' : 'above',
+      symbol: delta < 0 ? '↓' : '↑',
+      tone: delta < 0 ? 'within' : 'above',
     };
   }
 
@@ -944,13 +959,15 @@
         <div class="refund-monitor-comparison">
           <div class="refund-monitor-period">
             <span class="refund-monitor-period-label">${esc(tr('Historical monthly average', '과거 월평균'))}</span>
-            <div class="refund-monitor-order-total">
-              <strong>${viewModel.historicalOrderRate == null ? '—' : esc(formatPercent(viewModel.historicalOrderRate, 1))}</strong>
-              <span>${esc(tr('returned orders', '반품 환불 주문'))}</span>
-            </div>
-            <div class="refund-monitor-rate">
-              <strong>${viewModel.historicalRevenueRate == null ? '—' : esc(formatPercent(viewModel.historicalRevenueRate, 1))}</strong>
-              <span>${esc(tr('returned revenue', '반품 환불 매출'))}</span>
+            <div class="refund-monitor-metrics">
+              <div class="refund-monitor-metric">
+                <strong>${viewModel.historicalOrderRate == null ? '—' : esc(formatPercent(viewModel.historicalOrderRate, 1))}</strong>
+                <span>${esc(tr('returned orders', '반품 환불 주문'))}</span>
+              </div>
+              <div class="refund-monitor-metric">
+                <strong>${viewModel.historicalRevenueRate == null ? '—' : esc(formatPercent(viewModel.historicalRevenueRate, 1))}</strong>
+                <span>${esc(tr('returned revenue', '반품 환불 매출'))}</span>
+              </div>
             </div>
           </div>
 
@@ -960,13 +977,15 @@
 
           <div class="refund-monitor-period refund-monitor-period-current">
             <span class="refund-monitor-period-label">${esc(tr('Month to date', '월 누계'))}</span>
-            <div class="refund-monitor-order-total is-${esc(viewModel.orderComparison.tone)}">
-              <strong>${viewModel.monthToDateOrderRate == null ? '—' : esc(formatPercent(viewModel.monthToDateOrderRate, 1))}</strong>
-              <span>${esc(tr('returned orders', '반품 환불 주문'))}</span>
-            </div>
-            <div class="refund-monitor-rate is-${esc(viewModel.revenueComparison.tone)}">
-              <strong>${viewModel.monthToDateRevenueRate == null ? '—' : esc(formatPercent(viewModel.monthToDateRevenueRate, 1))}</strong>
-              <span>${esc(tr('returned revenue', '반품 환불 매출'))}</span>
+            <div class="refund-monitor-metrics">
+              <div class="refund-monitor-metric is-${esc(viewModel.orderComparison.tone)}">
+                <strong>${viewModel.monthToDateOrderRate == null ? '—' : esc(formatPercent(viewModel.monthToDateOrderRate, 1))}</strong>
+                <span>${esc(tr('returned orders', '반품 환불 주문'))}</span>
+              </div>
+              <div class="refund-monitor-metric is-${esc(viewModel.revenueComparison.tone)}">
+                <strong>${viewModel.monthToDateRevenueRate == null ? '—' : esc(formatPercent(viewModel.monthToDateRevenueRate, 1))}</strong>
+                <span>${esc(tr('returned revenue', '반품 환불 매출'))}</span>
+              </div>
             </div>
           </div>
         </div>
