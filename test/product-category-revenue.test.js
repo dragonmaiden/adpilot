@@ -140,7 +140,9 @@ test('calendar income statement renders the financial sequence and every canonic
   const cardRevenueIndex = paymentRowsSource.indexOf("label: tr('Credit card net receipts'");
   const bankRevenueIndex = paymentRowsSource.indexOf("label: tr('Bank transfer net revenue'");
   const totalRevenueIndex = revenueLinesSource.indexOf("label: tr('Total revenue'");
-  const refundsIndex = revenueLinesSource.indexOf("label: tr('Refunds and cancellations'");
+  const returnsIndex = revenueLinesSource.indexOf("label: tr('Returns and refunds'");
+  const cancellationsIndex = revenueLinesSource.indexOf("label: tr('Order cancellations'");
+  const unclassifiedIndex = revenueLinesSource.indexOf("label: tr('Other revenue reversals'");
   const paymentRowsIndex = revenueLinesSource.indexOf('...paymentRows.map');
   const netRevenueIndex = revenueLinesSource.indexOf("label: tr('Net revenue'");
   const cogsIndex = calendarJs.indexOf("label: 'COGS'");
@@ -151,8 +153,10 @@ test('calendar income statement renders the financial sequence and every canonic
 
   assert.ok(cardRevenueIndex >= 0);
   assert.ok(cardRevenueIndex < bankRevenueIndex);
-  assert.ok(totalRevenueIndex < refundsIndex);
-  assert.ok(refundsIndex < paymentRowsIndex);
+  assert.ok(totalRevenueIndex < returnsIndex);
+  assert.ok(returnsIndex < cancellationsIndex);
+  assert.ok(cancellationsIndex < unclassifiedIndex);
+  assert.ok(unclassifiedIndex < paymentRowsIndex);
   assert.ok(paymentRowsIndex < netRevenueIndex);
   assert.ok(netRevenueIndex < cogsIndex);
   assert.ok(cogsIndex < shippingIndex);
@@ -161,6 +165,18 @@ test('calendar income statement renders the financial sequence and every canonic
   assert.ok(advertisingIndex < totalCostsIndex);
   assert.match(calendarJs, /tr\('Net profit', '순이익'\)/);
   assert.match(calendarJs, /summary\.trueNetProfit/);
+});
+
+test('calendar income statement reads the server-owned refund split', () => {
+  assert.match(calendarServiceJs, /const refundDeductions = buildRefundDeductionMetrics\(selectionOrders\)/);
+  assert.match(calendarServiceJs, /returnRefundedAmount,/);
+  assert.match(calendarServiceJs, /cancellationRefundedAmount,/);
+  assert.match(calendarServiceJs, /unclassifiedRefundedAmount,/);
+  assert.match(calendarJs, /returnRefundedAmount:\s*toFiniteNumber\(canonical\.returnRefundedAmount\)/);
+  assert.match(calendarJs, /cancellationRefundedAmount:\s*toFiniteNumber\(canonical\.cancellationRefundedAmount\)/);
+  assert.match(calendarJs, /unclassifiedRefundedAmount:\s*toFiniteNumber\(canonical\.unclassifiedRefundedAmount\)/);
+  assert.match(calendarJs, /amount:\s*-summary\.returnRefundedAmount/);
+  assert.match(calendarJs, /amount:\s*-summary\.cancellationRefundedAmount/);
 });
 
 test('calendar income statement exposes financial incompleteness instead of hiding it', () => {

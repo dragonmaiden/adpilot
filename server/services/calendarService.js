@@ -334,7 +334,7 @@ function buildOrderMetrics(orders) {
   };
 }
 
-function getReturnRefundEconomics(order) {
+function getRefundDeductionEconomics(order) {
   const { payAmount, refundAmount } = getOrderPaymentAmounts(order);
   const totalRefundedAmount = Math.max(0, toFiniteNumber(refundAmount));
   const sections = getOrderSections(order);
@@ -347,7 +347,7 @@ function getReturnRefundEconomics(order) {
     && sectionStatuses.every(status => /^CANCEL(?:_|$)/.test(status));
   // Imweb combines cancellation and return refunds at order level. Cancellation
   // sections carry their own refund amount, so subtract them before measuring returns.
-  const cancellationRefundedAmount = Math.min(
+  const explicitCancellationAmount = Math.min(
     totalRefundedAmount,
     sections.reduce((total, section) => {
       const status = String(
@@ -357,37 +357,61 @@ function getReturnRefundEconomics(order) {
       return total + Math.max(0, toFiniteNumber(section?.cancelInfo?.refundAmount));
     }, 0)
   );
+  const cancellationRefundedAmount = hasCancellationSection
+    ? hasReturnSection
+      ? explicitCancellationAmount
+      : totalRefundedAmount
+    : 0;
   const returnRefundedAmount = hasReturnSection
     ? Math.max(0, totalRefundedAmount - cancellationRefundedAmount)
     : 0;
-  const excludedNonReturnRefund = Math.max(0, totalRefundedAmount - returnRefundedAmount);
+  const unclassifiedRefundedAmount = Math.max(
+    0,
+    totalRefundedAmount - returnRefundedAmount - cancellationRefundedAmount
+  );
   const eligibleGrossRevenue = isCancellationOnly
     ? 0
-    : Math.max(0, toFiniteNumber(payAmount) - excludedNonReturnRefund);
+    : Math.max(
+      0,
+      toFiniteNumber(payAmount) - cancellationRefundedAmount - unclassifiedRefundedAmount
+    );
 
   return {
     eligibleGrossRevenue,
+    totalRefundedAmount,
     returnRefundedAmount,
+    cancellationRefundedAmount,
+    unclassifiedRefundedAmount,
   };
 }
 
-function buildReturnRefundMetrics(orders) {
+function buildRefundDeductionMetrics(orders) {
   return (Array.isArray(orders) ? orders : []).reduce((summary, order) => {
-    const economics = getReturnRefundEconomics(order);
+    const economics = getRefundDeductionEconomics(order);
     summary.grossRevenue += economics.eligibleGrossRevenue;
-    summary.refundedAmount += economics.returnRefundedAmount;
+    summary.totalRefundedAmount += economics.totalRefundedAmount;
+    summary.returnRefundedAmount += economics.returnRefundedAmount;
+    summary.cancellationRefundedAmount += economics.cancellationRefundedAmount;
+    summary.unclassifiedRefundedAmount += economics.unclassifiedRefundedAmount;
     if (economics.eligibleGrossRevenue > 0) {
       summary.recognizedOrders += 1;
     }
     if (economics.returnRefundedAmount > 0) {
-      summary.refundOrders += 1;
+      summary.returnRefundOrders += 1;
+    }
+    if (economics.cancellationRefundedAmount > 0) {
+      summary.cancellationOrders += 1;
     }
     return summary;
   }, {
     grossRevenue: 0,
-    refundedAmount: 0,
+    totalRefundedAmount: 0,
+    returnRefundedAmount: 0,
+    cancellationRefundedAmount: 0,
+    unclassifiedRefundedAmount: 0,
     recognizedOrders: 0,
-    refundOrders: 0,
+    returnRefundOrders: 0,
+    cancellationOrders: 0,
   });
 }
 
@@ -725,6 +749,22 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
   });
 
   const orderMetrics = buildOrderMetrics(selectionOrders);
+  const refundDeductions = buildRefundDeductionMetrics(selectionOrders);
+  const classifiedRefundedAmount = refundDeductions.returnRefundedAmount
+    + refundDeductions.cancellationRefundedAmount;
+  const residualRefundedAmount = Math.round(
+    dayTotals.refundedAmount - classifiedRefundedAmount
+  );
+  const refundSplitValid = residualRefundedAmount >= 0;
+  const returnRefundedAmount = refundSplitValid
+    ? refundDeductions.returnRefundedAmount
+    : 0;
+  const cancellationRefundedAmount = refundSplitValid
+    ? refundDeductions.cancellationRefundedAmount
+    : 0;
+  const unclassifiedRefundedAmount = refundSplitValid
+    ? residualRefundedAmount
+    : dayTotals.refundedAmount;
   const paymentFees = dayTotals.paymentFeesComplete ? dayTotals.paymentFees : null;
   const trueNetProfit = dayTotals.paymentFeesComplete ? dayTotals.trueNetProfit : null;
 
@@ -736,6 +776,11 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
     roas: ratioOrNull(dayTotals.netRevenue, dayTotals.adSpendKRW),
     recognizedOrders: orderMetrics.recognizedOrders,
     refundRate: ratioPercentOrNull(dayTotals.refundedAmount, dayTotals.grossRevenue),
+    returnRefundedAmount,
+    cancellationRefundedAmount,
+    unclassifiedRefundedAmount,
+    returnRefundOrders: refundSplitValid ? refundDeductions.returnRefundOrders : 0,
+    cancellationOrders: refundSplitValid ? refundDeductions.cancellationOrders : 0,
     cancelRate: Number(orderMetrics.cancelRate.toFixed(1)),
     refundOrders: orderMetrics.refundOrders,
     cancelledSections: orderMetrics.cancelledSections,
@@ -854,15 +899,15 @@ function buildRefundWindowSummary({ orders, start, end }) {
       && compareDateKeys(date, start) >= 0
       && compareDateKeys(date, end) <= 0;
   });
-  const returnMetrics = buildReturnRefundMetrics(windowOrders);
+  const returnMetrics = buildRefundDeductionMetrics(windowOrders);
 
   return {
-    orderRate: ratioPercentOrNull(returnMetrics.refundOrders, returnMetrics.recognizedOrders),
-    revenueRate: ratioPercentOrNull(returnMetrics.refundedAmount, returnMetrics.grossRevenue),
+    orderRate: ratioPercentOrNull(returnMetrics.returnRefundOrders, returnMetrics.recognizedOrders),
+    revenueRate: ratioPercentOrNull(returnMetrics.returnRefundedAmount, returnMetrics.grossRevenue),
     grossRevenue: Math.round(returnMetrics.grossRevenue),
-    refundedAmount: Math.round(returnMetrics.refundedAmount),
+    refundedAmount: Math.round(returnMetrics.returnRefundedAmount),
     recognizedOrders: returnMetrics.recognizedOrders,
-    refundOrders: returnMetrics.refundOrders,
+    refundOrders: returnMetrics.returnRefundOrders,
     range: { start, end },
   };
 }
@@ -1209,6 +1254,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 module.exports = {
   getCalendarAnalysisResponse,
   buildAllTimeOrderPatterns,
+  buildRefundDeductionMetrics,
   buildRefundWindowSummary,
   buildHistoricalMonthlyRefundAverage,
   buildRefundRateComparison,

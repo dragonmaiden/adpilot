@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
+  buildRefundDeductionMetrics,
   buildRefundWindowSummary,
   buildHistoricalMonthlyRefundAverage,
   buildRefundRateComparison,
@@ -63,6 +64,62 @@ function ordersForMonth(month, refundCount, totalCount, refundedAmount) {
     }],
   }));
 }
+
+test('refund deductions classify returns and cancellations without changing the refunded total', () => {
+  const metrics = buildRefundDeductionMetrics([
+    {
+      totalPaymentPrice: 80_000,
+      totalRefundedPrice: 20_000,
+      sections: [{ orderSectionStatus: 'RETURN_COMPLETE' }],
+    },
+    {
+      totalPaymentPrice: 0,
+      totalRefundedPrice: 40_000,
+      sections: [{
+        orderSectionStatus: 'CANCEL_COMPLETE',
+        cancelInfo: { refundAmount: 40_000 },
+      }],
+    },
+    {
+      totalPaymentPrice: 100_000,
+      totalRefundedPrice: 50_000,
+      sections: [
+        {
+          orderSectionStatus: 'CANCEL_COMPLETE',
+          cancelInfo: { refundAmount: 30_000 },
+        },
+        { orderSectionStatus: 'RETURN_COMPLETE' },
+      ],
+    },
+  ]);
+
+  assert.equal(metrics.totalRefundedAmount, 110_000);
+  assert.equal(metrics.returnRefundedAmount, 40_000);
+  assert.equal(metrics.cancellationRefundedAmount, 70_000);
+  assert.equal(metrics.unclassifiedRefundedAmount, 0);
+  assert.equal(
+    metrics.returnRefundedAmount
+      + metrics.cancellationRefundedAmount
+      + metrics.unclassifiedRefundedAmount,
+    metrics.totalRefundedAmount
+  );
+  assert.equal(metrics.returnRefundOrders, 2);
+  assert.equal(metrics.cancellationOrders, 2);
+});
+
+test('refund deductions keep unknown Imweb statuses visible instead of mislabelling them', () => {
+  const metrics = buildRefundDeductionMetrics([
+    {
+      totalPaymentPrice: 75_000,
+      totalRefundedPrice: 25_000,
+      sections: [{ orderSectionStatus: 'EXCHANGE_COMPLETE' }],
+    },
+  ]);
+
+  assert.equal(metrics.returnRefundedAmount, 0);
+  assert.equal(metrics.cancellationRefundedAmount, 0);
+  assert.equal(metrics.unclassifiedRefundedAmount, 25_000);
+});
 
 test('completed historical months use arithmetic averages for order and revenue refund rates', () => {
   const average = buildHistoricalMonthlyRefundAverage({

@@ -186,6 +186,9 @@
     return {
       grossRevenue: toFiniteNumber(canonical.grossRevenue),
       refundedAmount: toFiniteNumber(canonical.refundedAmount),
+      returnRefundedAmount: toFiniteNumber(canonical.returnRefundedAmount),
+      cancellationRefundedAmount: toFiniteNumber(canonical.cancellationRefundedAmount),
+      unclassifiedRefundedAmount: toFiniteNumber(canonical.unclassifiedRefundedAmount),
       netRevenue: toFiniteNumber(canonical.netRevenue),
       adSpend: toFiniteNumber(canonical.adSpend),
       adSpendKRW: toFiniteNumber(canonical.adSpendKRW),
@@ -199,6 +202,8 @@
         : null,
       recognizedOrders: toFiniteNumber(canonical.recognizedOrders),
       refundOrders: toFiniteNumber(canonical.refundOrders),
+      returnRefundOrders: toFiniteNumber(canonical.returnRefundOrders),
+      cancellationOrders: toFiniteNumber(canonical.cancellationOrders),
       refundRate: hasCalendarMetric(canonical.refundRate)
         ? Number(canonical.refundRate)
         : null,
@@ -560,16 +565,38 @@
           kind: 'subtotal',
         },
         {
-          key: 'refunds',
-          label: tr('Refunds and cancellations', '환불 및 취소'),
+          key: 'returns',
+          label: tr('Returns and refunds', '반품 환불'),
           meta: tr(
-            `${formatCalendarPercentMetric(summary.refundRate)} refund rate`,
-            `환불률 ${formatCalendarPercentMetric(summary.refundRate)}`
+            `${formatCount(summary.returnRefundOrders)} post-delivery return ${summary.returnRefundOrders === 1 ? 'order' : 'orders'}`,
+            `배송 후 반품 주문 ${formatCount(summary.returnRefundOrders)}건`
           ),
-          amount: -summary.refundedAmount,
-          percent: shareOf(summary.refundedAmount, summary.grossRevenue),
+          amount: -summary.returnRefundedAmount,
+          percent: shareOf(summary.returnRefundedAmount, summary.grossRevenue),
           kind: 'deduction',
         },
+        {
+          key: 'cancellations',
+          label: tr('Order cancellations', '주문 취소'),
+          meta: tr(
+            `${formatCount(summary.cancellationOrders)} cancelled ${summary.cancellationOrders === 1 ? 'order' : 'orders'}`,
+            `취소 주문 ${formatCount(summary.cancellationOrders)}건`
+          ),
+          amount: -summary.cancellationRefundedAmount,
+          percent: shareOf(summary.cancellationRefundedAmount, summary.grossRevenue),
+          kind: 'deduction',
+        },
+        ...(summary.unclassifiedRefundedAmount > 0 ? [{
+          key: 'unclassified-reversals',
+          label: tr('Other revenue reversals', '기타 매출 차감'),
+          meta: tr(
+            'Needs Imweb status classification',
+            'Imweb 상태 분류 필요'
+          ),
+          amount: -summary.unclassifiedRefundedAmount,
+          percent: shareOf(summary.unclassifiedRefundedAmount, summary.grossRevenue),
+          kind: 'deduction',
+        }] : []),
         ...paymentRows.map(row => ({
           key: `payment-${row.channel}`,
           label: row.label,
