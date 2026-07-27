@@ -3,6 +3,7 @@ const contracts = require('../contracts/v1');
 const transforms = require('../transforms/charts');
 const reconciliationService = require('./reconciliationService');
 const paywayFinancialService = require('./paywayFinancialService');
+const fxService = require('./fxService');
 const { buildFinancialProjection } = require('./financialProjectionService');
 const {
   calcAOV,
@@ -810,6 +811,83 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
   };
 }
 
+function buildSelectionFxContext({
+  selectionDays,
+  selectionSummary,
+  historicalFx,
+  fallbackFx,
+  startDate,
+  endDate,
+} = {}) {
+  const days = Array.isArray(selectionDays) ? selectionDays : [];
+  const fallbackRate = Number(fallbackFx?.usdToKrwRate);
+  const dailyContexts = days.map(day => {
+    const historicalContext = historicalFx?.ratesByDate?.[day.date];
+    const historicalRate = Number(historicalContext?.usdToKrwRate);
+    const rowRate = Number(day?.usdToKrwRate);
+    let usdToKrwRate = fallbackRate;
+
+    if (Number.isFinite(historicalRate) && historicalRate > 0) {
+      usdToKrwRate = historicalRate;
+    } else if (Number.isFinite(rowRate) && rowRate > 0) {
+      usdToKrwRate = rowRate;
+    }
+
+    return {
+      date: day?.date || null,
+      usdToKrwRate,
+      rateDate: historicalContext?.rateDate || day?.fxRateDate || fallbackFx?.rateDate || null,
+      stale: historicalContext
+        ? Boolean(historicalFx?.stale || historicalContext.stale)
+        : true,
+    };
+  }).filter(context =>
+    context.date
+    && Number.isFinite(context.usdToKrwRate)
+    && context.usdToKrwRate > 0
+  );
+
+  const totalSpendUsd = Number(selectionSummary?.adSpend || 0);
+  const totalSpendKrw = Number(selectionSummary?.adSpendKRW || 0);
+  const singleDay = startDate === endDate;
+  let basis = 'latest_fallback';
+  let effectiveRate = fallbackRate;
+  let rateDate = fallbackFx?.rateDate || null;
+
+  if (historicalFx && singleDay) {
+    basis = 'daily';
+    effectiveRate = dailyContexts[0]?.usdToKrwRate;
+    rateDate = dailyContexts[0]?.rateDate || null;
+  } else if (historicalFx && totalSpendUsd > 0) {
+    basis = 'spend_weighted_average';
+    effectiveRate = totalSpendKrw / totalSpendUsd;
+    rateDate = null;
+  } else if (historicalFx) {
+    basis = 'arithmetic_average';
+    effectiveRate = dailyContexts.length > 0
+      ? dailyContexts.reduce((sum, context) => sum + context.usdToKrwRate, 0)
+        / dailyContexts.length
+      : fallbackRate;
+    rateDate = null;
+  }
+
+  return {
+    base: 'USD',
+    quote: 'KRW',
+    source: historicalFx?.source || fallbackFx?.source || 'unknown',
+    basis,
+    usdToKrwRate: Number.isFinite(effectiveRate) && effectiveRate > 0
+      ? Number(effectiveRate.toFixed(4))
+      : null,
+    rateDate,
+    rangeStart: startDate || days[0]?.date || null,
+    rangeEnd: endDate || days[days.length - 1]?.date || null,
+    fetchedAt: historicalFx?.fetchedAt || fallbackFx?.fetchedAt || null,
+    stale: dailyContexts.length === 0
+      || dailyContexts.some(context => context.stale),
+  };
+}
+
 function normalizeAllTimeHourlyRows(hourlyRows) {
   const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, orders: 0, revenue: 0 }));
 
@@ -1034,6 +1112,11 @@ function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, opera
       orders: Number(merged.orders || 0),
       adSpend: Number(merged.spend || 0),
       adSpendKRW: Number(merged.spendKrw || 0),
+      usdToKrwRate: Number.isFinite(Number(merged.usdToKrwRate))
+        ? Number(merged.usdToKrwRate)
+        : null,
+      fxRateDate: merged.fxRateDate || null,
+      fxStale: Boolean(merged.fxStale),
       metaPurchases: Number(metaPurchasesByDate.get(date) || 0),
       cogs: Number(profit.cogs || 0),
       shipping: Number(profit.cogsShipping || 0),
@@ -1096,7 +1179,19 @@ async function getCalendarAnalysisResponse(query = {}) {
     });
   }
 
-  const projection = buildFinancialProjection(data);
+  let historicalFx = null;
+  try {
+    historicalFx = await fxService.getUsdToKrwRatesForRange(
+      viewport.visibleStart,
+      viewport.visibleEnd
+    );
+  } catch (err) {
+    console.warn('[CALENDAR] Historical FX unavailable; using latest FX fallback:', err.message);
+  }
+
+  const projection = buildFinancialProjection(data, {
+    usdToKrwRatesByDate: historicalFx?.ratesByDate || null,
+  });
   const orderPatterns = buildAllTimeOrderPatterns(projection);
   const cogs = projection.cogs || {};
   const dailyMerged = projection.dailyMerged;
@@ -1230,6 +1325,16 @@ async function getCalendarAnalysisResponse(query = {}) {
     selectionCoverage,
     paywayFinancials
   );
+  const selectionFx = buildSelectionFxContext(
+    {
+      selectionDays: selectionDayRows,
+      selectionSummary,
+      historicalFx,
+      fallbackFx: projection.fx,
+      startDate: viewport.selectionStart,
+      endDate: viewport.selectionEnd,
+    }
+  );
   const paymentChannels = buildNetPaymentChannels({
     totalNetRevenue: selectionSummary.netRevenue,
     totalOrderCount: selectionSummary.recognizedOrders,
@@ -1243,7 +1348,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 
   return contracts.calendarAnalysis({
     ready: true,
-    fx: projection.fx,
+    fx: selectionFx,
     viewport,
     calendarDays,
     categoryRevenueByDate,
@@ -1273,6 +1378,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 module.exports = {
   getCalendarAnalysisResponse,
   alignCalendarDaysWithSelection,
+  buildSelectionFxContext,
   buildAllTimeOrderPatterns,
   buildRefundDeductionMetrics,
   buildRefundWindowSummary,

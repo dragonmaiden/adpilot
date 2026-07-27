@@ -53,8 +53,11 @@ function validCalendarFx() {
     base: 'USD',
     quote: 'KRW',
     source: 'frankfurter.app',
+    basis: 'daily',
     usdToKrwRate: 1461,
     rateDate: '2026-07-24',
+    rangeStart: '2026-07-24',
+    rangeEnd: '2026-07-24',
     fetchedAt: '2026-07-25T06:55:06.612Z',
     stale: false,
   };

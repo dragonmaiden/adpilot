@@ -80,6 +80,12 @@
     if (payload.fx.usdToKrwRate != null && typeof payload.fx.usdToKrwRate !== 'number') {
       return failContract('calendar-analysis', 'fx.usdToKrwRate must be a number or null');
     }
+    if (!['daily', 'spend_weighted_average', 'arithmetic_average', 'latest_fallback'].includes(payload.fx.basis)) {
+      return failContract('calendar-analysis', 'unexpected fx.basis');
+    }
+    if (typeof payload.fx.rangeStart !== 'string' || typeof payload.fx.rangeEnd !== 'string') {
+      return failContract('calendar-analysis', 'fx selection range must be present');
+    }
     if (typeof payload.fx.stale !== 'boolean') return failContract('calendar-analysis', 'missing fx.stale boolean');
     if (!hasObject(payload, 'viewport')) return failContract('calendar-analysis', 'missing viewport object');
     if (!hasArray(payload, 'calendarDays')) return failContract('calendar-analysis', 'missing calendarDays array');

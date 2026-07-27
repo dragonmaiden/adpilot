@@ -141,6 +141,45 @@
     })}`;
   }
 
+  function buildCalendarFxRateLabel(fx = {}) {
+    const usdToKrwRate = hasCalendarMetric(fx?.usdToKrwRate) && Number(fx.usdToKrwRate) > 0
+      ? Number(fx.usdToKrwRate)
+      : null;
+    if (usdToKrwRate == null) {
+      return tr('FX rate unavailable', '환율 정보 없음');
+    }
+
+    const fxDate = isIsoDateKey(fx?.rateDate)
+      ? formatUtcDate(fx.rateDate, { month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+    const fxRange = isIsoDateKey(fx?.rangeStart) && isIsoDateKey(fx?.rangeEnd)
+      ? formatCalendarRange(fx.rangeStart, fx.rangeEnd)
+      : null;
+    const cachedPrefix = fx.stale ? 'cached ' : '';
+    const cachedPrefixKo = fx.stale ? '캐시된 ' : '';
+    const contextLabel = fx.basis === 'spend_weighted_average'
+      ? tr(
+        `${cachedPrefix}spend-weighted average FX${fxRange ? ` · ${fxRange}` : ''}`,
+        `${cachedPrefixKo}지출 가중 평균 환율${fxRange ? ` · ${fxRange}` : ''}`
+      )
+      : fx.basis === 'arithmetic_average'
+        ? tr(
+          `${cachedPrefix}daily average FX${fxRange ? ` · ${fxRange}` : ''}`,
+          `${cachedPrefixKo}일별 평균 환율${fxRange ? ` · ${fxRange}` : ''}`
+        )
+        : fx.basis === 'latest_fallback'
+          ? tr(
+            `latest FX fallback${fxDate ? ` · ${fxDate}` : ''}`,
+            `최신 환율 대체값${fxDate ? ` · ${fxDate}` : ''}`
+          )
+          : tr(
+            `${cachedPrefix}daily FX${fxDate ? ` · ${fxDate}` : ''}`,
+            `${cachedPrefixKo}일별 환율${fxDate ? ` · ${fxDate}` : ''}`
+          );
+
+    return `1 USD = ${formatUsdToKrwRate(usdToKrwRate)} · ${contextLabel}`;
+  }
+
   function formatCalendarCellKrw(value, { signed = false } = {}) {
     const numeric = Math.round(toFiniteNumber(value));
     const abs = Math.abs(numeric);
@@ -460,18 +499,7 @@
 
   function buildIncomeStatementViewModel(selection, fx = {}) {
     const summary = buildCalendarWaterfallSummary(selection);
-    const usdToKrwRate = hasCalendarMetric(fx?.usdToKrwRate) && Number(fx.usdToKrwRate) > 0
-      ? Number(fx.usdToKrwRate)
-      : null;
-    const fxDate = isIsoDateKey(fx?.rateDate)
-      ? formatUtcDate(fx.rateDate, { month: 'short', day: 'numeric', year: 'numeric' })
-      : null;
-    const fxRateLabel = usdToKrwRate == null
-      ? tr('FX rate unavailable', '환율 정보 없음')
-      : tr(
-        `1 USD = ${formatUsdToKrwRate(usdToKrwRate)}${fxDate ? ` · ${fx.stale ? 'cached FX' : 'FX'} ${fxDate}` : fx.stale ? ' · cached FX' : ''}`,
-        `1 USD = ${formatUsdToKrwRate(usdToKrwRate)}${fxDate ? ` · ${fx.stale ? '캐시 환율' : '환율'} ${fxDate}` : fx.stale ? ' · 캐시 환율' : ''}`
-      );
+    const fxRateLabel = buildCalendarFxRateLabel(fx);
     const paymentChannels = selection?.paymentChannels || {};
     const payway = paymentChannels.payway || {};
     const channelsByKey = new Map(

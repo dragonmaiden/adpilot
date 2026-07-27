@@ -6,6 +6,7 @@ const {
   buildFinancialProjection,
 } = require('../server/services/financialProjectionService');
 const { buildEconomicsLedger } = require('../server/services/economicsLedgerService');
+const transforms = require('../server/transforms/charts');
 
 test('financial projection applies one scan FX rate to merged rows and profit waterfall', () => {
   const data = {
@@ -42,6 +43,77 @@ test('financial projection applies one scan FX rate to merged rows and profit wa
   assert.equal(waterfall.adSpendKRW, 15000);
   assert.equal(waterfall.paymentFees, 5400);
   assert.equal(waterfall.trueNetProfit, 34600);
+});
+
+test('financial projection applies each date FX rate to Meta spend and selected campaign totals', () => {
+  const data = {
+    fx: {
+      base: 'USD',
+      quote: 'KRW',
+      source: 'latest-test-rate',
+      usdToKrwRate: 1600,
+      rateDate: '2026-07-03',
+      fetchedAt: '2026-07-03T12:00:00.000Z',
+      stale: false,
+    },
+    revenueData: {
+      dailyRevenue: {
+        '2026-07-01': { revenue: 100_000, refunded: 0, orders: 1 },
+        '2026-07-02': { revenue: 200_000, refunded: 0, orders: 1 },
+      },
+      hourlyOrders: [],
+    },
+    campaignInsights: [
+      { campaign_id: 'c1', campaign_name: 'Meta', date_start: '2026-07-01', spend: '10', actions: [] },
+      { campaign_id: 'c1', campaign_name: 'Meta', date_start: '2026-07-02', spend: '30', actions: [] },
+    ],
+    cogsData: {
+      dailyCOGS: {},
+    },
+  };
+  const projection = buildFinancialProjection(data, {
+    usdToKrwRatesByDate: {
+      '2026-07-01': { usdToKrwRate: 1400, rateDate: '2026-07-01' },
+      '2026-07-02': { usdToKrwRate: 1500, rateDate: '2026-07-02' },
+    },
+  });
+
+  assert.deepEqual(
+    projection.dailyMerged.map(day => ({
+      date: day.date,
+      spendKrw: day.spendKrw,
+      usdToKrwRate: day.usdToKrwRate,
+      fxRateDate: day.fxRateDate,
+    })),
+    [
+      {
+        date: '2026-07-01',
+        spendKrw: 14_000,
+        usdToKrwRate: 1400,
+        fxRateDate: '2026-07-01',
+      },
+      {
+        date: '2026-07-02',
+        spendKrw: 45_000,
+        usdToKrwRate: 1500,
+        fxRateDate: '2026-07-02',
+      },
+    ]
+  );
+  assert.deepEqual(
+    projection.profitWaterfall.map(day => day.adSpendKRW),
+    [14_000, 45_000]
+  );
+
+  const [campaign] = transforms.buildCampaignProfit(
+    data.campaignInsights,
+    [{ id: 'c1', name: 'Meta' }],
+    100_000,
+    { totalCOGS: 0, totalShipping: 0 },
+    200_000,
+    projection.transformOptions
+  );
+  assert.equal(campaign.spendKRW, 59_000);
 });
 
 test('economics ledger uses the same explicit FX rate for Meta spend rows', () => {

@@ -105,7 +105,12 @@ function buildFinancialProjection(data = {}, options = {}) {
   const revenue = data.revenueData || {};
   const cogs = data.cogsData || null;
   const fx = normalizeFxContext(options.fx || data.fx);
-  const transformOptions = { usdToKrwRate: fx.usdToKrwRate };
+  const transformOptions = {
+    usdToKrwRate: fx.usdToKrwRate,
+    usdToKrwRatesByDate: options.usdToKrwRatesByDate || null,
+    fxRateDate: fx.rateDate,
+    fxStale: fx.stale,
+  };
 
   const dailyMerged = transforms.buildDailyMerged(
     revenue.dailyRevenue,
