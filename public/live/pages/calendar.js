@@ -568,8 +568,8 @@
           key: 'returns',
           label: tr('Returns and refunds', '반품 환불'),
           meta: tr(
-            `${formatCount(summary.returnRefundOrders)} post-delivery return ${summary.returnRefundOrders === 1 ? 'order' : 'orders'}`,
-            `배송 후 반품 주문 ${formatCount(summary.returnRefundOrders)}건`
+            `${formatCount(summary.returnRefundOrders)} post-delivery return ${summary.returnRefundOrders === 1 ? 'order' : 'orders'} · share of total gross revenue`,
+            `배송 후 반품 주문 ${formatCount(summary.returnRefundOrders)}건 · 총매출 기준 비율`
           ),
           amount: -summary.returnRefundedAmount,
           percent: shareOf(summary.returnRefundedAmount, summary.grossRevenue),
@@ -943,7 +943,7 @@
     container.innerHTML = `
       <div class="card refund-monitor-card refund-monitor-placeholder ${tone === 'error' ? 'is-error' : ''}">
         <div class="refund-monitor-kicker">${esc(tr('Refunds', '환불'))}</div>
-        <h2>${esc(tr('Return refunds · monthly average vs month to date', '반품 환불 · 월평균 대비 월 누계'))}</h2>
+        <h2>${esc(tr('Post-delivery return rates · cancellations excluded', '배송 후 반품률 · 주문 취소 제외'))}</h2>
         <p>${esc(message)}</p>
       </div>
     `;
@@ -1010,7 +1010,7 @@
         <header class="refund-monitor-header">
           <div>
             <div class="refund-monitor-kicker">${esc(tr('Refunds', '환불'))}</div>
-            <h2 id="refundMonitorTitle">${esc(tr('Return refunds · monthly average vs month to date', '반품 환불 · 월평균 대비 월 누계'))}</h2>
+            <h2 id="refundMonitorTitle">${esc(tr('Post-delivery return rates · cancellations excluded', '배송 후 반품률 · 주문 취소 제외'))}</h2>
           </div>
         </header>
 
@@ -1020,11 +1020,11 @@
             <div class="refund-monitor-metrics">
               <div class="refund-monitor-metric">
                 <strong>${viewModel.historicalOrderRate == null ? '—' : esc(formatPercent(viewModel.historicalOrderRate, 1))}</strong>
-                <span>${esc(tr('returned orders', '반품 환불 주문'))}</span>
+                <span>${esc(tr('order return rate', '주문 기준 반품률'))}</span>
               </div>
               <div class="refund-monitor-metric">
                 <strong>${viewModel.historicalRevenueRate == null ? '—' : esc(formatPercent(viewModel.historicalRevenueRate, 1))}</strong>
-                <span>${esc(tr('returned revenue', '반품 환불 매출'))}</span>
+                <span>${esc(tr('revenue return rate', '매출 기준 반품률'))}</span>
               </div>
             </div>
           </div>
@@ -1038,11 +1038,11 @@
             <div class="refund-monitor-metrics">
               <div class="refund-monitor-metric is-${esc(viewModel.orderComparison.tone)}">
                 <strong>${viewModel.monthToDateOrderRate == null ? '—' : esc(formatPercent(viewModel.monthToDateOrderRate, 1))}</strong>
-                <span>${esc(tr('returned orders', '반품 환불 주문'))}</span>
+                <span>${esc(tr('order return rate', '주문 기준 반품률'))}</span>
               </div>
               <div class="refund-monitor-metric is-${esc(viewModel.revenueComparison.tone)}">
                 <strong>${viewModel.monthToDateRevenueRate == null ? '—' : esc(formatPercent(viewModel.monthToDateRevenueRate, 1))}</strong>
-                <span>${esc(tr('returned revenue', '반품 환불 매출'))}</span>
+                <span>${esc(tr('revenue return rate', '매출 기준 반품률'))}</span>
               </div>
             </div>
           </div>

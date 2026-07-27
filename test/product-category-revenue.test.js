@@ -141,6 +141,7 @@ test('calendar income statement renders the financial sequence and every canonic
   const bankRevenueIndex = paymentRowsSource.indexOf("label: tr('Bank transfer net revenue'");
   const totalRevenueIndex = revenueLinesSource.indexOf("label: tr('Total revenue'");
   const returnsIndex = revenueLinesSource.indexOf("label: tr('Returns and refunds'");
+  const returnsGrossRevenueScopeIndex = revenueLinesSource.indexOf('share of total gross revenue');
   const cancellationsIndex = revenueLinesSource.indexOf("label: tr('Order cancellations'");
   const unclassifiedIndex = revenueLinesSource.indexOf("label: tr('Other revenue reversals'");
   const paymentRowsIndex = revenueLinesSource.indexOf('...paymentRows.map');
@@ -154,6 +155,7 @@ test('calendar income statement renders the financial sequence and every canonic
   assert.ok(cardRevenueIndex >= 0);
   assert.ok(cardRevenueIndex < bankRevenueIndex);
   assert.ok(totalRevenueIndex < returnsIndex);
+  assert.ok(returnsIndex < returnsGrossRevenueScopeIndex);
   assert.ok(returnsIndex < cancellationsIndex);
   assert.ok(cancellationsIndex < unclassifiedIndex);
   assert.ok(unclassifiedIndex < paymentRowsIndex);

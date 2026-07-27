@@ -355,9 +355,9 @@ test('summary shows historical and month-to-date return refund rates', () => {
   assert.match(calendarJs, /renderCalendarRefundRateMonitor\(\);/);
   assert.match(calendarJs, /Historical monthly average/);
   assert.match(calendarJs, /Month to date/);
-  assert.match(calendarJs, /Return refunds · monthly average vs month to date/);
-  assert.match(calendarJs, /returned orders/);
-  assert.match(calendarJs, /returned revenue/);
+  assert.match(calendarJs, /Post-delivery return rates · cancellations excluded/);
+  assert.match(calendarJs, /order return rate/);
+  assert.match(calendarJs, /revenue return rate/);
   assert.doesNotMatch(calendarJs, /refund orders \/ month/);
   assert.doesNotMatch(calendarJs, /role="meter"/);
   assert.doesNotMatch(calendarJs, /refund-monitor-(meter|track|axis|audit|benchmark)/);
