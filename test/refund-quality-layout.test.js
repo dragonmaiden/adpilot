@@ -51,7 +51,7 @@ test('retired analysis sections stay removed below the income statement', () => 
 
 test('selected-range headline remains without retired chart renderers', () => {
   assert.match(analyticsJs, /function renderCalendarSelectionProfitSummary\(payload = \{\}\)/);
-  assert.match(analyticsJs, /buildSelectionSummary\(rows,\s*selection\)/);
+  assert.match(analyticsJs, /buildSelectionSummary\(selection\)/);
   assert.match(
     analyticsJs,
     /live\.profitSummary = \{[\s\S]*renderCalendarSelection: renderCalendarSelectionProfitSummary/
@@ -64,6 +64,20 @@ test('selected-range headline remains without retired chart renderers', () => {
     calendarJs,
     /statementContainer\.innerHTML = renderCalendarIncomeStatement\(selection, calendarState\.data\.fx\);/
   );
+});
+
+test('selected-range cards consume the same canonical summary as the income statement', () => {
+  const summaryBuilder = analyticsJs.slice(
+    analyticsJs.indexOf('function buildSelectionSummary(selection)'),
+    analyticsJs.indexOf('function normalizeCoverageRows(rows)')
+  );
+
+  assert.match(summaryBuilder, /const sourceSummary = selection\?\.summary \|\| \{\};/);
+  assert.match(summaryBuilder, /sourceSummary\.trueNetProfit/);
+  assert.match(summaryBuilder, /sourceSummary\.grossRevenue/);
+  assert.match(summaryBuilder, /sourceSummary\.refundedAmount/);
+  assert.match(summaryBuilder, /sourceSummary\.totalCosts/);
+  assert.doesNotMatch(summaryBuilder, /rows\.reduce/);
 });
 
 test('selected-range headline keeps one net-profit owner and one row of supporting metrics', () => {

@@ -767,11 +767,15 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
     : dayTotals.refundedAmount;
   const paymentFees = dayTotals.paymentFeesComplete ? dayTotals.paymentFees : null;
   const trueNetProfit = dayTotals.paymentFeesComplete ? dayTotals.trueNetProfit : null;
+  const totalCosts = paymentFees == null
+    ? null
+    : dayTotals.cogs + dayTotals.shipping + paymentFees + dayTotals.adSpendKRW;
 
   return {
     ...dayTotals,
     paymentFees,
     trueNetProfit,
+    totalCosts,
     margin: trueNetProfit == null ? null : ratioPercentOrNull(trueNetProfit, dayTotals.netRevenue),
     roas: ratioOrNull(dayTotals.netRevenue, dayTotals.adSpendKRW),
     recognizedOrders: orderMetrics.recognizedOrders,
@@ -1051,6 +1055,17 @@ function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, opera
   });
 }
 
+function alignCalendarDaysWithSelection(calendarDays, selectionDays) {
+  const selectionByDate = new Map(
+    (Array.isArray(selectionDays) ? selectionDays : []).map(day => [day.date, day])
+  );
+
+  return (Array.isArray(calendarDays) ? calendarDays : []).map(day => ({
+    ...day,
+    ...(selectionByDate.get(day.date) || {}),
+  }));
+}
+
 async function getCalendarAnalysisResponse(query = {}) {
   const viewport = normalizeViewport(query);
   const data = scheduler.getLatestData();
@@ -1174,7 +1189,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 
   const visibleDayRows = buildDailyRows(visibleDates, maps, metaPurchasesByDate, ordersByDate, operationsByDate, reconciliationByDate);
   const maxRevenue = visibleDayRows.reduce((max, day) => Math.max(max, day.revenue || 0), 0);
-  const calendarDays = visibleDayRows.map(day => ({
+  const unadjustedCalendarDays = visibleDayRows.map(day => ({
     ...day,
     month: day.date.slice(0, 7),
     revenueIntensity: maxRevenue > 0 ? Number((day.revenue / maxRevenue).toFixed(3)) : 0,
@@ -1200,6 +1215,10 @@ async function getCalendarAnalysisResponse(query = {}) {
   const selectionDayRows = applyPaywayFeesToFinancialDays(
     unadjustedSelectionDayRows,
     paywayFinancials
+  );
+  const calendarDays = alignCalendarDaysWithSelection(
+    unadjustedCalendarDays,
+    selectionDayRows
   );
   const selectionCoverage = transforms.buildDataCoverage(
     selectionDayRows.map(day => ({ date: day.date })),
@@ -1253,6 +1272,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 
 module.exports = {
   getCalendarAnalysisResponse,
+  alignCalendarDaysWithSelection,
   buildAllTimeOrderPatterns,
   buildRefundDeductionMetrics,
   buildRefundWindowSummary,

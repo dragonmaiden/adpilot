@@ -10,6 +10,10 @@ test('calendar financial rates preserve unavailable denominator states', () => {
   assert.match(service, /trueNetProfit == null \? null : ratioPercentOrNull\(trueNetProfit, dayTotals\.netRevenue\)/);
   assert.match(service, /ratioPercentOrNull\(dayTotals\.refundedAmount, dayTotals\.grossRevenue\)/);
   assert.match(service, /ratioOrNull\(dayTotals\.netRevenue, dayTotals\.adSpendKRW\)/);
+  assert.match(service, /const totalCosts = paymentFees == null/);
   assert.doesNotMatch(client, /formatPercent\(summary\.(margin|refundRate) \|\| 0\)/);
   assert.doesNotMatch(client, /Number\(summary\.roas \|\| 0\)/);
+  assert.match(client, /const totalCosts = summary\.totalCosts;/);
+  assert.match(client, /const profitAvailable = hasCalendarMetric\(data\.trueNetProfit\);/);
+  assert.match(client, /isFuture \|\| !profitAvailable\s*\? '—'/);
 });

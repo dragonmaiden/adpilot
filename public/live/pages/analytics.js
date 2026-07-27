@@ -165,66 +165,53 @@
     };
   }
 
-  function buildSelectionSummary(rows, selection) {
-    const totals = rows.reduce(
-      (summary, row) => {
-        summary.totalGrossRevenue += toFiniteNumber(row.revenue);
-        summary.totalRefunded += toFiniteNumber(row.refunded);
-        summary.totalOrders += toFiniteNumber(row.orders);
-        summary.cogs += toFiniteNumber(row.cogs);
-        summary.shipping += toFiniteNumber(row.cogsShipping ?? row.shipping);
-        summary.adSpendKRW += toFiniteNumber(row.adSpendKRW);
-        summary.paymentFees += toFiniteNumber(row.paymentFees);
-        summary.totalProfit += toFiniteNumber(row.trueNetProfit);
-        return summary;
-      },
-      {
-        totalGrossRevenue: 0,
-        totalRefunded: 0,
-        totalOrders: 0,
-        cogs: 0,
-        shipping: 0,
-        adSpendKRW: 0,
-        paymentFees: 0,
-        totalProfit: 0,
-      }
-    );
+  function buildSelectionSummary(selection) {
+    const rows = normalizeCoverageRows(selection?.days || []);
     const sourceSummary = selection?.summary || {};
-    const totalNetRevenue = totals.totalGrossRevenue - totals.totalRefunded;
-    const totalCosts = totals.cogs + totals.shipping + totals.adSpendKRW + totals.paymentFees;
+    const totalNetRevenue = hasNumericValue(sourceSummary.netRevenue)
+      ? Number(sourceSummary.netRevenue)
+      : null;
+    const totalCosts = hasNumericValue(sourceSummary.totalCosts)
+      ? Number(sourceSummary.totalCosts)
+      : null;
 
     return {
-      daysShown: rows.length,
-      totalProfit: totals.totalProfit,
-      totalGrossRevenue: totals.totalGrossRevenue,
-      totalRefunded: totals.totalRefunded,
+      daysShown: hasNumericValue(selection?.dayCount)
+        ? Number(selection.dayCount)
+        : rows.length,
+      totalProfit: hasNumericValue(sourceSummary.trueNetProfit)
+        ? Number(sourceSummary.trueNetProfit)
+        : null,
+      totalGrossRevenue: hasNumericValue(sourceSummary.grossRevenue)
+        ? Number(sourceSummary.grossRevenue)
+        : null,
+      totalRefunded: hasNumericValue(sourceSummary.refundedAmount)
+        ? Number(sourceSummary.refundedAmount)
+        : null,
       totalOrders: hasNumericValue(sourceSummary.recognizedOrders)
         ? Number(sourceSummary.recognizedOrders)
-        : totals.totalOrders,
+        : null,
       totalCosts,
-      blendedMargin: totalNetRevenue > 0 ? (totals.totalProfit / totalNetRevenue) * 100 : null,
-      trueRoas: totals.adSpendKRW > 0 ? totalNetRevenue / totals.adSpendKRW : null,
-      refundRate:
-        totals.totalGrossRevenue > 0
-          ? (totals.totalRefunded / totals.totalGrossRevenue) * 100
-          : null,
-      costsShare: totalNetRevenue > 0 ? (totalCosts / totalNetRevenue) * 100 : null,
+      blendedMargin: hasNumericValue(sourceSummary.margin)
+        ? Number(sourceSummary.margin)
+        : null,
+      trueRoas: hasNumericValue(sourceSummary.roas)
+        ? Number(sourceSummary.roas)
+        : null,
+      refundRate: hasNumericValue(sourceSummary.refundRate)
+        ? Number(sourceSummary.refundRate)
+        : null,
+      costsShare: totalNetRevenue > 0 && hasNumericValue(totalCosts)
+        ? (totalCosts / totalNetRevenue) * 100
+        : null,
       coverage: getSelectionCoverage(rows, selection, sourceSummary),
     };
   }
 
-  function normalizeCalendarRows(rows) {
+  function normalizeCoverageRows(rows) {
     return (Array.isArray(rows) ? rows : [])
       .map(row => ({
         date: row?.date || '',
-        revenue: toFiniteNumber(row?.revenue),
-        refunded: toFiniteNumber(row?.refunded),
-        cogs: toFiniteNumber(row?.cogs),
-        cogsShipping: toFiniteNumber(row?.cogsShipping ?? row?.shipping),
-        adSpendKRW: toFiniteNumber(row?.adSpendKRW),
-        paymentFees: toFiniteNumber(row?.paymentFees),
-        trueNetProfit: toFiniteNumber(row?.trueNetProfit),
-        orders: toFiniteNumber(row?.orders),
         cogsCoverageRatio: toFiniteNumber(row?.cogsCoverageRatio),
       }))
       .filter(row => row.date);
@@ -403,8 +390,7 @@
       );
       return;
     }
-    const rows = normalizeCalendarRows(payload.rows || selection.days || []);
-    const summary = buildSelectionSummary(rows, selection);
+    const summary = buildSelectionSummary(selection);
     const windowLabel =
       payload.contextLabel || selection.label || tr('Selected range', '선택 범위');
 

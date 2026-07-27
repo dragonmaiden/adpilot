@@ -197,6 +197,9 @@
       paymentFees: hasCalendarMetric(canonical.paymentFees)
         ? toFiniteNumber(canonical.paymentFees)
         : null,
+      totalCosts: hasCalendarMetric(canonical.totalCosts)
+        ? toFiniteNumber(canonical.totalCosts)
+        : null,
       trueNetProfit: hasCalendarMetric(canonical.trueNetProfit)
         ? toFiniteNumber(canonical.trueNetProfit)
         : null,
@@ -323,27 +326,28 @@
     const todayKey = getKstDateKey();
     const isFuture = compareDateKeys(dateKey, todayKey) > 0;
     const isEmptyDay = !isFuture && (data.revenue || 0) === 0 && (data.orders || 0) === 0 && (data.adSpend || 0) === 0 && (data.refundCount || 0) === 0;
-    const netProfit = Number(data.trueNetProfit || 0);
-    const profitClass = netProfit >= 0 ? 'positive' : 'negative';
+    const profitAvailable = hasCalendarMetric(data.trueNetProfit);
+    const netProfit = profitAvailable ? Number(data.trueNetProfit) : null;
+    const profitClass = !profitAvailable ? '' : netProfit >= 0 ? 'positive' : 'negative';
     const maxPositiveProfit = Math.max(Number(spectrum?.maxPositiveProfit || 0), 1);
     const maxNegativeLoss = Math.max(Number(spectrum?.maxNegativeLoss || 0), 1);
-    const profitSpectrum = netProfit > 0
+    const profitSpectrum = profitAvailable && netProfit > 0
       ? Math.min(1, netProfit / maxPositiveProfit)
-      : netProfit < 0
+      : profitAvailable && netProfit < 0
         ? Math.min(1, Math.abs(netProfit) / maxNegativeLoss)
         : 0;
     const dayToneClass = isFuture
       ? 'profit-breakeven'
-      : netProfit > 0
+      : profitAvailable && netProfit > 0
         ? 'profit-positive'
-        : netProfit < 0
+        : profitAvailable && netProfit < 0
           ? 'profit-negative'
           : 'profit-breakeven';
     const tintStrength = isFuture
       ? 0
-      : netProfit > 0
+      : profitAvailable && netProfit > 0
         ? Math.min(1, 0.08 + profitSpectrum * 0.92)
-        : netProfit < 0
+        : profitAvailable && netProfit < 0
           ? Math.min(1, 0.08 + profitSpectrum * 0.92)
           : 0;
     const badges = [];
@@ -361,9 +365,11 @@
     }
 
     const revenueFullLabel = isFuture ? '—' : formatKrw(data.revenue || 0);
-    const profitFullLabel = isFuture ? '—' : formatSignedKrw(data.trueNetProfit || 0);
+    const profitFullLabel = isFuture || !profitAvailable ? '—' : formatSignedKrw(data.trueNetProfit);
     const revenueLabel = isFuture ? '—' : formatCalendarCellKrw(data.revenue || 0);
-    const profitLabel = isFuture ? '—' : formatCalendarCellKrw(data.trueNetProfit || 0, { signed: true });
+    const profitLabel = isFuture || !profitAvailable
+      ? '—'
+      : formatCalendarCellKrw(data.trueNetProfit, { signed: true });
     const orderCount = Number(data.orders || 0);
     const ordersLabel = isFuture
       ? tr('Future', '예정')
@@ -508,9 +514,7 @@
     const invalidNegativeBankRemainder = Boolean(
       paymentChannels?.reconciliation?.invalidNegativeBankRemainder
     );
-    const totalCosts = summary.paymentFees == null
-      ? null
-      : summary.cogs + summary.shipping + summary.paymentFees + summary.adSpendKRW;
+    const totalCosts = summary.totalCosts;
     const orderCount = summary.recognizedOrders || toFiniteNumber(paymentChannels.totalOrderCount);
     const shippingPerOrder = orderCount > 0 ? Math.round(summary.shipping / orderCount) : 0;
     const daysRequiringCOGS = summary.daysRequiringCOGS || 0;
@@ -1077,7 +1081,6 @@
     const selection = calendarState.data.selection || {};
     renderer({
       selection,
-      rows: Array.isArray(selection.days) ? selection.days : [],
       contextLabel: getCalendarWaterfallContextLabel(),
       sourceAudit: calendarState.data?.sourceAudit || null,
     });
