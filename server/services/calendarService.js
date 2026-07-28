@@ -1179,15 +1179,30 @@ async function getCalendarAnalysisResponse(query = {}) {
     });
   }
 
-  let historicalFx = null;
-  try {
-    historicalFx = await fxService.getUsdToKrwRatesForRange(
+  const [historicalFx, reconciliationReport, paywayFinancials] = await Promise.all([
+    fxService.getUsdToKrwRatesForRange(
       viewport.visibleStart,
       viewport.visibleEnd
-    );
-  } catch (err) {
-    console.warn('[CALENDAR] Historical FX unavailable; using latest FX fallback:', err.message);
-  }
+    ).catch(err => {
+      console.warn('[CALENDAR] Historical FX unavailable; using latest FX fallback:', err.message);
+      return null;
+    }),
+    reconciliationService.getReconciliationResponse({ refresh: false })
+      .catch(err => ({
+        ready: false,
+        error: err.message,
+        matchWindowMinutes: 0,
+        summary: {},
+        daily: [],
+        matches: [],
+        unmatchedSettlements: [],
+        unmatchedImwebPayments: [],
+      })),
+    paywayFinancialService.getPaywayFinancialSummary({
+      startDate: viewport.selectionStart,
+      endDate: viewport.selectionEnd,
+    }),
+  ]);
 
   const projection = buildFinancialProjection(data, {
     usdToKrwRatesByDate: historicalFx?.ratesByDate || null,
@@ -1241,22 +1256,6 @@ async function getCalendarAnalysisResponse(query = {}) {
     ordersByDate.set(date, existing);
   }
 
-  let reconciliationReport;
-  try {
-    reconciliationReport = await reconciliationService.getReconciliationResponse({ refresh: false });
-  } catch (err) {
-    reconciliationReport = {
-      ready: false,
-      error: err.message,
-      matchWindowMinutes: 0,
-      summary: {},
-      daily: [],
-      matches: [],
-      unmatchedSettlements: [],
-      unmatchedImwebPayments: [],
-    };
-  }
-
   const visibleReconciliation = filterReconciliationReport(reconciliationReport, viewport.visibleStart, viewport.visibleEnd);
   const selectionReconciliation = filterReconciliationReport(reconciliationReport, viewport.selectionStart, viewport.selectionEnd);
   const reconciliationByDate = new Map((visibleReconciliation.daily || []).map(day => [day.date, day]));
@@ -1303,10 +1302,6 @@ async function getCalendarAnalysisResponse(query = {}) {
   const unadjustedSelectionDayRows = visibleDayRows.filter(day =>
     compareDateKeys(day.date, viewport.selectionStart) >= 0 && compareDateKeys(day.date, viewport.selectionEnd) <= 0
   );
-  const paywayFinancials = await paywayFinancialService.getPaywayFinancialSummary({
-    startDate: viewport.selectionStart,
-    endDate: viewport.selectionEnd,
-  });
   const selectionDayRows = applyPaywayFeesToFinancialDays(
     unadjustedSelectionDayRows,
     paywayFinancials

@@ -5,6 +5,11 @@ const contracts = require('../contracts/v1');
 const { normalizeImwebPayments } = require('../domain/imwebPayments');
 const cardSettlementClient = require('../modules/cardSettlementClient');
 
+const CACHE_TTL_MS = 30 * 1000;
+let cachedResponse = null;
+let cachedAtMs = 0;
+let pendingRequest = null;
+
 function createMoneySummary() {
   return {
     count: 0,
@@ -211,7 +216,7 @@ async function getOrdersForReconciliation(options = {}) {
   return imweb.getAllOrders();
 }
 
-async function getReconciliationResponse(options = {}) {
+async function buildReconciliationResponse(options = {}) {
   const settlementReport = await cardSettlementClient.fetchCardSettlementReport();
   const orders = await getOrdersForReconciliation(options);
   const imwebPayments = normalizeImwebPayments(orders);
@@ -240,8 +245,44 @@ async function getReconciliationResponse(options = {}) {
   });
 }
 
+async function getReconciliationResponse(options = {}) {
+  const refresh = options.refresh === true;
+  const nowMs = Date.now();
+
+  if (!refresh && cachedResponse && nowMs - cachedAtMs < CACHE_TTL_MS) {
+    return cachedResponse;
+  }
+
+  if (!refresh && pendingRequest) {
+    return pendingRequest;
+  }
+
+  const request = buildReconciliationResponse(options)
+    .then(response => {
+      cachedResponse = response;
+      cachedAtMs = Date.now();
+      return response;
+    });
+
+  if (refresh) {
+    return request;
+  }
+
+  pendingRequest = request.finally(() => {
+    pendingRequest = null;
+  });
+  return pendingRequest;
+}
+
+function clearCache() {
+  cachedResponse = null;
+  cachedAtMs = 0;
+  pendingRequest = null;
+}
+
 module.exports = {
   getReconciliationResponse,
+  clearCache,
   normalizeImwebPayments,
   matchTransactions,
 };
