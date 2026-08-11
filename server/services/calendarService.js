@@ -727,6 +727,25 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
     summary.adSpendKRW += Number(day?.adSpendKRW || 0);
     summary.cogs += Number(day?.cogs || 0);
     summary.shipping += Number(day?.shipping || 0);
+    summary.purchaseCogs += Number(day?.purchaseCogs || 0);
+    summary.refundCogs += Number(day?.refundCogs || 0);
+    summary.purchaseShipping += Number(day?.purchaseShipping || 0);
+    summary.refundShipping += Number(day?.refundShipping || 0);
+    const hasCostActivity = Boolean(
+      day?.hasCOGS
+      || day?.hasPartialCOGS
+      || Number(day?.purchaseCogs || 0) !== 0
+      || Number(day?.refundCogs || 0) !== 0
+      || Number(day?.purchaseShipping || 0) !== 0
+      || Number(day?.refundShipping || 0) !== 0
+    );
+    if (hasCostActivity && !day?.sheetTotalsObserved) {
+      summary.sheetTotalsComplete = false;
+    }
+    if (day?.sheetTotalsObserved) {
+      summary.cogsSheetTotal += Number(day.cogsSheetTotal || 0);
+      summary.shippingSheetTotal += Number(day.shippingSheetTotal || 0);
+    }
     if (day?.paymentFees == null || day?.trueNetProfit == null) {
       summary.paymentFeesComplete = false;
     } else {
@@ -743,6 +762,13 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
     adSpendKRW: 0,
     cogs: 0,
     shipping: 0,
+    purchaseCogs: 0,
+    refundCogs: 0,
+    purchaseShipping: 0,
+    refundShipping: 0,
+    cogsSheetTotal: 0,
+    shippingSheetTotal: 0,
+    sheetTotalsComplete: true,
     paymentFees: 0,
     trueNetProfit: 0,
     metaPurchases: 0,
@@ -771,12 +797,47 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
   const totalCosts = paymentFees == null
     ? null
     : dayTotals.cogs + dayTotals.shipping + paymentFees + dayTotals.adSpendKRW;
+  const buildCostBridge = ({ sheetTotal, purchaseTotal, refundMarkedTotal, netTotal }) => {
+    const sourcePartitionDelta = sheetTotal - purchaseTotal - refundMarkedTotal;
+    const netCheckDelta = purchaseTotal - refundMarkedTotal - netTotal;
+
+    return {
+      sheetTotal,
+      purchaseTotal,
+      refundMarkedTotal,
+      netTotal,
+      sourcePartitionDelta,
+      netCheckDelta,
+      reconciled: sourcePartitionDelta === 0 && netCheckDelta === 0,
+    };
+  };
+  const costReconciliation = {
+    source: 'cogs_sheet',
+    basis: 'parsed_sheet_rows',
+    complete: dayTotals.sheetTotalsComplete,
+    cogs: buildCostBridge({
+      sheetTotal: dayTotals.cogsSheetTotal,
+      purchaseTotal: dayTotals.purchaseCogs,
+      refundMarkedTotal: dayTotals.refundCogs,
+      netTotal: dayTotals.cogs,
+    }),
+    shipping: buildCostBridge({
+      sheetTotal: dayTotals.shippingSheetTotal,
+      purchaseTotal: dayTotals.purchaseShipping,
+      refundMarkedTotal: dayTotals.refundShipping,
+      netTotal: dayTotals.shipping,
+    }),
+  };
+  costReconciliation.reconciled = costReconciliation.complete
+    && costReconciliation.cogs.reconciled
+    && costReconciliation.shipping.reconciled;
 
   return {
     ...dayTotals,
     paymentFees,
     trueNetProfit,
     totalCosts,
+    costReconciliation,
     margin: trueNetProfit == null ? null : ratioPercentOrNull(trueNetProfit, dayTotals.netRevenue),
     roas: ratioOrNull(dayTotals.netRevenue, dayTotals.adSpendKRW),
     recognizedOrders: orderMetrics.recognizedOrders,
@@ -1096,7 +1157,23 @@ function buildRefundRateComparison(historicalAverage = {}, monthToDateSummary = 
 function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, operationsByDate, reconciliationByDate) {
   return dateKeys.map(date => {
     const merged = maps.mergedByDate.get(date) || { date, revenue: 0, refunded: 0, netRevenue: 0, orders: 0, spend: 0, spendKrw: 0, purchases: 0 };
-    const profit = maps.profitByDate.get(date) || { date, cogs: 0, cogsShipping: 0, paymentFees: 0, trueNetProfit: 0, hasCOGS: false, hasPartialCOGS: false, cogsCoverageRatio: 0 };
+    const profit = maps.profitByDate.get(date) || {
+      date,
+      cogs: 0,
+      cogsShipping: 0,
+      purchaseCogs: 0,
+      refundCogs: 0,
+      purchaseShipping: 0,
+      refundShipping: 0,
+      cogsSheetTotal: null,
+      shippingSheetTotal: null,
+      sheetTotalsObserved: false,
+      paymentFees: 0,
+      trueNetProfit: 0,
+      hasCOGS: false,
+      hasPartialCOGS: false,
+      cogsCoverageRatio: 0,
+    };
     const orders = ordersByDate.get(date) || [];
     const orderMetrics = buildOrderMetrics(orders);
     const reconciliation = reconciliationByDate.get(date) || null;
@@ -1120,6 +1197,13 @@ function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, opera
       metaPurchases: Number(metaPurchasesByDate.get(date) || 0),
       cogs: Number(profit.cogs || 0),
       shipping: Number(profit.cogsShipping || 0),
+      purchaseCogs: Number(profit.purchaseCogs || 0),
+      refundCogs: Number(profit.refundCogs || 0),
+      purchaseShipping: Number(profit.purchaseShipping || 0),
+      refundShipping: Number(profit.refundShipping || 0),
+      cogsSheetTotal: profit.cogsSheetTotal == null ? null : Number(profit.cogsSheetTotal),
+      shippingSheetTotal: profit.shippingSheetTotal == null ? null : Number(profit.shippingSheetTotal),
+      sheetTotalsObserved: Boolean(profit.sheetTotalsObserved),
       paymentFees: Number(profit.paymentFees || 0),
       trueNetProfit: Number(profit.trueNetProfit || 0),
       margin: ratioPercentOrNull(profit.trueNetProfit || 0, merged.netRevenue || 0),
@@ -1373,6 +1457,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 module.exports = {
   getCalendarAnalysisResponse,
   alignCalendarDaysWithSelection,
+  buildSelectionSummary,
   buildSelectionFxContext,
   buildAllTimeOrderPatterns,
   buildRefundDeductionMetrics,

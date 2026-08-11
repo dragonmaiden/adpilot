@@ -146,8 +146,12 @@ test('calendar income statement renders the financial sequence and every canonic
   const unclassifiedIndex = revenueLinesSource.indexOf("label: tr('Other revenue reversals'");
   const paymentRowsIndex = revenueLinesSource.indexOf('...paymentRows.map');
   const netRevenueIndex = revenueLinesSource.indexOf("label: tr('Net revenue'");
-  const cogsIndex = calendarJs.indexOf("label: 'COGS'");
-  const shippingIndex = calendarJs.indexOf("label: tr('Shipping costs'");
+  const grossCogsIndex = calendarJs.indexOf("grossLabel: tr('Gross COGS purchased'");
+  const cogsRecoveryIndex = calendarJs.indexOf("recoveryLabel: tr('Less: recovered/returned COGS'");
+  const netCogsIndex = calendarJs.indexOf("netLabel: tr('Net COGS used in profit'");
+  const grossShippingIndex = calendarJs.indexOf("grossLabel: tr('Shipping paid'");
+  const shippingRecoveryIndex = calendarJs.indexOf("recoveryLabel: tr('Less: shipping reimbursed'");
+  const netShippingIndex = calendarJs.indexOf("netLabel: tr('Net shipping used in profit'");
   const paymentFeesIndex = calendarJs.indexOf("label: tr('Payment processing fees'");
   const advertisingIndex = calendarJs.indexOf("label: tr('Meta ad spend'");
   const totalCostsIndex = calendarJs.indexOf("label: tr('Total costs'");
@@ -160,9 +164,13 @@ test('calendar income statement renders the financial sequence and every canonic
   assert.ok(cancellationsIndex < unclassifiedIndex);
   assert.ok(unclassifiedIndex < paymentRowsIndex);
   assert.ok(paymentRowsIndex < netRevenueIndex);
-  assert.ok(netRevenueIndex < cogsIndex);
-  assert.ok(cogsIndex < shippingIndex);
-  assert.ok(shippingIndex < paymentFeesIndex);
+  assert.ok(netRevenueIndex < grossCogsIndex);
+  assert.ok(grossCogsIndex < cogsRecoveryIndex);
+  assert.ok(cogsRecoveryIndex < netCogsIndex);
+  assert.ok(netCogsIndex < grossShippingIndex);
+  assert.ok(grossShippingIndex < shippingRecoveryIndex);
+  assert.ok(shippingRecoveryIndex < netShippingIndex);
+  assert.ok(netShippingIndex < paymentFeesIndex);
   assert.ok(paymentFeesIndex < advertisingIndex);
   assert.ok(advertisingIndex < totalCostsIndex);
   assert.match(calendarJs, /tr\('Net profit', '순이익'\)/);
@@ -179,6 +187,20 @@ test('calendar income statement reads the server-owned refund split', () => {
   assert.match(calendarJs, /unclassifiedRefundedAmount:\s*toFiniteNumber\(canonical\.unclassifiedRefundedAmount\)/);
   assert.match(calendarJs, /amount:\s*-summary\.returnRefundedAmount/);
   assert.match(calendarJs, /amount:\s*-summary\.cancellationRefundedAmount/);
+});
+
+test('calendar income statement exposes the server-owned COGS Sheet reconciliation', () => {
+  assert.match(calendarServiceJs, /costReconciliation = \{/);
+  assert.match(calendarServiceJs, /sheetTotal:\s*dayTotals\.cogsSheetTotal/);
+  assert.match(calendarServiceJs, /sourcePartitionDelta = sheetTotal - purchaseTotal - refundMarkedTotal/);
+  assert.match(calendarServiceJs, /netCheckDelta = purchaseTotal - refundMarkedTotal - netTotal/);
+  assert.match(calendarJs, /Gross COGS purchased/);
+  assert.match(calendarJs, /Less: recovered\/returned COGS/);
+  assert.match(calendarJs, /Shipping paid/);
+  assert.match(calendarJs, /Less: shipping reimbursed/);
+  assert.match(calendarJs, /raw positive-column totals/);
+  assert.match(calendarJs, /COGS Sheet classification does not reconcile/);
+  assert.match(calendarJs, /COGS Sheet reconciliation/);
 });
 
 test('calendar income statement exposes financial incompleteness instead of hiding it', () => {

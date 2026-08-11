@@ -101,6 +101,35 @@ function buildMonthlyRates(monthlyRefunds) {
   return monthlyRates;
 }
 
+function buildDailyCogsWithSheetTotals(cogsData = null) {
+  const dailyCogs = Object.fromEntries(
+    Object.entries(cogsData?.dailyCOGS || {}).map(([date, row]) => [date, { ...row }])
+  );
+  const sourceTotalsByDate = new Map();
+
+  for (const item of Array.isArray(cogsData?.items) ? cogsData.items : []) {
+    const date = String(item?.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+
+    const sourceTotals = sourceTotalsByDate.get(date) || { cogs: 0, shipping: 0 };
+    sourceTotals.cogs += Number.isFinite(Number(item?.cost)) ? Number(item.cost) : 0;
+    sourceTotals.shipping += Number.isFinite(Number(item?.shipping)) ? Number(item.shipping) : 0;
+    sourceTotalsByDate.set(date, sourceTotals);
+  }
+
+  for (const [date, row] of Object.entries(dailyCogs)) {
+    const sourceTotals = sourceTotalsByDate.get(date);
+    dailyCogs[date] = {
+      ...row,
+      cogsSheetTotal: sourceTotals?.cogs ?? null,
+      shippingSheetTotal: sourceTotals?.shipping ?? null,
+      sheetTotalsObserved: Boolean(sourceTotals),
+    };
+  }
+
+  return dailyCogs;
+}
+
 function buildFinancialProjection(data = {}, options = {}) {
   const revenue = data.revenueData || {};
   const cogs = data.cogsData || null;
@@ -111,14 +140,14 @@ function buildFinancialProjection(data = {}, options = {}) {
     fxRateDate: fx.rateDate,
     fxStale: fx.stale,
   };
+  const dailyCOGS = buildDailyCogsWithSheetTotals(cogs);
 
   const dailyMerged = transforms.buildDailyMerged(
     revenue.dailyRevenue,
     data.campaignInsights,
-    cogs?.dailyCOGS,
+    dailyCOGS,
     transformOptions
   );
-  const dailyCOGS = cogs ? cogs.dailyCOGS || {} : {};
   const profitWaterfall = transforms.buildProfitWaterfall(
     dailyMerged,
     dailyCOGS,
@@ -157,6 +186,7 @@ function buildFinancialProjection(data = {}, options = {}) {
 
 module.exports = {
   normalizeFxContext,
+  buildDailyCogsWithSheetTotals,
   buildFinancialProjection,
   buildFeaturedProfitSummary,
   buildProfitRunRate,

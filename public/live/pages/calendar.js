@@ -196,6 +196,11 @@
   function buildCalendarWaterfallSummary(selection) {
     const rows = Array.isArray(selection?.days) ? selection.days : [];
     const canonical = selection?.summary || {};
+    const costReconciliation = canonical.costReconciliation || {};
+    const cogsReconciliation = canonical.costReconciliation?.cogs || {};
+    const shippingReconciliation = canonical.costReconciliation?.shipping || {};
+    const netCogs = toFiniteNumber(canonical.cogs);
+    const netShipping = toFiniteNumber(canonical.shipping);
     const coverage = rows.reduce((summary, day) => {
       const grossRevenue = toFiniteNumber(day.revenue);
       const refundedAmount = toFiniteNumber(day.refunded);
@@ -231,8 +236,28 @@
       netRevenue: toFiniteNumber(canonical.netRevenue),
       adSpend: toFiniteNumber(canonical.adSpend),
       adSpendKRW: toFiniteNumber(canonical.adSpendKRW),
-      cogs: toFiniteNumber(canonical.cogs),
-      shipping: toFiniteNumber(canonical.shipping),
+      cogs: netCogs,
+      shipping: netShipping,
+      purchaseCogs: hasCalendarMetric(cogsReconciliation.purchaseTotal)
+        ? toFiniteNumber(cogsReconciliation.purchaseTotal)
+        : netCogs,
+      refundCogs: toFiniteNumber(cogsReconciliation.refundMarkedTotal),
+      cogsSheetTotal: costReconciliation.complete && hasCalendarMetric(cogsReconciliation.sheetTotal)
+        ? toFiniteNumber(cogsReconciliation.sheetTotal)
+        : null,
+      cogsSourcePartitionDelta: toFiniteNumber(cogsReconciliation.sourcePartitionDelta),
+      cogsNetCheckDelta: toFiniteNumber(cogsReconciliation.netCheckDelta),
+      purchaseShipping: hasCalendarMetric(shippingReconciliation.purchaseTotal)
+        ? toFiniteNumber(shippingReconciliation.purchaseTotal)
+        : netShipping,
+      refundShipping: toFiniteNumber(shippingReconciliation.refundMarkedTotal),
+      shippingSheetTotal: costReconciliation.complete && hasCalendarMetric(shippingReconciliation.sheetTotal)
+        ? toFiniteNumber(shippingReconciliation.sheetTotal)
+        : null,
+      shippingSourcePartitionDelta: toFiniteNumber(shippingReconciliation.sourcePartitionDelta),
+      shippingNetCheckDelta: toFiniteNumber(shippingReconciliation.netCheckDelta),
+      costReconciliationComplete: costReconciliation.complete === true,
+      costReconciled: costReconciliation.reconciled === true,
       paymentFees: hasCalendarMetric(canonical.paymentFees)
         ? toFiniteNumber(canonical.paymentFees)
         : null,
@@ -576,6 +601,74 @@
         `Payway 실제: 부과 ${formatKrw(payway.approvalFees || 0)} − 환급 ${formatKrw(payway.cancelledFees || 0)}`
       )
       : tr('Waiting for complete Payway fee data', '완전한 Payway 수수료 데이터를 기다리는 중');
+    const hasRefundCostAdjustments = summary.refundCogs > 0 || summary.refundShipping > 0;
+    const costReconciliationTone = !summary.costReconciliationComplete || !summary.costReconciled
+      ? 'mismatch'
+      : 'aligned';
+    const costReconciliationNote = !summary.costReconciliationComplete
+      ? tr(
+        'The parsed COGS Sheet row totals are unavailable for part of this range. Net COGS and shipping are shown, but source-to-income alignment cannot be verified.',
+        '선택 기간 일부의 COGS Sheet 원본 행 합계를 사용할 수 없습니다. 순원가와 순배송비는 표시되지만 원본과 손익계산서 간 일치 여부는 확인할 수 없습니다.'
+      )
+      : !summary.costReconciled
+        ? tr(
+          `COGS Sheet classification does not reconcile. COGS source partition ${formatSignedKrw(summary.cogsSourcePartitionDelta)}, COGS net check ${formatSignedKrw(summary.cogsNetCheckDelta)}, shipping source partition ${formatSignedKrw(summary.shippingSourcePartitionDelta)}, shipping net check ${formatSignedKrw(summary.shippingNetCheckDelta)}. Review the refund-marked rows before relying on profit.`,
+          `COGS Sheet 분류가 일치하지 않습니다. 원가 원본 분류 차이 ${formatSignedKrw(summary.cogsSourcePartitionDelta)}, 원가 순액 검증 차이 ${formatSignedKrw(summary.cogsNetCheckDelta)}, 배송비 원본 분류 차이 ${formatSignedKrw(summary.shippingSourcePartitionDelta)}, 배송비 순액 검증 차이 ${formatSignedKrw(summary.shippingNetCheckDelta)}입니다. 순이익을 사용하기 전에 환불 표시 행을 확인하세요.`
+        )
+        : hasRefundCostAdjustments
+          ? tr(
+            `COGS Sheet and income statement align. The raw positive-column totals are ${formatKrw(summary.cogsSheetTotal)} cost and ${formatKrw(summary.shippingSheetTotal)} shipping: ${formatKrw(summary.purchaseCogs)} purchases + ${formatKrw(summary.refundCogs)} refund-marked COGS, and ${formatKrw(summary.purchaseShipping)} shipping paid + ${formatKrw(summary.refundShipping)} refund-marked shipping. Profit shows those recoveries separately, producing net COGS of ${formatKrw(summary.cogs)} and net shipping of ${formatKrw(summary.shipping)}.`,
+            `COGS Sheet와 손익계산서가 일치합니다. 양수 열 원본 합계는 원가 ${formatKrw(summary.cogsSheetTotal)}, 배송비 ${formatKrw(summary.shippingSheetTotal)}이며, 매입 원가 ${formatKrw(summary.purchaseCogs)} + 환불 표시 원가 ${formatKrw(summary.refundCogs)}, 지급 배송비 ${formatKrw(summary.purchaseShipping)} + 환불 표시 배송비 ${formatKrw(summary.refundShipping)}로 구성됩니다. 손익에는 환급을 별도 표시하여 순원가 ${formatKrw(summary.cogs)}, 순배송비 ${formatKrw(summary.shipping)}를 반영합니다.`
+          )
+          : tr(
+            'COGS Sheet cost and shipping totals match the net amounts used in profit; no refund/recovery adjustment applies to this range.',
+            'COGS Sheet의 원가 및 배송비 합계가 순이익 계산에 사용된 순액과 일치하며, 이 기간에는 환불/환급 조정이 없습니다.'
+          );
+    const renderNetCostBridge = ({
+      grossKey,
+      grossLabel,
+      grossMeta,
+      grossTotal,
+      recoveryKey,
+      recoveryLabel,
+      recoveryMeta,
+      recoveryTotal,
+      netKey,
+      netLabel,
+      netMeta,
+      netTotal,
+    }) => [
+      {
+        key: grossKey,
+        label: grossLabel,
+        meta: grossMeta,
+        amount: -grossTotal,
+        percent: shareOf(grossTotal, summary.netRevenue),
+        kind: 'cost',
+      },
+      {
+        key: recoveryKey,
+        label: recoveryLabel,
+        meta: recoveryMeta,
+        amount: recoveryTotal,
+        percent: shareOf(recoveryTotal, summary.netRevenue),
+        kind: 'detail recovery',
+      },
+      {
+        key: netKey,
+        label: netLabel,
+        meta: netMeta,
+        amount: -netTotal,
+        percent: shareOf(netTotal, summary.netRevenue),
+        kind: 'subtotal',
+      },
+    ];
+    const cogsRecoveryMeta = summary.costReconciliationComplete
+      ? tr('Refund-marked COGS Sheet rows shown separately from purchases', '매입과 분리 표시한 COGS Sheet 환불 표시 행')
+      : tr('Current recovery classification; source-row alignment is unavailable', '현재 환급 분류이며 원본 행 일치 여부는 확인할 수 없음');
+    const shippingRecoveryMeta = summary.costReconciliationComplete
+      ? tr('Refund-marked shipping shown separately from shipping paid', '지급 배송비와 분리 표시한 환불 표시 배송비')
+      : tr('Current reimbursement classification; source-row alignment is unavailable', '현재 환급 배송비 분류이며 원본 행 일치 여부는 확인할 수 없음');
 
     return {
       summary,
@@ -587,6 +680,8 @@
       totalCosts,
       cogsComplete,
       coverageLabel,
+      costReconciliationNote,
+      costReconciliationTone,
       revenueLines: [
         {
           key: 'gross-revenue',
@@ -647,24 +742,36 @@
         },
       ],
       costLines: [
-        {
-          key: 'cogs',
-          label: 'COGS',
-          meta: coverageLabel,
-          amount: -summary.cogs,
-          percent: shareOf(summary.cogs, summary.netRevenue),
-          kind: 'cost',
-        },
-        {
-          key: 'shipping',
-          label: tr('Shipping costs', '배송비'),
-          meta: orderCount > 0
-            ? tr(`${formatKrw(shippingPerOrder)} per order`, `주문당 ${formatKrw(shippingPerOrder)}`)
+        ...renderNetCostBridge({
+          grossKey: 'gross-cogs',
+          grossLabel: tr('Gross COGS purchased', '총 매입 원가'),
+          grossMeta: tr('COGS Sheet purchase rows · refund-marked rows excluded', 'COGS Sheet 매입 행 · 환불 표시 행 제외'),
+          grossTotal: summary.purchaseCogs,
+          recoveryKey: 'recovered-cogs',
+          recoveryLabel: tr('Less: recovered/returned COGS', '차감: 회수/반품 원가'),
+          recoveryMeta: cogsRecoveryMeta,
+          recoveryTotal: summary.refundCogs,
+          netKey: 'net-cogs',
+          netLabel: tr('Net COGS used in profit', '순이익 계산 반영 순원가'),
+          netMeta: coverageLabel,
+          netTotal: summary.cogs,
+        }),
+        ...renderNetCostBridge({
+          grossKey: 'shipping-paid',
+          grossLabel: tr('Shipping paid', '지급 배송비'),
+          grossMeta: tr('COGS Sheet shipping on purchase rows · refund-marked rows excluded', 'COGS Sheet 매입 행 배송비 · 환불 표시 행 제외'),
+          grossTotal: summary.purchaseShipping,
+          recoveryKey: 'shipping-reimbursed',
+          recoveryLabel: tr('Less: shipping reimbursed', '차감: 환급 배송비'),
+          recoveryMeta: shippingRecoveryMeta,
+          recoveryTotal: summary.refundShipping,
+          netKey: 'net-shipping',
+          netLabel: tr('Net shipping used in profit', '순이익 계산 반영 순배송비'),
+          netMeta: orderCount > 0
+            ? tr(`${formatKrw(shippingPerOrder)} net per recognized order`, `인식 주문당 순배송비 ${formatKrw(shippingPerOrder)}`)
             : tr('No recognized orders', '인식된 주문 없음'),
-          amount: -summary.shipping,
-          percent: shareOf(summary.shipping, summary.netRevenue),
-          kind: 'cost',
-        },
+          netTotal: summary.shipping,
+        }),
         {
           key: 'payment-fees',
           label: tr('Payment processing fees', '결제 처리 수수료'),
@@ -803,6 +910,15 @@
         <div class="income-statement-lines" role="table">
           ${viewModel.costLines.map(line => renderIncomeStatementLine(line)).join('')}
         </div>
+        ${viewModel.costReconciliationNote ? `
+          <div class="income-statement-source-reconciliation ${esc(viewModel.costReconciliationTone)}" role="note">
+            <i data-lucide="${viewModel.costReconciliationTone === 'mismatch' ? 'triangle-alert' : 'scale'}"></i>
+            <div>
+              <strong>${esc(tr('COGS Sheet reconciliation', 'COGS Sheet 조정 내역'))}</strong>
+              <span>${esc(viewModel.costReconciliationNote)}</span>
+            </div>
+          </div>
+        ` : ''}
       </section>
       <div class="income-statement-result ${!profitAvailable ? 'unavailable' : resultPositive ? 'positive' : 'negative'}">
         <div class="income-statement-result-copy">

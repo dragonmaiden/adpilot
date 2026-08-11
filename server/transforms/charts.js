@@ -360,8 +360,26 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate, options = 
     const hasPendingRecovery = pendingRecoveryItems > 0 || pendingRecoveryOrders > 0;
     const hasCOGS = hasAnyCOGS && coverageRatio >= 1;
     const hasPartialCOGS = hasAnyCOGS && coverageRatio < 1;
-    const cogs = hasAnyCOGS ? (cogsEntry.cost || cogsEntry.cogs || 0) : 0;
-    const cogsShipping = hasAnyCOGS ? (cogsEntry.shipping || 0) : 0;
+    const cogs = hasAnyCOGS ? toFiniteNumber(cogsEntry.cost ?? cogsEntry.cogs) : 0;
+    const cogsShipping = hasAnyCOGS ? toFiniteNumber(cogsEntry.shipping) : 0;
+    const refundCogs = hasAnyCOGS ? toFiniteNumber(cogsEntry.refundCost) : 0;
+    const refundShipping = hasAnyCOGS ? toFiniteNumber(cogsEntry.refundShipping) : 0;
+    const cogsSheetTotal = cogsEntry?.sheetTotalsObserved
+      ? toFiniteNumber(cogsEntry.cogsSheetTotal)
+      : null;
+    const shippingSheetTotal = cogsEntry?.sheetTotalsObserved
+      ? toFiniteNumber(cogsEntry.shippingSheetTotal)
+      : null;
+    const purchaseCogs = hasAnyCOGS
+      ? cogsEntry.purchaseCost == null
+        ? cogs + refundCogs
+        : toFiniteNumber(cogsEntry.purchaseCost)
+      : 0;
+    const purchaseShipping = hasAnyCOGS
+      ? cogsEntry.purchaseShipping == null
+        ? cogsShipping + refundShipping
+        : toFiniteNumber(cogsEntry.purchaseShipping)
+      : 0;
     const canonicalSpendKrw = Number(day.spendKrw);
     const adSpendKRW = day.spendKrw != null && Number.isFinite(canonicalSpendKrw)
       ? Math.round(canonicalSpendKrw)
@@ -385,10 +403,13 @@ function buildProfitWaterfall(dailyMerged, dailyCOGS, paymentFeeRate, options = 
       cogsCoverageRatio: coverageRatio,
       pendingRecoveryItems,
       pendingRecoveryOrders,
-      purchaseCogs: hasAnyCOGS ? Number(cogsEntry.purchaseCost || 0) : 0,
-      refundCogs: hasAnyCOGS ? Number(cogsEntry.refundCost || 0) : 0,
-      purchaseShipping: hasAnyCOGS ? Number(cogsEntry.purchaseShipping || 0) : 0,
-      refundShipping: hasAnyCOGS ? Number(cogsEntry.refundShipping || 0) : 0,
+      purchaseCogs,
+      refundCogs,
+      purchaseShipping,
+      refundShipping,
+      cogsSheetTotal,
+      shippingSheetTotal,
+      sheetTotalsObserved: cogsSheetTotal != null && shippingSheetTotal != null,
     };
   });
 }

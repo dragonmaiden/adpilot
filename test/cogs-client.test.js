@@ -265,6 +265,12 @@ test('coverage and waterfall mark partial COGS days separately from fully covere
   assert.equal(coverage.coverageRatio, 0.833);
   assert.equal(waterfall[0].hasCOGS, true);
   assert.equal(waterfall[0].hasPartialCOGS, false);
+  assert.equal(waterfall[0].purchaseCogs, 100000);
+  assert.equal(waterfall[0].refundCogs, 0);
+  assert.equal(waterfall[0].purchaseShipping, 10000);
+  assert.equal(waterfall[0].refundShipping, 0);
+  assert.equal(waterfall[0].cogsSheetTotal, null);
+  assert.equal(waterfall[0].sheetTotalsObserved, false);
   assert.equal(waterfall[1].hasCOGS, false);
   assert.equal(waterfall[1].hasPartialCOGS, true);
   assert.equal(waterfall[2].hasPendingRecovery, true);
