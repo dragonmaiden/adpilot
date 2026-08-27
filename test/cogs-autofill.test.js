@@ -213,6 +213,112 @@ test('syncOrderToCogsSheet appends multi-item rows to the correct month tab with
   }
 });
 
+test('syncOrderToCogsSheet refuses to initialize a non-empty misaligned tab without changing it', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  const writeRequests = [];
+
+  global.fetch = async (...args) => {
+    writeRequests.push(args);
+    throw new Error('No Google write should be attempted for a non-empty misaligned sheet');
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+        buildSheetTargets: () => [],
+        fetchSheetCSV: async () => [
+          ['', '', '', '', '', '', '', '', '', '', '', 'delivery note'],
+          ['101', "'2026-03-13", 'existing customer', '20260313009999'],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for the fail-closed sheet test');
+        },
+      },
+    }, async service => {
+      await assert.rejects(
+        service.syncOrderToCogsSheet(createOrder(), {
+          target: { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+        }),
+        /Refusing to initialize non-empty COGS sheet "3월 주문".*No data was changed/
+      );
+      assert.equal(writeRequests.length, 0);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('syncOrderToCogsSheet initializes a genuinely empty tab before appending', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  const headerUpdates = [];
+  const appendRequests = [];
+
+  global.fetch = async (url, options = {}) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    if (textUrl.includes('/values:batchUpdate')) {
+      headerUpdates.push({ url: textUrl, body: JSON.parse(options.body) });
+      return {
+        ok: true,
+        json: async () => ({ totalUpdatedCells: 13 }),
+      };
+    }
+
+    appendRequests.push({ url: textUrl, body: JSON.parse(options.body) });
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 2 } }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+        buildSheetTargets: () => [],
+        fetchSheetCSV: async () => [],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for the empty-sheet test');
+        },
+      },
+    }, async service => {
+      const result = await service.syncOrderToCogsSheet(createOrder(), {
+        target: { label: '3월', sheetName: '3월 주문', gid: null, discovered: false },
+      });
+
+      assert.equal(result.status, 'appended');
+      assert.equal(headerUpdates.length, 1);
+      assert.equal(headerUpdates[0].body.data[0].range, "'3월 주문'!A1");
+      assert.equal(appendRequests.length, 1);
+      assert.equal(
+        [...headerUpdates, ...appendRequests].some(request => request.url.includes(':clear')),
+        false
+      );
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('syncOrderToCogsSheet canonicalizes stale month-only sheet titles before appending', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();

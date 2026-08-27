@@ -622,23 +622,18 @@ async function ensureSheetInitialized(target, rows) {
   const hasContentInPrimaryColumns = firstRow.slice(0, 7).some(cell => asString(cell));
   if (hasContentInPrimaryColumns) return { initialized: false };
 
-  const escapedSheetName = String(target.sheetName || target.label || '').replace(/'/g, "''");
-
-  // Clear any misaligned data before writing headers
   const hasAnyContent = Array.isArray(rows) && rows.some(row =>
     Array.isArray(row) && row.some(cell => asString(cell))
   );
   if (hasAnyContent) {
-    const token = await getGoogleAccessToken();
-    const clearUrl = `${SHEETS_API_BASE}/${encodeURIComponent(config.cogs.spreadsheetId)}/values/'${escapedSheetName}':clear`;
-    await fetch(clearUrl, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: '{}',
-    });
-    console.log(`[COGS AUTOFILL] Cleared misaligned data from "${target.sheetName}"`);
+    const sheetName = asString(target?.sheetName || target?.label) || 'unknown';
+    throw new Error(
+      `Refusing to initialize non-empty COGS sheet "${sheetName}": ` +
+      'row 1 columns A-G are empty while other data exists. No data was changed.'
+    );
   }
 
+  const escapedSheetName = String(target.sheetName || target.label || '').replace(/'/g, "''");
   const titleRow = [buildSheetTitle(target)];
   await updateSheetValues([
     {
