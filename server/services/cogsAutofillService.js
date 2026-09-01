@@ -584,6 +584,21 @@ function buildSheetTitle(target) {
   return `${SHEET_TITLE_PREFIX} ${monthLabel} 주문`;
 }
 
+function isCanonicalSheetHeaderRow(row) {
+  if (!Array.isArray(row)) return false;
+
+  const normalizedCells = row.map(cell => asString(cell).toLowerCase());
+  return normalizedCells[COL.NO] === 'no'
+    && normalizedCells[COL.DATE] === 'date'
+    && normalizedCells[COL.NAME] === 'name'
+    && normalizedCells[COL.ORDER_NO] === 'order number'
+    && normalizedCells[COL.PRODUCT] === 'product name'
+    && normalizedCells[COL.COST] === 'cost'
+    && normalizedCells[COL.SHIPPING] === 'shipping cost'
+    && normalizedCells[COL.PAYMENT] === 'payment'
+    && normalizedCells[COL.DELIVERY] === 'delivery';
+}
+
 async function applyCheckboxValidation(sheetGid, startRow, rowCount, ...columnIndices) {
   const token = await getGoogleAccessToken();
   const requests = columnIndices.map(colIndex => ({
@@ -616,11 +631,13 @@ async function applyCheckboxValidation(sheetGid, startRow, rowCount, ...columnIn
 }
 
 async function ensureSheetInitialized(target, rows) {
-  // Skip initialization if the sheet already has meaningful data in the first
-  // few columns (title row, header row, or order data starting at column A).
+  // Existing tabs may intentionally leave row 1 blank and place the canonical
+  // headers on row 2. Recognize that schema before treating content as unsafe.
   const firstRow = Array.isArray(rows?.[0]) ? rows[0] : [];
   const hasContentInPrimaryColumns = firstRow.slice(0, 7).some(cell => asString(cell));
-  if (hasContentInPrimaryColumns) return { initialized: false };
+  const hasCanonicalHeader = (Array.isArray(rows) ? rows.slice(0, 3) : [])
+    .some(isCanonicalSheetHeaderRow);
+  if (hasContentInPrimaryColumns || hasCanonicalHeader) return { initialized: false };
 
   const hasAnyContent = Array.isArray(rows) && rows.some(row =>
     Array.isArray(row) && row.some(cell => asString(cell))

@@ -255,6 +255,70 @@ test('syncOrderToCogsSheet refuses to initialize a non-empty misaligned tab with
   }
 });
 
+test('syncOrderToCogsSheet appends to a valid tab with a blank title row and headers on row 2', async () => {
+  const dataDir = createTempDataDir();
+  const privateKey = createPrivateKeyPem();
+  const originalFetch = global.fetch;
+  const writeRequests = [];
+
+  global.fetch = async (url, options = {}) => {
+    const textUrl = String(url);
+    if (textUrl === 'https://oauth2.googleapis.com/token') {
+      return {
+        ok: true,
+        json: async () => ({ access_token: 'google-access-token', expires_in: 3600 }),
+      };
+    }
+
+    writeRequests.push({ url: textUrl, body: JSON.parse(options.body) });
+    return {
+      ok: true,
+      json: async () => ({ updates: { updatedRows: 2 } }),
+    };
+  };
+
+  try {
+    await withMockedService({
+      config: createConfig(privateKey),
+      runtimePaths: { dataDir },
+      cogsClient: {
+        fetchWorkbookMetadata: async () => ({ workbookSheets: [] }),
+        buildSheetTargets: () => [],
+        fetchSheetCSV: async () => [
+          [],
+          [
+            'No', 'date', 'name', 'order number', 'product URL', 'seller no',
+            'product name', 'Cost', 'Shipping cost', 'payment', 'delivery', 'note',
+          ],
+          ['9', "'2026-09-01", 'existing customer', '20260901000001', '', '', 'existing product'],
+        ],
+      },
+      imwebClient: {
+        getOrder: async () => {
+          throw new Error('getOrder should not be called for direct syncOrderToCogsSheet test');
+        },
+      },
+    }, async service => {
+      const result = await service.syncOrderToCogsSheet(createOrder({
+        orderNo: '20260901000002',
+        wtime: '2026-09-01T02:36:00.000Z',
+      }), {
+        target: { label: '9월', sheetName: 'Sep', gid: null, discovered: true },
+      });
+
+      assert.equal(result.status, 'appended');
+      assert.equal(result.sheetName, 'Sep');
+      assert.equal(result.sequenceNo, 10);
+      assert.equal(writeRequests.length, 1);
+      assert.match(writeRequests[0].url, /values\/'Sep'!A%3AL:append/);
+      assert.equal(writeRequests[0].url.includes(':clear'), false);
+      assert.equal(writeRequests[0].url.includes('/values:batchUpdate'), false);
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('syncOrderToCogsSheet initializes a genuinely empty tab before appending', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
