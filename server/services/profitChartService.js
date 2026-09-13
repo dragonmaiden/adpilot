@@ -2,14 +2,12 @@ const crypto = require('crypto');
 const { buildFinancialProjection } = require('./financialProjectionService');
 const { shiftDate } = require('../domain/time');
 
-function buildCumulativeProfitSeries(data, reportDate) {
-  const projection = buildFinancialProjection(data);
-  const rows = projection.profitWaterfall
+function buildCumulativeProfitSeries(data, reportDate, financialDays) {
+  const rows = financialDays
     .filter(row => row.date <= reportDate)
     .sort((a, b) => a.date.localeCompare(b.date));
   if (!rows.length) return [];
   const byDate = new Map(rows.map(row => [row.date, row]));
-  const ordersByDate = new Map(projection.dailyMerged.map(row => [row.date, row.orders]));
   const points = [];
   let total = 0;
   let estimated = false;
@@ -19,7 +17,7 @@ function buildCumulativeProfitSeries(data, reportDate) {
     let dailyPending = false;
     let dailyEstimated = false;
     if (row) {
-      const needsCosts = Number(ordersByDate.get(date)) > 0 || row.revenue > 0;
+      const needsCosts = Number(row.orders) > 0 || row.revenue > 0;
       const missingRevenue = !Object.hasOwn(data.revenueData?.dailyRevenue || {}, date)
         && Number(data.cogsData?.dailyCOGS?.[date]?.purchases) > 0;
       if (missingRevenue || !Number.isFinite(row.trueNetProfit)
@@ -82,7 +80,7 @@ function buildMonthlyProfitSvg(months) {
     elements.push(`<rect data-month="${month.month}" x="${x - width / 2}" y="${Math.min(y(0), y(month.value))}" width="${width}" height="${Math.max(2, Math.abs(y(month.value) - y(0)))}" fill="${month.current ? '#ffffff' : color}" stroke="${color}" stroke-width="3" ${month.current ? 'stroke-dasharray="1 7" stroke-linecap="round"' : ''}/>`);
     if (months.length <= 12) elements.push(`<text x="${x}" y="${month.value < 0 ? y(month.value) + 23 : y(month.value) - 12}" text-anchor="middle" font-size="15" fill="#334155">${compact(month.value)}${month.estimated ? ' est.' : ''}</text>`);
   });
-  if (months.some(month => month.pending)) elements.push('<text x="48" y="1000" font-size="18" fill="#64748b">N/A: monthly profit is pending missing costs.</text>');
+  if (months.some(month => month.pending)) elements.push('<text x="48" y="1000" font-size="18" fill="#64748b">N/A: monthly profit is pending complete financial data.</text>');
   return elements.join('\n');
 }
 
@@ -123,7 +121,7 @@ function buildProfitChartSvg(points, reportDate) {
   for (const { i, week } of weekTicks.filter((_, index) => index % tickStride === 0)) {
     elements.push(`<text x="${x(i)}" y="461" text-anchor="${i === 0 ? 'start' : 'middle'}" font-size="18" fill="#64748b">${week.slice(5)}</text>`);
   }
-  const headline = last.value == null ? 'Pending complete cost data' : `${money(last.value)}${last.estimated ? '  estimated' : ''}`;
+  const headline = last.value == null ? 'Pending complete financial data' : `${money(last.value)}${last.estimated ? '  estimated' : ''}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1040">
     <rect width="1100" height="1040" rx="24" fill="#ffffff"/>
     <g font-family="DejaVu Sans, Arial, sans-serif">
@@ -131,7 +129,7 @@ function buildProfitChartSvg(points, reportDate) {
       <text x="48" y="84" font-size="18" fill="#64748b">Since first recorded day ${points[0].date} · through ${reportDate} (KST)</text>
       <text x="48" y="128" font-size="30" font-weight="bold" fill="#0f172a">${headline}</text>
       ${elements.join('\n')}
-      ${last.pending ? '<text x="48" y="520" font-size="18" fill="#64748b">Line stops where costs are missing.</text>' : ''}
+      ${last.pending ? '<text x="48" y="520" font-size="18" fill="#64748b">Line stops where financial data is incomplete.</text>' : ''}
       <line x1="48" x2="1052" y1="546" y2="546" stroke="#e2e8f0"/>
       ${buildMonthlyProfitSvg(buildMonthlyProfitSeries(points, reportDate))}
     </g></svg>`;
@@ -148,7 +146,26 @@ async function buildDailyProfitChart(data, reportDate) {
   if (auditStatus && auditStatus !== 'reconciled') {
     throw new Error('Financial sources do not reconcile; profit chart unavailable');
   }
-  const points = buildCumulativeProfitSeries(data, reportDate);
+  const dates = buildFinancialProjection(data).dailyMerged.map(row => row.date)
+    .filter(date => date <= reportDate).sort();
+  if (!dates.length) throw new Error('No recorded financial history for chart');
+  const startDate = dates[0];
+  const [historicalFx, paywayFinancials] = await Promise.all([
+    require('./fxService').getUsdToKrwRatesForRange(startDate, reportDate),
+    require('./paywayFinancialService').getPaywayFinancialSummary({ startDate, endDate: reportDate }),
+  ]);
+  if (paywayFinancials.stale || paywayFinancials.error) {
+    throw new Error('Payway fees are stale or unavailable; profit chart unavailable');
+  }
+  const projection = buildFinancialProjection(data, {
+    usdToKrwRatesByDate: historicalFx?.ratesByDate || null,
+  });
+  const allDates = [];
+  for (let date = startDate; date <= reportDate; date = shiftDate(date, 1)) allDates.push(date);
+  // Lazy import avoids the calendar → scheduler → Telegram dependency cycle.
+  const { buildSummaryFinancialDays } = require('./calendarService');
+  const days = buildSummaryFinancialDays(projection, allDates, paywayFinancials);
+  const points = buildCumulativeProfitSeries(data, reportDate, days);
   if (!points.length) throw new Error('No recorded financial history for chart');
   const svg = buildProfitChartSvg(points, reportDate);
   const png = await require('sharp')(Buffer.from(svg)).png().toBuffer();

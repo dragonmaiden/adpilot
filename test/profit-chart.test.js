@@ -2,7 +2,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const sharp = require('sharp');
 const { buildFinancialProjection } = require('../server/services/financialProjectionService');
-const { buildCumulativeProfitSeries, buildMonthlyProfitSeries, buildDailyProfitChart, buildProfitChartSvg } = require('../server/services/profitChartService');
+const { buildCumulativeProfitSeries: sumProfitDays, buildMonthlyProfitSeries, buildDailyProfitChart, buildProfitChartSvg } = require('../server/services/profitChartService');
+const { buildSummaryFinancialDays, buildSelectionSummary } = require('../server/services/calendarService');
+const fxService = require('../server/services/fxService');
+const paywayService = require('../server/services/paywayFinancialService');
+const fees = { ready: true, totals: { feesComplete: true }, daily: [] };
+test.beforeEach(() => {
+  test.mock.method(fxService, 'getUsdToKrwRatesForRange', async () => ({ ratesByDate: {} }));
+  test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => fees);
+});
+test.afterEach(() => test.mock.restoreAll());
+
+function summaryDays(data) {
+  const projection = buildFinancialProjection(data);
+  return buildSummaryFinancialDays(projection, projection.dailyMerged.map(row => row.date), fees);
+}
+function buildCumulativeProfitSeries(data, date) {
+  return sumProfitDays(data, date, summaryDays(data));
+}
 
 function fixture() {
   return {
@@ -23,7 +40,7 @@ function fixture() {
 
 test('cumulative chart sums canonical daily profits, fills quiet days and excludes future days', () => {
   const data = fixture();
-  const rows = buildFinancialProjection(data).profitWaterfall.filter(row => row.date <= '2026-01-04');
+  const rows = summaryDays(data).filter(row => row.date <= '2026-01-04');
   const points = buildCumulativeProfitSeries(data, '2026-01-04');
   assert.equal(points.length, 4);
   assert.equal(points[0].value, rows[0].trueNetProfit);
@@ -115,4 +132,64 @@ test('missing costs invalidate only their month, not later monthly profits', () 
   assert.equal(months[0].value, null);
   assert.ok(months[1].value > 0);
   assert.equal(months[1].pending, false);
+});
+
+test('Telegram PNG uses website Summary daily, monthly and cumulative profits with historical FX and actual fees', async () => {
+  const data = fixture();
+  delete data.revenueData.dailyRevenue['2026-01-05'];
+  data.cogsData.dailyCOGS['2026-01-03'].costCoverageRatio = 1;
+  data.revenueData.dailyRevenue['2026-02-01'] = { revenue: 1000, refunded: 0, orders: 1 };
+  data.cogsData.dailyCOGS['2026-02-01'] = { cost: 100, shipping: 20, costCoverageRatio: 1 };
+  const historicalFx = { ratesByDate: { '2026-01-04': { usdToKrwRate: 1234.56, rateDate: '2026-01-02' } } };
+  const payway = { ready: true, totals: { feesComplete: true }, daily: [
+    { date: '2026-01-01', processingFees: 17 },
+    { date: '2026-01-02', processingFees: -3 }, // fee reversal on an otherwise quiet day
+    { date: '2026-02-01', processingFees: 21 },
+  ] };
+  test.mock.method(fxService, 'getUsdToKrwRatesForRange', async (start, end) => {
+    assert.equal(start, '2026-01-01');
+    assert.equal(end, '2026-02-01');
+    return historicalFx;
+  });
+  test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => payway);
+  const scheduler = require('../server/modules/scheduler');
+  test.mock.method(scheduler, 'getLatestData', () => data);
+  test.mock.method(scheduler, 'getScanHistory', () => []);
+  test.mock.method(scheduler, 'getLastScanResult', () => null);
+  test.mock.method(require('../server/services/reconciliationService'), 'getReconciliationResponse', async () => ({ ready: false }));
+  const website = await require('../server/services/calendarService').getCalendarAnalysisResponse({
+    visibleStart: '2026-01-01', visibleEnd: '2026-02-01',
+    selectionStart: '2026-01-01', selectionEnd: '2026-02-01',
+  });
+  const days = website.selection.days;
+  assert.equal(days[0].trueNetProfit, 433);
+  assert.equal(days[1].trueNetProfit, 3);
+  assert.equal(days[3].adSpendKRW, 1235);
+  assert.equal(days.at(-1).trueNetProfit, 859);
+  const points = sumProfitDays(data, '2026-02-01', days);
+  assert.deepEqual(points.map(point => point.dailyValue), days.map(day => day.trueNetProfit));
+  assert.equal(points.at(-1).value, website.selection.summary.trueNetProfit);
+  for (const month of buildMonthlyProfitSeries(points, '2026-02-01')) {
+    const summary = buildSelectionSummary(days.filter(day => day.date.startsWith(month.month)), [], {}, payway);
+    assert.equal(month.value, summary.trueNetProfit);
+  }
+  const chart = await buildDailyProfitChart(data, '2026-02-01');
+  const expectedPng = await sharp(Buffer.from(buildProfitChartSvg(points, '2026-02-01'))).png().toBuffer();
+  assert.deepEqual(chart.png, expectedPng);
+  assert.equal(chart.pending, false);
+});
+
+test('incomplete Payway fees remain unknown and stale fees or failed FX do not fall back to estimated profit', async () => {
+  const data = fixture();
+  const incomplete = { ready: true, totals: { feesComplete: false }, daily: [] };
+  const projection = buildFinancialProjection(data);
+  const days = buildSummaryFinancialDays(projection, ['2026-01-01'], incomplete);
+  assert.equal(days[0].trueNetProfit, null);
+  assert.equal(sumProfitDays(data, '2026-01-01', days)[0].value, null);
+  test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => incomplete);
+  assert.equal((await buildDailyProfitChart(data, '2026-01-04')).pending, true);
+  test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => ({ ...fees, stale: true }));
+  await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /Payway fees are stale/);
+  test.mock.method(fxService, 'getUsdToKrwRatesForRange', async () => { throw new Error('FX unavailable'); });
+  await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /FX unavailable/);
 });

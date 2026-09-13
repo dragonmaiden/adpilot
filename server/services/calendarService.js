@@ -1216,6 +1216,7 @@ function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, opera
       reconciliationGapAmount,
       hasCOGS: !!profit.hasCOGS,
       hasPartialCOGS: !!profit.hasPartialCOGS,
+      hasPendingRecovery: !!profit.hasPendingRecovery,
       cogsCoverageRatio: Number(profit.cogsCoverageRatio || 0),
       coverageLevel: profit.hasCOGS ? 'covered' : profit.hasPartialCOGS ? 'partial' : 'missing',
     };
@@ -1231,6 +1232,18 @@ function alignCalendarDaysWithSelection(calendarDays, selectionDays) {
     ...day,
     ...(selectionByDate.get(day.date) || {}),
   }));
+}
+
+function buildSummaryFinancialDays(projection, dates, paywayFinancials, context = {}) {
+  const days = buildDailyRows(
+    dates,
+    buildDayMaps(projection.dailyMerged, projection.profitWaterfall),
+    context.metaPurchasesByDate || new Map(),
+    context.ordersByDate || new Map(),
+    context.operationsByDate || new Map(),
+    context.reconciliationByDate || new Map()
+  );
+  return applyPaywayFeesToFinancialDays(days, paywayFinancials);
 }
 
 async function getCalendarAnalysisResponse(query = {}) {
@@ -1383,12 +1396,9 @@ async function getCalendarAnalysisResponse(query = {}) {
     }).filter(([monthKey]) => /^\d{4}-\d{2}$/.test(String(monthKey || '')))
   );
 
-  const unadjustedSelectionDayRows = visibleDayRows.filter(day =>
-    compareDateKeys(day.date, viewport.selectionStart) >= 0 && compareDateKeys(day.date, viewport.selectionEnd) <= 0
-  );
-  const selectionDayRows = applyPaywayFeesToFinancialDays(
-    unadjustedSelectionDayRows,
-    paywayFinancials
+  const selectionDayRows = buildSummaryFinancialDays(
+    projection, selectionDates, paywayFinancials,
+    { metaPurchasesByDate, ordersByDate, operationsByDate, reconciliationByDate }
   );
   const calendarDays = alignCalendarDaysWithSelection(
     unadjustedCalendarDays,
@@ -1455,6 +1465,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 }
 
 module.exports = {
+  buildSummaryFinancialDays,
   getCalendarAnalysisResponse,
   alignCalendarDaysWithSelection,
   buildSelectionSummary,

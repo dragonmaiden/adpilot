@@ -2,6 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildDailyProfitChart } = require('../server/services/profitChartService');
 const { buildDailyReportCorrectionPlan } = require('../server/services/dailyTelegramReportService');
+test.beforeEach(() => {
+  test.mock.method(require('../server/services/fxService'), 'getUsdToKrwRatesForRange', async () => ({ ratesByDate: {} }));
+  test.mock.method(require('../server/services/paywayFinancialService'), 'getPaywayFinancialSummary', async () => ({
+    ready: true, totals: { feesComplete: true }, daily: [],
+  }));
+});
+test.afterEach(() => test.mock.restoreAll());
 
 const ENV_KEYS = [
   'TELEGRAM_BOT_TOKEN',
