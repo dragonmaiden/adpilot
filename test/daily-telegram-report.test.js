@@ -109,6 +109,48 @@ test('daily report message uses canonical financial projection totals', () => {
   assert.doesNotMatch(plan.text, /Cost watch/);
 });
 
+test('daily report compares MTD returns with the website monthly average through the report date', () => {
+  const order = (date, refunded, status = 'RETURN_COMPLETE', gross = 1000) => ({
+    wtime: `${date}T01:00:00Z`,
+    totalPaymentPrice: gross - refunded,
+    totalRefundedPrice: refunded,
+    sections: [{ orderSectionStatus: status }],
+  });
+  const data = buildLatestData({
+    cogsData: { dailyCOGS: {
+      '2026-04-12': { cost: 100, shipping: 0, purchases: 1, costCoverageRatio: 1 },
+    } },
+    revenueData: { dailyRevenue: {
+      '2026-02-01': { revenue: 1000, refunded: 100, orders: 1 },
+      '2026-03-01': { revenue: 10000, refunded: 3000, orders: 1 },
+      '2026-04-12': { revenue: 1000, refunded: 200, orders: 1 },
+    } },
+    orders: [
+      order('2026-02-01', 100),
+      order('2026-03-01', 3000, 'RETURN_COMPLETE', 10000),
+      order('2026-04-01', 0, 'PURCHASE_CONFIRMATION'),
+      order('2026-04-12', 200),
+      order('2026-04-12', 1000, 'CANCEL_COMPLETE'),
+      order('2026-04-13', 1000),
+    ],
+  });
+  const plan = buildDailySummaryReportPlan(data, {}, new Date('2026-04-12T14:30:00Z'));
+  const expected = '↩️ <b>MTD return/refund rate (revenue):</b> 10.0% vs 20.0% historical monthly average (cancellations excluded)';
+  assert.equal(plan.text.split('\n').at(-1), expected);
+  const corrected = buildDailyReportCorrectionPlan(data, '2026-04-12');
+  assert.equal(corrected.text.split('\n').at(-1), expected);
+});
+
+test('daily report does not invent zero refund rates when order data is unavailable', () => {
+  const plan = buildDailySummaryReportPlan(buildLatestData(), {}, new Date('2026-04-30T14:30:00Z'));
+  assert.match(plan.text, /N\/A vs N\/A historical monthly average/);
+});
+
+test('daily report does not display stale refund comparison percentages', () => {
+  const plan = buildDailySummaryReportPlan(buildLatestData({ sources: { imweb: { stale: true } } }), {}, new Date('2026-04-30T14:30:00Z'));
+  assert.match(plan.text, /N\/A — order source unavailable or stale/);
+});
+
 test('daily report skips duplicate report dates', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData(),
@@ -155,7 +197,7 @@ test('daily report does not fake profit when COGS are pending for a sales day', 
   assert.equal(plan.totals.profitAvailable, false);
   assert.match(plan.text, /📈 <b>Total Profits:<\/b> N\/A \(COGS pending\)/);
   assert.match(plan.text, /📐 <b>Net Profit Margin:<\/b> N\/A/);
-  assert.match(plan.text, /⏳ <b>Watch:<\/b> profit is pending final COGS coverage/);
+  assert.doesNotMatch(plan.text, /⏳ <b>Watch:<\/b> profit is pending final COGS coverage/);
 });
 
 test('daily report labels partial COGS profit as an estimate instead of N/A', () => {
@@ -176,7 +218,7 @@ test('daily report labels partial COGS profit as an estimate instead of N/A', ()
   assert.equal(plan.totals.cogsCoverageRatio, 0.5);
   assert.match(plan.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
   assert.match(plan.text, /📐 <b>Net Profit Margin:<\/b> 59% est\./);
-  assert.match(plan.text, /⏳ <b>Watch:<\/b> profit is estimated until final COGS coverage \(50% covered\)/);
+  assert.doesNotMatch(plan.text, /⏳ <b>Watch:<\/b> profit is estimated until final COGS coverage \(50% covered\)/);
   assert.doesNotMatch(plan.text, /N\/A \(COGS pending\)/);
 });
 
@@ -221,7 +263,7 @@ test('daily report correction waits for complete COGS before replacing a pending
   assert.doesNotMatch(corrected.text, /N\/A \(COGS pending\)/);
 });
 
-test('daily report gives warm encouragement on no-sales days without changing totals', () => {
+test('daily report keeps no-sales totals without the old insight footer', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData({
       revenueData: {
@@ -244,11 +286,11 @@ test('daily report gives warm encouragement on no-sales days without changing to
   assert.equal(plan.totals.orders, 0);
   assert.equal(plan.totals.revenue, 0);
   assert.equal(plan.totals.trueNetProfit, 0);
-  assert.match(plan.text, /ℹ️ <b>Readout:<\/b> no revenue activity recorded for the day/);
-  assert.match(plan.text, /(?:🌱|🧭|💛) <b>Encouragement:<\/b>/);
+  assert.doesNotMatch(plan.text, /ℹ️ <b>Readout:<\/b> no revenue activity recorded for the day/);
+  assert.doesNotMatch(plan.text, /(?:🌱|🧭|💛) <b>Encouragement:<\/b>/);
 });
 
-test('daily report gives warm encouragement on loss days without hiding the loss', () => {
+test('daily report keeps loss totals without the old insight footer', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData({
       revenueData: {
@@ -270,8 +312,8 @@ test('daily report gives warm encouragement on loss days without hiding the loss
   assert.equal(plan.shouldSend, true);
   assert.ok(plan.totals.trueNetProfit < 0);
   assert.match(plan.text, /📈 <b>Total Profits:<\/b> -₩/);
-  assert.match(plan.text, /⚠️ <b>Watch:<\/b> loss after costs was -₩/);
-  assert.match(plan.text, /(?:💪|🔧|🧭) <b>Encouragement:<\/b>/);
+  assert.doesNotMatch(plan.text, /⚠️ <b>Watch:<\/b> loss after costs was -₩/);
+  assert.doesNotMatch(plan.text, /(?:💪|🔧|🧭) <b>Encouragement:<\/b>/);
 });
 
 test('daily report adds data and Telegram audit warnings without changing core totals', () => {
@@ -302,7 +344,7 @@ test('daily report adds data and Telegram audit warnings without changing core t
   assert.match(plan.text, /📦 <b>Total Orders:<\/b> 50/);
 });
 
-test('daily report uses the insight block for campaign watch items', () => {
+test('daily report removes campaign watch items without changing ad spend', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData({
       campaignInsights: [
@@ -328,11 +370,11 @@ test('daily report uses the insight block for campaign watch items', () => {
 
   assert.match(plan.text, /🧾 <b>Total Costs:<\/b> ₩9,007,836/);
   assert.match(plan.text, /└ Ad Spend: ₩210,000/);
-  assert.match(plan.text, /👀 <b>Campaign watch:<\/b> Cold Prospecting spent ₩150,000 with 0 Meta purchases/);
-  assert.match(plan.text, /🎯 <b>Best Meta signal:<\/b> Retargeting &lt;VIP&gt; drove 2 purchases at ₩30,000 CPA/);
+  assert.doesNotMatch(plan.text, /👀 <b>Campaign watch:<\/b> Cold Prospecting spent ₩150,000 with 0 Meta purchases/);
+  assert.doesNotMatch(plan.text, /🎯 <b>Best Meta signal:<\/b> Retargeting &lt;VIP&gt; drove 2 purchases at ₩30,000 CPA/);
 });
 
-test('daily report celebrates record orders, record sales, and above-average profit when history supports it', () => {
+test('daily report retains historical signals in totals but removes them from the footer', () => {
   const dailyRevenue = {};
   const dailyCOGS = {};
 
@@ -369,7 +411,7 @@ test('daily report celebrates record orders, record sales, and above-average pro
     'record_revenue',
     'profit_above_recent_average',
   ]);
-  assert.match(plan.text, /🏆 <b>New orders high:<\/b> 20 orders beat the previous best of 11/);
-  assert.match(plan.text, /🏆 <b>New sales high:<\/b> ₩2,000,000 beat the previous best of ₩1,300,000/);
-  assert.match(plan.text, /🎉 <b>Profit signal:<\/b> ₩1,230,000 is \d+% above the recent 7-day average/);
+  assert.doesNotMatch(plan.text, /🏆 <b>New orders high:<\/b> 20 orders beat the previous best of 11/);
+  assert.doesNotMatch(plan.text, /🏆 <b>New sales high:<\/b> ₩2,000,000 beat the previous best of ₩1,300,000/);
+  assert.doesNotMatch(plan.text, /🎉 <b>Profit signal:<\/b> ₩1,230,000 is \d+% above the recent 7-day average/);
 });

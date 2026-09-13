@@ -289,6 +289,7 @@ async function listPendingCogsDailyReportDeliveries(options = {}) {
       and (
         payload like '%N/A (COGS pending)%'
         or metadata->>'profitIsEstimated' = 'true'
+        or metadata->>'chartPending' = 'true'
       )
     order by report_date asc
     limit $1`,

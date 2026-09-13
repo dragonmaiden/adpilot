@@ -1,6 +1,5 @@
 const { buildFinancialProjection } = require('./financialProjectionService');
 const { KST_TIME_ZONE, formatDateInTimeZone, shiftDate } = require('../domain/time');
-const { convertUsdToKrw, getPurchases } = require('../domain/metrics');
 
 const KST_UTC_OFFSET_MS = 9 * 60 * 60 * 1000;
 const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', {
@@ -107,13 +106,6 @@ function formatPercent(value) {
 
 function formatCoveragePercent(value) {
   return Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : '0%';
-}
-
-function escapeTelegramHtml(value) {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
 }
 
 function divideOrNull(numerator, denominator) {
@@ -310,130 +302,6 @@ function chooseDateVariant(dateKey, variants) {
   return variants[hashDateKey(dateKey) % variants.length];
 }
 
-function getCampaignLabel(row) {
-  return String(row?.campaign_name || row?.campaignName || row?.campaign_id || row?.campaignId || 'Unnamed campaign').trim();
-}
-
-function buildDailyCampaignSummaries(latestData, reportDate) {
-  const fxRate = asFiniteNumber(latestData?.fx?.usdToKrwRate, null);
-  const campaigns = new Map();
-
-  for (const row of Array.isArray(latestData?.campaignInsights) ? latestData.campaignInsights : []) {
-    if (row?.date_start !== reportDate) continue;
-
-    const key = String(row?.campaign_id || row?.campaignId || getCampaignLabel(row));
-    const current = campaigns.get(key) || {
-      campaignId: key,
-      name: getCampaignLabel(row),
-      spendUsd: 0,
-      spendKrw: 0,
-      purchases: 0,
-    };
-    const spendUsd = asFiniteNumber(row?.spend);
-    current.spendUsd += spendUsd;
-    current.spendKrw += Math.round(convertUsdToKrw(spendUsd, fxRate || undefined));
-    current.purchases += getPurchases(row?.actions);
-    campaigns.set(key, current);
-  }
-
-  return [...campaigns.values()]
-    .filter(campaign => campaign.spendKrw > 0 || campaign.purchases > 0)
-    .sort((left, right) => right.spendKrw - left.spendKrw);
-}
-
-function buildCampaignWatchInsights(totals, latestData = {}) {
-  const campaigns = buildDailyCampaignSummaries(latestData, totals.reportDate);
-  const totalSpend = campaigns.reduce((sum, campaign) => sum + campaign.spendKrw, 0);
-  const totalPurchases = campaigns.reduce((sum, campaign) => sum + campaign.purchases, 0);
-  const insights = [];
-
-  if (totalSpend <= 0) {
-    return insights;
-  }
-
-  const zeroPurchaseCampaign = campaigns
-    .filter(campaign => campaign.purchases <= 0)
-    .sort((left, right) => right.spendKrw - left.spendKrw)[0];
-  const zeroPurchaseThreshold = Math.max(10000, totalSpend * 0.15);
-  if (zeroPurchaseCampaign && zeroPurchaseCampaign.spendKrw >= zeroPurchaseThreshold) {
-    insights.push(
-      `👀 <b>Campaign watch:</b> ${escapeTelegramHtml(zeroPurchaseCampaign.name)} spent ${formatKrw(zeroPurchaseCampaign.spendKrw)} with 0 Meta purchases`
-    );
-  }
-
-  if (totalPurchases <= 0 && totals.orders > 0) {
-    insights.push(`⚠️ <b>Attribution watch:</b> Meta shows 0 purchases while Imweb has ${formatWholeNumber(totals.orders)} order${totals.orders === 1 ? '' : 's'}`);
-    return insights.slice(0, 2);
-  }
-
-  const bestCpaCampaign = campaigns
-    .filter(campaign => campaign.purchases > 0 && campaign.spendKrw > 0)
-    .sort((left, right) => (left.spendKrw / left.purchases) - (right.spendKrw / right.purchases))[0];
-  if (bestCpaCampaign) {
-    insights.push(
-      `🎯 <b>Best Meta signal:</b> ${escapeTelegramHtml(bestCpaCampaign.name)} drove ${formatWholeNumber(bestCpaCampaign.purchases)} purchase${bestCpaCampaign.purchases === 1 ? '' : 's'} at ${formatKrw(bestCpaCampaign.spendKrw / bestCpaCampaign.purchases)} CPA`
-    );
-  }
-
-  const topCampaign = campaigns[0];
-  if (topCampaign && campaigns.length > 1) {
-    const spendShare = divideOrNull(topCampaign.spendKrw, totalSpend);
-    if (spendShare != null && spendShare >= 0.5) {
-      insights.push(
-        `📌 <b>Spend concentration:</b> ${escapeTelegramHtml(topCampaign.name)} used ${formatPercent(spendShare * 100)} of Meta spend`
-      );
-    }
-  }
-
-  return insights.slice(0, 2);
-}
-
-function buildHistoricalPerformanceInsights(totals) {
-  const insights = [];
-
-  for (const signal of Array.isArray(totals?.historicalSignals) ? totals.historicalSignals : []) {
-    if (signal.type === 'record_orders') {
-      insights.push(
-        `🏆 <b>New orders high:</b> ${formatWholeNumber(signal.current)} orders beat the previous best of ${formatWholeNumber(signal.previousBest)}`
-      );
-    } else if (signal.type === 'record_revenue') {
-      insights.push(
-        `🏆 <b>New sales high:</b> ${formatKrw(signal.current)} beat the previous best of ${formatKrw(signal.previousBest)}`
-      );
-    } else if (signal.type === 'profit_above_recent_average') {
-      insights.push(
-        `🎉 <b>Profit signal:</b> ${formatKrw(signal.current)} is ${formatPercent(signal.liftPct)} above the recent ${formatWholeNumber(signal.daysCompared)}-day average`
-      );
-    }
-  }
-
-  return insights.slice(0, 3);
-}
-
-function buildLowDayEncouragement(totals) {
-  if (!totals?.profitAvailable) {
-    return null;
-  }
-
-  if (totals.orders <= 0 || totals.revenue <= 0) {
-    return chooseDateVariant(totals.reportDate, [
-      '🌱 <b>Encouragement:</b> quiet day logged - clean data gives you a calm reset for tomorrow',
-      '🧭 <b>Encouragement:</b> no sales today - use the pause to check spend pacing and the strongest product angles',
-      '💛 <b>Encouragement:</b> slow day, still useful signal - tomorrow stays clearer because this was recorded honestly',
-    ]);
-  }
-
-  if (totals.trueNetProfit < 0) {
-    return chooseDateVariant(totals.reportDate, [
-      '💪 <b>Encouragement:</b> loss day spotted - useful signal to tighten costs before the next push',
-      '🔧 <b>Encouragement:</b> below break-even today - review spend and COGS while the pattern is fresh',
-      '🧭 <b>Encouragement:</b> tough margin day - protect spend and lean into proven campaigns next',
-    ]);
-  }
-
-  return null;
-}
-
 function getReportMood(totals, latestData = {}) {
   const sourceAuditFailed = latestData?.sourceAudit?.reconciliation?.status
     && latestData.sourceAudit.reconciliation.status !== 'reconciled';
@@ -505,21 +373,6 @@ function buildDailyReportInsights(totals, latestData = {}) {
   if (orderAudit?.status === 'failed') {
     insights.push(`⚠️ <b>Telegram audit:</b> ${formatWholeNumber(orderAuditIssues)} order alert issue${orderAuditIssues === 1 ? '' : 's'}`);
   }
-  if (totals.profitIsEstimated) {
-    insights.push(`⏳ <b>Watch:</b> profit is estimated until final COGS coverage (${formatCoveragePercent(totals.cogsCoverageRatio)} covered)`);
-  } else if (!totals.profitAvailable) {
-    insights.push('⏳ <b>Watch:</b> profit is pending final COGS coverage');
-  } else if (totals.orders <= 0 || totals.revenue <= 0) {
-    insights.push('ℹ️ <b>Readout:</b> no revenue activity recorded for the day');
-    insights.push(buildLowDayEncouragement(totals));
-  } else if (totals.trueNetProfit < 0) {
-    insights.push(`⚠️ <b>Watch:</b> loss after costs was ${formatKrw(totals.trueNetProfit)}`);
-    insights.push(buildLowDayEncouragement(totals));
-  }
-
-  insights.push(...buildHistoricalPerformanceInsights(totals));
-  insights.push(...buildCampaignWatchInsights(totals, latestData));
-
   return insights.filter(Boolean).slice(0, 3);
 }
 
@@ -536,6 +389,7 @@ function buildDailyReportMessage(totals, latestData = {}) {
     ? `${formatPercent(totals.marginPct)} est.`
     : 'N/A';
   const insights = buildDailyReportInsights(totals, latestData);
+  insights.push(buildMonthlyRefundComparisonLine(latestData, totals.reportDate));
   const insightSection = insights.length > 0
     ? `\n\n${insights.join('\n')}`
     : '';
@@ -554,6 +408,30 @@ function buildDailyReportMessage(totals, latestData = {}) {
    └ Shipping: ${formatKrw(totals.shipping)}
    └ Payment Fees: ${formatKrw(totals.paymentFees)}
    └ Ad Spend: ${formatKrw(totals.adSpendKrw)}${insightSection}`;
+}
+
+function buildMonthlyRefundComparisonLine(latestData, reportDate) {
+  const source = latestData?.sources?.imweb;
+  if (source?.stale || source?.status === 'error' || source?.hasData === false) {
+    return '↩️ <b>MTD return/refund rate:</b> N/A — order source unavailable or stale';
+  }
+  // Resolve lazily: calendarService loads the scheduler, which also uses this report service.
+  const {
+    buildAllTimeOrderPatterns,
+    buildRefundWindowSummary,
+    buildHistoricalMonthlyRefundAverage,
+  } = require('./calendarService');
+  const monthStart = `${reportDate.slice(0, 7)}-01`;
+  const orders = Array.isArray(latestData?.orders) ? latestData.orders : [];
+  const rangeStart = buildAllTimeOrderPatterns(buildFinancialProjection(latestData || {})).range.start;
+  const current = buildRefundWindowSummary({ orders, start: monthStart, end: reportDate });
+  const historical = buildHistoricalMonthlyRefundAverage({
+    orders,
+    start: rangeStart,
+    end: shiftDate(monthStart, -1),
+  });
+  const formatRate = value => value == null ? 'N/A' : `${value.toFixed(1)}%`;
+  return `↩️ <b>MTD return/refund rate (revenue):</b> ${formatRate(current.revenueRate)} vs ${formatRate(historical.revenueRate)} historical monthly average (cancellations excluded)`;
 }
 
 function buildDailySummaryReportPlan(latestData, state, now = new Date()) {
@@ -637,14 +515,11 @@ function buildDailyReportCorrectionPlan(latestData, reportDate, options = {}) {
 }
 
 module.exports = {
-  buildCampaignWatchInsights,
   buildDailyReportCorrectionPlan,
-  buildDailyCampaignSummaries,
   buildDailySummaryReportPlan,
   buildDailyReportInsights,
   buildDailyReportMessage,
   buildDailyReportTotals,
-  buildHistoricalPerformanceInsights,
   buildHistoricalPerformanceSignals,
   buildRevenueCoverageDiagnostics,
   dateKeyToKstTimeUtc,

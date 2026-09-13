@@ -9,7 +9,9 @@ const { buildScanSummaryPlan } = require('../services/telegramDigestService');
 const {
   buildDailyReportCorrectionPlan,
   buildDailySummaryReportPlan,
+  buildDailyReportMessage,
 } = require('../services/dailyTelegramReportService');
+const { buildDailyProfitChart } = require('../services/profitChartService');
 const financialLedgerRepository = require('../db/financialLedgerRepository');
 
 const BOT_TOKEN = typeof config.telegram.botToken === 'string'
@@ -87,12 +89,12 @@ async function requestTelegram(endpoint, { method = 'POST', payload = null, time
   const timeout = createTimeoutSignal(timeoutMs);
   const requestOptions = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: payload instanceof FormData ? {} : { 'Content-Type': 'application/json' },
     signal: timeout.signal,
   };
 
   if (payload != null) {
-    requestOptions.body = JSON.stringify(payload);
+    requestOptions.body = payload instanceof FormData ? payload : JSON.stringify(payload);
   }
 
   try {
@@ -397,6 +399,62 @@ function buildDailyReportMetadata(plan, telegramMessageId) {
   };
 }
 
+async function deliverDailyReport(plan, latestData, previous = null) {
+  if (getConfigurationError()) return { ok: false, description: getConfigurationError() };
+  const messageId = getTelegramMessageId(previous?.metadata);
+  // Legacy text reports keep their existing correction path.
+  if (messageId && previous.metadata?.messageType !== 'photo') {
+    return editMessageText(messageId, plan.text);
+  }
+  let chart;
+  try {
+    // Conservative raw-HTML length check keeps captions within Telegram's limit.
+    if (plan.text.length > 1024) throw new Error('Summary exceeds photo caption limit');
+    chart = await buildDailyProfitChart(latestData || {}, plan.reportDate);
+  } catch (err) {
+    if (messageId) return { ok: false, description: `Chart correction unavailable: ${err.message}` };
+    const deliveredText = `${plan.text}\n\nChart unavailable; summary sent as text.`;
+    const result = await sendMessage(deliveredText);
+    return { ...result, deliveredText, reportMetadata: { messageType: 'text', chartError: err.message } };
+  }
+  const reportMetadata = {
+    messageType: 'photo',
+    chartPending: chart.pending,
+    chartFingerprint: chart.fingerprint,
+    chartError: null,
+  };
+  if (messageId && previous.metadata.chartFingerprint === chart.fingerprint && previous.payload === plan.text) {
+    return { ok: true, unchanged: true, reportMetadata };
+  }
+  const form = new FormData();
+  form.set('chat_id', CHAT_ID);
+  form.set('photo', new Blob([chart.png], { type: 'image/png' }), 'cumulative-profit.png');
+  if (messageId) {
+    form.set('message_id', String(messageId));
+    form.set('media', JSON.stringify({
+      type: 'photo', media: 'attach://photo', caption: plan.text, parse_mode: 'HTML',
+    }));
+  } else {
+    form.set('caption', plan.text);
+    form.set('parse_mode', 'HTML');
+  }
+  let result;
+  try {
+    result = await requestTelegram(messageId ? 'editMessageMedia' : 'sendPhoto', { payload: form });
+  } catch (_) {
+    result = { ok: false, description: 'Telegram chart upload failed' };
+  }
+  if (!result?.ok && /message is not modified/i.test(result?.description || '')) {
+    return { ok: true, reportMetadata };
+  }
+  syncStatus({
+    status: result?.ok ? 'connected' : 'error',
+    lastCheckedAt: nowIso(),
+    ...(result?.ok ? { lastOkAt: nowIso(), lastError: null } : { lastError: result?.description || 'Telegram chart upload failed' }),
+  });
+  return { ...result, reportMetadata };
+}
+
 function isEstimatedDailyReport(report = {}) {
   if (report?.metadata?.profitIsEstimated === true) return true;
   return /\best\.\s*\(\d+% COGS\)/i.test(String(report.payload || ''));
@@ -419,6 +477,10 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
     const plan = buildDailyReportCorrectionPlan(latestData || {}, report.reportDate, {
       allowEstimated: !isEstimatedDailyReport(report),
     });
+    if (report.metadata?.chartPending && plan.reason === 'profit-still-pending-cogs') {
+      plan.shouldCorrect = true;
+      plan.text = buildDailyReportMessage(plan.totals, latestData || {});
+    }
     if (!plan.shouldCorrect || !plan.text) {
       waiting += 1;
       reports.push({
@@ -431,10 +493,16 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
 
     const messageId = getTelegramMessageId(report.metadata);
     let delivery = 'edited_message';
-    let result = messageId ? await editMessageText(messageId, plan.text) : null;
+    let result = messageId ? await deliverDailyReport(plan, latestData, report) : null;
+
+    if (result?.unchanged) {
+      waiting += 1;
+      reports.push({ reportDate: report.reportDate, status: 'waiting', reason: 'chart-unchanged' });
+      continue;
+    }
 
     if (!result?.ok) {
-      if (options.sendFallbackOnEditFailure === false) {
+      if (options.sendFallbackOnEditFailure === false || report.metadata?.messageType === 'photo') {
         failed += 1;
         reports.push({
           reportDate: report.reportDate,
@@ -455,7 +523,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
         payload: plan.text,
         sentAt: report.sentAt || null,
         error: null,
-        metadata: buildCorrectionMetadata(report, delivery, result, plan),
+        metadata: { ...buildCorrectionMetadata(report, delivery, result, plan), ...result.reportMetadata },
       });
       reports.push({
         reportDate: report.reportDate,
@@ -491,7 +559,7 @@ async function sendDailySummaryReport(latestData = null, options = {}) {
     return { skipped: true, reason: plan.reason, reportDate: plan.reportDate };
   }
 
-  const result = await sendMessage(plan.text);
+  const result = await deliverDailyReport(plan, latestData);
   const sentAt = new Date().toISOString();
   if (result?.ok) {
     telegramState.markDailyReportSent({
@@ -500,8 +568,9 @@ async function sendDailySummaryReport(latestData = null, options = {}) {
     });
     await recordDailyReportDelivery(plan, {
       status: 'sent',
+      payload: result.deliveredText || plan.text,
       sentAt: options.sentAt || sentAt,
-      metadata: buildDailyReportMetadata(plan, result.result?.message_id),
+      metadata: { ...buildDailyReportMetadata(plan, result.result?.message_id), ...result.reportMetadata },
     });
   } else {
     await recordDailyReportDelivery(plan, {

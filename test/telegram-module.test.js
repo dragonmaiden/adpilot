@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { buildDailyProfitChart } = require('../server/services/profitChartService');
+const { buildDailyReportCorrectionPlan } = require('../server/services/dailyTelegramReportService');
 
 const ENV_KEYS = [
   'TELEGRAM_BOT_TOKEN',
@@ -191,7 +193,7 @@ test('sendDailySummaryReport records partial COGS metadata for the correction sw
   };
 
   await withTelegramModule(validEnv(), async (url, options = {}) => {
-    requests.push({ url, body: JSON.parse(options.body) });
+    requests.push({ url, body: Object.fromEntries(options.body), headers: options.headers });
     return { ok: true, json: async () => ({ ok: true, result: { message_id: 88 } }) };
   }, async telegram => {
     const result = await telegram.sendDailySummaryReport(
@@ -209,13 +211,19 @@ test('sendDailySummaryReport records partial COGS metadata for the correction sw
 
     assert.equal(result.ok, true);
     assert.equal(requests.length, 1);
-    assert.match(requests[0].body.text, /⚠️ ₩6,882,764 est\. \(50% COGS\)/);
+    assert.match(requests[0].url, /sendPhoto$/);
+    assert.match(requests[0].body.caption, /⚠️ ₩6,882,764 est\. \(50% COGS\)/);
+    assert.equal(requests[0].body.photo.type, 'image/png');
+    assert.ok(requests[0].body.photo.size > 0);
+    assert.equal(requests[0].headers['Content-Type'], undefined);
     assert.equal(records.length, 1);
     assert.equal(records[0].status, 'sent');
     assert.equal(records[0].metadata.telegramMessageId, 88);
     assert.equal(records[0].metadata.profitAvailable, false);
     assert.equal(records[0].metadata.profitIsEstimated, true);
     assert.equal(records[0].metadata.cogsCoverageRatio, 0.5);
+    assert.equal(records[0].metadata.messageType, 'photo');
+    assert.equal(records[0].metadata.chartPending, true);
   }, { financialLedgerRepository, telegramState });
 });
 
@@ -358,4 +366,128 @@ test('refreshPendingDailyReports edits estimated partial-COGS reports once profi
     assert.equal(records[0].metadata.profitIsEstimated, false);
     assert.equal(records[0].metadata.cogsCoverageRatio, 1);
   }, { financialLedgerRepository });
+});
+
+test('photo report corrections update the chart and caption together and skip unchanged charts', async () => {
+  const requests = [];
+  const records = [];
+  const data = buildDailyReportLatestData({ cost: 8000000, shipping: 100000, purchases: 6, costCoverageRatio: 1 });
+  const report = {
+    reportDate: '2026-04-30', payload: 'Old estimate',
+    metadata: { telegramMessageId: 90, messageType: 'photo', chartPending: true },
+  };
+  const repository = {
+    listPendingCogsDailyReportDeliveries: async () => ({ reports: [report] }),
+    recordTelegramReportDelivery: async record => records.push(record),
+  };
+  await withTelegramModule(validEnv(), async (url, options) => {
+    requests.push({ url, form: options.body });
+    return { ok: true, json: async () => ({ ok: true, result: { message_id: 90 } }) };
+  }, async telegram => {
+    const result = await telegram.refreshPendingDailyReports(data);
+    assert.equal(result.corrected, 1);
+    assert.match(requests[0].url, /editMessageMedia$/);
+    assert.equal(requests[0].form.get('message_id'), '90');
+    const media = JSON.parse(requests[0].form.get('media'));
+    assert.equal(media.media, 'attach://photo');
+    assert.equal(media.parse_mode, 'HTML');
+    assert.match(media.caption, /₩2,832,764/);
+    assert.equal(records[0].metadata.chartPending, false);
+    assert.equal(records[0].metadata.messageType, 'photo');
+    report.metadata = records[0].metadata;
+    report.payload = records[0].payload;
+    const unchanged = await telegram.refreshPendingDailyReports(data);
+    assert.equal(unchanged.waiting, 1);
+    assert.equal(requests.length, 1);
+  }, { financialLedgerRepository: repository });
+});
+
+test('historical COGS completion refreshes a chart even when the report day remains pending', async () => {
+  const data = buildDailyReportLatestData({ cost: 4000000, shipping: 50000, purchases: 6, costCoverageRatio: 0.5 });
+  const oldChart = await buildDailyProfitChart(data, '2026-04-30');
+  const oldPlan = buildDailyReportCorrectionPlan(data, '2026-04-30', { allowEstimated: true });
+  const report = {
+    reportDate: '2026-04-30', payload: oldPlan.text,
+    metadata: { telegramMessageId: 91, messageType: 'photo', chartPending: true, profitIsEstimated: true, chartFingerprint: oldChart.fingerprint },
+  };
+  data.revenueData.dailyRevenue['2026-04-29'] = { revenue: 100000, refunded: 0, orders: 1 };
+  data.cogsData.dailyCOGS['2026-04-29'] = { cost: 10000, shipping: 0, costCoverageRatio: 1 };
+  let calls = 0;
+  await withTelegramModule(validEnv(), async url => {
+    assert.match(url, /editMessageMedia$/);
+    calls += 1;
+    return { ok: true, json: async () => ({ ok: true }) };
+  }, async telegram => {
+    const result = await telegram.refreshPendingDailyReports(data);
+    assert.equal(result.corrected, 1);
+    assert.equal(calls, 1);
+  }, { financialLedgerRepository: {
+    listPendingCogsDailyReportDeliveries: async () => ({ reports: [report] }),
+    recordTelegramReportDelivery: async record => assert.equal(record.metadata.chartPending, true),
+  } });
+});
+
+test('failed photo edits stay failed without posting duplicate summaries', async () => {
+  let calls = 0;
+  await withTelegramModule(validEnv(), async () => {
+    calls += 1;
+    return { ok: true, json: async () => ({ ok: false, description: 'Cannot edit photo' }) };
+  }, async telegram => {
+    const result = await telegram.refreshPendingDailyReports(buildDailyReportLatestData({ cost: 8000000, shipping: 100000, costCoverageRatio: 1 }));
+    assert.equal(result.failed, 1);
+    assert.equal(calls, 1);
+  }, { financialLedgerRepository: {
+    listPendingCogsDailyReportDeliveries: async () => ({ reports: [{ reportDate: '2026-04-30', metadata: { telegramMessageId: 92, messageType: 'photo', chartPending: true } }] }),
+    recordTelegramReportDelivery: async () => assert.fail('Failed edit cannot be recorded as corrected'),
+  } });
+});
+
+test('Telegram already-unchanged response still persists refreshed chart metadata', async () => {
+  const records = [];
+  await withTelegramModule(validEnv(), async () => ({
+    ok: true, json: async () => ({ ok: false, description: 'Bad Request: message is not modified' }),
+  }), async telegram => {
+    const result = await telegram.refreshPendingDailyReports(buildDailyReportLatestData({ cost: 8000000, shipping: 100000, costCoverageRatio: 1 }));
+    assert.equal(result.corrected, 1);
+    assert.equal(records[0].metadata.chartPending, false);
+    assert.ok(records[0].metadata.chartFingerprint);
+  }, { financialLedgerRepository: {
+    listPendingCogsDailyReportDeliveries: async () => ({ reports: [{ reportDate: '2026-04-30', metadata: { telegramMessageId: 92, messageType: 'photo', chartPending: true } }] }),
+    recordTelegramReportDelivery: async record => records.push(record),
+  } });
+});
+
+test('failed photo sends do not mark the day as sent or attempt a duplicate text send', async () => {
+  let calls = 0;
+  await withTelegramModule(validEnv(), async url => {
+    assert.match(url, /sendPhoto$/);
+    calls += 1;
+    throw new Error('network unavailable');
+  }, async telegram => {
+    const result = await telegram.sendDailySummaryReport(buildDailyReportLatestData({ cost: 100, costCoverageRatio: 1 }), { now: new Date('2026-04-30T14:30:00Z') });
+    assert.equal(result.ok, false);
+    assert.equal(calls, 1);
+  }, {
+    telegramState: { getState: () => ({}), markDailyReportSent: () => assert.fail('Must not mark failed delivery sent') },
+    financialLedgerRepository: { recordTelegramReportDelivery: async record => assert.equal(record.status, 'failed') },
+  });
+});
+
+test('unavailable chart keeps the summary deliverable with explicit text fallback metadata', async () => {
+  const data = buildDailyReportLatestData({ cost: 100, costCoverageRatio: 1 });
+  data.sources = { imweb: { stale: true } };
+  await withTelegramModule(validEnv(), async (url, options) => {
+    assert.match(url, /sendMessage$/);
+    assert.match(JSON.parse(options.body).text, /Chart unavailable; summary sent as text/);
+    return { ok: true, json: async () => ({ ok: true, result: { message_id: 93 } }) };
+  }, async telegram => {
+    assert.equal((await telegram.sendDailySummaryReport(data, { now: new Date('2026-04-30T14:30:00Z') })).ok, true);
+  }, {
+    telegramState: { getState: () => ({}), markDailyReportSent: () => {} },
+    financialLedgerRepository: { recordTelegramReportDelivery: async record => {
+      assert.equal(record.metadata.messageType, 'text');
+      assert.match(record.metadata.chartError, /stale/);
+      assert.match(record.payload, /Chart unavailable; summary sent as text/);
+    } },
+  });
 });

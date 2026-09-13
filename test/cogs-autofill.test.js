@@ -472,6 +472,32 @@ test('syncOrderToCogsSheet canonicalizes stale month-only sheet titles before ap
   }
 });
 
+test('order notifications use the same fish tiers at each revenue boundary', async () => {
+  await withMockedService({
+    config: {},
+    runtimePaths: { dataDir: os.tmpdir() },
+    cogsClient: {},
+    imwebClient: {},
+  }, async service => {
+    const cases = [
+      [0, '🐟 small fish ₩'],
+      [199999, '🐟 small fish ₩'],
+      [200000, '🐋 BIG FISH ₩₩!'],
+      [350000, '🐋 BIG FISH ₩₩!'],
+      [399999, '🐋 BIG FISH ₩₩!'],
+      [400000, '😎🦈 BOSS FISH ₩₩₩!'],
+      [1000000, '😎🦈 BOSS FISH ₩₩₩!'],
+    ];
+    for (const [amount, label] of cases) {
+      for (const buildMessage of [service.buildNewOrderNotification, service.buildAutofillNotification]) {
+        const message = buildMessage({ orderValue: amount, netRevenue: amount });
+        const revenueLine = message.split('\n').find(line => line.startsWith('Revenue:'));
+        assert.equal(revenueLine, `Revenue: ₩${amount.toLocaleString('en-US')} · ${label}`);
+      }
+    }
+  });
+});
+
 test('buildNewOrderNotification formats the pre-payment order alert', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
@@ -505,7 +531,7 @@ test('buildNewOrderNotification formats the pre-payment order alert', async () =
     assert.match(message, /Order: 202603145648900/);
     assert.match(message, /Date: 2026-03-13/);
     assert.match(message, /Customer: 홍신희/);
-    assert.match(message, /Revenue: ₩111,000 · 🐟 small fish ₩₩/);
+    assert.match(message, /Revenue: ₩111,000 · 🐟 small fish ₩\n/);
     assert.match(message, /Payment: Awaiting payment check · BANK_TRANSFER/);
     assert.match(message, /Products:\n• 실크 모노그램 방도/);
     assert.match(
@@ -719,7 +745,7 @@ test('buildAutofillNotification formats the paid-order COGS summary', async () =
     assert.match(message, /Order: 202603145648900/);
     assert.match(message, /Date: 2026-03-13/);
     assert.match(message, /Customer: 홍신희/);
-    assert.match(message, /Revenue: ₩97,707 · 🐟 small fish ₩₩/);
+    assert.match(message, /Revenue: ₩97,707 · 🐟 small fish ₩\n/);
     assert.match(message, /Sheet: 3월 주문/);
     assert.match(message, /Rows appended: 1/);
     assert.match(message, /Products:\n• 실크 모노그램 방도/);
