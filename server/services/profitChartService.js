@@ -9,9 +9,6 @@ function buildCumulativeProfitSeries(data, reportDate, financialDays) {
   if (!rows.length) return [];
   const byDate = new Map(rows.map(row => [row.date, row]));
   const points = [];
-  let total = 0;
-  let estimated = false;
-  let pending = false;
   for (let date = rows[0].date; date <= reportDate; date = shiftDate(date, 1)) {
     const row = byDate.get(date);
     let dailyPending = false;
@@ -25,14 +22,26 @@ function buildCumulativeProfitSeries(data, reportDate, financialDays) {
         dailyPending = true;
       }
       dailyEstimated = (needsCosts && !row.hasCOGS) || row.hasPendingRecovery === true;
-      total += row.trueNetProfit;
     }
-    pending ||= dailyPending;
-    estimated ||= dailyEstimated;
-    points.push({ date, value: pending ? null : total, estimated, pending,
+    points.push({ date,
       dailyValue: dailyPending ? null : (row?.trueNetProfit ?? 0), dailyEstimated });
   }
-  return points;
+  // Start at the first usable monthly period, never at a few isolated days
+  // before an incomplete month. Keep all daily values for the monthly bars.
+  const firstUsableMonth = buildMonthlyProfitSeries(points, reportDate)
+    .find(month => !month.pending)?.month;
+  let total = 0;
+  let estimated = false;
+  let pending = false;
+  return points.map(point => {
+    if (!firstUsableMonth || point.date.slice(0, 7) < firstUsableMonth) {
+      return { ...point, value: null, pending: true, estimated: false };
+    }
+    pending ||= point.dailyValue == null;
+    estimated ||= point.dailyEstimated;
+    if (point.dailyValue != null) total += point.dailyValue;
+    return { ...point, value: pending ? null : total, pending, estimated };
+  });
 }
 
 function buildMonthlyProfitSeries(points, reportDate) {
@@ -84,7 +93,9 @@ function buildMonthlyProfitSvg(months) {
   return elements.join('\n');
 }
 
-function buildProfitChartSvg(points, reportDate) {
+function buildProfitChartSvg(historyPoints, reportDate) {
+  const firstUsableIndex = historyPoints.findIndex(point => point.value != null);
+  const points = firstUsableIndex < 0 ? historyPoints : historyPoints.slice(firstUsableIndex);
   const known = points.filter(point => point.value != null);
   const last = points.at(-1);
   const values = known.map(point => point.value);
@@ -119,19 +130,19 @@ function buildProfitChartSvg(points, reportDate) {
     .filter((tick, i, all) => i === 0 || tick.week !== all[i - 1].week);
   const tickStride = Math.max(1, Math.ceil(weekTicks.length / 6));
   for (const { i, week } of weekTicks.filter((_, index) => index % tickStride === 0)) {
-    elements.push(`<text x="${x(i)}" y="461" text-anchor="${i === 0 ? 'start' : 'middle'}" font-size="18" fill="#64748b">${week.slice(5)}</text>`);
+    elements.push(`<text x="${x(i)}" y="461" text-anchor="${i === 0 ? 'start' : 'middle'}" font-size="18" fill="#64748b">${(i === 0 ? points[0].date : week).slice(5)}</text>`);
   }
   const headline = last.value == null ? 'Pending complete financial data' : `${money(last.value)}${last.estimated ? '  estimated' : ''}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1040">
     <rect width="1100" height="1040" rx="24" fill="#ffffff"/>
     <g font-family="DejaVu Sans, Arial, sans-serif">
-      <text x="48" y="50" font-size="27" font-weight="bold" fill="#0f172a">Cumulative net profit · daily</text>
-      <text x="48" y="84" font-size="18" fill="#64748b">Since first recorded day ${points[0].date} · through ${reportDate} (KST)</text>
+      <text x="48" y="50" font-size="27" font-weight="bold" fill="#0f172a">${firstUsableIndex < 0 ? 'Cumulative net profit' : `Cumulative profit since ${points[0].date}`}</text>
+      <text x="48" y="84" font-size="18" fill="#64748b">Through ${reportDate} (KST)${firstUsableIndex > 0 ? ' · Earlier history excluded: incomplete financial data' : ''}</text>
       <text x="48" y="128" font-size="30" font-weight="bold" fill="#0f172a">${headline}</text>
       ${elements.join('\n')}
       ${last.pending ? '<text x="48" y="520" font-size="18" fill="#64748b">Line stops where financial data is incomplete.</text>' : ''}
       <line x1="48" x2="1052" y1="546" y2="546" stroke="#e2e8f0"/>
-      ${buildMonthlyProfitSvg(buildMonthlyProfitSeries(points, reportDate))}
+      ${buildMonthlyProfitSvg(buildMonthlyProfitSeries(historyPoints, reportDate))}
     </g></svg>`;
 }
 
@@ -171,7 +182,7 @@ async function buildDailyProfitChart(data, reportDate) {
   const png = await require('sharp')(Buffer.from(svg)).png().toBuffer();
   return {
     png,
-    pending: points.at(-1).pending || points.at(-1).estimated,
+    pending: points.some(point => point.pending || point.estimated),
     fingerprint: crypto.createHash('sha256').update(svg).digest('hex'),
   };
 }

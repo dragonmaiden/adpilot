@@ -128,10 +128,37 @@ test('missing costs invalidate only their month, not later monthly profits', () 
   data.cogsData.dailyCOGS['2026-02-01'] = { cost: 300, costCoverageRatio: 1 };
   const points = buildCumulativeProfitSeries(data, '2026-02-01');
   const months = buildMonthlyProfitSeries(points, '2026-02-01');
-  assert.equal(points.at(-1).value, null);
+  assert.equal(points.at(-1).value, months[1].value);
   assert.equal(months[0].value, null);
   assert.ok(months[1].value > 0);
   assert.equal(months[1].pending, false);
+});
+
+test('incomplete opening month is excluded from the line, not zero-filled or hidden in monthly bars', () => {
+  const days = [
+    { date: '2026-02-03', trueNetProfit: -50, orders: 0 },
+    { date: '2026-02-04', trueNetProfit: null, orders: 1 },
+    { date: '2026-03-01', trueNetProfit: 100, orders: 1, hasCOGS: true },
+    { date: '2026-03-02', trueNetProfit: -20, orders: 0 },
+    { date: '2026-04-01', trueNetProfit: 30, orders: 1, hasCOGS: true },
+  ];
+  const points = sumProfitDays({}, '2026-04-01', days);
+  assert.equal(points.find(point => point.date === '2026-02-03').value, null);
+  assert.equal(points.find(point => point.date === '2026-03-01').value, 100);
+  assert.equal(points.at(-1).value, 110);
+  assert.deepEqual(buildMonthlyProfitSeries(points, '2026-04-01').map(month => month.value), [null, 80, 30]);
+  const svg = buildProfitChartSvg(points, '2026-04-01');
+  assert.match(svg, /Cumulative profit since 2026-03-01/);
+  assert.match(svg, /Earlier history excluded: incomplete financial data/);
+  assert.match(svg, />03-01<\/text>/);
+  assert.doesNotMatch(svg, /Since first recorded|>02-02<\/text>/);
+  assert.match(svg, /N\/A/);
+  // A later gap stops this cumulative period; it never skips missing profit.
+  days.push({ date: '2026-04-02', trueNetProfit: null });
+  days.push({ date: '2026-05-01', trueNetProfit: 500 });
+  const later = sumProfitDays({}, '2026-05-01', days);
+  assert.equal(later.at(-1).value, null);
+  assert.equal(buildMonthlyProfitSeries(later, '2026-05-01').at(-1).value, 500);
 });
 
 test('Telegram PNG uses website Summary daily, monthly and cumulative profits with historical FX and actual fees', async () => {
