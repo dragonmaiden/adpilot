@@ -135,15 +135,15 @@ test('daily report compares MTD returns with the website monthly average through
     ],
   });
   const plan = buildDailySummaryReportPlan(data, {}, new Date('2026-04-12T14:30:00Z'));
-  const expected = '↩️ <b>MTD return/refund rate (revenue):</b> 10.0% vs 20.0% historical monthly average (cancellations excluded)';
-  assert.equal(plan.text.split('\n').at(-1), expected);
+  const expected = '↩️ <b>MTD return/refund rate (revenue):</b>\n<b>10.0% vs 20.0%</b>\nHistorical monthly average (cancellations excluded)';
+  assert.ok(plan.text.endsWith(expected));
   const corrected = buildDailyReportCorrectionPlan(data, '2026-04-12');
-  assert.equal(corrected.text.split('\n').at(-1), expected);
+  assert.ok(corrected.text.endsWith(expected));
 });
 
 test('daily report does not invent zero refund rates when order data is unavailable', () => {
   const plan = buildDailySummaryReportPlan(buildLatestData(), {}, new Date('2026-04-30T14:30:00Z'));
-  assert.match(plan.text, /N\/A vs N\/A historical monthly average/);
+  assert.match(plan.text, /<b>N\/A vs N\/A<\/b>\nHistorical monthly average/);
 });
 
 test('daily report does not display stale refund comparison percentages', () => {

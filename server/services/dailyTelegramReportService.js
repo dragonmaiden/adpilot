@@ -431,7 +431,7 @@ function buildMonthlyRefundComparisonLine(latestData, reportDate) {
     end: shiftDate(monthStart, -1),
   });
   const formatRate = value => value == null ? 'N/A' : `${value.toFixed(1)}%`;
-  return `↩️ <b>MTD return/refund rate (revenue):</b> ${formatRate(current.revenueRate)} vs ${formatRate(historical.revenueRate)} historical monthly average (cancellations excluded)`;
+  return `↩️ <b>MTD return/refund rate (revenue):</b>\n<b>${formatRate(current.revenueRate)} vs ${formatRate(historical.revenueRate)}</b>\nHistorical monthly average (cancellations excluded)`;
 }
 
 function buildDailySummaryReportPlan(latestData, state, now = new Date()) {
