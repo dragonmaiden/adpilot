@@ -345,15 +345,19 @@ async function sendScanSummary(scanResult, latestData = null) {
 }
 
 async function recordDailyReportDelivery(plan, patch = {}) {
+  const record = {
+    reportDate: plan.reportDate,
+    status: patch.status,
+    payload: patch.payload ?? plan.text ?? null,
+    sentAt: patch.sentAt || null,
+    error: patch.error || null,
+    metadata: patch.metadata || {},
+  };
+  const delivered = ['sent', 'corrected'].includes(record.status);
+  if (delivered) telegramState.recordReportDelivery(record);
   try {
-    await financialLedgerRepository.recordTelegramReportDelivery({
-      reportDate: plan.reportDate,
-      status: patch.status,
-      payload: patch.payload ?? plan.text ?? null,
-      sentAt: patch.sentAt || null,
-      error: patch.error || null,
-      metadata: patch.metadata || {},
-    });
+    const result = await financialLedgerRepository.recordTelegramReportDelivery(record);
+    if (delivered && !result?.skipped) telegramState.markReportDeliverySynced(record);
   } catch (err) {
     console.warn('[TELEGRAM] Daily report ledger write failed:', err.message);
   }
@@ -461,19 +465,45 @@ function isEstimatedDailyReport(report = {}) {
 }
 
 async function refreshPendingDailyReports(latestData = null, options = {}) {
-  const pending = await financialLedgerRepository.listPendingCogsDailyReportDeliveries({
-    limit: options.limit,
-  });
-  if (pending?.skipped) {
+  const local = Object.values(telegramState.getState().reportDeliveries || {});
+  for (const record of local.filter(report => report.ledgerPending)) {
+    try {
+      const result = await financialLedgerRepository.recordTelegramReportDelivery(record);
+      if (result?.skipped) break;
+      telegramState.markReportDeliverySynced(record);
+    } catch (err) {
+      console.warn('[TELEGRAM] Daily report ledger replay deferred:', err.message);
+      break;
+    }
+  }
+  let pending;
+  try {
+    pending = await financialLedgerRepository.listPendingCogsDailyReportDeliveries({ limit: options.limit });
+  } catch (err) {
+    console.warn('[TELEGRAM] Using local report tracking; ledger read failed:', err.message);
+    if (!local.length) throw err;
+    pending = { reports: [] };
+  }
+  if (pending?.skipped && !local.length) {
     return { skipped: true, reason: pending.reason, corrected: 0, failed: 0, waiting: 0, reports: [] };
   }
+  // Local records include corrections not yet acknowledged by the database.
+  const byDate = new Map((pending.reports || []).map(report => [report.reportDate, report]));
+  for (const record of local) {
+    byDate.delete(record.reportDate);
+    if (String(record.payload).includes('N/A (COGS pending)') ||
+        record.metadata?.profitIsEstimated === true || record.metadata?.chartPending === true) {
+      byDate.set(record.reportDate, record);
+    }
+  }
+  const candidates = [...byDate.values()];
 
   const reports = [];
   let corrected = 0;
   let failed = 0;
   let waiting = 0;
 
-  for (const report of pending.reports || []) {
+  for (const report of candidates) {
     const plan = buildDailyReportCorrectionPlan(latestData || {}, report.reportDate, {
       allowEstimated: !isEstimatedDailyReport(report),
     });
@@ -517,8 +547,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
 
     if (result?.ok) {
       corrected += 1;
-      await financialLedgerRepository.recordTelegramReportDelivery({
-        reportDate: report.reportDate,
+      await recordDailyReportDelivery(plan, {
         status: 'corrected',
         payload: plan.text,
         sentAt: report.sentAt || null,
@@ -551,6 +580,10 @@ async function sendDailySummaryReport(latestData = null, options = {}) {
     options.now || new Date()
   );
   if (!plan.shouldSend || !plan.text) {
+    // A duplicate check must not overwrite the successful delivery and its ID.
+    if (plan.reason === 'daily-report-already-sent') {
+      return { skipped: true, reason: plan.reason, reportDate: plan.reportDate };
+    }
     await recordDailyReportDelivery(plan, {
       status: `skipped:${plan.reason}`,
       error: plan.reason,
@@ -562,10 +595,6 @@ async function sendDailySummaryReport(latestData = null, options = {}) {
   const result = await deliverDailyReport(plan, latestData);
   const sentAt = new Date().toISOString();
   if (result?.ok) {
-    telegramState.markDailyReportSent({
-      reportDate: plan.reportDate,
-      sentAt: options.sentAt || sentAt,
-    });
     await recordDailyReportDelivery(plan, {
       status: 'sent',
       payload: result.deliveredText || plan.text,

@@ -15,6 +15,7 @@ function createState() {
       reportDate: null,
       sentAt: null,
     },
+    reportDeliveries: {},
   };
 }
 
@@ -39,16 +40,45 @@ function loadState() {
         category: typeof raw?.summary?.category === 'string' ? raw.summary.category : null,
       },
       dailyReport: normalizeDailyReportState(raw),
+      reportDeliveries: raw.reportDeliveries || {},
     };
   } catch (err) {
     console.warn(`[TELEGRAM STATE] Failed to load state: ${err.message}`);
-    return createState();
+    throw err;
   }
 }
 
 function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
-  fs.chmodSync(STATE_FILE, 0o600);
+  const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`;
+  const fd = fs.openSync(temporaryFile, 'w', 0o600);
+  try {
+    fs.writeFileSync(fd, JSON.stringify(state, null, 2));
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(temporaryFile, STATE_FILE);
+}
+
+// Keep Telegram's receiver ID on the persistent disk before attempting Postgres.
+function recordReportDelivery(record) {
+  const state = loadState();
+  state.reportDeliveries[record.reportDate] = { ...record, ledgerPending: true };
+  if (record.status === 'sent') {
+    state.dailyReport = { reportDate: record.reportDate, sentAt: record.sentAt };
+  }
+  saveState(state);
+}
+
+function markReportDeliverySynced(record) {
+  const state = loadState();
+  const current = state.reportDeliveries[record.reportDate];
+  // An older database write must not acknowledge a newer correction.
+  if (current && JSON.stringify({ ...current, ledgerPending: undefined })
+      === JSON.stringify({ ...record, ledgerPending: undefined })) {
+    current.ledgerPending = false;
+    saveState(state);
+  }
 }
 
 function getState() {
@@ -76,4 +106,6 @@ module.exports = {
   getState,
   markDailyReportSent,
   markSummarySent,
+  recordReportDelivery,
+  markReportDeliverySynced,
 };

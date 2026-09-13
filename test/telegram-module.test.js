@@ -51,9 +51,19 @@ async function withTelegramModule(env, fetchImpl, run, overrides = {}) {
   clearModule('../server/modules/telegram');
   clearModule('../server/modules/telegramState');
   clearModule('../server/db/financialLedgerRepository');
-  if (overrides.telegramState) {
-    installMockModule('../server/modules/telegramState', overrides.telegramState);
-  }
+  const state = { reportDeliveries: {} };
+  installMockModule('../server/modules/telegramState', {
+    getState: () => state,
+    markSummarySent: () => {},
+    recordReportDelivery: record => {
+      state.reportDeliveries[record.reportDate] = { ...record, ledgerPending: true };
+      if (record.status === 'sent') state.dailyReport = { reportDate: record.reportDate, sentAt: record.sentAt };
+    },
+    markReportDeliverySynced: record => {
+      if (state.reportDeliveries[record.reportDate]) state.reportDeliveries[record.reportDate].ledgerPending = false;
+    },
+    ...overrides.telegramState,
+  });
   if (overrides.financialLedgerRepository) {
     installMockModule('../server/db/financialLedgerRepository', overrides.financialLedgerRepository);
   }
@@ -85,6 +95,44 @@ function validEnv(overrides = {}) {
     ...overrides,
   };
 }
+
+test('database outage preserves delivery, prevents duplicate sends, corrects locally and replays after recovery', async () => {
+  let unavailable = true;
+  const records = [];
+  const requests = [];
+  const repository = {
+    recordTelegramReportDelivery: async record => {
+      if (unavailable) throw new Error('cannot execute INSERT in a read-only transaction');
+      records.push(record);
+      return { ok: true };
+    },
+    listPendingCogsDailyReportDeliveries: async () => {
+      if (unavailable) throw new Error('database unavailable');
+      return { reports: [] };
+    },
+  };
+  await withTelegramModule(validEnv(), async url => {
+    requests.push(url);
+    return { ok: true, json: async () => ({ ok: true, result: { message_id: 888 } }) };
+  }, async telegram => {
+    const data = buildDailyReportLatestData({ cost: 4000000, shipping: 50000, costCoverageRatio: 0.5 });
+    const options = { now: new Date('2026-04-30T14:30:00.000Z') };
+    assert.equal((await telegram.sendDailySummaryReport(data, options)).ok, true);
+    assert.equal((await telegram.sendDailySummaryReport(data, options)).reason, 'daily-report-already-sent');
+    assert.equal(requests.length, 1);
+    data.cogsData.dailyCOGS['2026-04-30'] = { cost: 8000000, shipping: 100000, costCoverageRatio: 1 };
+    assert.equal((await telegram.refreshPendingDailyReports(data)).corrected, 1);
+    assert.match(requests[1], /editMessageMedia$/);
+    unavailable = false;
+    await telegram.refreshPendingDailyReports(data);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].metadata.telegramMessageId, 888);
+    assert.equal(records[0].status, 'corrected');
+    await telegram.refreshPendingDailyReports(data);
+    assert.equal(records.length, 1, 'Acknowledged records must not replay forever');
+    assert.equal(requests.length, 2, 'Recovery must not post a duplicate');
+  }, { financialLedgerRepository: repository });
+});
 
 function buildDailyReportLatestData(cogsRow) {
   return {
@@ -404,7 +452,7 @@ test('photo report corrections update the chart and caption together and skip un
     report.metadata = records[0].metadata;
     report.payload = records[0].payload;
     const unchanged = await telegram.refreshPendingDailyReports(data);
-    assert.equal(unchanged.waiting, 1);
+    assert.equal(unchanged.waiting, 0); // Locally completed reports override stale database candidates.
     assert.equal(requests.length, 1);
   }, { financialLedgerRepository: repository });
 });
