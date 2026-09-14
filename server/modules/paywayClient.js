@@ -503,7 +503,7 @@ function dedupePayments(payments) {
   return deduped;
 }
 
-async function fetchPaymentHistoryAjaxPage(body) {
+async function fetchPaymentHistoryAjaxPage(body, options = {}) {
   const response = await requestPayway('/ajax.php', {
     method: 'POST',
     headers: {
@@ -528,7 +528,14 @@ async function fetchPaymentHistoryAjaxPage(body) {
     throw error;
   }
 
-  return parsePaymentHistoryAjaxResponse(payload);
+  if (options.requireComplete && !Array.isArray(payload?.T2) && !Array.isArray(payload?.rows)) {
+    throw new Error('Payway reconciliation received an unexpected history response');
+  }
+  const payments = parsePaymentHistoryAjaxResponse(payload);
+  if (options.requireComplete && payments.length !== (payload.T2 || payload.rows).length) {
+    throw new Error('Payway reconciliation cannot silently drop malformed history rows');
+  }
+  return payments;
 }
 
 async function fetchPaymentHistoryForTarget(options, terminalId) {
@@ -536,7 +543,7 @@ async function fetchPaymentHistoryForTarget(options, terminalId) {
 
   for (let page = PAYMENT_HISTORY_PAGE; page <= MAX_PAYMENT_HISTORY_PAGES; page += 1) {
     const rows = await fetchPaymentHistoryAjaxPage(
-      buildPaymentHistoryRequestBody(options, terminalId, page)
+      buildPaymentHistoryRequestBody(options, terminalId, page), options
     );
     payments.push(...rows);
 
@@ -569,6 +576,7 @@ async function fetchPaymentHistoryViaAjax(options = {}) {
     throw failures[0];
   }
   if (failures.length > 0) {
+    if (options.requireComplete) throw new Error('Payway reconciliation requires every terminal history query to succeed');
     console.warn(
       `[PAYWAY] ${failures.length} supplemental payment history request(s) failed; `
       + `using ${paymentBatches.length} successful response(s)`

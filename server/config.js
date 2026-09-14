@@ -128,6 +128,13 @@ const config = {
     autoConfirmImwebPayment: process.env.PAYWAY_AUTO_CONFIRM_IMWEB_PAYMENT === 'true',
   },
 
+  // Read-only scheduled payment audit and Telegram report
+  paymentReconciliation: {
+    // Runs on the existing persistent Render service; local previews never send reports by default.
+    enabled: process.env.PAYMENT_RECONCILIATION_ENABLED === 'true'
+      || (process.env.RENDER === 'true' && process.env.PAYMENT_RECONCILIATION_ENABLED !== 'false'),
+  },
+
   // Observability
   sentry: {
     dsn: process.env.SENTRY_DSN || '',

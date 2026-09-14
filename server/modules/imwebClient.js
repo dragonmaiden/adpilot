@@ -636,8 +636,9 @@ function getOrderHistoryTimeRange(endTime = new Date()) {
 }
 
 // Get all orders (paginated)
-async function getAllOrders({ endTime = new Date() } = {}) {
+async function getAllOrders({ endTime = new Date(), requireComplete = false, timeoutMs } = {}) {
   const allOrders = [];
+  let expectedCount;
   let page = 1;
   const limit = 100;
   const historyTimeRange = getOrderHistoryTimeRange(endTime);
@@ -647,19 +648,37 @@ async function getAllOrders({ endTime = new Date() } = {}) {
       page,
       limit,
       ...historyTimeRange,
-    });
+    }, timeoutMs ? { timeoutMs } : undefined);
     if (!Array.isArray(data?.data?.list)) {
       throw new Error(`Imweb GET /orders returned an unexpected shape on page ${page}`);
     }
-    if (data.data.list.length === 0) break;
+    if (requireComplete && (!Number.isInteger(data.data.totalCount) || data.data.totalCount < 0)) {
+      throw new Error('Imweb reconciliation requires a valid pagination total');
+    }
+    if (requireComplete) {
+      if (expectedCount !== undefined && expectedCount !== data.data.totalCount) {
+        throw new Error('Imweb order count changed during reconciliation; retry with a fresh response');
+      }
+      expectedCount = data.data.totalCount;
+    }
+    if (data.data.list.length === 0) {
+      if (requireComplete && allOrders.length < data.data.totalCount) throw new Error('Imweb reconciliation received an incomplete page');
+      break;
+    }
     allOrders.push(...data.data.list);
     const totalCount = data.data.totalCount || 0;
     console.log(`[IMWEB] Fetched page ${page}: ${data.data.list.length} orders (total: ${totalCount})`);
     if (allOrders.length >= totalCount) break;
     page++;
+    if (requireComplete && page > 1000) throw new Error('Imweb reconciliation exceeded its pagination limit');
   }
 
   console.log(`[IMWEB] Total orders fetched: ${allOrders.length}`);
+  if (requireComplete && (allOrders.length !== expectedCount
+    || allOrders.some(order => !order.orderNo)
+    || new Set(allOrders.map(order => order.orderNo)).size !== allOrders.length)) {
+    throw new Error('Imweb reconciliation received incomplete or duplicate order pages');
+  }
   return sanitizeImwebOrders(allOrders);
 }
 

@@ -29,6 +29,7 @@ const orderNotificationService = require('./services/orderNotificationService');
 const orderNotificationAuditService = require('./services/orderNotificationAuditService');
 const observabilityService = require('./services/observabilityService');
 const imwebAuthRepairService = require('./services/imwebAuthRepairService');
+const paymentReconciliationService = require('./services/paymentReconciliationService');
 
 function shouldDeliverPaidOrderNotification(result) {
   return result?.status === 'appended'
@@ -377,6 +378,11 @@ app.get('/api/audits/order-notifications', async (req, res) => {
   }
 });
 
+// Read-only report history. Sending is done only by the persistent cloud scheduler.
+app.get('/api/audits/payments', (req, res) => {
+  res.json(paymentReconciliationService.getService().getStatus());
+});
+
 // ── Trigger manual scan ──
 app.post('/api/scan', scanLimiter, async (req, res) => {
   if (scheduler.getIsScanning()) {
@@ -587,4 +593,5 @@ app.listen(PORT, '0.0.0.0', () => {
 
   // Start the scheduler
   scheduler.startScheduler();
+  paymentReconciliationService.getService().start();
 });

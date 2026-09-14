@@ -504,6 +504,8 @@ test('fetchPaymentHistory keeps successful rows when a stale terminal query fail
       assert.equal(payments[0].terminal, 'TMN777777');
       assert.equal(payments[0].transactionAmount, 96900);
       assert.match(warnings[0], /supplemental payment history request/);
+      await assert.rejects(client.fetchPaymentHistory({ requireComplete: true,
+        now: new Date('2026-06-02T00:35:00.000Z') }), /requires every terminal/);
     });
   } finally {
     console.warn = originalWarn;

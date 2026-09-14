@@ -82,3 +82,40 @@ timing. These timestamps cannot reveal when Payway first published an approval.
 Verification: `npm test`, `npm run lint`, and `git diff --check`. The watcher tests
 cover concurrent registration, delayed approvals, restart recovery, warnings,
 atomic-write failure, corruption, amount/ambiguity limits, and cancellation.
+
+## Cloud reconciliation reports
+
+The existing single-instance Render service runs a separate read-only audit at
+14:00 and 21:00 Asia/Seoul. A one-minute scheduler checks the latest due slot;
+startup catches up that slot once. A laptop or Codex session is not required.
+The fast payment-confirmation watcher remains independent of these reports.
+
+Each report checks Payway approvals/refunds against fresh Imweb order/payment
+records for the current month, at least 48 hours across month boundaries, and
+carried unresolved references. Older referenced orders extend the Payway range
+once to include original approvals; any remaining missing approval needs review.
+Nonstandard references and possible split payments require review, not amount-only
+matching. This is Payway-to-Imweb coverage, not an audit of every other payment
+provider. Historical approval-to-confirmation delays are timing review items,
+not unpaid orders or proof of when Payway made an approval visible.
+
+Every run sends Shue Updates a complete/all-clear, action-needed, or incomplete
+report. Missing pages, unavailable sources, and missing cash fields cannot yield
+all clear. Reports never confirm, cancel, reopen, charge, refund, or modify COGS.
+The destination ID and title must match before sending.
+
+`/data/payment_reconciliation.json` stores reports, unresolved cases, and Telegram
+receipts using atomic writes. Do not delete it to force a resend. Ambiguous sends
+are not retried blindly; explicit rejections retry after at least five minutes.
+Corrupt state or unavailable persistent storage stops delivery. Reports retain
+62 recent slot receipts plus unresolved delivery records. This requires one Node
+process on persistent storage; multiple instances require shared locking first.
+
+Inspect authenticated `GET /api/audits/payments` and `[PAYMENT AUDIT]` logs for
+schedule, last report, delivery status and message ID. Enabled by default on
+Render, disabled locally; `PAYMENT_RECONCILIATION_ENABLED=false` disables it.
+Deploy to the existing service, verify its exact commit and first Telegram receipt,
+then pause the local Codex schedule. Rollback must preserve the state file.
+While Render itself is down it cannot send reports; startup catches up only the
+latest slot, not every missed notification. Scheduled delivery is not a guarantee
+against provider outages or evidence that historical discrepancies were repaired.

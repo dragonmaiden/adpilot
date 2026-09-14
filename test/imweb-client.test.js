@@ -208,6 +208,17 @@ test('getAllOrders requests every page from the first KST business day through o
   });
 });
 
+test('strict reconciliation refuses a truncated Imweb page and passes bounded request timeouts', async () => {
+  await withImwebClient(async (url, options) => {
+    if (url.endsWith('/oauth2/token')) return successfulTokenResponse();
+    assert.ok(options.signal);
+    return new Response(JSON.stringify({ statusCode: 200, data: { totalCount: 2, list: [] } }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }, async client => {
+    await assert.rejects(client.getAllOrders({ requireComplete: true, timeoutMs: 10000 }), /incomplete page/);
+  });
+});
+
 test('getOrderHistoryTimeRange rejects a malformed business start date', async () => {
   await withImwebClient(async url => {
     if (url.endsWith('/oauth2/token')) return successfulTokenResponse();
