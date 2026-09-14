@@ -268,6 +268,8 @@ test('confirmBankTransferPayment checks the order and calls the official Imweb c
       'https://openapi.imweb.me/payments/202607237401269/bank-transfer/confirm'
     );
     assert.equal(confirmationRequest.options.body, undefined);
+    assert.ok(confirmationRequest.options.signal instanceof AbortSignal);
+    assert.ok(requests.filter(request => request.options.method === 'GET').every(request => request.options.signal instanceof AbortSignal));
     assert.equal(confirmationRequest.options.headers.Authorization, 'Bearer new-access-token');
     assert.equal(confirmationRequest.options.headers['x-site-code'], 'site-code');
     assert.equal(requests.filter(request => request.options.method === 'GET').length, 2);
@@ -282,6 +284,28 @@ test('Imweb confirmation requires read-back proof, not just an accepted PATCH', 
     } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }, async client => {
     await assert.rejects(client.confirmBankTransferPayment('202609137271906'), /not yet verified/);
+  });
+});
+
+test('a timed-out confirmation is recovered by reading Imweb, without blindly repeating the write', async () => {
+  let writes = 0;
+  await withImwebClient(async (url, options = {}) => {
+    if (url.endsWith('/oauth2/token')) return successfulTokenResponse();
+    if (options.method === 'PATCH') {
+      writes++;
+      assert.ok(options.signal instanceof AbortSignal);
+      throw new DOMException('Timed out after the server accepted payment', 'TimeoutError');
+    }
+    return new Response(JSON.stringify({ statusCode: 200, data: { order: {
+      orderNo: '202609140001', mtime: '2026-09-14T09:00:00Z',
+      payments: [{ method: 'BANKTRANSFER', paidPrice: 88063,
+        paymentStatus: writes ? 'PAYMENT_COMPLETE' : 'PAYMENT_PREPARATION' }],
+    } } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }, async client => {
+    await assert.rejects(client.confirmBankTransferPayment('202609140001'), /Timed out/);
+    assert.equal(writes, 1);
+    assert.equal((await client.confirmBankTransferPayment('202609140001')).alreadyConfirmed, true);
+    assert.equal(writes, 1);
   });
 });
 

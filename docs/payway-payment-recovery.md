@@ -32,6 +32,27 @@ outages beyond the recovery window, unavailable Telegram, and another bot's
 mutations still need operator intervention. The tracking file is owned by one
 Node process; multiple writers require shared transactional storage first.
 
+## Timely confirmation
+
+The normal-operation target is confirmation within 60 seconds after an approval
+becomes visible in Payway. This is a target, not a provider availability guarantee.
+Scheduled checks use start-to-start cadence (30 seconds by default), subtracting
+processing time instead of adding another full interval afterward. A slow check
+is followed by a one-second minimum gap, without overlapping confirmation polls.
+
+Telegram delivery and warning requests run separately from scheduled confirmation
+checks. Per-order notification tasks are deduplicated; their acknowledgments share
+the single in-process state owner. Detected approvals remain reserved and durable
+while Telegram is pending. Manual `runDueChecks` calls wait for notifications by
+default; the scheduler explicitly uses `waitForNotifications: false`.
+
+Single-order Imweb reads and confirmation requests have ten-second timeouts.
+An ambiguous timeout is retried by checking Imweb status first, not blindly
+repeating the PATCH. Confirmation failure schedules an attention alert immediately.
+Poll duration and confirmation request duration are logged; `paymentFirstObservedAt`
+and the actual `imwebConfirmation.confirmedAt` provide observation-to-confirmation
+timing. These timestamps cannot reveal when Payway first published an approval.
+
 ## Operator response
 
 1. Check the exact Imweb order number against Payway's merchant order reference,

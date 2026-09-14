@@ -100,6 +100,79 @@ function createConfig() {
   };
 }
 
+test('scheduled payment checks confirm other orders while Telegram remains blocked', async () => {
+  const dataDir = createTempDataDir();
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  const confirmed = [];
+  let releaseTelegram;
+  const telegramGate = new Promise(resolve => { releaseTelegram = resolve; });
+  let deliveries = 0;
+  const orders = ['202609140001', '202609140002'];
+  await withMockedWatchService({ config, runtimePaths: { dataDir },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true,
+      isApprovedPaywayPayment: () => true,
+      fetchPaymentHistory: async () => orders.map(orderNo => ({ merchantOrderNo: orderNo, transactionId: orderNo,
+        transactionAmount: 88063, transactionAtIso: '2026-09-14T09:00:00Z' })),
+    },
+    imwebClient: { confirmBankTransferPayment: async orderNo => { confirmed.push(orderNo); return { confirmed: true }; } },
+    orderNotificationService: { deliverPaywayPaymentNotification: async () => { deliveries++; await telegramGate; return { ok: true }; } },
+  }, async service => {
+    for (const orderNo of orders) service.watchOrder({ orderNo, orderValue: 88063, paymentState: 'awaiting_check' },
+      { now: new Date('2026-09-14T09:00:00Z') });
+    const poll = service.runDueChecks({ now: new Date('2026-09-14T09:00:15Z'), waitForNotifications: false });
+    try {
+      await new Promise(resolve => setImmediate(resolve));
+      assert.deepEqual(confirmed, orders);
+      assert.equal((await poll).directUnresolved, 0);
+      assert.equal((await service.runDueChecks({ now: new Date('2026-09-14T09:00:30Z'), waitForNotifications: false })).directUnresolved, 0);
+      assert.deepEqual(confirmed, orders);
+      assert.equal(deliveries, 2);
+      service.watchOrder({ orderNo: '202609140003', orderValue: 99000, paymentState: 'awaiting_check' });
+    } finally {
+      releaseTelegram();
+      await poll;
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(service.loadState().watchedOrders[orders[0]].status, 'paid');
+    assert.equal(service.loadState().watchedOrders[orders[1]].status, 'paid');
+    assert.equal(service.loadState().watchedOrders['202609140003'].status, 'watching');
+  });
+});
+
+test('poll cadence subtracts processing time and never overlaps slow payment checks', async () => {
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
+  const originalNow = Date.now;
+  let elapsed = 0;
+  let processingMs = 11000;
+  const delays = [];
+  await withMockedWatchService({ config, runtimePaths: { dataDir: createTempDataDir() },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true,
+      fetchPaymentHistory: async () => { elapsed += processingMs; return []; }, isApprovedPaywayPayment: () => true },
+    orderNotificationService: {},
+  }, async service => {
+    try {
+      Date.now = () => originalNow() + elapsed;
+      global.setTimeout = (_callback, delay) => { delays.push(delay); return { unref() {} }; };
+      global.clearTimeout = () => {};
+      service.start();
+      await service.runDueChecks({ waitForNotifications: false });
+      assert.ok(delays.at(-1) <= 19000 && delays.at(-1) >= 18500);
+      processingMs = 40000;
+      await service.runDueChecks({ waitForNotifications: false });
+      assert.equal(delays.at(-1), 1000);
+    } finally {
+      service.stop();
+      Date.now = originalNow;
+      global.setTimeout = originalSetTimeout;
+      global.clearTimeout = originalClearTimeout;
+    }
+  });
+});
+
 test('an in-flight payment poll cannot erase a newly registered order', async () => {
   const dataDir = createTempDataDir();
   let finishFetch;
@@ -185,7 +258,7 @@ test('confirmation retries survive concurrent scans and restart, with retried, d
     releaseConfirmation();
     await poll;
     assert.equal(service.loadState().watchedOrders[order.orderNo].status, 'payment_detected');
-    assert.equal(warningCalls, 1);
+    assert.equal(warningCalls, 2);
   });
   // New module instance reads the persisted approval even when Payway no longer returns it.
   overrides.paywayClient.fetchPaymentHistory = async () => [];
@@ -1166,7 +1239,7 @@ test('Payway watcher confirms a uniquely matched card payment in Imweb before co
     assert.deepEqual(confirmations, ['202607237401269']);
     assert.equal(deliveries.length, 1);
     assert.equal(deliveries[0].options.imwebPaymentConfirmed, true);
-    assert.equal(deliveries[0].options.imwebPaymentConfirmedAt, '2026-07-23T06:50:30.000Z');
+    assert.ok(Number.isFinite(Date.parse(deliveries[0].options.imwebPaymentConfirmedAt)));
     const state = service.loadState();
     assert.equal(state.watchedOrders['202607237401269'].status, 'paid');
     assert.equal(state.watchedOrders['202607237401269'].imwebConfirmation.status, 'confirmed');

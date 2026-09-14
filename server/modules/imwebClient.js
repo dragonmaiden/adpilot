@@ -17,6 +17,7 @@ let tokenInitialized = false;
 let refreshInFlight = null;
 
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000;
+const PAYMENT_REQUEST_TIMEOUT_MS = 10_000;
 const TOKEN_REFRESH_MAX_ATTEMPTS = 3;
 const TOKEN_REFRESH_RETRY_DELAYS_MS = Object.freeze([250, 750]);
 const SAFE_TOKEN_RETRY_CODES = new Set([
@@ -563,6 +564,7 @@ async function requestImwebWithAccessToken(path, method = 'GET', params = {}, op
   const requestOptions = {
     method,
     headers,
+    ...(options.timeoutMs ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}),
   };
 
   if (method !== 'GET') {
@@ -580,11 +582,11 @@ async function requestImwebWithAccessToken(path, method = 'GET', params = {}, op
 }
 
 // ── Make authenticated API request ──
-async function imwebApi(path, method = 'GET', params = {}) {
+async function imwebApi(path, method = 'GET', params = {}, options = {}) {
   await ensureToken();
 
   async function requestOnce(retryOnAuthFailure) {
-    const requestPromise = requestImwebWithAccessToken(path, method, params);
+    const requestPromise = requestImwebWithAccessToken(path, method, params, options);
     const res = await requestPromise.catch(err => {
       if (!retryOnAuthFailure) throw err;
       const statusMatch = String(err.message || '').match(/HTTP (\d{3})/);
@@ -661,14 +663,14 @@ async function getAllOrders({ endTime = new Date() } = {}) {
   return sanitizeImwebOrders(allOrders);
 }
 
-async function getOrder(orderNo) {
+async function getOrder(orderNo, options = { timeoutMs: PAYMENT_REQUEST_TIMEOUT_MS }) {
   const normalizedOrderNo = String(orderNo || '').trim();
   if (!normalizedOrderNo) {
     throw new Error('orderNo is required');
   }
 
   try {
-    const payload = await imwebApi(`/orders/${encodeURIComponent(normalizedOrderNo)}`, 'GET');
+    const payload = await imwebApi(`/orders/${encodeURIComponent(normalizedOrderNo)}`, 'GET', {}, options);
     const order = payload?.data?.order || payload?.data || payload?.order || payload;
     if (!order || typeof order !== 'object') {
       throw new Error('unexpected payload shape');
@@ -686,12 +688,13 @@ async function getOrder(orderNo) {
 }
 
 async function confirmBankTransferPayment(orderNo) {
+  const requestOptions = { timeoutMs: PAYMENT_REQUEST_TIMEOUT_MS };
   const normalizedOrderNo = String(orderNo || '').trim();
   if (!normalizedOrderNo) {
     throw new Error('orderNo is required');
   }
 
-  const order = await getOrder(normalizedOrderNo);
+  const order = await getOrder(normalizedOrderNo, requestOptions);
   const paymentState = getImwebOrderPaymentState(order);
   if (isTerminalImwebOrder(order) || paymentState.paymentStatuses.some(status => /CANCEL|REFUND|RETURN/.test(status))) {
     throw new Error(`Order ${normalizedOrderNo} is cancelled or closed; manual payment review required`);
@@ -713,7 +716,8 @@ async function confirmBankTransferPayment(orderNo) {
   const payload = await imwebApi(
     `/payments/${encodeURIComponent(normalizedOrderNo)}/bank-transfer/confirm`,
     'PATCH',
-    null
+    null,
+    requestOptions
   );
   if (payload?.data !== true) {
     throw new Error(
@@ -721,7 +725,7 @@ async function confirmBankTransferPayment(orderNo) {
     );
   }
 
-  const confirmedOrder = await getOrder(normalizedOrderNo);
+  const confirmedOrder = await getOrder(normalizedOrderNo, requestOptions);
   const confirmedState = getImwebOrderPaymentState(confirmedOrder);
   if (isTerminalImwebOrder(confirmedOrder) || !confirmedState.hasCompletedPayment
     || !confirmedState.paymentStatuses.includes('PAYMENT_COMPLETE')) {
