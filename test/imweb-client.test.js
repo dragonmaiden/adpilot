@@ -242,7 +242,8 @@ test('confirmBankTransferPayment checks the order and calls the official Imweb c
             mtime: '2026-07-23T06:50:00.000Z',
             payments: [{
               paidPrice: 245000,
-              paymentStatus: 'PAYMENT_PREPARATION',
+              paymentStatus: requests.some(request => request.options.method === 'PATCH')
+                ? 'PAYMENT_COMPLETE' : 'PAYMENT_PREPARATION',
               method: 'BANKTRANSFER',
             }],
           },
@@ -269,7 +270,41 @@ test('confirmBankTransferPayment checks the order and calls the official Imweb c
     assert.equal(confirmationRequest.options.body, undefined);
     assert.equal(confirmationRequest.options.headers.Authorization, 'Bearer new-access-token');
     assert.equal(confirmationRequest.options.headers['x-site-code'], 'site-code');
+    assert.equal(requests.filter(request => request.options.method === 'GET').length, 2);
   });
+});
+
+test('Imweb confirmation requires read-back proof, not just an accepted PATCH', async () => {
+  await withImwebClient(async (url, options = {}) => {
+    if (url.endsWith('/oauth2/token')) return successfulTokenResponse();
+    return new Response(JSON.stringify({ statusCode: 200, data: options.method === 'PATCH' ? true : {
+      order: { orderNo: '202609137271906', payments: [{ method: 'BANKTRANSFER', paymentStatus: 'PAYMENT_PREPARATION' }] },
+    } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }, async client => {
+    await assert.rejects(client.confirmBankTransferPayment('202609137271906'), /not yet verified/);
+  });
+});
+
+test('Imweb confirmation refuses cancelled orders and sections even with pending bank-transfer data', async () => {
+  for (const fields of [
+    { orderStatus: 'CANCEL_COMPLETE' },
+    { sections: [{ orderSectionStatus: 'CANCEL_REQUEST' }] },
+    { orderSections: [{ status: 'REFUND_COMPLETE' }] },
+    { payments: [{ method: 'BANKTRANSFER', paymentStatus: 'PAYMENT_CANCEL_REQUEST' }] },
+  ]) {
+    let writes = 0;
+    await withImwebClient(async (url, options = {}) => {
+      if (url.endsWith('/oauth2/token')) return successfulTokenResponse();
+      if (options.method === 'PATCH') writes++;
+      return new Response(JSON.stringify({ statusCode: 200, data: { order: {
+        orderNo: '202609137271906', payments: [{ method: 'BANKTRANSFER', paymentStatus: 'PAYMENT_PREPARATION' }],
+        ...fields,
+      } } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }, async client => {
+      await assert.rejects(client.confirmBankTransferPayment('202609137271906'), /cancelled or closed/);
+      assert.equal(writes, 0);
+    });
+  }
 });
 
 test('confirmBankTransferPayment treats an already-paid order as reconciled without another write', async () => {

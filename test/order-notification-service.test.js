@@ -1,6 +1,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+test('Payway attention alert clearly requests review without claiming payment confirmation', async () => {
+  let message;
+  await withMockedOrderNotificationService({
+    cogsAutofillService: {},
+    telegram: { sendMessage: async text => { message = text; return { ok: true, result: { message_id: 10 } }; } },
+  }, async service => {
+    const result = await service.deliverPaywayAttentionWarning({ orderNo: '202609137271906', reason: 'payment_detected', paymentDetected: true });
+    assert.equal(result.ok, true);
+    assert.match(message, /<b>Payment needs attention<\/b>/);
+    assert.match(message, /202609137271906/);
+    assert.match(message, /Automatic retries continue/);
+    assert.match(message, /Do not confirm a cancelled order/);
+  });
+});
+
 async function withMockedOrderNotificationService(overrides, run) {
   const servicePath = require.resolve('../server/services/orderNotificationService');
   const dependencyEntries = [

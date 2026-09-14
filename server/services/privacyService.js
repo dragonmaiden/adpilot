@@ -170,7 +170,7 @@ function sanitizeSection(section) {
   return {
     orderSectionNo: asString(section.orderSectionNo) || null,
     orderSectionCode: asString(section.orderSectionCode) || null,
-    orderSectionStatus: asString(section.orderSectionStatus || section.orderStatus) || null,
+    orderSectionStatus: asString(section.orderSectionStatus || section.orderStatus || section.status) || null,
     isDeliveryHold: asString(section.isDeliveryHold) || null,
     deliveryPrice: Number(section.deliveryPrice || 0) || 0,
     deliveryIslandPrice: Number(section.deliveryIslandPrice || 0) || 0,

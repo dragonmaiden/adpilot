@@ -6,7 +6,7 @@ const fs = require('fs');
 const config = require('../config');
 const { formatDateInTimeZone, getHourInTimeZone } = require('../domain/time');
 const { summarizeOrderAttribution } = require('../domain/imwebAttribution');
-const { getImwebOrderPaymentState, getOrderCashTotals } = require('../domain/imwebPayments');
+const { getImwebOrderPaymentState, getOrderCashTotals, isTerminalImwebOrder } = require('../domain/imwebPayments');
 const { sanitizeImwebOrder, sanitizeImwebOrders } = require('../services/privacyService');
 const runtimePaths = require('../runtime/paths');
 
@@ -693,6 +693,9 @@ async function confirmBankTransferPayment(orderNo) {
 
   const order = await getOrder(normalizedOrderNo);
   const paymentState = getImwebOrderPaymentState(order);
+  if (isTerminalImwebOrder(order) || paymentState.paymentStatuses.some(status => /CANCEL|REFUND|RETURN/.test(status))) {
+    throw new Error(`Order ${normalizedOrderNo} is cancelled or closed; manual payment review required`);
+  }
   if (paymentState.hasCompletedPayment) {
     return {
       confirmed: true,
@@ -716,6 +719,13 @@ async function confirmBankTransferPayment(orderNo) {
     throw new Error(
       `Imweb bank-transfer confirmation returned an unexpected result for order ${normalizedOrderNo}`
     );
+  }
+
+  const confirmedOrder = await getOrder(normalizedOrderNo);
+  const confirmedState = getImwebOrderPaymentState(confirmedOrder);
+  if (isTerminalImwebOrder(confirmedOrder) || !confirmedState.hasCompletedPayment
+    || !confirmedState.paymentStatuses.includes('PAYMENT_COMPLETE')) {
+    throw new Error(`Imweb payment confirmation not yet verified for order ${normalizedOrderNo}`);
   }
 
   return {

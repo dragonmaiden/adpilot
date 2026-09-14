@@ -9,6 +9,7 @@ const { getOrderItems } = require('../domain/imwebAttribution');
 const { formatDateInTimeZone } = require('../domain/time');
 const {
   getImwebOrderPaymentState,
+  isTerminalImwebOrder: isTerminalOrderState,
   getOrderCashTotals,
   normalizeChannelGroup,
   normalizeImwebPayments,
@@ -32,13 +33,6 @@ const DEFAULT_PAYWAY_MIN_WATCH_MINUTES = 60;
 const DEFAULT_PAYWAY_MATCH_LEAD_MINUTES = 5;
 const DEFAULT_SCAN_INTERVAL_MINUTES = 3;
 const MONTH_ONLY_SHEET_RE = /^\s*\d{1,2}\s*월\s*$/;
-const TERMINAL_ORDER_STATUS_TOKENS = [
-  'CANCEL',
-  'RETURN',
-  'EXCHANGE',
-  'REFUND',
-  'CLOSED',
-];
 
 let googleAccessToken = null;
 let googleAccessTokenExpiry = 0;
@@ -845,21 +839,6 @@ function summarizeTerminalOrderState(order) {
 
 function hasRecognizedPayment(order) {
   return normalizeImwebPayments([order]).some(payment => payment.type === 'approval');
-}
-
-function isTerminalOrderState(order) {
-  const orderStatus = asString(order?.orderStatus).toUpperCase();
-  if (TERMINAL_ORDER_STATUS_TOKENS.some(token => orderStatus.includes(token))) {
-    return true;
-  }
-
-  const sectionStatuses = getOrderSections(order)
-    .map(section => asString(section?.orderSectionStatus || section?.status).toUpperCase())
-    .filter(Boolean);
-
-  return sectionStatuses.some(status => (
-    TERMINAL_ORDER_STATUS_TOKENS.some(token => status.includes(token))
-  ));
 }
 
 function buildOrderNotificationResult(order, overrides = {}) {

@@ -100,6 +100,206 @@ function createConfig() {
   };
 }
 
+test('an in-flight payment poll cannot erase a newly registered order', async () => {
+  const dataDir = createTempDataDir();
+  let finishFetch;
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  await withMockedWatchService({
+    config, runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true, isConfigured: () => true,
+      isApprovedPaywayPayment: () => true,
+      fetchPaymentHistory: () => new Promise(resolve => { finishFetch = resolve; }),
+    },
+    orderNotificationService: {},
+  }, async service => {
+    const poll = service.runDueChecks({ now: new Date('2026-09-13T04:43:00Z') });
+    service.watchOrder({ orderNo: '202609137271906', orderValue: 88063, paymentState: 'awaiting_check' },
+      { now: new Date('2026-09-13T04:43:03Z') });
+    finishFetch([]);
+    await poll;
+    assert.equal(service.loadState().watchedOrders['202609137271906']?.watchStartedAt, '2026-09-13T04:43:03.000Z');
+  });
+});
+
+test('direct reconciliation replays a late-visible exact-order payment behind the cursor', async () => {
+  const dataDir = createTempDataDir();
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  let payments = [];
+  const confirmed = [];
+  await withMockedWatchService({
+    config, runtimePaths: { dataDir },
+    paywayClient: {
+      isEnabled: () => true, isConfigured: () => true,
+      isApprovedPaywayPayment: () => true, fetchPaymentHistory: async () => payments,
+    },
+    imwebClient: {
+      getOrder: async orderNo => ({ orderNo, totalPrice: 88063, payments: [{ method: 'BANKTRANSFER', paymentStatus: 'PAYMENT_WAIT' }] }),
+      confirmBankTransferPayment: async orderNo => { confirmed.push(orderNo); return { confirmed: true }; },
+    },
+    orderNotificationService: { deliverPaywayPaymentNotification: async () => ({ ok: true }) },
+  }, async service => {
+    await service.runDueChecks({ now: new Date('2026-09-13T04:49:00Z') });
+    payments = [{ transactionId: 'late-approval', merchantOrderNo: '202609137271906',
+      transactionAmount: 88063, transactionAtIso: '2026-09-13T04:38:04Z', terminal: 'TMN025656' }];
+    await service.runDueChecks({ now: new Date('2026-09-13T04:50:00Z') });
+    await service.runDueChecks({ now: new Date('2026-09-13T04:51:00Z') });
+    assert.deepEqual(confirmed, ['202609137271906']);
+  });
+});
+
+test('confirmation retries survive concurrent scans and restart, with retried, deduplicated warnings', async () => {
+  const dataDir = createTempDataDir();
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  let releaseConfirmation;
+  let warningCalls = 0;
+  let confirmationCalls = 0;
+  const payment = { transactionId: 'restart-payment', merchantOrderNo: '202609137271906',
+    transactionAmount: 88063, transactionAtIso: '2026-09-13T04:38:04Z', terminal: 'TMN025656' };
+  const order = { orderNo: payment.merchantOrderNo, orderValue: 88063, paymentState: 'awaiting_check' };
+  const overrides = {
+    config, runtimePaths: { dataDir },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true,
+      isApprovedPaywayPayment: () => true, fetchPaymentHistory: async () => [payment] },
+    imwebClient: {
+      confirmBankTransferPayment: async () => {
+        confirmationCalls++;
+        await new Promise(resolve => { releaseConfirmation = resolve; });
+        throw new Error('temporary Imweb failure');
+      },
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async () => { throw new Error('Telegram timeout'); },
+      deliverPaywayAttentionWarning: async () => ({ ok: ++warningCalls > 1 }),
+    },
+  };
+  await withMockedWatchService(overrides, async service => {
+    service.watchOrder(order, { now: new Date('2026-09-13T04:49:51Z') });
+    const poll = service.runDueChecks({ now: new Date('2026-09-13T04:50:00Z') });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(service.loadState().watchedOrders[order.orderNo].matchedPayment.transactionId, payment.transactionId);
+    assert.equal(service.watchOrder(order).reason, 'payment_already_detected');
+    releaseConfirmation();
+    await poll;
+    assert.equal(service.loadState().watchedOrders[order.orderNo].status, 'payment_detected');
+    assert.equal(warningCalls, 1);
+  });
+  // New module instance reads the persisted approval even when Payway no longer returns it.
+  overrides.paywayClient.fetchPaymentHistory = async () => [];
+  overrides.imwebClient.confirmBankTransferPayment = async () => {
+    confirmationCalls++;
+    throw new Error('still unavailable');
+  };
+  await withMockedWatchService(overrides, async service => {
+    await service.runDueChecks({ now: new Date('2026-09-13T04:51:00Z') });
+    await service.runDueChecks({ now: new Date('2026-09-13T04:52:00Z') });
+    assert.equal(warningCalls, 2);
+    assert.equal(confirmationCalls, 3);
+    overrides.imwebClient.confirmBankTransferPayment = async () => ({ confirmed: true });
+    overrides.orderNotificationService.deliverPaywayPaymentNotification = async () => ({ ok: true });
+    await service.runDueChecks({ now: new Date('2026-09-13T04:53:00Z') });
+    assert.equal(service.loadState().watchedOrders[order.orderNo].status, 'paid');
+  });
+});
+
+test('invalid tracking state is preserved instead of silently resetting it', async () => {
+  const dataDir = createTempDataDir();
+  const stateFile = path.join(dataDir, 'payway_payment_watch_state.json');
+  const config = createConfig();
+  await withMockedWatchService({ config, runtimePaths: { dataDir },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true },
+    orderNotificationService: {},
+  }, async service => {
+    for (const invalid of ['{truncated', '{"watchedOrders":[]}']) {
+      fs.writeFileSync(stateFile, invalid);
+      assert.throws(() => service.watchOrder({ orderNo: '202609137271906', orderValue: 88063, paymentState: 'awaiting_check' }), /refusing to replace/);
+      assert.equal(fs.readFileSync(stateFile, 'utf8'), invalid);
+    }
+  });
+});
+
+test('expired watches alert once without replaying historical expired-watch alerts', async () => {
+  const dataDir = createTempDataDir();
+  const warnings = [];
+  fs.writeFileSync(path.join(dataDir, 'payway_payment_watch_state.json'), JSON.stringify({
+    watchedOrders: { historical: { orderNo: 'historical', status: 'expired' } }, handledTransactions: {},
+  }));
+  await withMockedWatchService({ config: createConfig(), runtimePaths: { dataDir },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true },
+    orderNotificationService: { deliverPaywayAttentionWarning: async payload => { warnings.push(payload); return { ok: true }; } },
+  }, async service => {
+    service.watchOrder({ orderNo: '202609137271906', orderValue: 88063, paymentState: 'awaiting_check' },
+      { now: new Date('2026-09-13T04:43:03Z') });
+    await service.runDueChecks({ now: new Date('2026-09-13T05:44:00Z') });
+    await service.runDueChecks({ now: new Date('2026-09-13T05:45:00Z') });
+    assert.deepEqual(warnings.map(w => w.orderNo), ['202609137271906']);
+    assert.equal(warnings[0].paymentDetected, false);
+  });
+});
+
+test('direct replay preserves cancelled-order, amount, duplicate-payment and age guards', async () => {
+  const dataDir = createTempDataDir();
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  const warnings = [];
+  const payment = (orderNo, transactionId, time = '2026-09-13T04:38:04Z') => ({
+    transactionId, merchantOrderNo: orderNo, transactionAmount: 88063, transactionAtIso: time, terminal: 'TMN025656',
+  });
+  await withMockedWatchService({ config, runtimePaths: { dataDir },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true,
+      isApprovedPaywayPayment: () => true, fetchPaymentHistory: async () => [
+        payment('202609130001', 'cancelled'), payment('202609130002', 'wrong-amount'),
+        payment('202609130003', 'duplicate-one'), payment('202609130003', 'duplicate-two'),
+        payment('202609120001', 'too-old', '2026-09-12T01:00:00Z'),
+      ] },
+    imwebClient: {
+      getOrder: async orderNo => {
+        assert.ok(['202609130001', '202609130002'].includes(orderNo));
+        return { orderNo, totalPrice: 99000, orderStatus: orderNo === '202609130001' ? 'CANCEL_COMPLETE' : 'ORDER_WAIT',
+          payments: [{ method: 'BANKTRANSFER', paymentStatus: 'PAYMENT_PREPARATION' }] };
+      },
+      confirmBankTransferPayment: async () => assert.fail('unsafe Imweb confirmation'),
+    },
+    orderNotificationService: {
+      deliverPaywayPaymentNotification: async () => assert.fail('unsafe completion notification'),
+      deliverPaywayAttentionWarning: async payload => { warnings.push(payload); return { ok: true }; },
+    },
+  }, async service => {
+    await service.runDueChecks({ now: new Date('2026-09-13T04:50:00Z') });
+    await service.runDueChecks({ now: new Date('2026-09-13T04:51:00Z') });
+    const handled = service.loadState().handledTransactions;
+    assert.equal(handled.cancelled.reason, 'imweb_order_cancelled_or_closed');
+    assert.equal(handled['wrong-amount'].reason, 'payway_imweb_amount_mismatch');
+    assert.equal(handled['duplicate-one'].reason, 'multiple_payway_payments_for_order');
+    assert.equal(handled['too-old'], undefined);
+    assert.equal(warnings.length, 4);
+  });
+});
+
+test('failed atomic replacement leaves the previous tracking file intact', async () => {
+  const dataDir = createTempDataDir();
+  const stateFile = path.join(dataDir, 'payway_payment_watch_state.json');
+  await withMockedWatchService({ config: createConfig(), runtimePaths: { dataDir },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true }, orderNotificationService: {},
+  }, async service => {
+    const order = { orderNo: '202609137271906', orderValue: 88063, paymentState: 'awaiting_check' };
+    service.watchOrder(order);
+    const before = fs.readFileSync(stateFile, 'utf8');
+    const rename = fs.renameSync;
+    try {
+      fs.renameSync = () => { throw new Error('simulated disk failure'); };
+      assert.throws(() => service.watchOrder({ ...order, orderNo: '202609130002' }), /simulated disk failure/);
+    } finally {
+      fs.renameSync = rename;
+    }
+    assert.equal(fs.readFileSync(stateFile, 'utf8'), before);
+    assert.equal(fs.statSync(stateFile).mode & 0o777, 0o600);
+  });
+});
+
 test('Payway watcher detects a matching approved payment and triggers the Payway Telegram completion flow', async () => {
   const dataDir = createTempDataDir();
   const deliveries = [];

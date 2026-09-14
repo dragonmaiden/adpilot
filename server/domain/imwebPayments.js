@@ -7,6 +7,14 @@ const NON_CASH_PAYMENT_STATUS_TOKENS = [
   'PENDING',
   'WAIT',
 ];
+
+function isTerminalImwebOrder(order) {
+  const sections = Array.isArray(order?.sections) ? order.sections
+    : Array.isArray(order?.orderSections) ? order.orderSections : [];
+  const statuses = [order?.orderStatus, ...sections.map(section => section?.orderSectionStatus || section?.status)];
+  return statuses.some(value => ['CANCEL', 'RETURN', 'EXCHANGE', 'REFUND', 'CLOSED']
+    .some(token => String(value || '').toUpperCase().includes(token)));
+}
 function getImwebOrderPaymentState(order) {
   const payments = Array.isArray(order?.payments) ? order.payments : [];
   const paymentStatuses = [...new Set(
@@ -171,6 +179,7 @@ function normalizeImwebPayments(orders, options = {}) {
 }
 
 module.exports = {
+  isTerminalImwebOrder,
   getOrderCashTotals,
   getImwebOrderPaymentState,
   getPaymentTimestamp,

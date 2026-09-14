@@ -446,6 +446,25 @@ async function deliverPaywayAmbiguousPaymentWarning(payload = {}) {
   };
 }
 
+async function deliverPaywayAttentionWarning({ orderNo, reason, paymentDetected }) {
+  const safeOrderNo = String(orderNo || '').replace(/[^0-9]/g, '');
+  const descriptions = {
+    expired: 'No matching payment was found before the watch expired.',
+    completion_failed: 'Payment processing exhausted its retry window.',
+    payment_detected: 'Payment was found, but Imweb confirmation or its notification is still pending. Automatic retries continue.',
+    manual_review: 'A Payway approval could not be safely confirmed against this Imweb order.',
+    lookup_pending: 'A Payway approval was found, but the Imweb order could not be checked. Automatic retries continue.',
+  };
+  const response = await telegram.sendMessage([
+    '⚠️ <b>Payment needs attention</b>',
+    `Order: ${safeOrderNo}`,
+    descriptions[reason] || 'Payment confirmation needs manual review.',
+    paymentDetected ? 'Check Payway approval and Imweb payment status now.' : 'Check Payway before allowing an unpaid-order cancellation.',
+    'Do not confirm a cancelled order or charge the customer again without reviewing the payment.',
+  ].join('\n'));
+  return { ok: Boolean(response?.ok), messageId: getTelegramMessageId(response) };
+}
+
 async function deliverClosedOrderNotification(result) {
   return withOrderNotificationLock(result?.orderNo, async () => {
     const closed = await closeExistingOrderNotificationUnlocked(result);
@@ -462,6 +481,7 @@ module.exports = {
   deliverPaidOrderNotification,
   deliverPaywayPaymentNotification,
   deliverPaywayAmbiguousPaymentWarning,
+  deliverPaywayAttentionWarning,
   closeExistingOrderNotification,
   deliverClosedOrderNotification,
 };

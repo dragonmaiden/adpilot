@@ -8,6 +8,7 @@ const imwebClient = require('../modules/imwebClient');
 const cogsAutofillService = require('./cogsAutofillService');
 const orderNotificationService = require('./orderNotificationService');
 const { asString } = require('./privacyService');
+const { isTerminalImwebOrder } = require('../domain/imwebPayments');
 
 const STATE_FILE = path.join(runtimePaths.dataDir, 'payway_payment_watch_state.json');
 const HANDLED_TRANSACTION_RETENTION_HOURS = 24;
@@ -16,11 +17,15 @@ const MATCH_LEAD_SCAN_BUFFER_MINUTES = 2;
 const DEFAULT_PAYWAY_WATCH_MINUTES = 10;
 const DEFAULT_PAYWAY_MIN_WATCH_MINUTES = 60;
 const NO_MATCH_LOG_INTERVAL_POLLS = 10;
-const PAYMENT_MONITOR_OVERLAP_MS = 60 * 1000;
+// Replay exact-order approvals across delayed API responses and service restarts.
+const PAYMENT_RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 let pollTimer = null;
 let started = false;
 let runningPoll = null;
+// Registration is synchronous. Share the poll's state while it awaits network I/O
+// so its final save cannot overwrite orders registered by the scanner meanwhile.
+let pollingState = null;
 
 function nowIso(now = new Date()) {
   return now.toISOString();
@@ -42,6 +47,11 @@ function loadState() {
 
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    for (const field of ['watchedOrders', 'handledTransactions']) {
+      if (!raw?.[field] || typeof raw[field] !== 'object' || Array.isArray(raw[field])) {
+        throw new Error(`Invalid ${field} in Payway tracking state`);
+      }
+    }
     return {
       watchedOrders: raw?.watchedOrders && typeof raw.watchedOrders === 'object'
         ? raw.watchedOrders
@@ -54,14 +64,25 @@ function loadState() {
         : {},
       paymentMonitorCursorAt: asString(raw?.paymentMonitorCursorAt) || null,
     };
-  } catch (_) {
-    return createEmptyState();
+  } catch (err) {
+    throw new Error(`Cannot read Payway tracking state; refusing to replace it: ${err.message}`, { cause: err });
   }
 }
 
 function saveState(state) {
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), { mode: 0o600 });
-  fs.chmodSync(STATE_FILE, 0o600);
+  const temporaryFile = `${STATE_FILE}.${process.pid}.tmp`;
+  let fd;
+  try {
+    fd = fs.openSync(temporaryFile, 'w', 0o600);
+    fs.writeFileSync(fd, JSON.stringify(state, null, 2));
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = undefined;
+    fs.renameSync(temporaryFile, STATE_FILE);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    if (fs.existsSync(temporaryFile)) fs.unlinkSync(temporaryFile);
+  }
 }
 
 function getPositiveInteger(value, fallback) {
@@ -189,6 +210,7 @@ function expireOldWatches(state, now = new Date()) {
       if (completionRetryExpiresAt && completionRetryExpiresAt.getTime() < nowMs) {
         watch.status = 'completion_failed';
         watch.completionFailedAt = nowIso(now);
+        watch.attentionRequiredAt = nowIso(now);
         expired += 1;
       }
       continue;
@@ -198,6 +220,7 @@ function expireOldWatches(state, now = new Date()) {
     if (expiresAt && expiresAt.getTime() < nowMs) {
       watch.status = 'expired';
       watch.expiredAt = nowIso(now);
+      watch.attentionRequiredAt = nowIso(now);
       console.warn(
         `[PAYWAY] Payment watch expired for order ${watch.orderNo} after ${Number(watch.pollAttempts || 0)} poll(s); `
         + `amount=${watch.amount || 'unknown'} last_error=${watch.lastPollError || 'none'}`
@@ -305,8 +328,8 @@ function ensurePaymentMonitorCursor(state, now = new Date()) {
 function isWithinPaymentMonitorWindow(state, payment, now = new Date()) {
   const paidAtMs = paymentTimestampMs(payment);
   if (!paidAtMs) return false;
-  const cursor = ensurePaymentMonitorCursor(state, now);
-  return paidAtMs >= cursor.getTime() - PAYMENT_MONITOR_OVERLAP_MS;
+  return paidAtMs >= now.getTime() - PAYMENT_RECOVERY_WINDOW_MS
+    && paidAtMs <= now.getTime() + 60000;
 }
 
 function matchesWatch(watch, payment) {
@@ -322,7 +345,7 @@ function matchesWatch(watch, payment) {
 
   const watchStartedAt = parseDate(watch.watchStartedAt);
   const expiresAt = parseDate(watch.expiresAt);
-  const lowerBoundMs = watchStartedAt ? watchStartedAt.getTime() - getMatchLeadMs() : null;
+  const lowerBoundMs = watchStartedAt ? watchStartedAt.getTime() - PAYMENT_RECOVERY_WINDOW_MS : null;
   const upperBoundMs = expiresAt ? expiresAt.getTime() + 60000 : null;
 
   if (lowerBoundMs != null && paidAtMs < lowerBoundMs) return false;
@@ -525,15 +548,50 @@ function recordHandledTransaction(state, payment, orderNo, now, status, reason =
 
 function recordDirectManualReview(state, payment, orderNo, now, reason) {
   recordHandledTransaction(state, payment, orderNo, now, 'manual_review', reason);
+  state.handledTransactions[payment.transactionId].attentionRequiredAt = nowIso(now);
   console.warn(
     `[PAYWAY] Direct auto-confirm skipped for order ${orderNo}: ${reason} `
     + `(transaction=${payment.transactionId || payment.approvalNo || 'unknown'})`
   );
 }
 
+async function deliverAttentionWarnings(state, now) {
+  const send = orderNotificationService.deliverPaywayAttentionWarning;
+  if (typeof send !== 'function') return 0;
+  let failed = 0;
+  const records = [
+    ...Object.values(state.watchedOrders).filter(watch =>
+      (watch.attentionRequiredAt && ['expired', 'completion_failed'].includes(watch.status))
+      || (watch.status === 'payment_detected' && watch.lastDeliveryError)),
+    ...Object.values(state.handledTransactions).filter(record =>
+      record.attentionRequiredAt && ['manual_review', 'lookup_pending'].includes(record.status)),
+  ];
+  for (const record of records) {
+    if (record.attentionWarningSentAt) continue;
+    try {
+      const delivery = await send({ orderNo: record.orderNo, reason: record.status,
+        paymentDetected: Boolean(record.matchedPayment || record.transactionAmount) });
+      if (delivery?.ok) record.attentionWarningSentAt = nowIso(now);
+      else {
+        failed++;
+        console.warn(`[PAYWAY] Attention warning delivery failed for order ${record.orderNo}`);
+      }
+    } catch (err) {
+      failed++;
+      console.warn(`[PAYWAY] Attention warning delivery failed for order ${record.orderNo}: ${err.message}`);
+    }
+    saveState(state);
+  }
+  return failed;
+}
+
 async function reconcileDirectPayment(state, payment, now = new Date()) {
   const orderNo = getPaymentOrderNo(payment);
   const order = await imwebClient.getOrder(orderNo);
+  if (isTerminalImwebOrder(order)) {
+    recordDirectManualReview(state, payment, orderNo, now, 'imweb_order_cancelled_or_closed');
+    return { reconciled: false, delivered: false, manualReview: true };
+  }
   const orderResult = cogsAutofillService.buildOrderNotificationResult(order, {
     notificationKind: 'new_order',
     notificationSource: 'payway_direct',
@@ -593,7 +651,8 @@ async function reconcileDirectPayments(state, payments, now = new Date()) {
     .filter(payment => paywayClient.isApprovedPaywayPayment(payment))
     .filter(payment => shouldMatchTerminal(payment))
     .filter(payment => isImwebOrderReference(getPaymentOrderNo(payment)))
-    .filter(payment => !state.handledTransactions[payment.transactionId])
+    .filter(payment => !state.handledTransactions[payment.transactionId]
+      || state.handledTransactions[payment.transactionId].status === 'lookup_pending')
     .filter(payment => isWithinPaymentMonitorWindow(state, payment, now));
   const candidatesByOrder = new Map();
 
@@ -625,6 +684,13 @@ async function reconcileDirectPayments(state, payments, now = new Date()) {
       if (result.manualReview) manualReview += 1;
     } catch (err) {
       unresolved += 1;
+      const payment = orderPayments[0];
+      const previous = state.handledTransactions[payment.transactionId];
+      if (!previous || previous.status === 'lookup_pending') {
+        recordHandledTransaction(state, payment, orderNo, now, 'lookup_pending', 'imweb_lookup_failed');
+        state.handledTransactions[payment.transactionId].attentionWarningSentAt = previous?.attentionWarningSentAt;
+        state.handledTransactions[payment.transactionId].attentionRequiredAt = previous?.attentionRequiredAt || nowIso(now);
+      }
       console.warn(`[PAYWAY] Direct auto-confirm deferred for order ${orderNo}: ${err.message}`);
     }
   }
@@ -654,6 +720,7 @@ async function confirmMatchedImwebPayment(watch, now = new Date()) {
 
   try {
     const result = await imwebClient.confirmBankTransferPayment(watch.orderNo);
+    if (result?.confirmed !== true) throw new Error('Imweb did not verify payment confirmation');
     watch.imwebConfirmation = {
       status: 'confirmed',
       attempts,
@@ -662,6 +729,7 @@ async function confirmMatchedImwebPayment(watch, now = new Date()) {
       alreadyConfirmed: Boolean(result?.alreadyConfirmed),
       lastError: null,
     };
+    console.log(`[PAYWAY] Imweb payment verified for order ${watch.orderNo}; already_confirmed=${Boolean(result.alreadyConfirmed)}`);
     return {
       ok: true,
       alreadyConfirmed: Boolean(result?.alreadyConfirmed),
@@ -692,6 +760,12 @@ function describeCompletionFailure(confirmation, delivery) {
 }
 
 async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
+  // Persist the approval before any external action; a restart must resume it.
+  watch.status = 'payment_detected';
+  watch.paymentDetectedAt = watch.paymentDetectedAt || nowIso(now);
+  watch.matchedPayment = payment;
+  watch.paywayTransactionId = payment.transactionId;
+  saveState(state);
   console.log(
     `[PAYWAY] Payment matched for order ${watch.orderNo}: `
     + `amount=${payment.transactionAmount || payment.approvedAmount || watch.amount || 'unknown'} `
@@ -710,16 +784,22 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date()) {
     paywayApprovedAt: payment.transactionAt || payment.transactionAtIso,
   };
   const confirmation = await confirmMatchedImwebPayment(watch, now);
+  saveState(state);
   const imwebPaymentConfirmed = confirmation.ok
     && confirmation.reason !== 'auto_confirmation_disabled';
-  const delivery = await orderNotificationService.deliverPaywayPaymentNotification(
-    notificationResult,
-    payment,
-    {
-      imwebPaymentConfirmed,
-      imwebPaymentConfirmedAt: watch.imwebConfirmation?.confirmedAt || null,
-    }
-  );
+  let delivery;
+  try {
+    delivery = await orderNotificationService.deliverPaywayPaymentNotification(
+      notificationResult,
+      payment,
+      {
+        imwebPaymentConfirmed,
+        imwebPaymentConfirmedAt: watch.imwebConfirmation?.confirmedAt || null,
+      }
+    );
+  } catch (err) {
+    delivery = { ok: false, reason: err.message || 'telegram_delivery_failed' };
+  }
 
   if (confirmation.ok && delivery?.ok) {
     watch.status = 'paid';
@@ -781,16 +861,19 @@ function watchOrder(result, options = {}) {
   }
 
   const now = options.now instanceof Date ? options.now : new Date();
-  const state = loadState();
+  const state = pollingState || loadState();
   const existing = state.watchedOrders[orderNo];
   if (existing && existing.status === 'paid') {
     return { ok: true, skipped: true, reason: 'already_paid', orderNo };
   }
+  if (existing?.matchedPayment) {
+    // A repeated pending-order scan must not reset a confirmation retry.
+    return { ok: true, skipped: true, reason: 'payment_already_detected', orderNo };
+  }
 
   const watchStartedAt = nowIso(now);
   const expiresAt = new Date(now.getTime() + (getWatchMinutes() * 60 * 1000)).toISOString();
-  state.watchedOrders[orderNo] = {
-    ...(existing || {}),
+  state.watchedOrders[orderNo] = Object.assign(existing || {}, {
     orderNo,
     amount,
     status: 'watching',
@@ -800,7 +883,7 @@ function watchOrder(result, options = {}) {
     orderResult: buildStoredOrderResult(result),
     lastPollAt: existing?.lastPollAt || null,
     pollAttempts: Number(existing?.pollAttempts || 0),
-  };
+  });
 
   pruneHandledTransactions(state, now);
   saveState(state);
@@ -820,6 +903,7 @@ async function runDueChecks(options = {}) {
   runningPoll = (async () => {
     const now = options.now instanceof Date ? options.now : new Date();
     const state = loadState();
+    pollingState = state;
     expireOldWatches(state, now);
     pruneHandledTransactions(state, now);
     pruneAmbiguityWarnings(state, now);
@@ -830,8 +914,10 @@ async function runDueChecks(options = {}) {
       ensurePaymentMonitorCursor(state, now);
     }
     if (activeWatches.length === 0 && !directMonitoring) {
+      const attentionWarningsFailed = await deliverAttentionWarnings(state, now);
       saveState(state);
-      clearPollTimer();
+      if (attentionWarningsFailed || getActiveWatches(state, now).length > 0) scheduleNextPoll(getPollIntervalMs());
+      else clearPollTimer();
       return { ok: true, activeWatches: 0, detected: 0, delivered: 0, failedDeliveries: 0 };
     }
 
@@ -868,6 +954,7 @@ async function runDueChecks(options = {}) {
           watch.pollAttempts = Number(watch.pollAttempts || 0) + 1;
           watch.lastPollError = err.message;
         }
+        await deliverAttentionWarnings(state, now);
         saveState(state);
         scheduleNextPoll(getPollIntervalMs());
         return {
@@ -925,10 +1012,11 @@ async function runDueChecks(options = {}) {
     }
 
     const warningResult = await deliverAmbiguousMatchWarnings(state, ambiguousWarnings, now);
+    const attentionWarningsFailed = await deliverAttentionWarnings(state, now);
 
     saveState(state);
 
-    if (directMonitoring || getActiveWatches(state, now).length > 0) {
+    if (attentionWarningsFailed || directMonitoring || getActiveWatches(state, now).length > 0) {
       scheduleNextPoll(getPollIntervalMs());
     } else {
       clearPollTimer();
@@ -952,6 +1040,7 @@ async function runDueChecks(options = {}) {
     return await runningPoll;
   } finally {
     runningPoll = null;
+    pollingState = null;
   }
 }
 
