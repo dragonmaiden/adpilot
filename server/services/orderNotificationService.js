@@ -449,14 +449,16 @@ async function deliverPaywayAmbiguousPaymentWarning(payload = {}) {
 async function deliverPaywayAttentionWarning({ orderNo, reason, paymentDetected }) {
   const safeOrderNo = String(orderNo || '').replace(/[^0-9]/g, '');
   const descriptions = {
-    expired: 'No matching payment was found before the watch expired.',
+    expired: 'No matching payment was found before monitoring ended. This does not prove the customer paid or that confirmation failed.',
     completion_failed: 'Payment processing exhausted its retry window.',
     payment_detected: 'Payment was found, but Imweb confirmation or its notification is still pending. Automatic retries continue.',
     manual_review: 'A Payway approval could not be safely confirmed against this Imweb order.',
     lookup_pending: 'A Payway approval was found, but the Imweb order could not be checked. Automatic retries continue.',
   };
   const response = await telegram.sendMessage([
-    '⚠️ <b>Payment needs attention</b>',
+    reason === 'expired' && !paymentDetected
+      ? '⏳ <b>Payment not found — please check</b>'
+      : '⚠️ <b>Payment status needs review</b>',
     `Order: ${safeOrderNo}`,
     descriptions[reason] || 'Payment confirmation needs manual review.',
     paymentDetected ? 'Check Payway approval and Imweb payment status now.' : 'Check Payway before allowing an unpaid-order cancellation.',

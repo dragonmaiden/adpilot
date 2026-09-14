@@ -9,10 +9,27 @@ test('Payway attention alert clearly requests review without claiming payment co
   }, async service => {
     const result = await service.deliverPaywayAttentionWarning({ orderNo: '202609137271906', reason: 'payment_detected', paymentDetected: true });
     assert.equal(result.ok, true);
-    assert.match(message, /<b>Payment needs attention<\/b>/);
+    assert.match(message, /⚠️ <b>Payment status needs review<\/b>/);
     assert.match(message, /202609137271906/);
     assert.match(message, /Automatic retries continue/);
     assert.match(message, /Do not confirm a cancelled order/);
+  });
+});
+
+test('expired search is not presented as a confirmed payment failure', async () => {
+  let message;
+  await withMockedOrderNotificationService({
+    cogsAutofillService: {},
+    telegram: { sendMessage: async text => { message = text; return { ok: true, result: { message_id: 11 } }; } },
+  }, async service => {
+    await service.deliverPaywayAttentionWarning({ orderNo: '<123>', reason: 'expired', paymentDetected: false });
+    assert.match(message, /⏳ <b>Payment not found — please check/);
+    assert.match(message, /This does not prove the customer paid/);
+    assert.match(message, /Order: 123/);
+    assert.doesNotMatch(message, /⚠️|<123>/);
+    await service.deliverPaywayAttentionWarning({ orderNo: '123', reason: 'completion_failed', paymentDetected: true });
+    assert.match(message, /⚠️ <b>Payment status needs review/);
+    assert.doesNotMatch(message, /⏳|Payment not found/);
   });
 });
 

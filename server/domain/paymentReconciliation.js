@@ -126,8 +126,9 @@ function buildPaymentAuditMessage(report) {
   const failures = [...new Map(report.issues.filter(issue => issue.severity === 'error'
     && ['paid_cancelled', 'unconfirmed', 'failed_confirmation'].includes(issue.kind))
     .map(issue => [issue.orderNo, issue])).values()];
-  const uncertain = report.issues.filter(issue => issue.kind === 'missing_order'
-    || (issue.kind === 'unidentified_reference' && issue.detail.startsWith('Approval')));
+  // An incomplete source cannot establish that a reference is unmatched.
+  const uncertain = report.complete ? report.issues.filter(issue => issue.kind === 'missing_order'
+    || (issue.kind === 'unidentified_reference' && issue.detail.startsWith('Approval'))) : [];
   const dateLabel = date => new Date(date).toLocaleDateString('en-GB', {
     timeZone: KST_TIME_ZONE, day: 'numeric', month: 'short',
     ...(report.startDate.slice(0, 4) !== report.endDate.slice(0, 4) ? { year: 'numeric' } : {}),
@@ -137,12 +138,23 @@ function buildPaymentAuditMessage(report) {
   });
   const lines = ['📋 <b>Payment Confirmation Summary</b>',
     `${dateLabel(report.generatedAt)} · ${timeLabel} KST`, ''];
-  if (!report.complete) lines.push('⚠️ <b>Incomplete check — results not final</b>');
-  lines.push(`${failures.length || !report.complete ? '⚠️' : '✅'} <b>Missing confirmations: ${failures.length}</b>`);
+  if (!report.complete) {
+    lines.push('⚠️ <b>Unable to verify all confirmations</b>');
+    if (failures.length) lines.push(`⚠️ <b>Missing confirmations found: ${failures.length}</b> — check incomplete`);
+  } else {
+    lines.push(`${failures.length ? '⚠️' : '✅'} <b>Missing confirmations: ${failures.length}</b>`);
+  }
   if (uncertain.length) lines.push(`ℹ️ <b>Unmatched payments: ${uncertain.length}</b> — not confirmed errors`);
-  lines.push('', `🔎 Checked ${report.checkedOrders} order references · ${dateLabel(report.startDate)}–${dateLabel(report.endDate)}`);
-  for (const error of report.errors.slice(0, 5)) lines.push(`⚠️ ${escape(error).slice(0, 240)}`);
-  if (report.errors.length > 5) lines.push(`${report.errors.length - 5} more source limitations in the saved report.`);
+  const period = `${dateLabel(report.startDate)}–${dateLabel(report.endDate)}`;
+  lines.push('', report.complete ? `🔎 Checked ${report.checkedOrders} order references · ${period}` : `📅 Requested period: ${period}`);
+  const errors = [...new Set(report.errors.map(error => {
+    if (/^Imweb (fetch failed|records unavailable)/.test(error)) return 'Imweb records were unavailable.';
+    if (/^Payway (fetch failed|records unavailable)/.test(error)) return 'Payway records were unavailable.';
+    return error;
+  }))];
+  for (const error of errors.slice(0, 5)) lines.push(escape(error).slice(0, 240));
+  if (errors.length > 5) lines.push(`${errors.length - 5} more source limitations in the saved report.`);
+  if (!report.complete) lines.push('Please check Payway and Imweb manually; this is not an all-clear.');
   let displayed = 0;
   for (const issue of failures) {
     const line = `\n⚠️ ${escape(issue.orderNo)}${issue.amount == null ? '' : ` · ₩${issue.amount.toLocaleString('en-US')}`}\n${escape(issue.detail)}`;

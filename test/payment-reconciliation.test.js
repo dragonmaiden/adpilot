@@ -35,7 +35,7 @@ test('all-clear requires complete sources and actual confirmation', () => {
     { payments: [{ ...approval, transactionAtIso: null }] }]) {
     const report = audit(overrides);
     assert.equal(report.complete, false);
-    assert.match(buildPaymentAuditMessage(report, now.toISOString()), /⚠️.*Incomplete/);
+    assert.match(buildPaymentAuditMessage(report, now.toISOString()), /⚠️.*Unable to verify/);
   }
 });
 
@@ -103,7 +103,7 @@ test('missing source sends an incomplete report and preserves unresolved cases',
   const f = fixture({ initialCases: [{ orderNo, sourceDate: '2026-09-05' }],
     payway: { fetchPaymentHistory: async () => { throw new Error('offline'); } } });
   await f.service.runDue();
-  assert.match(f.messages[0], /⚠️.*Incomplete/);
+  assert.match(f.messages[0], /⚠️.*Unable to verify/);
   assert.equal(f.service.getStatus().unresolvedCount, 1);
 });
 
@@ -168,9 +168,28 @@ test('compact summary uses the check time in Korea and preserves incomplete warn
   report.complete = false;
   report.errors = ['Payway unavailable'];
   const message = buildPaymentAuditMessage(report);
-  assert.match(message, /Incomplete check/);
+  assert.match(message, /Unable to verify/);
   assert.match(message, /Payway unavailable/);
   assert.doesNotMatch(message, /✅/);
+});
+
+test('unavailable Imweb never renders unknown as zero, checked or unmatched', () => {
+  const report = audit({ orders: null, errors: ['Imweb fetch failed; order/payment coverage unavailable'],
+    payments: [approval, { ...approval, transactionId: 'unknown', merchantOrderNo: 'A_unknown' }] });
+  const message = buildPaymentAuditMessage(report);
+  assert.match(message, /⚠️ <b>Unable to verify all confirmations/);
+  assert.match(message, /Requested period/);
+  assert.equal(message.split('Imweb records were unavailable.').length - 1, 1);
+  assert.doesNotMatch(message, /Missing confirmations: 0|✅|Checked|Unmatched payments|not matched/);
+  assert.ok(report.issues.some(issue => issue.orderNo === 'A_unknown'));
+});
+
+test('partial checks retain known missing confirmations without claiming a complete count', () => {
+  const report = audit({ errors: ['partial source'], orders: [{ ...paidOrder, totalPaymentPrice: 0, payments: [] }] });
+  const message = buildPaymentAuditMessage(report);
+  assert.match(message, /Missing confirmations found: 1<\/b> — check incomplete/);
+  assert.match(message, new RegExp(orderNo));
+  assert.doesNotMatch(message, /✅|🔎 Checked/);
 });
 
 test('unmatched approvals are separate uncertainty, not errors or an all-clear', () => {
