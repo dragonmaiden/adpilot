@@ -59,7 +59,8 @@ test('unidentified refunds, duplicate approvals and mismatches require review, n
   assert.ok(report.issues.some(issue => issue.kind === 'multiple_approvals'));
   assert.ok(report.issues.some(issue => issue.kind === 'amount_mismatch'));
   assert.ok(report.issues.some(issue => issue.kind === 'unidentified_reference'));
-  assert.match(buildPaymentAuditMessage(report, now.toISOString()), /^⚠️/);
+  assert.match(buildPaymentAuditMessage(report, now.toISOString()), /^✅/);
+  assert.doesNotMatch(buildPaymentAuditMessage(report, now.toISOString()), /Review items|rfd_unknown|All checked payments reconciled/);
 });
 
 test('late confirmation is separate from a missing confirmation; expiry alone is not payment proof', () => {
@@ -143,12 +144,41 @@ test('a persisted in-flight send after crash remains uncertain and never sends t
 
 test('long reports stay within Telegram size and escape source text', () => {
   const report = audit();
-  report.issues = Array.from({ length: 100 }, (_, i) => ({ orderNo: `<order&${i}>`, severity: 'review', amount: 100,
+  report.issues = Array.from({ length: 100 }, (_, i) => ({ orderNo: `<order&${i}>`, kind: 'unconfirmed', severity: 'error', amount: 100,
     detail: 'Unidentified payment needs review' }));
   const message = buildPaymentAuditMessage(report, now.toISOString());
   assert.ok(message.length < 4096);
   assert.match(message, /&lt;order&amp;0&gt;/);
-  assert.match(message, /more items/);
+  assert.match(message, /more affected orders/);
+});
+
+test('historical delays stay in the audit but never inflate Telegram failure counts', () => {
+  const report = audit({ orders: [{ ...paidOrder, payments: [{ ...paidOrder.payments[0], paymentCompleteTime: '2026-09-06T08:50:30Z' }] }] });
+  assert.equal(report.reviewCount, 1);
+  const message = buildPaymentAuditMessage(report, now.toISOString());
+  assert.match(message, /^✅/);
+  assert.match(message, /missing Imweb confirmation: 0/);
+  assert.doesNotMatch(message, /60s|minutes after|Review items|Action needed/);
+});
+
+test('unmatched approvals are separate uncertainty, not errors or an all-clear', () => {
+  const report = audit({ payments: [approval, { ...approval, transactionId: 'unknown', merchantOrderNo: 'A_unknown' }] });
+  const message = buildPaymentAuditMessage(report, now.toISOString());
+  assert.match(message, /^ℹ️/);
+  assert.match(message, /Unverified: 1 payment references/);
+  assert.match(message, /missing Imweb confirmation: 0/);
+  assert.doesNotMatch(message, /Action needed|All clear|Review items/);
+});
+
+test('real missing confirmations stay prominent and duplicate checks count one order', () => {
+  const report = audit({ orders: [{ ...paidOrder, totalPaymentPrice: 0, payments: [] }], watches: {
+    [orderNo]: { orderNo, amount: 198550, matchedPayment: approval, status: 'completion_failed', watchStartedAt: '2026-09-05' },
+  } });
+  assert.equal(report.errorCount, 2);
+  const message = buildPaymentAuditMessage(report, now.toISOString());
+  assert.match(message, /^⚠️.*Action needed/);
+  assert.match(message, /missing Imweb confirmation: 1/);
+  assert.equal(message.split(orderNo).length - 1, 1);
 });
 
 test('an old refund expands the Payway coverage before comparing totals', async () => {

@@ -99,9 +99,14 @@ matching. This is Payway-to-Imweb coverage, not an audit of every other payment
 provider. Historical approval-to-confirmation delays are timing review items,
 not unpaid orders or proof of when Payway made an approval visible.
 
-Every run sends Shue Updates a complete/all-clear, action-needed, or incomplete
-report. Missing pages, unavailable sources, and missing cash fields cannot yield
-all clear. Reports never confirm, cancel, reopen, charge, refund, or modify COGS.
+Every run sends Shue Updates a focused payment-confirmation check. Action-needed
+alerts list paid-but-unconfirmed, paid-but-cancelled, or failed-confirmation cases,
+counting affected orders once. Historical delays, refund/accounting mismatches,
+and expired watches without payment proof stay in the saved audit, not the Telegram
+warning count. Unmatched approvals/missing orders get a separate informational
+caveat and cannot produce an unqualified all-clear. Missing pages, unavailable
+sources, and missing cash fields produce an incomplete warning. Reports never
+confirm, cancel, reopen, charge, refund, or modify COGS.
 The destination ID and title must match before sending.
 
 `/data/payment_reconciliation.json` stores reports, unresolved cases, and Telegram

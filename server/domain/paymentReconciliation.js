@@ -121,28 +121,36 @@ function reconcilePayments({ payments, orders, watches = {}, startDate, endDate,
 
 function buildPaymentAuditMessage(report, slot) {
   const escape = value => text(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const clear = report.complete && report.issues.length === 0;
-  const title = !report.complete ? 'Incomplete' : clear ? 'All clear — reconciled' : 'Action needed';
+  // Telegram is a missed-confirmation alert, not the detailed accounting audit.
+  // Count affected orders once even if both the watch and source check flag them.
+  const failures = [...new Map(report.issues.filter(issue => issue.severity === 'error'
+    && ['paid_cancelled', 'unconfirmed', 'failed_confirmation'].includes(issue.kind))
+    .map(issue => [issue.orderNo, issue])).values()];
+  const uncertain = report.issues.filter(issue => issue.kind === 'missing_order'
+    || (issue.kind === 'unidentified_reference' && issue.detail.startsWith('Approval')));
+  const clear = report.complete && failures.length === 0 && uncertain.length === 0;
+  const title = failures.length ? 'Action needed' : !report.complete ? 'Incomplete'
+    : uncertain.length ? 'No confirmed failures' : 'No missed confirmations found';
+  const icon = failures.length || !report.complete ? '⚠️' : clear ? '✅' : 'ℹ️';
   const kst = date => new Date(date).toLocaleString('en-GB', { timeZone: KST_TIME_ZONE, hour12: false });
-  const lines = [`${clear ? '✅' : '⚠️'} <b>Payment reconciliation — ${title}</b>`,
+  const lines = [`${icon} <b>Payment confirmation check — ${title}</b>`,
     `Scheduled: ${kst(slot)} KST`, `Checked: ${kst(report.generatedAt)} KST`,
     `Coverage: ${report.startDate} to ${report.endDate} · Payway ↔ Imweb`,
     `${report.complete ? 'COMPLETE' : 'INCOMPLETE'} · ${report.paymentRows} transactions · ${report.checkedOrders} order references`,
-    `Discrepancies: ${report.errorCount} · Review items: ${report.reviewCount}`];
-  if (clear) lines.push('All checked payments reconciled. No unresolved payment discrepancies found.');
-  const delayed = report.issues.filter(issue => issue.kind === 'delayed_confirmation').length;
-  if (delayed) lines.push(`Includes ${delayed} already-confirmed payments taking over 60s; these are not unpaid orders.`);
+    `<b>Paid orders missing Imweb confirmation: ${failures.length}</b>`];
+  if (clear) lines.push('No missing confirmations found among matched Payway orders.');
+  if (uncertain.length) lines.push(`Unverified: ${uncertain.length} payment references could not be matched to an Imweb order. These are not confirmed failures; details retained in the saved report.`);
   for (const error of report.errors.slice(0, 5)) lines.push(`⚠️ ${escape(error).slice(0, 240)}`);
   if (report.errors.length > 5) lines.push(`${report.errors.length - 5} more source limitations in the saved report.`);
   let displayed = 0;
-  const priority = issue => issue.severity === 'error' ? 0 : issue.kind === 'delayed_confirmation' ? 2 : 1;
-  for (const issue of [...report.issues].sort((a, b) => priority(a) - priority(b))) {
+  for (const issue of failures) {
     const line = `\n⚠️ ${escape(issue.orderNo)}${issue.amount == null ? '' : ` · ₩${issue.amount.toLocaleString('en-US')}`}\n${escape(issue.detail)}`;
     if (displayed >= 10 || lines.join('\n').length + line.length > 3300) break;
     lines.push(line); displayed++;
   }
-  if (displayed < report.issues.length) lines.push(`\n${report.issues.length - displayed} more items in AdPilot's saved reconciliation report.`);
-  if (!clear) lines.push('\nReview before confirming a cancelled order, issuing a refund or charging again.');
+  if (displayed < failures.length) lines.push(`\n${failures.length - displayed} more affected orders in AdPilot's saved reconciliation report.`);
+  if (failures.length) lines.push('\nCheck Payway and Imweb before restoring a cancelled order or charging again.');
+  lines.push('Scope: missing payment confirmations, not a full refund/accounting audit.');
   lines.push('Read-only check. No orders or payments changed.');
   return lines.join('\n');
 }
