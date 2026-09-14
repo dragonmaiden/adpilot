@@ -46,6 +46,19 @@ the single in-process state owner. Detected approvals remain reserved and durabl
 while Telegram is pending. Manual `runDueChecks` calls wait for notifications by
 default; the scheduler explicitly uses `waitForNotifications: false`.
 
+Failed Imweb confirmations persist their retry state immediately and send only
+the independent attention warning. The payment-completion notification is not
+started until confirmation succeeds, so blocked Telegram delivery cannot hold
+the same order's next confirmation retry. A regression test reproduces this
+failure on the earlier implementation and verifies a retry on the next poll.
+
+The September 5 order's observed approval time is also replayed in tests with
+late scanner registration and with no scanner watch. Both confirm exactly once
+when the approval is available and Imweb remains eligible. This is conditional
+coverage, not proof of the historical cause: September 5 runtime logs and order
+cancellation history were unavailable during the investigation. Historical
+cancelled orders are not automatically repaired by deploying these changes.
+
 Single-order Imweb reads and confirmation requests have ten-second timeouts.
 An ambiguous timeout is retried by checking Imweb status first, not blindly
 repeating the PATCH. Confirmation failure schedules an attention alert immediately.

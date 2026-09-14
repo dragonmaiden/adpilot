@@ -140,6 +140,49 @@ test('scheduled payment checks confirm other orders while Telegram remains block
   });
 });
 
+test('a failed Imweb confirmation retries next poll even while Telegram is blocked', async () => {
+  const dataDir = createTempDataDir();
+  const config = createConfig();
+  config.payway.autoConfirmImwebPayment = true;
+  const orderNo = '202609055487584';
+  let attempts = 0;
+  let releaseTelegram;
+  const gate = new Promise(resolve => { releaseTelegram = resolve; });
+  const deliveries = [];
+  await withMockedWatchService({ config, runtimePaths: { dataDir },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true,
+      isApprovedPaywayPayment: () => true,
+      fetchPaymentHistory: async () => [{ merchantOrderNo: orderNo, transactionId: 'retry-approval',
+        transactionAmount: 198550, transactionAtIso: '2026-09-05T08:50:06Z' }],
+    },
+    imwebClient: { confirmBankTransferPayment: async () => {
+      if (++attempts === 1) throw new Error('temporary Imweb timeout');
+      return { confirmed: true };
+    } },
+    orderNotificationService: {
+      deliverPaywayAttentionWarning: async () => { await gate; return { ok: true }; },
+      deliverPaywayPaymentNotification: async (_order, _payment, options) => {
+        deliveries.push(options); await gate; return { ok: true };
+      },
+    },
+  }, async service => {
+    service.watchOrder({ orderNo, orderValue: 198550, paymentState: 'awaiting_check' },
+      { now: new Date('2026-09-05T08:53:55Z') });
+    try {
+      await service.runDueChecks({ now: new Date('2026-09-05T08:54:00Z'), waitForNotifications: false });
+      await service.runDueChecks({ now: new Date('2026-09-05T08:54:30Z'), waitForNotifications: false });
+      assert.equal(attempts, 2);
+      assert.equal(service.loadState().watchedOrders[orderNo].imwebConfirmation.status, 'confirmed');
+      assert.equal(deliveries.length, 1);
+      assert.equal(deliveries[0].imwebPaymentConfirmed, true);
+    } finally {
+      releaseTelegram();
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(service.loadState().watchedOrders[orderNo].status, 'paid');
+  });
+});
+
 test('poll cadence subtracts processing time and never overlaps slow payment checks', async () => {
   const config = createConfig();
   config.payway.autoConfirmImwebPayment = true;
@@ -258,7 +301,7 @@ test('confirmation retries survive concurrent scans and restart, with retried, d
     releaseConfirmation();
     await poll;
     assert.equal(service.loadState().watchedOrders[order.orderNo].status, 'payment_detected');
-    assert.equal(warningCalls, 2);
+    assert.equal(warningCalls, 1, 'failed warning remains eligible for the next poll');
   });
   // New module instance reads the persisted approval even when Payway no longer returns it.
   overrides.paywayClient.fetchPaymentHistory = async () => [];
@@ -276,6 +319,38 @@ test('confirmation retries survive concurrent scans and restart, with retried, d
     await service.runDueChecks({ now: new Date('2026-09-13T04:53:00Z') });
     assert.equal(service.loadState().watchedOrders[order.orderNo].status, 'paid');
   });
+});
+
+test('September 5 approval is confirmed after delayed discovery, with or without a scanner watch', async () => {
+  // Replay the observed timestamps; this does not establish the historical failure cause.
+  for (const registerWatch of [false, true]) {
+    const dataDir = createTempDataDir();
+    const config = createConfig();
+    config.payway.autoConfirmImwebPayment = true;
+    const orderNo = '202609055487584';
+    let payments = [];
+    let confirmations = 0;
+    await withMockedWatchService({ config, runtimePaths: { dataDir },
+      paywayClient: { isEnabled: () => true, isConfigured: () => true,
+        isApprovedPaywayPayment: () => true, fetchPaymentHistory: async () => payments },
+      imwebClient: {
+        getOrder: async () => ({ orderNo, orderStatus: 'OPEN', totalPrice: 198550,
+          payments: [{ method: 'BANKTRANSFER', paymentStatus: 'PAYMENT_WAIT', paidPrice: 198550 }] }),
+        confirmBankTransferPayment: async () => { confirmations++; return { confirmed: true }; },
+      },
+      orderNotificationService: { deliverPaywayPaymentNotification: async () => ({ ok: true }) },
+    }, async service => {
+      await service.runDueChecks({ now: new Date('2026-09-05T08:53:55Z') });
+      if (registerWatch) service.watchOrder({ orderNo, orderValue: 198550, paymentState: 'awaiting_check' },
+        { now: new Date('2026-09-05T09:00:00Z') });
+      payments = [{ merchantOrderNo: orderNo, transactionId: 'TMN025656:45292363:198550',
+        terminal: 'TMN025656', transactionAmount: 198550, transactionAtIso: '2026-09-05T08:50:06Z' }];
+      await service.runDueChecks({ now: new Date('2026-09-05T09:00:30Z') });
+      await service.runDueChecks({ now: new Date('2026-09-05T09:01:00Z') });
+      assert.equal(confirmations, 1);
+      assert.equal(service.loadState().watchedOrders[orderNo].imwebConfirmation.status, 'confirmed');
+    });
+  }
 });
 
 test('invalid tracking state is preserved instead of silently resetting it', async () => {
@@ -1380,8 +1455,7 @@ test('Payway watcher keeps the workflow pending when Imweb confirmation fails', 
     assert.equal(state.watchedOrders['202607230002'].status, 'payment_detected');
     assert.equal(state.watchedOrders['202607230002'].imwebConfirmation.status, 'failed');
     assert.match(state.watchedOrders['202607230002'].lastDeliveryError, /30103/);
-    assert.equal(deliveries.length, 1);
-    assert.equal(deliveries[0].imwebPaymentConfirmed, false);
+    assert.equal(deliveries.length, 0, 'only the attention warning is eligible before confirmation succeeds');
   });
 });
 

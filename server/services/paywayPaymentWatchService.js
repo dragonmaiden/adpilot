@@ -804,8 +804,15 @@ async function deliverDetectedPayment(state, watch, payment, now = new Date(), o
 
   const confirmation = await confirmMatchedImwebPayment(watch, now);
   watch.lastDeliveryError = confirmation.ok ? watch.lastDeliveryError : describeCompletionFailure(confirmation);
+  if (!confirmation.ok) {
+    // A Telegram request must never own the retry lock for an unconfirmed payment.
+    // Persist the retry first; only the separate attention warning may run here.
+    recordCompletionFailure(state, watch, payment, confirmation, null, now);
+    saveState(state);
+    runNotificationTask('attention', () => deliverAttentionWarnings(state, now));
+    return { delivered: false, confirmation };
+  }
   saveState(state);
-  if (!confirmation.ok) runNotificationTask('attention', () => deliverAttentionWarnings(state, now));
   const task = runNotificationTask(watch.orderNo, async () => {
     const result = await deliverConfirmedPaymentNotification(state, watch, payment, confirmation, now);
     saveState(state);
@@ -859,6 +866,11 @@ async function deliverConfirmedPaymentNotification(state, watch, payment, confir
     return { delivered: true, confirmation, delivery };
   }
 
+  recordCompletionFailure(state, watch, payment, confirmation, delivery, now);
+  return { delivered: false, confirmation, delivery };
+}
+
+function recordCompletionFailure(state, watch, payment, confirmation, delivery, now) {
   watch.status = 'payment_detected';
   watch.paymentDetectedAt = watch.paymentDetectedAt || nowIso(now);
   watch.paywayTransactionId = payment.transactionId;
@@ -878,7 +890,6 @@ async function deliverConfirmedPaymentNotification(state, watch, payment, confir
     };
   }
   console.warn(`[PAYWAY] Payment completion failed for order ${watch.orderNo}: ${watch.lastDeliveryError}`);
-  return { delivered: false, confirmation, delivery };
 }
 
 function watchOrder(result, options = {}) {
