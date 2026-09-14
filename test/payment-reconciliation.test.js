@@ -28,14 +28,14 @@ test('Korea schedule uses 14:00 and 21:00 regardless of host timezone', () => {
 });
 
 test('all-clear requires complete sources and actual confirmation', () => {
-  assert.match(buildPaymentAuditMessage(audit(), now.toISOString()), /^✅/);
+  assert.match(buildPaymentAuditMessage(audit(), now.toISOString()), /✅ <b>Missing confirmations: 0/);
   for (const overrides of [{ payments: null }, { orders: null }, { payments: {} }, { orders: {} }, { errors: ['partial source'] },
     { orders: [{ ...paidOrder, totalPaymentPrice: -1 }] },
     { orders: [{ ...paidOrder, totalRefundedPrice: undefined }] },
     { payments: [{ ...approval, transactionAtIso: null }] }]) {
     const report = audit(overrides);
     assert.equal(report.complete, false);
-    assert.match(buildPaymentAuditMessage(report, now.toISOString()), /^⚠️.*Incomplete/);
+    assert.match(buildPaymentAuditMessage(report, now.toISOString()), /⚠️.*Incomplete/);
   }
 });
 
@@ -59,7 +59,7 @@ test('unidentified refunds, duplicate approvals and mismatches require review, n
   assert.ok(report.issues.some(issue => issue.kind === 'multiple_approvals'));
   assert.ok(report.issues.some(issue => issue.kind === 'amount_mismatch'));
   assert.ok(report.issues.some(issue => issue.kind === 'unidentified_reference'));
-  assert.match(buildPaymentAuditMessage(report, now.toISOString()), /^✅/);
+  assert.match(buildPaymentAuditMessage(report, now.toISOString()), /✅ <b>Missing confirmations: 0/);
   assert.doesNotMatch(buildPaymentAuditMessage(report, now.toISOString()), /Review items|rfd_unknown|All checked payments reconciled/);
 });
 
@@ -103,7 +103,7 @@ test('missing source sends an incomplete report and preserves unresolved cases',
   const f = fixture({ initialCases: [{ orderNo, sourceDate: '2026-09-05' }],
     payway: { fetchPaymentHistory: async () => { throw new Error('offline'); } } });
   await f.service.runDue();
-  assert.match(f.messages[0], /^⚠️.*Incomplete/);
+  assert.match(f.messages[0], /⚠️.*Incomplete/);
   assert.equal(f.service.getStatus().unresolvedCount, 1);
 });
 
@@ -156,17 +156,30 @@ test('historical delays stay in the audit but never inflate Telegram failure cou
   const report = audit({ orders: [{ ...paidOrder, payments: [{ ...paidOrder.payments[0], paymentCompleteTime: '2026-09-06T08:50:30Z' }] }] });
   assert.equal(report.reviewCount, 1);
   const message = buildPaymentAuditMessage(report, now.toISOString());
-  assert.match(message, /^✅/);
-  assert.match(message, /missing Imweb confirmation: 0/);
+  assert.match(message, /✅ <b>Missing confirmations: 0/);
+  assert.match(message, /Missing confirmations: 0/);
   assert.doesNotMatch(message, /60s|minutes after|Review items|Action needed/);
+});
+
+test('compact summary uses the check time in Korea and preserves incomplete warnings', () => {
+  const report = audit();
+  report.generatedAt = '2026-09-14T11:30:05Z';
+  assert.equal(buildPaymentAuditMessage(report), '📋 <b>Payment Confirmation Summary</b>\n14 Sept · 8:30 PM KST\n\n✅ <b>Missing confirmations: 0</b>\n\n🔎 Checked 1 order references · 1 Sept–14 Sept');
+  report.complete = false;
+  report.errors = ['Payway unavailable'];
+  const message = buildPaymentAuditMessage(report);
+  assert.match(message, /Incomplete check/);
+  assert.match(message, /Payway unavailable/);
+  assert.doesNotMatch(message, /✅/);
 });
 
 test('unmatched approvals are separate uncertainty, not errors or an all-clear', () => {
   const report = audit({ payments: [approval, { ...approval, transactionId: 'unknown', merchantOrderNo: 'A_unknown' }] });
   const message = buildPaymentAuditMessage(report, now.toISOString());
-  assert.match(message, /^ℹ️/);
-  assert.match(message, /Unverified: 1 payment references/);
-  assert.match(message, /missing Imweb confirmation: 0/);
+  assert.match(message, /ℹ️ <b>Unmatched payments: 1/);
+  assert.match(message, /Payway ref: <code>A_unknown<\/code> · ₩198,550/);
+  assert.match(message, /Imweb order: not matched/);
+  assert.match(message, /Missing confirmations: 0/);
   assert.doesNotMatch(message, /Action needed|All clear|Review items/);
 });
 
@@ -176,8 +189,8 @@ test('real missing confirmations stay prominent and duplicate checks count one o
   } });
   assert.equal(report.errorCount, 2);
   const message = buildPaymentAuditMessage(report, now.toISOString());
-  assert.match(message, /^⚠️.*Action needed/);
-  assert.match(message, /missing Imweb confirmation: 1/);
+  assert.match(message, /⚠️ <b>Missing confirmations: 1/);
+  assert.match(message, /Missing confirmations: 1/);
   assert.equal(message.split(orderNo).length - 1, 1);
 });
 

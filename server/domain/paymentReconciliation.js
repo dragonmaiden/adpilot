@@ -119,7 +119,7 @@ function reconcilePayments({ payments, orders, watches = {}, startDate, endDate,
     reviewCount: issues.filter(issue => issue.severity === 'review').length };
 }
 
-function buildPaymentAuditMessage(report, slot) {
+function buildPaymentAuditMessage(report) {
   const escape = value => text(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // Telegram is a missed-confirmation alert, not the detailed accounting audit.
   // Count affected orders once even if both the watch and source check flag them.
@@ -128,18 +128,19 @@ function buildPaymentAuditMessage(report, slot) {
     .map(issue => [issue.orderNo, issue])).values()];
   const uncertain = report.issues.filter(issue => issue.kind === 'missing_order'
     || (issue.kind === 'unidentified_reference' && issue.detail.startsWith('Approval')));
-  const clear = report.complete && failures.length === 0 && uncertain.length === 0;
-  const title = failures.length ? 'Action needed' : !report.complete ? 'Incomplete'
-    : uncertain.length ? 'No confirmed failures' : 'No missed confirmations found';
-  const icon = failures.length || !report.complete ? '⚠️' : clear ? '✅' : 'ℹ️';
-  const kst = date => new Date(date).toLocaleString('en-GB', { timeZone: KST_TIME_ZONE, hour12: false });
-  const lines = [`${icon} <b>Payment confirmation check — ${title}</b>`,
-    `Scheduled: ${kst(slot)} KST`, `Checked: ${kst(report.generatedAt)} KST`,
-    `Coverage: ${report.startDate} to ${report.endDate} · Payway ↔ Imweb`,
-    `${report.complete ? 'COMPLETE' : 'INCOMPLETE'} · ${report.paymentRows} transactions · ${report.checkedOrders} order references`,
-    `<b>Paid orders missing Imweb confirmation: ${failures.length}</b>`];
-  if (clear) lines.push('No missing confirmations found among matched Payway orders.');
-  if (uncertain.length) lines.push(`Unverified: ${uncertain.length} payment references could not be matched to an Imweb order. These are not confirmed failures; details retained in the saved report.`);
+  const dateLabel = date => new Date(date).toLocaleDateString('en-GB', {
+    timeZone: KST_TIME_ZONE, day: 'numeric', month: 'short',
+    ...(report.startDate.slice(0, 4) !== report.endDate.slice(0, 4) ? { year: 'numeric' } : {}),
+  });
+  const timeLabel = new Date(report.generatedAt).toLocaleTimeString('en-US', {
+    timeZone: KST_TIME_ZONE, hour: 'numeric', minute: '2-digit', hour12: true,
+  });
+  const lines = ['📋 <b>Payment Confirmation Summary</b>',
+    `${dateLabel(report.generatedAt)} · ${timeLabel} KST`, ''];
+  if (!report.complete) lines.push('⚠️ <b>Incomplete check — results not final</b>');
+  lines.push(`${failures.length || !report.complete ? '⚠️' : '✅'} <b>Missing confirmations: ${failures.length}</b>`);
+  if (uncertain.length) lines.push(`ℹ️ <b>Unmatched payments: ${uncertain.length}</b> — not confirmed errors`);
+  lines.push('', `🔎 Checked ${report.checkedOrders} order references · ${dateLabel(report.startDate)}–${dateLabel(report.endDate)}`);
   for (const error of report.errors.slice(0, 5)) lines.push(`⚠️ ${escape(error).slice(0, 240)}`);
   if (report.errors.length > 5) lines.push(`${report.errors.length - 5} more source limitations in the saved report.`);
   let displayed = 0;
@@ -149,9 +150,14 @@ function buildPaymentAuditMessage(report, slot) {
     lines.push(line); displayed++;
   }
   if (displayed < failures.length) lines.push(`\n${failures.length - displayed} more affected orders in AdPilot's saved reconciliation report.`);
+  let unmatchedDisplayed = 0;
+  for (const issue of uncertain) {
+    const line = `\nℹ️ Payway ref: <code>${escape(issue.orderNo)}</code>${issue.amount == null ? '' : ` · ₩${issue.amount.toLocaleString('en-US')}`}\nImweb order: not matched`;
+    if (unmatchedDisplayed >= 10 || lines.join('\n').length + line.length > 3500) break;
+    lines.push(line); unmatchedDisplayed++;
+  }
+  if (unmatchedDisplayed < uncertain.length) lines.push(`${uncertain.length - unmatchedDisplayed} more unmatched references in the saved report.`);
   if (failures.length) lines.push('\nCheck Payway and Imweb before restoring a cancelled order or charging again.');
-  lines.push('Scope: missing payment confirmations, not a full refund/accounting audit.');
-  lines.push('Read-only check. No orders or payments changed.');
   return lines.join('\n');
 }
 
