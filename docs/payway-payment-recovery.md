@@ -115,9 +115,11 @@ Telegram status wording distinguishes evidence from uncertainty:
 - ⚠️ Unable to verify all confirmations replaces the zero/count and checked-total
   claims when sources are incomplete. Known findings remain visible; unmatched
   references stay in the saved report until the check is complete.
-- ⏳ Payment not found — please check is an individual expired-search alert,
-  not proof that the customer paid or that confirmation failed. Other watcher
-  alerts say payment status needs review, since notification work may be pending.
+- Individual payment-review alerts require detected Payway payment evidence.
+  Bank-transfer searches that expire without a detected Payway payment stay in
+  the saved audit without sending a review alert. Imweb's bank-transfer label
+  alone does not suppress an alert once a Payway payment is detected. Monitoring,
+  confirmation retries, and the scheduled summaries are unchanged.
 
 `/data/payment_reconciliation.json` stores reports, unresolved cases, and Telegram
 receipts using atomic writes. Do not delete it to force a resend. Ambiguous sends

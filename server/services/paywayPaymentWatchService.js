@@ -584,6 +584,10 @@ async function deliverAttentionWarnings(state, now) {
   ];
   for (const record of records) {
     if (record.attentionWarningSentAt) continue;
+    // Bank-transfer watches also cover Payway's Imweb checkout placeholder.
+    // Only a detected Payway payment brings an order into payment-review scope;
+    // an expired search alone is not a reason to review a direct bank transfer.
+    if (!record.matchedPayment && !record.transactionAmount) continue;
     try {
       const delivery = await send({ orderNo: record.orderNo, reason: record.status,
         paymentDetected: Boolean(record.matchedPayment || record.transactionAmount) });

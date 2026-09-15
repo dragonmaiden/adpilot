@@ -369,7 +369,7 @@ test('invalid tracking state is preserved instead of silently resetting it', asy
   });
 });
 
-test('expired watches alert once without replaying historical expired-watch alerts', async () => {
+test('bank-transfer searches without Payway evidence expire silently and retain audit state', async () => {
   const dataDir = createTempDataDir();
   const warnings = [];
   fs.writeFileSync(path.join(dataDir, 'payway_payment_watch_state.json'), JSON.stringify({
@@ -383,8 +383,30 @@ test('expired watches alert once without replaying historical expired-watch aler
       { now: new Date('2026-09-13T04:43:03Z') });
     await service.runDueChecks({ now: new Date('2026-09-13T05:44:00Z') });
     await service.runDueChecks({ now: new Date('2026-09-13T05:45:00Z') });
-    assert.deepEqual(warnings.map(w => w.orderNo), ['202609137271906']);
-    assert.equal(warnings[0].paymentDetected, false);
+    assert.deepEqual(warnings, []);
+    assert.equal(service.loadState().watchedOrders['202609137271906'].status, 'expired');
+    assert.ok(service.loadState().watchedOrders['202609137271906'].attentionRequiredAt);
+  });
+});
+
+test('bank-transfer placeholder with a detected Payway payment still warns once after restart', async () => {
+  const dataDir = createTempDataDir();
+  const warnings = [];
+  fs.writeFileSync(path.join(dataDir, 'payway_payment_watch_state.json'), JSON.stringify({
+    watchedOrders: {
+      directBank: { orderNo: 'directBank', status: 'expired', attentionRequiredAt: '2026-09-13T05:00:00Z',
+        orderResult: { paymentChannel: 'bank_transfer' } },
+      paywayCard: { orderNo: 'paywayCard', status: 'completion_failed', attentionRequiredAt: '2026-09-13T05:00:00Z',
+        orderResult: { paymentChannel: 'bank_transfer' }, matchedPayment: { transactionId: 'approval-1', approvedAmount: 88063 } },
+    }, handledTransactions: {},
+  }));
+  await withMockedWatchService({ config: createConfig(), runtimePaths: { dataDir },
+    paywayClient: { isEnabled: () => true, isConfigured: () => true },
+    orderNotificationService: { deliverPaywayAttentionWarning: async payload => { warnings.push(payload); return { ok: true }; } },
+  }, async service => {
+    await service.runDueChecks({ now: new Date('2026-09-13T05:44:00Z') });
+    await service.runDueChecks({ now: new Date('2026-09-13T05:45:00Z') });
+    assert.deepEqual(warnings, [{ orderNo: 'paywayCard', reason: 'completion_failed', paymentDetected: true }]);
   });
 });
 
