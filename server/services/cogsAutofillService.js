@@ -26,8 +26,8 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SHEETS_API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DEFAULT_POLL_LOOKBACK_DAYS = 7;
 const MAX_NEW_ORDER_BACKFILL_HOURS = 1;
-const BIG_FISH_THRESHOLD_KRW = 200000;
-const BOSS_FISH_THRESHOLD_KRW = 400000;
+const MEDIUM_FISH_THRESHOLD_KRW = 200000;
+const BIG_FISH_THRESHOLD_KRW = 400000;
 const DEFAULT_PAYWAY_WATCH_MINUTES = 10;
 const DEFAULT_PAYWAY_MIN_WATCH_MINUTES = 60;
 const DEFAULT_PAYWAY_MATCH_LEAD_MINUTES = 5;
@@ -744,12 +744,12 @@ function formatStoreMoney(amount) {
 }
 
 function getOrderSizeLabel(amount) {
-  if (Number(amount || 0) >= BOSS_FISH_THRESHOLD_KRW) {
-    return '😎🦈 BOSS FISH ₩₩₩!';
+  if (Number(amount || 0) >= BIG_FISH_THRESHOLD_KRW) {
+    return '🐋 BIG FISH ₩₩₩!';
   }
-  return Number(amount || 0) >= BIG_FISH_THRESHOLD_KRW
-    ? '🐋 BIG FISH ₩₩!'
-    : '🐟 small fish ₩';
+  return Number(amount || 0) >= MEDIUM_FISH_THRESHOLD_KRW
+    ? '🐟 Medium Fish ₩₩'
+    : '🐡 Small Fish ₩';
 }
 
 function getPaymentMethodLabel(order) {
