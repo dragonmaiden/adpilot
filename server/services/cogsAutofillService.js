@@ -1644,6 +1644,9 @@ async function syncRecentOrdersToCogs(orders, options = {}) {
   const sheetCache = new Map();
 
   for (const order of eligibleOrders) {
+    // Cached sheet calls can resolve entirely as microtasks. Yield real I/O time
+    // between orders so synchronous state writes cannot starve payment polling.
+    await new Promise(resolve => setImmediate(resolve));
     try {
       const orderDate = order?.wtime ? formatDateInTimeZone(order.wtime) : '';
       const targetKey = String(orderDate || '').slice(0, 7);

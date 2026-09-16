@@ -52,7 +52,7 @@ test('scan runner sends paid fallback notifications for duplicate paid orders wi
 
   assert.match(
     source,
-    /for \(const duplicate of result\.duplicates\) {\s+await orderNotificationService\.deliverPaidOrderNotification\(duplicate\);\s+}/
+    /for \(const duplicate of result\.duplicates\) {\s+await orderNotificationService\.deliverPaidOrderNotification\(duplicate\);\s+await new Promise\(resolve => setImmediate\(resolve\)\);\s+}/
   );
   assert.doesNotMatch(source, /duplicate\?\.alreadyNotified/);
 });

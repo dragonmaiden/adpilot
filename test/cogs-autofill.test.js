@@ -1867,11 +1867,17 @@ test('syncRecentOrdersToCogs appends only recent paid orders and skips stale or 
         sections: [{ sectionItems: [{ productInfo: { prodName: '스카프 D' } }] }],
       });
 
+      let eventLoopTurns = 0;
+      setImmediate(() => {
+        eventLoopTurns += 1;
+        setImmediate(() => { eventLoopTurns += 1; });
+      });
       const result = await service.syncRecentOrdersToCogs(
         [stalePaid, recentDuplicate, unpaid, refundedClosed, recentPaid, recentPaid],
         { lookbackDays: 3 }
       );
 
+      assert.equal(eventLoopTurns, 2, 'payment timers and HTTP I/O must get a turn between COGS orders');
       assert.equal(result.status, 'ok');
       assert.equal(result.lookbackDays, 3);
       assert.equal(result.eligibleOrders, 2);

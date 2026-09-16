@@ -40,6 +40,9 @@ metadata getter for every historical order: with 2,223 orders that blocked the
 event loop for minutes, delaying both payment timers and HTTP responses. Each
 batch reloads the file; individual payment operations still read fresh state.
 Regression tests enforce bounded reads and visibility of updates between batches.
+COGS synchronization and paid-notification batches also yield to timers and HTTP
+I/O between orders, including when sheet lookups and notification skips are cached.
+Fresh per-order state reads/writes remain in place to preserve concurrent updates.
 
 The live Render service must use HTTP health checks at `/api/health`, matching
 `render.yaml`, rather than the default TCP-only probe. This lets Render restart

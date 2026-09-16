@@ -664,10 +664,12 @@ async function reconcileRecentImwebOrdersToCogs(scanResult, freshOrders) {
 
     for (const appended of result.appended) {
       await orderNotificationService.deliverPaidOrderNotification(appended);
+      await new Promise(resolve => setImmediate(resolve));
     }
 
     for (const duplicate of result.duplicates) {
       await orderNotificationService.deliverPaidOrderNotification(duplicate);
+      await new Promise(resolve => setImmediate(resolve));
     }
 
     return { ok: true, result };
