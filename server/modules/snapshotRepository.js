@@ -1,17 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const runtimePaths = require('../runtime/paths');
+const { getMaxSnapshotScanSets, pruneSnapshots } = require('../runtime/snapshotRetention');
 
 const SNAP_DIR = path.join(runtimePaths.dataDir, 'snapshots');
-const DEFAULT_MAX_SCAN_SETS = 72;
-
-function getMaxSnapshotScanSets() {
-  const configured = Number.parseInt(process.env.SNAPSHOT_MAX_SCAN_SETS || '', 10);
-  if (!Number.isFinite(configured) || configured < 1) {
-    return DEFAULT_MAX_SCAN_SETS;
-  }
-  return configured;
-}
 
 function ensureSnapshotDir() {
   if (!fs.existsSync(SNAP_DIR)) {
@@ -21,37 +13,19 @@ function ensureSnapshotDir() {
 
 function saveSnapshotFile(filename, data) {
   const filepath = path.join(SNAP_DIR, filename);
-  fs.writeFileSync(filepath, JSON.stringify(data, null, 2), { mode: 0o600 });
+  fs.writeFileSync(filepath, JSON.stringify(data), { mode: 0o600 });
   fs.chmodSync(filepath, 0o600);
 }
 
-function listSnapshotFiles() {
-  if (!fs.existsSync(SNAP_DIR)) return [];
-  return fs.readdirSync(SNAP_DIR).filter(f => f.endsWith('.json'));
+function cleanupSnapshots(maxScanSets = getMaxSnapshotScanSets()) {
+  return pruneSnapshots(runtimePaths.dataDir, { maxScanSets });
 }
 
-function cleanupSnapshots(maxScanSets = 240) {
-  try {
-    const files = listSnapshotFiles();
-    const scanIds = [...new Set(files.map(f => f.split('_')[0]))].sort();
-    if (scanIds.length <= maxScanSets) return;
-
-    const toDelete = scanIds.slice(0, scanIds.length - maxScanSets);
-    for (const scanId of toDelete) {
-      const scanFiles = files.filter(f => f.startsWith(scanId + '_'));
-      for (const file of scanFiles) {
-        fs.unlinkSync(path.join(SNAP_DIR, file));
-      }
-    }
-    console.log(`[SCHEDULER] Cleaned up ${toDelete.length} old snapshot sets`);
-  } catch (err) {
-    console.warn('[SCHEDULER] Snapshot cleanup error:', err.message);
-  }
-}
-
-function writeSnapshotParts(scanId, snapshotData) {
+function snapshotParts(scanId, snapshotData) {
+  const parts = [];
+  const addPart = (filename, data) => parts.push({ filename, data });
   if (Array.isArray(snapshotData.campaigns) || Array.isArray(snapshotData.adSets) || Array.isArray(snapshotData.ads)) {
-    saveSnapshotFile(`${scanId}_meta_structure.json`, {
+    addPart(`${scanId}_meta_structure.json`, {
       campaigns: snapshotData.campaigns ?? [],
       adSets: snapshotData.adSets ?? [],
       ads: snapshotData.ads ?? [],
@@ -59,14 +33,14 @@ function writeSnapshotParts(scanId, snapshotData) {
   }
 
   if (Array.isArray(snapshotData.campaignInsights) || Array.isArray(snapshotData.adInsights)) {
-    saveSnapshotFile(`${scanId}_meta_insights.json`, {
+    addPart(`${scanId}_meta_insights.json`, {
       campaignInsights: snapshotData.campaignInsights ?? [],
       adInsights: snapshotData.adInsights ?? [],
     });
   }
 
   if (Array.isArray(snapshotData.orders)) {
-    saveSnapshotFile(`${scanId}_imweb_orders.json`, snapshotData.orders);
+    addPart(`${scanId}_imweb_orders.json`, snapshotData.orders);
   }
 
   if (
@@ -78,7 +52,7 @@ function writeSnapshotParts(scanId, snapshotData) {
     snapshotData.sourceAudit !== undefined ||
     snapshotData.sources !== undefined
   ) {
-    saveSnapshotFile(`${scanId}_normalized.json`, {
+    addPart(`${scanId}_normalized.json`, {
       revenueData: snapshotData.revenueData,
       cogsData: snapshotData.cogsData ?? null,
       economicsLedger: snapshotData.economicsLedger ?? null,
@@ -89,24 +63,53 @@ function writeSnapshotParts(scanId, snapshotData) {
       timestamp: new Date().toISOString(),
     });
   }
+  return parts;
 }
 
 function saveSnapshot(scanId, snapshotData) {
+  if (!/^\d+$/.test(String(scanId))) throw new Error('Invalid snapshot scan ID');
   ensureSnapshotDir();
+  const parts = snapshotParts(scanId, snapshotData);
+  if (parts.some(part => fs.existsSync(path.join(SNAP_DIR, part.filename)))) {
+    throw new Error('Snapshot already exists; refusing to overwrite recovery data');
+  }
+  // Measure one serialized part at a time to avoid retaining another whole scan in memory.
+  const reservedBytes = parts.reduce((total, part) => total + Buffer.byteLength(JSON.stringify(part.data)), 0);
   const maxScanSets = getMaxSnapshotScanSets();
-  cleanupSnapshots(Math.max(1, maxScanSets - 1));
+  const prepare = limit => {
+    const storage = pruneSnapshots(runtimePaths.dataDir, { maxScanSets: limit, reservedBytes });
+    if (!storage.canWrite) {
+      const error = new Error('Snapshot skipped to preserve disk headroom and the latest recovery copy');
+      error.code = 'ENOSPC';
+      throw error;
+    }
+  };
+  prepare(Math.max(1, maxScanSets - 1));
 
   try {
-    writeSnapshotParts(scanId, snapshotData);
+    for (const part of parts) saveSnapshotFile(part.filename, part.data);
   } catch (err) {
+    // Remove only this failed new set, never an existing recovery set or workflow file.
+    for (const part of parts) {
+      const filepath = path.join(SNAP_DIR, part.filename);
+      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+    }
     if (err?.code !== 'ENOSPC') {
       throw err;
     }
 
     const retryMaxSets = Math.max(1, Math.floor(maxScanSets / 2));
     console.warn(`[SCHEDULER] Snapshot disk full — pruning to ${retryMaxSets} scan sets and retrying save`);
-    cleanupSnapshots(retryMaxSets);
-    writeSnapshotParts(scanId, snapshotData);
+    prepare(retryMaxSets);
+    try {
+      for (const part of parts) saveSnapshotFile(part.filename, part.data);
+    } catch (retryError) {
+      for (const part of parts) {
+        const filepath = path.join(SNAP_DIR, part.filename);
+        if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+      }
+      throw retryError;
+    }
   }
 
   cleanupSnapshots(maxScanSets);

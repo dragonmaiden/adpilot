@@ -175,3 +175,45 @@ test('saveSnapshot persists a complete recovery projection with source freshness
     assert.equal(normalized.sourceAudit.status, 'reconciled');
   });
 });
+
+test('oversized snapshot is refused without replacing the latest recovery copy', async t => {
+  const dataDir = createTempDataDir();
+  const snapshotDir = path.join(dataDir, 'snapshots');
+  fs.mkdirSync(snapshotDir);
+  fs.writeFileSync(path.join(snapshotDir, '4000_normalized.json'), '{"keep":true}');
+  const previous = process.env.SNAPSHOT_MAX_BYTES;
+  process.env.SNAPSHOT_MAX_BYTES = '50';
+  t.after(() => {
+    if (previous === undefined) delete process.env.SNAPSHOT_MAX_BYTES;
+    else process.env.SNAPSHOT_MAX_BYTES = previous;
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  await withMockedSnapshotRepository({ dataDir }, async repository => {
+    assert.throws(() => repository.saveSnapshot('5000', { orders: [{ data: 'x'.repeat(100) }] }), /preserve disk headroom/);
+    assert.deepEqual(listSnapshotScanIds(dataDir), ['4000']);
+    assert.deepEqual(repository.getSnapshot('4000').data.normalized, { keep: true });
+    assert.throws(() => repository.saveSnapshot('../bad', { orders: [] }), /Invalid snapshot/);
+    assert.throws(() => repository.saveSnapshot('4000', { revenueData: {} }), /refusing to overwrite/);
+  });
+});
+
+test('repeated disk-full writes remove only the failed new set and preserve the prior set', async t => {
+  const dataDir = createTempDataDir();
+  const snapshotDir = path.join(dataDir, 'snapshots');
+  fs.mkdirSync(snapshotDir);
+  fs.writeFileSync(path.join(snapshotDir, '4000_normalized.json'), '{"keep":true}');
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const original = fs.writeFileSync;
+  t.mock.method(fs, 'writeFileSync', (filepath, ...args) => {
+    if (String(filepath).endsWith('5000_normalized.json')) {
+      original(filepath, 'partial');
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    }
+    return original(filepath, ...args);
+  });
+  await withMockedSnapshotRepository({ dataDir }, async repository => {
+    assert.throws(() => repository.saveSnapshot('5000', { orders: [], revenueData: {} }), /disk full/);
+    assert.deepEqual(listSnapshotScanIds(dataDir), ['4000']);
+    assert.deepEqual(repository.getSnapshot('4000').data.normalized, { keep: true });
+  });
+});

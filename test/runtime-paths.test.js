@@ -81,3 +81,27 @@ test('runtime paths recover from ENOSPC by pruning snapshot sets before falling 
     fs.writeFileSync = originalWriteFileSync;
   }
 });
+
+test('startup enforces snapshot byte budget even when the tiny write probe succeeds', async t => {
+  const dataDir = createTempDataDir();
+  const snapshotDir = path.join(dataDir, 'snapshots');
+  fs.mkdirSync(snapshotDir);
+  for (const id of ['1000', '2000', '3000']) {
+    fs.writeFileSync(path.join(snapshotDir, `${id}_normalized.json`), 'x'.repeat(30));
+  }
+  const stateFile = path.join(dataDir, 'payway_payment_watch_state.json');
+  fs.writeFileSync(stateFile, '{"pending":"preserve"}');
+  const previous = process.env.SNAPSHOT_MAX_BYTES;
+  process.env.SNAPSHOT_MAX_BYTES = '65';
+  t.after(() => {
+    if (previous === undefined) delete process.env.SNAPSHOT_MAX_BYTES;
+    else process.env.SNAPSHOT_MAX_BYTES = previous;
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+  await withMockedRuntimePaths({ paths: { defaultDataDir: dataDir } }, async runtimePaths => {
+    assert.equal(runtimePaths.usedFallback, false);
+    assert.equal(fs.existsSync(path.join(snapshotDir, '1000_normalized.json')), false);
+    assert.equal(fs.readdirSync(snapshotDir).length, 2);
+    assert.equal(fs.readFileSync(stateFile, 'utf8'), '{"pending":"preserve"}');
+  });
+});

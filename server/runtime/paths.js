@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('../config');
+const { pruneSnapshots } = require('./snapshotRetention');
 
-const SNAPSHOT_DIR_NAME = 'snapshots';
 const STARTUP_RECOVERY_SCAN_SETS = 24;
 
 function ensureWritableDirectory(dir) {
@@ -27,26 +27,7 @@ function ensureWritableDirectory(dir) {
 }
 
 function cleanupSnapshotSets(dataDir, maxScanSets = STARTUP_RECOVERY_SCAN_SETS) {
-  const snapshotDir = path.join(dataDir, SNAPSHOT_DIR_NAME);
-  if (!fs.existsSync(snapshotDir)) {
-    return 0;
-  }
-
-  const files = fs.readdirSync(snapshotDir).filter(file => file.endsWith('.json'));
-  const scanIds = [...new Set(files.map(file => file.split('_')[0]))].sort();
-  if (scanIds.length <= maxScanSets) {
-    return 0;
-  }
-
-  const toDelete = scanIds.slice(0, scanIds.length - maxScanSets);
-  for (const scanId of toDelete) {
-    const scanFiles = files.filter(file => file.startsWith(`${scanId}_`));
-    for (const file of scanFiles) {
-      fs.unlinkSync(path.join(snapshotDir, file));
-    }
-  }
-
-  return toDelete.length;
+  return pruneSnapshots(dataDir, { maxScanSets }).deletedSets;
 }
 
 function tryRecoverWritableDataDir(dir, err) {
@@ -109,6 +90,16 @@ try {
     dataDir = fallbackDataDir;
     ensureWritableDirectory(dataDir);
   }
+}
+
+// A tiny write probe can succeed on a nearly full disk while payment-state writes fail.
+// Enforce retention before any service loads or writes its state, not only after ENOSPC.
+try {
+  const storage = pruneSnapshots(dataDir);
+  console.log(`[STORAGE] Snapshot bytes=${storage.bytes}; free bytes=${storage.freeBytes}`);
+  if (!storage.canWrite) console.warn('[STORAGE] Low disk headroom; newest recovery snapshot preserved');
+} catch (err) {
+  console.warn('[STORAGE] Startup snapshot retention failed:', err.message);
 }
 
 const logDir = path.join(dataDir, 'logs');
