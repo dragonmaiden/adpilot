@@ -286,14 +286,14 @@ function sanitizeNotificationMetadata(metadata) {
   };
 }
 
-function getOrderNotificationDiagnostics(orderNo) {
+function getOrderNotificationDiagnostics(orderNo, state = loadState()) {
   const normalizedOrderNo = asString(orderNo);
   if (!normalizedOrderNo) {
     return null;
   }
 
-  const notification = sanitizeNotificationMetadata(getNotifiedOrderMetadata(normalizedOrderNo));
-  const imported = getImportedOrderMetadata(normalizedOrderNo);
+  const notification = sanitizeNotificationMetadata(state.notifiedOrders[normalizedOrderNo]);
+  const imported = state.importedOrders[normalizedOrderNo];
 
   return {
     orderNo: normalizedOrderNo,
@@ -312,6 +312,11 @@ function getOrderNotificationDiagnostics(orderNo) {
     } : null,
     inference: buildNotificationBehaviorInference(notification),
   };
+}
+
+function createOrderNotificationDiagnosticsReader() {
+  const state = loadState();
+  return orderNo => getOrderNotificationDiagnostics(orderNo, state);
 }
 
 function wasOrderNotified(orderNo) {
@@ -1292,13 +1297,13 @@ function getOrderCreationTimestamp(order) {
   return parseTimestamp(order?.wtime);
 }
 
-function shouldBackfillNewOrderNotification(order) {
+function shouldBackfillNewOrderNotification(order, state) {
   const normalizedOrderNo = asString(order?.orderNo);
   if (!normalizedOrderNo) {
     return false;
   }
 
-  const notification = getNotifiedOrderMetadata(normalizedOrderNo);
+  const notification = state.notifiedOrders[normalizedOrderNo];
   if (notification?.notificationStage === 'payment_confirmed' || notification?.notificationStage === 'order_closed') {
     return false;
   }
@@ -1334,13 +1339,13 @@ function isWithinPaywayWatchRefreshWindow(order, notification, now = new Date())
   return now.getTime() - anchor.getTime() <= getPaywayWatchRefreshWindowMs();
 }
 
-function shouldRefreshPaywayPaymentWatch(order, options = {}) {
+function shouldRefreshPaywayPaymentWatch(order, state, options = {}) {
   const normalizedOrderNo = asString(order?.orderNo);
   if (!normalizedOrderNo) {
     return false;
   }
 
-  const notification = getNotifiedOrderMetadata(normalizedOrderNo);
+  const notification = state.notifiedOrders[normalizedOrderNo];
   if (!notification?.messageId) {
     return false;
   }
@@ -1359,13 +1364,13 @@ function shouldRefreshPaywayPaymentWatch(order, options = {}) {
     && isWithinPaywayWatchRefreshWindow(order, notification, now);
 }
 
-function shouldCloseExistingOrderNotification(order) {
+function shouldCloseExistingOrderNotification(order, state) {
   const normalizedOrderNo = asString(order?.orderNo);
   if (!normalizedOrderNo || !isTerminalOrderState(order)) {
     return false;
   }
 
-  const notification = getNotifiedOrderMetadata(normalizedOrderNo);
+  const notification = state.notifiedOrders[normalizedOrderNo];
   if (!notification) {
     return false;
   }
@@ -1379,6 +1384,9 @@ function shouldCloseExistingOrderNotification(order) {
 }
 
 function collectRecentNewOrderNotifications(orders, options = {}) {
+  // These collectors are synchronous: one fresh read per batch is consistent and
+  // avoids blocking payment timers with thousands of repeated disk reads/parses.
+  const state = loadState();
   const windowStart = resolveNewOrderBackfillWindowStart(options);
   const seenOrderNos = new Set();
 
@@ -1389,7 +1397,7 @@ function collectRecentNewOrderNotifications(orders, options = {}) {
         return false;
       }
 
-      if (!shouldBackfillNewOrderNotification(order)) {
+      if (!shouldBackfillNewOrderNotification(order, state)) {
         return false;
       }
 
@@ -1422,6 +1430,7 @@ function collectRecentNewOrderNotifications(orders, options = {}) {
 }
 
 function collectRecentPaywayPaymentWatchCandidates(orders, options = {}) {
+  const state = loadState();
   const windowStart = resolveNewOrderBackfillWindowStart(options);
   const now = options.now instanceof Date ? options.now : new Date();
   const seenOrderNos = new Set();
@@ -1433,7 +1442,7 @@ function collectRecentPaywayPaymentWatchCandidates(orders, options = {}) {
         return false;
       }
 
-      if (!shouldRefreshPaywayPaymentWatch(order, { now })) {
+      if (!shouldRefreshPaywayPaymentWatch(order, state, { now })) {
         return false;
       }
 
@@ -1453,7 +1462,7 @@ function collectRecentPaywayPaymentWatchCandidates(orders, options = {}) {
 
   const pending = eligibleOrders.map(order => {
     const orderNo = asString(order?.orderNo);
-    const notification = getNotifiedOrderMetadata(orderNo);
+    const notification = state.notifiedOrders[orderNo];
     return {
       ...buildOrderNotificationResult(order, {
         notificationKind: 'new_order',
@@ -1475,12 +1484,13 @@ function collectRecentPaywayPaymentWatchCandidates(orders, options = {}) {
 }
 
 function collectRecentClosedOrderNotifications(orders) {
+  const state = loadState();
   const seenOrderNos = new Set();
   const pending = [];
 
   for (const order of Array.isArray(orders) ? orders : []) {
     const orderNo = asString(order?.orderNo);
-    if (!orderNo || seenOrderNos.has(orderNo) || !shouldCloseExistingOrderNotification(order)) {
+    if (!orderNo || seenOrderNos.has(orderNo) || !shouldCloseExistingOrderNotification(order, state)) {
       continue;
     }
 
@@ -1691,6 +1701,7 @@ module.exports = {
   getImportedOrderMetadata,
   getNotifiedOrderMetadata,
   getOrderNotificationDiagnostics,
+  createOrderNotificationDiagnosticsReader,
   recordOrderNotificationDelivery,
   markOrderNotificationCompleted,
   markOrderNotificationClosed,

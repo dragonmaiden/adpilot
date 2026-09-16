@@ -99,7 +99,7 @@ function buildOrderIssue(order, diagnostics) {
 }
 
 function buildOrderNotificationAudit(rows, options = {}) {
-  const getDiagnostics = options.getDiagnostics || cogsAutofillService.getOrderNotificationDiagnostics;
+  const getDiagnostics = options.getDiagnostics || cogsAutofillService.createOrderNotificationDiagnosticsReader();
   const normalizedOrders = (Array.isArray(rows) ? rows : [])
     .map(normalizeLedgerOrder)
     .filter(order => order.orderNo);

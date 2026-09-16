@@ -34,6 +34,18 @@ Node process; multiple writers require shared transactional storage first.
 
 ## Timely confirmation
 
+Notification backfill, watch refresh, closure checks, and notification auditing
+read local tracking state once per synchronous batch. Do not call a disk-backed
+metadata getter for every historical order: with 2,223 orders that blocked the
+event loop for minutes, delaying both payment timers and HTTP responses. Each
+batch reloads the file; individual payment operations still read fresh state.
+Regression tests enforce bounded reads and visibility of updates between batches.
+
+The live Render service must use HTTP health checks at `/api/health`, matching
+`render.yaml`, rather than the default TCP-only probe. This lets Render restart
+an unresponsive application automatically. It does not prove a particular payment
+was confirmed; verify the Imweb read-back log for that order.
+
 The normal-operation target is confirmation within 60 seconds after an approval
 becomes visible in Payway. This is a target, not a provider availability guarantee.
 Scheduled checks use start-to-start cadence (30 seconds by default), subtracting

@@ -102,6 +102,77 @@ function createConfig(privateKey) {
   };
 }
 
+test('notification batch checks read state once, without caching across checks or changing state', async t => {
+  const dataDir = createTempDataDir();
+  const stateFile = path.join(dataDir, 'cogs_autofill_state.json');
+  const orders = Array.from({ length: 250 }, (_, index) => createOrder({
+    orderNo: String(202609160000000 + index),
+    wtime: '2026-09-16T00:00:00Z',
+    totalPaymentPrice: 0,
+    payments: [],
+  }));
+  const originalState = JSON.stringify({ importedOrders: {}, notifiedOrders: {} });
+  fs.writeFileSync(stateFile, originalState);
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  await withMockedService({
+    config: createConfig(''), runtimePaths: { dataDir }, cogsClient: {}, imwebClient: {},
+  }, async service => {
+    const read = fs.readFileSync;
+    let reads = 0;
+    t.mock.method(fs, 'readFileSync', (filepath, ...args) => {
+      if (filepath === stateFile) reads += 1;
+      return read(filepath, ...args);
+    });
+    const options = { now: new Date('2026-09-16T00:30:00Z'), sinceTime: new Date('2026-09-15T23:30:00Z') };
+    for (const collect of [service.collectRecentNewOrderNotifications, service.collectRecentPaywayPaymentWatchCandidates, service.collectRecentClosedOrderNotifications]) {
+      reads = 0;
+      collect(orders, options);
+      assert.equal(reads, 1, `${collect.name} must read state once per batch`);
+    }
+    assert.equal(read(stateFile, 'utf8'), originalState);
+    // Another workflow may update the file between scans; the next batch must see it.
+    const updatedState = JSON.stringify({ importedOrders: {}, notifiedOrders: {
+      [orders[0].orderNo]: { messageId: 123, notificationStage: 'payment_confirmed' },
+    } });
+    fs.writeFileSync(stateFile, updatedState);
+    assert.equal(service.collectRecentNewOrderNotifications(orders, options).eligibleOrders, 249);
+    assert.equal(service.getNotifiedOrderMetadata(orders[0].orderNo).notificationStage, 'payment_confirmed');
+    reads = 0;
+    const diagnostics = service.createOrderNotificationDiagnosticsReader();
+    for (const order of orders) diagnostics(order.orderNo);
+    assert.equal(reads, 1, 'notification audit must also read state once per batch');
+    assert.equal(diagnostics(orders[0].orderNo).notification.notificationStage, 'payment_confirmed');
+    assert.equal(read(stateFile, 'utf8'), updatedState);
+  });
+});
+
+test('production-sized notification batches use bounded state reads', async t => {
+  const dataDir = createTempDataDir();
+  const stateFile = path.join(dataDir, 'cogs_autofill_state.json');
+  const orders = Array.from({ length: 2223 }, (_, index) => createOrder({ orderNo: String(index + 1) }));
+  const notifiedOrders = Object.fromEntries(orders.map(order => [order.orderNo, {
+    messageId: 123, notificationStage: 'payment_confirmed', detail: 'x'.repeat(600),
+  }]));
+  fs.writeFileSync(stateFile, JSON.stringify({ importedOrders: {}, notifiedOrders }));
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  await withMockedService({ config: createConfig(''), runtimePaths: { dataDir }, cogsClient: {}, imwebClient: {} }, async service => {
+    const read = fs.readFileSync;
+    let reads = 0;
+    t.mock.method(fs, 'readFileSync', (filepath, ...args) => {
+      if (filepath === stateFile) reads += 1;
+      return read(filepath, ...args);
+    });
+    const start = performance.now();
+    assert.equal(service.collectRecentNewOrderNotifications(orders).pending.length, 0);
+    assert.equal(service.collectRecentPaywayPaymentWatchCandidates(orders).pending.length, 0);
+    assert.equal(service.collectRecentClosedOrderNotifications(orders).pending.length, 0);
+    const diagnostics = service.createOrderNotificationDiagnosticsReader();
+    for (const order of orders) assert.equal(diagnostics(order.orderNo).notificationRecorded, true);
+    assert.equal(reads, 4);
+    t.diagnostic(`2223 orders; ${fs.statSync(stateFile).size} state bytes; four batch reads; ${(performance.now() - start).toFixed(1)} ms`);
+  });
+});
+
 test('syncOrderToCogsSheet appends multi-item rows to the correct month tab without overwriting existing data', async () => {
   const dataDir = createTempDataDir();
   const privateKey = createPrivateKeyPem();
