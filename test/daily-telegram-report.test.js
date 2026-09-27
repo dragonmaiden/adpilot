@@ -2,12 +2,33 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  buildDailyReportCorrectionPlan,
-  buildDailySummaryReportPlan,
+  buildDailyReportCorrectionPlan: planCorrection,
+  buildDailySummaryReportPlan: planSummary,
   formatReportDate,
   getNextDailyReportAt,
   resolveDailyReportDate,
 } = require('../server/services/dailyTelegramReportService');
+const { buildFinancialProjection } = require('../server/services/financialProjectionService');
+const { buildSummaryFinancialDays } = require('../server/services/calendarService');
+
+function financialDay(data, date) {
+  const projection = buildFinancialProjection(data);
+  const revenue = projection.dailyMerged.find(row => row.date === date)?.netRevenue || 0;
+  const payway = {
+    ready: true,
+    totals: { feesComplete: true },
+    daily: [{ date, processingFees: Math.round(revenue * 0.06) }],
+  };
+  return buildSummaryFinancialDays(projection, [date], payway)[0];
+}
+
+function buildDailySummaryReportPlan(data, state, now) {
+  return planSummary(data, state, now, financialDay(data, resolveDailyReportDate(now)));
+}
+
+function buildDailyReportCorrectionPlan(data, date, options = {}) {
+  return planCorrection(data, date, { ...options, financialDay: financialDay(data, date) });
+}
 
 function buildLatestData(overrides = {}) {
   return {
@@ -351,6 +372,7 @@ test('daily report adds data and Telegram audit warnings without changing core t
   const plan = buildDailySummaryReportPlan(
     buildLatestData({
       sourceAudit: {
+        status: 'mismatch',
         reconciliation: {
           status: 'mismatch',
           failedChecks: ['imweb_orders_to_revenue_gross', 'true_net_profit_identity'],
@@ -370,9 +392,30 @@ test('daily report adds data and Telegram audit warnings without changing core t
 
   assert.equal(plan.shouldSend, true);
   assert.match(plan.text, /<i>.*(?:Data check needed|Audit review needed|Pipeline needs a look).*<\/i>/);
-  assert.match(plan.text, /⚠️ <b>Data check:<\/b> 2 source audit issues/);
+  assert.match(plan.text, /⚠️ <b>Data check:<\/b> 2 source mismatches/);
   assert.match(plan.text, /⚠️ <b>Telegram audit:<\/b> 2 order alert issues/);
   assert.match(plan.text, /📦 <b>Total Orders:<\/b> 50/);
+});
+
+test('daily report warns about missing Sheet fields even when entered amounts reconcile', () => {
+  const plan = buildDailySummaryReportPlan(
+    buildLatestData({
+      sourceAudit: {
+        status: 'incomplete',
+        reconciliation: { status: 'reconciled', failedChecks: [] },
+        summary: { costCompleteness: {
+          missingCostItemCount: 2,
+          missingOrderNumberRows: 1,
+          missingCustomerNameRows: 1,
+        } },
+      },
+    }),
+    { dailyReport: { reportDate: null, sentAt: null } },
+    new Date('2026-04-30T14:30:00.000Z')
+  );
+
+  assert.match(plan.text, /COGS Sheet incomplete:<\/b> 2 missing cost fields, 1 blank order IDs, 1 blank names/);
+  assert.doesNotMatch(plan.text, /Data check:<\/b> 0/);
 });
 
 test('daily report removes campaign watch items without changing ad spend', () => {
@@ -405,7 +448,7 @@ test('daily report removes campaign watch items without changing ad spend', () =
   assert.doesNotMatch(plan.text, /🎯 <b>Best Meta signal:<\/b> Retargeting &lt;VIP&gt; drove 2 purchases at ₩30,000 CPA/);
 });
 
-test('daily report retains historical signals in totals but removes them from the footer', () => {
+test('daily report does not add obsolete historical signals to the footer', () => {
   const dailyRevenue = {};
   const dailyCOGS = {};
 
@@ -437,11 +480,7 @@ test('daily report retains historical signals in totals but removes them from th
     new Date('2026-04-30T14:30:00.000Z')
   );
 
-  assert.deepEqual(plan.totals.historicalSignals.map(signal => signal.type), [
-    'record_orders',
-    'record_revenue',
-    'profit_above_recent_average',
-  ]);
+  assert.equal(plan.totals.historicalSignals, undefined);
   assert.doesNotMatch(plan.text, /🏆 <b>New orders high:<\/b> 20 orders beat the previous best of 11/);
   assert.doesNotMatch(plan.text, /🏆 <b>New sales high:<\/b> ₩2,000,000 beat the previous best of ₩1,300,000/);
   assert.doesNotMatch(plan.text, /🎉 <b>Profit signal:<\/b> ₩1,230,000 is \d+% above the recent 7-day average/);

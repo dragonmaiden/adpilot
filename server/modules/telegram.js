@@ -12,6 +12,7 @@ const {
   buildDailyReportMessage,
 } = require('../services/dailyTelegramReportService');
 const { buildDailyProfitChart } = require('../services/profitChartService');
+const { getReportFinancialDays } = require('../services/reportFinancialDaysService');
 const financialLedgerRepository = require('../db/financialLedgerRepository');
 
 const BOT_TOKEN = typeof config.telegram.botToken === 'string'
@@ -504,8 +505,17 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
   let waiting = 0;
 
   for (const report of candidates) {
+    let financialDay;
+    try {
+      financialDay = (await getReportFinancialDays(latestData || {}, report.reportDate, report.reportDate)).days[0];
+    } catch (err) {
+      waiting += 1;
+      reports.push({ reportDate: report.reportDate, status: 'waiting', reason: `financial-basis-unavailable: ${err.message}` });
+      continue;
+    }
     const plan = buildDailyReportCorrectionPlan(latestData || {}, report.reportDate, {
       allowEstimated: !isEstimatedDailyReport(report),
+      financialDay,
     });
     if (report.metadata?.chartPending && plan.reason === 'profit-still-pending-cogs') {
       plan.shouldCorrect = true;
@@ -574,10 +584,25 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
 
 // ── Send daily financial summary report ──
 async function sendDailySummaryReport(latestData = null, options = {}) {
+  const preflight = buildDailySummaryReportPlan(latestData || {}, telegramState.getState(), options.now || new Date());
+  if (preflight.reason === 'daily-report-already-sent') {
+    return { skipped: true, reason: preflight.reason, reportDate: preflight.reportDate };
+  }
+  let financialDay;
+  if (preflight.reason === 'financial-day-unavailable') {
+    try {
+      financialDay = (await getReportFinancialDays(latestData || {}, preflight.reportDate, preflight.reportDate)).days[0];
+    } catch (err) {
+      const reason = `financial-basis-unavailable: ${err.message}`;
+      await recordDailyReportDelivery(preflight, { status: 'skipped:financial-basis-unavailable', error: reason });
+      return { skipped: true, reason, reportDate: preflight.reportDate };
+    }
+  }
   const plan = buildDailySummaryReportPlan(
     latestData || {},
     telegramState.getState(),
-    options.now || new Date()
+    options.now || new Date(),
+    financialDay
   );
   if (!plan.shouldSend || !plan.text) {
     // A duplicate check must not overwrite the successful delivery and its ID.

@@ -171,6 +171,17 @@
       };
     }
 
+    if (sourceAudit.status === 'incomplete') {
+      const gaps = sourceAudit.summary?.costCompleteness || {};
+      return {
+        isError: false,
+        text: tr(
+          `COGS Sheet incomplete: ${Number(gaps.missingCostItemCount || 0)} missing costs, ${Number(gaps.missingOrderNumberRows || 0)} missing order numbers, ${Number(gaps.missingCustomerNameRows || 0)} missing names. Profit is not final.`,
+          `COGS Sheet 미완료: 원가 ${Number(gaps.missingCostItemCount || 0)}건, 주문번호 ${Number(gaps.missingOrderNumberRows || 0)}건, 이름 ${Number(gaps.missingCustomerNameRows || 0)}건. 순이익은 확정되지 않았습니다.`
+        ),
+      };
+    }
+
     return null;
   }
 

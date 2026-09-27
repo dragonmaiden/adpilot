@@ -6,9 +6,6 @@ const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', {
   timeZone: 'UTC',
   month: 'long',
 });
-const MIN_RECORD_HISTORY_DAYS = 7;
-const MIN_AVERAGE_HISTORY_DAYS = 3;
-const PROFIT_AVERAGE_LOOKBACK_DAYS = 14;
 const DAILY_REPORT_KST_HOUR = 23;
 const DAILY_REPORT_KST_MINUTE = 30;
 const DAILY_REPORT_KST_MINUTE_OF_DAY = (DAILY_REPORT_KST_HOUR * 60) + DAILY_REPORT_KST_MINUTE;
@@ -114,10 +111,6 @@ function divideOrNull(numerator, denominator) {
   return asFiniteNumber(numerator) / parsedDenominator;
 }
 
-function findRowByDate(rows, dateKey) {
-  return (Array.isArray(rows) ? rows : []).find(row => row?.date === dateKey) || null;
-}
-
 function getCoverageRatio(row) {
   const ratio = Number(row?.cogsCoverageRatio);
   if (!Number.isFinite(ratio)) {
@@ -199,79 +192,29 @@ function getUnavailableReason(diagnostics) {
   return 'revenue-source-unavailable';
 }
 
-function isBeforeReportDate(row, reportDate) {
-  return String(row?.date || '') < reportDate;
-}
-
-function buildHistoricalPerformanceSignals(projection, totals) {
-  const priorRevenueRows = (Array.isArray(projection?.dailyMerged) ? projection.dailyMerged : [])
-    .filter(row => isBeforeReportDate(row, totals.reportDate))
-    .filter(row => asFiniteNumber(row?.orders) > 0 || asFiniteNumber(row?.revenue) > 0);
-  const priorProfitRows = (Array.isArray(projection?.profitWaterfall) ? projection.profitWaterfall : [])
-    .filter(row => isBeforeReportDate(row, totals.reportDate))
-    .filter(row => row?.hasCOGS && asFiniteNumber(row?.netRevenue) > 0);
-  const signals = [];
-
-  if (priorRevenueRows.length >= MIN_RECORD_HISTORY_DAYS) {
-    const priorBestOrders = Math.max(...priorRevenueRows.map(row => asFiniteNumber(row?.orders)));
-    const priorBestRevenue = Math.max(...priorRevenueRows.map(row => asFiniteNumber(row?.revenue)));
-
-    if (totals.orders > priorBestOrders && priorBestOrders > 0) {
-      signals.push({
-        type: 'record_orders',
-        current: totals.orders,
-        previousBest: priorBestOrders,
-      });
-    }
-    if (totals.revenue > priorBestRevenue && priorBestRevenue > 0) {
-      signals.push({
-        type: 'record_revenue',
-        current: totals.revenue,
-        previousBest: priorBestRevenue,
-      });
-    }
+function buildDailyReportTotals(latestData, reportDate, financialDay) {
+  if (financialDay?.date !== reportDate || !financialDay.paymentFeesComplete || financialDay.fxStale) {
+    throw new Error('Daily report requires the website financial day with actual Payway fees and dated FX');
   }
-
-  const averageRows = priorProfitRows.slice(-PROFIT_AVERAGE_LOOKBACK_DAYS);
-  if (totals.profitAvailable && averageRows.length >= MIN_AVERAGE_HISTORY_DAYS) {
-    const averageProfit = averageRows.reduce((sum, row) => sum + asFiniteNumber(row?.trueNetProfit), 0) / averageRows.length;
-    if (averageProfit > 0 && totals.trueNetProfit > averageProfit) {
-      signals.push({
-        type: 'profit_above_recent_average',
-        current: totals.trueNetProfit,
-        average: averageProfit,
-        liftPct: ((totals.trueNetProfit - averageProfit) / averageProfit) * 100,
-        daysCompared: averageRows.length,
-      });
-    }
-  }
-
-  return signals;
-}
-
-function buildDailyReportTotals(latestData, reportDate) {
-  const projection = buildFinancialProjection(latestData || {});
-  const revenueRow = findRowByDate(projection.dailyMerged, reportDate);
-  const profitRow = findRowByDate(projection.profitWaterfall, reportDate);
-  const orders = asFiniteNumber(revenueRow?.orders);
-  const revenue = asFiniteNumber(profitRow?.revenue ?? revenueRow?.revenue);
-  const refunds = asFiniteNumber(profitRow?.refunded ?? revenueRow?.refunded);
-  const netRevenue = asFiniteNumber(profitRow?.netRevenue ?? revenueRow?.netRevenue ?? (revenue - refunds));
-  const cogs = asFiniteNumber(profitRow?.cogs);
-  const shipping = asFiniteNumber(profitRow?.cogsShipping);
+  const orders = asFiniteNumber(financialDay.orders);
+  const revenue = asFiniteNumber(financialDay.revenue);
+  const refunds = asFiniteNumber(financialDay.refunded);
+  const netRevenue = asFiniteNumber(financialDay.netRevenue);
+  const cogs = asFiniteNumber(financialDay.cogs);
+  const shipping = asFiniteNumber(financialDay.shipping);
   const cogsWithShipping = cogs + shipping;
-  const adSpendKrw = asFiniteNumber(profitRow?.adSpendKRW ?? revenueRow?.spendKrw);
-  const paymentFees = asFiniteNumber(profitRow?.paymentFees);
-  const trueNetProfit = asFiniteNumber(profitRow?.trueNetProfit);
-  const cogsCoverageRatio = getCoverageRatio(profitRow);
+  const adSpendKrw = asFiniteNumber(financialDay.adSpendKRW);
+  const paymentFees = asFiniteNumber(financialDay.paymentFees);
+  const trueNetProfit = asFiniteNumber(financialDay.trueNetProfit);
+  const cogsCoverageRatio = getCoverageRatio(financialDay);
   const unavailableSources = ['cogs', 'metaInsights']
     .filter(key => isSourceUnavailable(latestData?.sources?.[key]));
   const financialUnavailableReason = unavailableSources.length > 0
     ? `${unavailableSources.join(', ')} source unavailable or stale`
     : null;
-  const profitAvailable = !financialUnavailableReason && (!profitRow || profitRow.hasCOGS || orders === 0);
+  const profitAvailable = !financialUnavailableReason && (financialDay.hasCOGS || orders === 0);
   const profitIsEstimated = !financialUnavailableReason && !profitAvailable
-    && profitRow?.hasPartialCOGS && cogsCoverageRatio > 0;
+    && financialDay.hasPartialCOGS && cogsCoverageRatio > 0;
   const profitReportable = profitAvailable || profitIsEstimated;
   const marginRatio = profitReportable ? divideOrNull(trueNetProfit, netRevenue) : null;
   const refundRateRatio = divideOrNull(refunds, revenue);
@@ -300,10 +243,7 @@ function buildDailyReportTotals(latestData, reportDate) {
     roas: roasRatio,
   };
 
-  return {
-    ...totals,
-    historicalSignals: buildHistoricalPerformanceSignals(projection, totals),
-  };
+  return totals;
 }
 
 function hashDateKey(dateKey) {
@@ -316,8 +256,8 @@ function chooseDateVariant(dateKey, variants) {
 }
 
 function getReportMood(totals, latestData = {}) {
-  const sourceAuditFailed = latestData?.sourceAudit?.reconciliation?.status
-    && latestData.sourceAudit.reconciliation.status !== 'reconciled';
+  const sourceAuditFailed = latestData?.sourceAudit?.status
+    && latestData.sourceAudit.status !== 'reconciled';
   const orderAuditFailed = latestData?.orderNotificationAudit?.status === 'failed';
 
   if (sourceAuditFailed || orderAuditFailed) {
@@ -383,8 +323,14 @@ function buildDailyReportInsights(totals, latestData = {}) {
   const orderAuditIssues = asFiniteNumber(orderAudit?.summary?.missingDeliveryCount)
     + asFiniteNumber(orderAudit?.summary?.staleNotificationCount);
 
-  if (sourceAudit?.reconciliation?.status && sourceAudit.reconciliation.status !== 'reconciled') {
-    insights.push(`⚠️ <b>Data check:</b> ${formatWholeNumber(failedSourceChecks.length)} source audit issue${failedSourceChecks.length === 1 ? '' : 's'}`);
+  if (sourceAudit?.status === 'incomplete') {
+    const gaps = sourceAudit.summary?.costCompleteness || {};
+    insights.push(`⚠️ <b>COGS Sheet incomplete:</b> ${formatWholeNumber(gaps.missingCostItemCount || 0)} missing cost fields, ${formatWholeNumber(gaps.missingOrderNumberRows || 0)} blank order IDs, ${formatWholeNumber(gaps.missingCustomerNameRows || 0)} blank names`);
+  } else if (sourceAudit?.status && sourceAudit.status !== 'reconciled') {
+    const detail = failedSourceChecks.length > 0
+      ? `${formatWholeNumber(failedSourceChecks.length)} source mismatch${failedSourceChecks.length === 1 ? '' : 'es'}`
+      : 'source data unavailable';
+    insights.push(`⚠️ <b>Data check:</b> ${detail}`);
   }
   if (orderAudit?.status === 'failed') {
     insights.push(`⚠️ <b>Telegram audit:</b> ${formatWholeNumber(orderAuditIssues)} order alert issue${orderAuditIssues === 1 ? '' : 's'}`);
@@ -466,7 +412,7 @@ function buildMonthlyRefundComparisonLine(latestData, reportDate) {
   return `↩️ <b>MTD return/refund rate (revenue):</b>\n<b>${formatRate(current.revenueRate)} vs ${formatRate(historical.revenueRate)}</b>\nHistorical monthly average (cancellations excluded)`;
 }
 
-function buildDailySummaryReportPlan(latestData, state, now = new Date()) {
+function buildDailySummaryReportPlan(latestData, state, now = new Date(), financialDay = null) {
   const reportDate = resolveDailyReportDate(now);
   if (!reportDate) {
     return { shouldSend: false, reason: 'invalid-report-date', reportDate: null, text: null };
@@ -487,7 +433,10 @@ function buildDailySummaryReportPlan(latestData, state, now = new Date()) {
     };
   }
 
-  const totals = buildDailyReportTotals(latestData, reportDate);
+  if (!financialDay) {
+    return { shouldSend: false, reason: 'financial-day-unavailable', reportDate, text: null };
+  }
+  const totals = buildDailyReportTotals(latestData, reportDate, financialDay);
   return {
     shouldSend: true,
     reason: 'scheduled-daily-report',
@@ -513,7 +462,10 @@ function buildDailyReportCorrectionPlan(latestData, reportDate, options = {}) {
     };
   }
 
-  const totals = buildDailyReportTotals(latestData, reportDate);
+  if (!options.financialDay) {
+    return { shouldCorrect: false, reason: 'financial-day-unavailable', reportDate, text: null };
+  }
+  const totals = buildDailyReportTotals(latestData, reportDate, options.financialDay);
   if (totals.financialUnavailableReason) {
     return {
       shouldCorrect: false,
@@ -562,7 +514,6 @@ module.exports = {
   buildDailyReportInsights,
   buildDailyReportMessage,
   buildDailyReportTotals,
-  buildHistoricalPerformanceSignals,
   buildRevenueCoverageDiagnostics,
   dateKeyToKstTimeUtc,
   formatKrw,

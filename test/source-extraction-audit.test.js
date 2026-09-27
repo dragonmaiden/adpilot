@@ -165,6 +165,33 @@ test('source extraction audit reconciles canonical sources to the financial proj
   assert.equal(audit.reconciliation.projectionTotals.trueNetProfit, 81225);
 });
 
+test('arithmetic reconciliation does not hide missing COGS values or order identities', () => {
+  const base = createLatestData();
+  const latestData = createLatestData({
+    cogsData: {
+      ...base.cogsData,
+      incompletePurchaseCount: 1,
+      missingCostItemCount: 1,
+      validation: { missingOrderNumberRows: 2, missingCustomerNameRows: 1 },
+    },
+  });
+  const audit = buildSourceExtractionAudit({
+    scanId: 'incomplete-sheet',
+    since: '2026-04-30',
+    until: '2026-04-30',
+    sourceResults: createSourceResults(),
+    latestData,
+  });
+  assert.equal(audit.reconciliation.status, 'reconciled');
+  assert.equal(audit.status, 'incomplete');
+  assert.deepEqual(audit.summary.costCompleteness, {
+    incompletePurchaseCount: 1,
+    missingCostItemCount: 1,
+    missingOrderNumberRows: 2,
+    missingCustomerNameRows: 1,
+  });
+});
+
 test('source extraction audit reports distinct source dates instead of source row counts', () => {
   const latestData = createLatestData({
     orders: [

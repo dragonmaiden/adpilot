@@ -3,9 +3,15 @@ const assert = require('node:assert/strict');
 const { buildDailyProfitChart } = require('../server/services/profitChartService');
 const { buildDailyReportCorrectionPlan } = require('../server/services/dailyTelegramReportService');
 test.beforeEach(() => {
-  test.mock.method(require('../server/services/fxService'), 'getUsdToKrwRatesForRange', async () => ({ ratesByDate: {} }));
+  test.mock.method(require('../server/services/fxService'), 'getUsdToKrwRatesForRange', async (startDate, endDate) => {
+    const ratesByDate = {};
+    for (let date = startDate; date <= endDate; date = require('../server/domain/time').shiftDate(date, 1)) {
+      ratesByDate[date] = { usdToKrwRate: 1500, rateDate: date };
+    }
+    return { ratesByDate };
+  });
   test.mock.method(require('../server/services/paywayFinancialService'), 'getPaywayFinancialSummary', async () => ({
-    ready: true, totals: { feesComplete: true }, daily: [],
+    ready: true, totals: { feesComplete: true }, daily: [{ date: '2026-04-30', processingFees: 697836 }],
   }));
 });
 test.afterEach(() => test.mock.restoreAll());
@@ -460,7 +466,9 @@ test('photo report corrections update the chart and caption together and skip un
 test('historical COGS completion refreshes a chart even when the report day remains pending', async () => {
   const data = buildDailyReportLatestData({ cost: 4000000, shipping: 50000, purchases: 6, costCoverageRatio: 0.5 });
   const oldChart = await buildDailyProfitChart(data, '2026-04-30');
-  const oldPlan = buildDailyReportCorrectionPlan(data, '2026-04-30', { allowEstimated: true });
+  const { getReportFinancialDays } = require('../server/services/reportFinancialDaysService');
+  const oldDay = (await getReportFinancialDays(data, '2026-04-30', '2026-04-30')).days[0];
+  const oldPlan = buildDailyReportCorrectionPlan(data, '2026-04-30', { allowEstimated: true, financialDay: oldDay });
   const report = {
     reportDate: '2026-04-30', payload: oldPlan.text,
     metadata: { telegramMessageId: 91, messageType: 'photo', chartPending: true, profitIsEstimated: true, chartFingerprint: oldChart.fingerprint },

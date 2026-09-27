@@ -192,6 +192,8 @@ test('COGS parsing preserves a repeated-order name but flags a genuinely missing
   assert.deepEqual(items[1].warnings, []);
   assert.ok(items[2].warnings.includes('missing_customer_name'));
   assert.ok(items[3].warnings.includes('missing_order_number'));
+  assert.equal(items[3].orderNumber, '', 'a Sheet sequence is not an Imweb order ID');
+  assert.equal(items[3].orderKey, '9월:row:6');
 });
 
 test('parseOrderItems supports the compact delivery-details cell in column M', () => {

@@ -210,3 +210,19 @@ test('selected income statement keeps source alignment unavailable when parsed C
   assert.equal(summary.costReconciliation.complete, false);
   assert.equal(summary.costReconciliation.reconciled, false);
 });
+
+test('matching entered COGS amounts do not imply every active day has complete costs', () => {
+  const summary = buildSelectionSummary([{
+    date: '2026-09-01', revenue: 100_000, orders: 1,
+    cogs: 20_000, shipping: 3_000,
+    purchaseCogs: 20_000, purchaseShipping: 3_000,
+    cogsSheetTotal: 20_000, shippingSheetTotal: 3_000,
+    sheetTotalsObserved: true, hasPartialCOGS: true, hasCOGS: false,
+    paymentFees: 1_000, trueNetProfit: 76_000,
+  }], [], {}, { ready: true, totals: { feesComplete: true } });
+  assert.equal(summary.costReconciliation.amountsReconcile, true);
+  assert.equal(summary.costReconciliation.coverageComplete, false);
+  assert.equal(summary.costReconciliation.reconciled, false);
+  assert.equal(summary.costReconciliation.daysRequiringCOGS, 1);
+  assert.equal(summary.costReconciliation.daysWithPartialCOGS, 1);
+});

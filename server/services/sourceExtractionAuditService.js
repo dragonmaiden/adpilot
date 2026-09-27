@@ -301,13 +301,22 @@ function buildSourceExtractionAudit({ scanId, since, until, sourceResults = {}, 
   const failedFetches = Object.entries(sources)
     .filter(([, source]) => source.fetchStatus !== 'ok')
     .map(([source]) => source);
+  const costCompleteness = {
+    incompletePurchaseCount: cogsSummary.incompletePurchaseCount,
+    missingCostItemCount: cogsSummary.missingCostItemCount,
+    missingOrderNumberRows: round(latestData.cogsData?.validation?.missingOrderNumberRows),
+    missingCustomerNameRows: round(latestData.cogsData?.validation?.missingCustomerNameRows),
+  };
+  const hasIncompleteCosts = Object.values(costCompleteness).some(count => count > 0);
 
   return {
-    status: reconciliation.status === 'reconciled' && failedFetches.length === 0
-      ? 'reconciled'
-      : reconciliation.status === 'reconciled'
+    status: reconciliation.status !== 'reconciled'
+      ? 'mismatch'
+      : failedFetches.length > 0
         ? 'reconciled_with_stale_sources'
-        : 'mismatch',
+        : hasIncompleteCosts
+          ? 'incomplete'
+          : 'reconciled',
     scanId,
     generatedAt: new Date().toISOString(),
     canonicalSources: ['imweb', 'meta', 'cogs'],
@@ -318,6 +327,7 @@ function buildSourceExtractionAudit({ scanId, since, until, sourceResults = {}, 
       reconciliationStatus: reconciliation.status,
       passedChecks: reconciliation.checks.filter(check => check.status === 'pass').length,
       failedChecks: reconciliation.failedChecks,
+      costCompleteness,
     },
     sources,
     reconciliation,

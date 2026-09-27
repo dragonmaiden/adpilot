@@ -754,6 +754,17 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
       summary.trueNetProfit += Number(day.trueNetProfit);
     }
     summary.metaPurchases += Number(day?.metaPurchases || 0);
+    const needsCostCoverage = Number(day?.revenue || 0) > 0
+      || Number(day?.refunded || 0) > 0
+      || Number(day?.orders || 0) > 0
+      || Number(day?.cogs || 0) !== 0
+      || Number(day?.shipping || 0) !== 0
+      || day?.hasCOGS || day?.hasPartialCOGS;
+    if (needsCostCoverage) {
+      summary.daysRequiringCOGS += 1;
+      if (day?.hasCOGS) summary.daysWithCOGS += 1;
+      else if (day?.hasPartialCOGS) summary.daysWithPartialCOGS += 1;
+    }
     return summary;
   }, {
     grossRevenue: 0,
@@ -774,6 +785,9 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
     trueNetProfit: 0,
     metaPurchases: 0,
     paymentFeesComplete: true,
+    daysRequiringCOGS: 0,
+    daysWithCOGS: 0,
+    daysWithPartialCOGS: 0,
   });
 
   const orderMetrics = buildOrderMetrics(selectionOrders);
@@ -816,6 +830,10 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
     source: 'cogs_sheet',
     basis: 'parsed_sheet_rows',
     complete: dayTotals.sheetTotalsComplete,
+    coverageComplete: dayTotals.daysWithCOGS === dayTotals.daysRequiringCOGS,
+    daysRequiringCOGS: dayTotals.daysRequiringCOGS,
+    daysWithCOGS: dayTotals.daysWithCOGS,
+    daysWithPartialCOGS: dayTotals.daysWithPartialCOGS,
     cogs: buildCostBridge({
       sheetTotal: dayTotals.cogsSheetTotal,
       purchaseTotal: dayTotals.purchaseCogs,
@@ -829,9 +847,11 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
       netTotal: dayTotals.shipping,
     }),
   };
-  costReconciliation.reconciled = costReconciliation.complete
+  costReconciliation.amountsReconcile = costReconciliation.complete
     && costReconciliation.cogs.reconciled
     && costReconciliation.shipping.reconciled;
+  costReconciliation.reconciled = costReconciliation.amountsReconcile
+    && costReconciliation.coverageComplete;
 
   return {
     ...dayTotals,

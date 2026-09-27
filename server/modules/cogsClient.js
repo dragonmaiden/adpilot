@@ -560,9 +560,10 @@ function parseOrderItems(rows, options = {}) {
       const sameOrderAsPrevious = currentOrder && orderNumber && orderNumber === currentOrder.orderNumber;
       currentOrder = {
         sequenceNo,
+        headerRowNumber: sheetRowNumber,
         date,
         name: compactDetails?.customerName || name || (sameOrderAsPrevious ? currentOrder.name : ''),
-        orderNumber: orderNumber || sequenceNo,
+        orderNumber,
         ordererPhone,
         receiverName,
         receiverPhone,
@@ -609,7 +610,7 @@ function parseOrderItems(rows, options = {}) {
       rowNumber: sheetRowNumber,
       sequenceNo: currentOrder.sequenceNo,
       orderNumber: currentOrder.orderNumber,
-      orderKey: currentOrder.orderNumber || `${sheetLabel}:${currentOrder.sequenceNo}`,
+      orderKey: currentOrder.orderNumber || `${sheetLabel}:row:${currentOrder.headerRowNumber}`,
       date: currentOrder.date,
       name: currentOrder.name,
       ordererPhone: currentOrder.ordererPhone,

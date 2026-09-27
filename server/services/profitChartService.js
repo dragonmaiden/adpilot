@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { buildFinancialProjection } = require('./financialProjectionService');
+const { getReportFinancialDays } = require('./reportFinancialDaysService');
 const { shiftDate } = require('../domain/time');
 
 function buildCumulativeProfitSeries(data, reportDate, financialDays) {
@@ -161,21 +162,7 @@ async function buildDailyProfitChart(data, reportDate) {
     .filter(date => date <= reportDate).sort();
   if (!dates.length) throw new Error('No recorded financial history for chart');
   const startDate = dates[0];
-  const [historicalFx, paywayFinancials] = await Promise.all([
-    require('./fxService').getUsdToKrwRatesForRange(startDate, reportDate),
-    require('./paywayFinancialService').getPaywayFinancialSummary({ startDate, endDate: reportDate }),
-  ]);
-  if (paywayFinancials.stale || paywayFinancials.error) {
-    throw new Error('Payway fees are stale or unavailable; profit chart unavailable');
-  }
-  const projection = buildFinancialProjection(data, {
-    usdToKrwRatesByDate: historicalFx?.ratesByDate || null,
-  });
-  const allDates = [];
-  for (let date = startDate; date <= reportDate; date = shiftDate(date, 1)) allDates.push(date);
-  // Lazy import avoids the calendar → scheduler → Telegram dependency cycle.
-  const { buildSummaryFinancialDays } = require('./calendarService');
-  const days = buildSummaryFinancialDays(projection, allDates, paywayFinancials);
+  const { days } = await getReportFinancialDays(data, startDate, reportDate);
   const points = buildCumulativeProfitSeries(data, reportDate, days);
   if (!points.length) throw new Error('No recorded financial history for chart');
   const svg = buildProfitChartSvg(points, reportDate);

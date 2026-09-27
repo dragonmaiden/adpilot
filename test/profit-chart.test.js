@@ -8,7 +8,13 @@ const fxService = require('../server/services/fxService');
 const paywayService = require('../server/services/paywayFinancialService');
 const fees = { ready: true, totals: { feesComplete: true }, daily: [] };
 test.beforeEach(() => {
-  test.mock.method(fxService, 'getUsdToKrwRatesForRange', async () => ({ ratesByDate: {} }));
+  test.mock.method(fxService, 'getUsdToKrwRatesForRange', async (startDate, endDate) => {
+    const ratesByDate = {};
+    for (let date = startDate; date <= endDate; date = require('../server/domain/time').shiftDate(date, 1)) {
+      ratesByDate[date] = { usdToKrwRate: 1500, rateDate: date };
+    }
+    return { ratesByDate };
+  });
   test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => fees);
 });
 test.afterEach(() => test.mock.restoreAll());
@@ -167,14 +173,19 @@ test('Telegram PNG uses website Summary daily, monthly and cumulative profits wi
   data.cogsData.dailyCOGS['2026-01-03'].costCoverageRatio = 1;
   data.revenueData.dailyRevenue['2026-02-01'] = { revenue: 1000, refunded: 0, orders: 1 };
   data.cogsData.dailyCOGS['2026-02-01'] = { cost: 100, shipping: 20, costCoverageRatio: 1 };
-  const historicalFx = { ratesByDate: { '2026-01-04': { usdToKrwRate: 1234.56, rateDate: '2026-01-02' } } };
+  const ratesByDate = {};
+  for (let date = '2026-01-01'; date <= '2026-02-01'; date = require('../server/domain/time').shiftDate(date, 1)) {
+    ratesByDate[date] = { usdToKrwRate: 1500, rateDate: date };
+  }
+  ratesByDate['2026-01-04'] = { usdToKrwRate: 1234.56, rateDate: '2026-01-02' };
+  const historicalFx = { ratesByDate };
   const payway = { ready: true, totals: { feesComplete: true }, daily: [
     { date: '2026-01-01', processingFees: 17 },
     { date: '2026-01-02', processingFees: -3 }, // fee reversal on an otherwise quiet day
     { date: '2026-02-01', processingFees: 21 },
   ] };
   test.mock.method(fxService, 'getUsdToKrwRatesForRange', async (start, end) => {
-    assert.equal(start, '2026-01-01');
+    assert.ok(['2026-01-01', '2026-02-01'].includes(start));
     assert.equal(end, '2026-02-01');
     return historicalFx;
   });
@@ -204,6 +215,16 @@ test('Telegram PNG uses website Summary daily, monthly and cumulative profits wi
   const expectedPng = await sharp(Buffer.from(buildProfitChartSvg(points, '2026-02-01'))).png().toBuffer();
   assert.deepEqual(chart.png, expectedPng);
   assert.equal(chart.pending, false);
+  const reportDay = (await require('../server/services/reportFinancialDaysService')
+    .getReportFinancialDays(data, '2026-02-01', '2026-02-01')).days[0];
+  const plan = require('../server/services/dailyTelegramReportService').buildDailySummaryReportPlan(
+    data, {}, new Date('2026-02-01T14:30:00Z'), reportDay
+  );
+  const websiteDay = days.at(-1);
+  assert.equal(plan.totals.paymentFees, websiteDay.paymentFees);
+  assert.equal(plan.totals.adSpendKrw, websiteDay.adSpendKRW);
+  assert.equal(plan.totals.trueNetProfit, websiteDay.trueNetProfit);
+  assert.match(plan.text, /└ Payment Fees: ₩21/);
 });
 
 test('incomplete Payway fees remain unknown and stale fees or failed FX do not fall back to estimated profit', async () => {
@@ -214,9 +235,9 @@ test('incomplete Payway fees remain unknown and stale fees or failed FX do not f
   assert.equal(days[0].trueNetProfit, null);
   assert.equal(sumProfitDays(data, '2026-01-01', days)[0].value, null);
   test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => incomplete);
-  assert.equal((await buildDailyProfitChart(data, '2026-01-04')).pending, true);
+  await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /Payway fees are unavailable or incomplete/);
   test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => ({ ...fees, stale: true }));
-  await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /Payway fees are stale/);
+  await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /Payway fees are unavailable or incomplete/);
   test.mock.method(fxService, 'getUsdToKrwRatesForRange', async () => { throw new Error('FX unavailable'); });
   await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /FX unavailable/);
 });

@@ -92,6 +92,7 @@
   function formatAuditStatus(status) {
     const map = {
       reconciled: { text: tr('Reconciled', '조정 완료'), badge: 'badge-success' },
+      incomplete: { text: tr('COGS Incomplete', '원가 미완료'), badge: 'badge-warning' },
       reconciled_with_stale_sources: { text: tr('Using Last Good Data', '마지막 정상 데이터 사용'), badge: 'badge-warning' },
       mismatch: { text: tr('Mismatch', '불일치'), badge: 'badge-error' },
     };
@@ -125,6 +126,13 @@
     }
     if (staleSources.length > 0) {
       parts.push(tr(`stale sources: ${staleSources.join(', ')}`, `캐시 소스: ${staleSources.join(', ')}`));
+    }
+    const costs = summary.costCompleteness || {};
+    if (Number(costs.missingCostItemCount) > 0 || Number(costs.missingOrderNumberRows) > 0 || Number(costs.missingCustomerNameRows) > 0) {
+      parts.push(tr(
+        `COGS gaps: ${Number(costs.missingCostItemCount || 0)} missing costs, ${Number(costs.missingOrderNumberRows || 0)} missing order numbers, ${Number(costs.missingCustomerNameRows || 0)} missing names`,
+        `원가 누락: 원가 ${Number(costs.missingCostItemCount || 0)}건, 주문번호 ${Number(costs.missingOrderNumberRows || 0)}건, 이름 ${Number(costs.missingCustomerNameRows || 0)}건`
+      ));
     }
 
     return parts.join(' · ');

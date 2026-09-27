@@ -201,31 +201,7 @@
     const shippingReconciliation = canonical.costReconciliation?.shipping || {};
     const netCogs = toFiniteNumber(canonical.cogs);
     const netShipping = toFiniteNumber(canonical.shipping);
-    const coverage = rows.reduce((summary, day) => {
-      const grossRevenue = toFiniteNumber(day.revenue);
-      const refundedAmount = toFiniteNumber(day.refunded);
-      const recognizedOrders = toFiniteNumber(day.orders);
-      const cogs = toFiniteNumber(day.cogs);
-      const shipping = toFiniteNumber(day.shipping);
-      const needsCOGSCoverage = grossRevenue > 0
-        || refundedAmount > 0
-        || recognizedOrders > 0
-        || cogs > 0
-        || shipping > 0
-        || day.hasCOGS
-        || day.hasPartialCOGS;
-
-      if (needsCOGSCoverage) {
-        summary.daysRequiringCOGS += 1;
-        summary.daysWithCOGS += day.hasCOGS ? 1 : 0;
-        summary.daysWithPartialCOGS += day.hasPartialCOGS ? 1 : 0;
-      }
-      return summary;
-    }, {
-      daysRequiringCOGS: 0,
-      daysWithCOGS: 0,
-      daysWithPartialCOGS: 0,
-    });
+    const coverage = costReconciliation;
 
     return {
       grossRevenue: toFiniteNumber(canonical.grossRevenue),
@@ -257,6 +233,8 @@
       shippingSourcePartitionDelta: toFiniteNumber(shippingReconciliation.sourcePartitionDelta),
       shippingNetCheckDelta: toFiniteNumber(shippingReconciliation.netCheckDelta),
       costReconciliationComplete: costReconciliation.complete === true,
+      costAmountsReconcile: costReconciliation.amountsReconcile === true,
+      costCoverageComplete: costReconciliation.coverageComplete === true,
       costReconciled: costReconciliation.reconciled === true,
       paymentFees: hasCalendarMetric(canonical.paymentFees)
         ? toFiniteNumber(canonical.paymentFees)
@@ -610,11 +588,16 @@
         'The parsed COGS Sheet row totals are unavailable for part of this range. Net COGS and shipping are shown, but source-to-income alignment cannot be verified.',
         '선택 기간 일부의 COGS Sheet 원본 행 합계를 사용할 수 없습니다. 순원가와 순배송비는 표시되지만 원본과 손익계산서 간 일치 여부는 확인할 수 없습니다.'
       )
-      : !summary.costReconciled
+      : !summary.costAmountsReconcile
         ? tr(
           `COGS Sheet classification does not reconcile. COGS source partition ${formatSignedKrw(summary.cogsSourcePartitionDelta)}, COGS net check ${formatSignedKrw(summary.cogsNetCheckDelta)}, shipping source partition ${formatSignedKrw(summary.shippingSourcePartitionDelta)}, shipping net check ${formatSignedKrw(summary.shippingNetCheckDelta)}. Review the refund-marked rows before relying on profit.`,
           `COGS Sheet 분류가 일치하지 않습니다. 원가 원본 분류 차이 ${formatSignedKrw(summary.cogsSourcePartitionDelta)}, 원가 순액 검증 차이 ${formatSignedKrw(summary.cogsNetCheckDelta)}, 배송비 원본 분류 차이 ${formatSignedKrw(summary.shippingSourcePartitionDelta)}, 배송비 순액 검증 차이 ${formatSignedKrw(summary.shippingNetCheckDelta)}입니다. 순이익을 사용하기 전에 환불 표시 행을 확인하세요.`
         )
+        : !summary.costCoverageComplete
+          ? tr(
+            `The entered COGS Sheet rows match the income statement, but costs are incomplete for ${formatCount(Math.max(0, daysRequiringCOGS - fullCoverage))} of ${formatCount(daysRequiringCOGS)} active days. Net profit is not final until missing costs are entered.`,
+            `입력된 COGS Sheet 행은 손익계산서와 일치하지만, 활동이 있는 ${formatCount(daysRequiringCOGS)}일 중 ${formatCount(Math.max(0, daysRequiringCOGS - fullCoverage))}일의 원가가 미완료입니다. 누락 원가가 입력되기 전까지 순이익은 확정되지 않습니다.`
+          )
         : hasRefundCostAdjustments
           ? tr(
             `COGS Sheet and income statement align. The raw positive-column totals are ${formatKrw(summary.cogsSheetTotal)} cost and ${formatKrw(summary.shippingSheetTotal)} shipping: ${formatKrw(summary.purchaseCogs)} purchases + ${formatKrw(summary.refundCogs)} refund-marked COGS, and ${formatKrw(summary.purchaseShipping)} shipping paid + ${formatKrw(summary.refundShipping)} refund-marked shipping. Profit shows those recoveries separately, producing net COGS of ${formatKrw(summary.cogs)} and net shipping of ${formatKrw(summary.shipping)}.`,
