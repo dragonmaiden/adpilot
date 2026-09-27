@@ -27,6 +27,8 @@ function historicalAverage(overrides = {}) {
     monthCount: 3,
     orderRateMonthCount: 3,
     revenueRateMonthCount: 3,
+    orderRateLow: 14,
+    orderRateHigh: 15,
     range: {
       start: '2026-01-01',
       end: '2026-03-31',
@@ -171,6 +173,8 @@ test('completed historical months use arithmetic averages for order and revenue 
     monthCount: 3,
     orderRateMonthCount: 3,
     revenueRateMonthCount: 3,
+    orderRateLow: 14,
+    orderRateHigh: 15,
     range: {
       start: '2026-01-01',
       end: '2026-03-31',
@@ -192,6 +196,8 @@ test('historical monthly average compares with the current month to date', () =>
     monthCount: 3,
     orderRateMonthCount: 3,
     revenueRateMonthCount: 3,
+    orderRateLow: 14,
+    orderRateHigh: 15,
     range: {
       start: '2026-01-01',
       end: '2026-03-31',
@@ -375,7 +381,7 @@ test('calendar contract preserves nullable refund rates instead of coercing them
   assert.equal(payload.refundComparison.monthToDate.revenueDeltaPoints, null);
 });
 
-test('summary shows only historical and month-to-date order return rates', () => {
+test('summary compares month-to-date order return rate against history on one track', () => {
   const monitorIndex = indexHtml.indexOf('id="refundRateMonitor"');
   const statementIndex = indexHtml.indexOf('id="calendarIncomeStatementDeck"');
   const patternsIndex = indexHtml.indexOf('id="calendarOrderPatterns"');
@@ -386,38 +392,28 @@ test('summary shows only historical and month-to-date order return rates', () =>
   assert.match(calendarJs, /buildRefundMonitorViewModel\(refundComparison\)/);
   assert.match(calendarJs, /calendarState\.data\.refundComparison/);
   assert.match(calendarJs, /renderCalendarRefundRateMonitor\(\);/);
-  assert.match(calendarJs, /Historical monthly average/);
+  assert.match(calendarJs, /Historical average/);
   assert.match(calendarJs, /Month to date/);
   assert.match(calendarJs, /Post-delivery order return rate · cancellations excluded/);
-  assert.match(calendarJs, /order return rate/);
   assert.doesNotMatch(calendarJs, /revenue return rate/);
-  assert.doesNotMatch(calendarJs, /refund orders \/ month/);
-  assert.doesNotMatch(calendarJs, /role="meter"/);
-  assert.doesNotMatch(calendarJs, /refund-monitor-(meter|track|axis|audit|benchmark)/);
-  assert.doesNotMatch(calendarJs, /\bpp\b|%p/);
-  assert.match(calendarJs, /relativeDifference/);
-  assert.match(calendarJs, /% below average/);
-  assert.match(calendarJs, /% above average/);
-  assert.match(calendarJs, /refund-monitor-metrics/);
-  assert.equal((calendarJs.match(/class="refund-monitor-metric(?:\s|")/g) || []).length, 2);
   assert.doesNotMatch(calendarJs, /historicalRevenueRate|monthToDateRevenueRate|revenueComparison/);
+  // Fixed 0–10% axis that extends to the next whole percent above the largest value.
+  assert.match(calendarJs, /const axisMax = largest > 10 \? Math\.floor\(largest\) \+ 1 : 10;/);
+  assert.match(calendarJs, /pt above average/);
+  assert.match(calendarJs, /pt below average/);
+  assert.match(calendarJs, /% higher/);
+  assert.match(calendarJs, /% lower/);
+  assert.match(calendarJs, /-month range/);
+  assert.match(calendarJs, /orders returned/);
+  assert.match(calendarJs, /class="refund-monitor-band"/);
+  assert.match(calendarJs, /refund-monitor-tick is-average/);
+  assert.match(calendarJs, /refund-monitor-tick is-current/);
   assert.match(calendarJs, /\(day\.returnEligibleOrders \|\| 0\) > 0/);
   assert.match(calendarJs, /\(day\.returnRefundOrders \|\| 0\) > 0/);
-  assert.doesNotMatch(calendarJs, /refund-monitor-(order-total|rate)/);
-  assert.match(
-    css,
-    /\.refund-monitor-metric strong\s*\{[\s\S]*font-size:\s*clamp\(1\.85rem,\s*3\.25vw,\s*2\.65rem\)/
-  );
-  assert.match(
-    css,
-    /\.refund-monitor-header\s*\{[\s\S]*max-width:\s*920px[\s\S]*margin-inline:\s*auto/
-  );
-  assert.match(
-    css,
-    /\.refund-monitor-comparison\s*\{[\s\S]*max-width:\s*920px[\s\S]*margin-inline:\s*auto/
-  );
-  assert.match(css, /\.refund-monitor-comparison\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
-  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.refund-monitor-comparison\s*\{[\s\S]*grid-template-columns:\s*1fr/);
+  assert.match(css, /\.refund-monitor-comparison\s*\{[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto/);
+  assert.match(css, /\.refund-monitor-track\s*\{[\s\S]*height:\s*8px/);
+  assert.match(css, /\.refund-monitor-tick\.is-average\s*\{[\s\S]*width:\s*1\.5px/);
+  assert.match(css, /@media \(max-width:\s*768px\)[\s\S]*\.refund-monitor-scale\s*\{[\s\S]*grid-column:\s*1 \/ -1/);
 });
 
 test('calendar defaults to month to date while keeping the shared selection path', () => {

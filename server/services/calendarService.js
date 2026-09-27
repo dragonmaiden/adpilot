@@ -1087,6 +1087,8 @@ function buildHistoricalMonthlyRefundAverage({ orders, start, end }) {
       monthCount: 0,
       orderRateMonthCount: 0,
       revenueRateMonthCount: 0,
+      orderRateLow: null,
+      orderRateHigh: null,
       range: { start: null, end: null },
     };
   }
@@ -1116,12 +1118,16 @@ function buildHistoricalMonthlyRefundAverage({ orders, start, end }) {
     ? validRevenueRateMonths.reduce((total, month) => total + month.revenueRate, 0) / validRevenueRateMonths.length
     : null;
 
+  const orderRates = validOrderRateMonths.map(month => month.orderRate);
+
   return {
     orderRate: averageOrderRate == null ? null : Number(averageOrderRate.toFixed(1)),
     revenueRate: averageRevenueRate == null ? null : Number(averageRevenueRate.toFixed(1)),
     monthCount: monthlySummaries.length,
     orderRateMonthCount: validOrderRateMonths.length,
     revenueRateMonthCount: validRevenueRateMonths.length,
+    orderRateLow: orderRates.length > 0 ? Number(Math.min(...orderRates).toFixed(1)) : null,
+    orderRateHigh: orderRates.length > 0 ? Number(Math.max(...orderRates).toFixed(1)) : null,
     range: { start, end },
   };
 }
@@ -1148,6 +1154,8 @@ function buildRefundRateComparison(historicalAverage = {}, monthToDateSummary = 
       monthCount: Math.max(0, toFiniteNumber(historicalAverage?.monthCount)),
       orderRateMonthCount: Math.max(0, toFiniteNumber(historicalAverage?.orderRateMonthCount)),
       revenueRateMonthCount: Math.max(0, toFiniteNumber(historicalAverage?.revenueRateMonthCount)),
+      orderRateLow: historicalAverage?.orderRateLow ?? null,
+      orderRateHigh: historicalAverage?.orderRateHigh ?? null,
       range: {
         start: historicalAverage?.range?.start || null,
         end: historicalAverage?.range?.end || null,

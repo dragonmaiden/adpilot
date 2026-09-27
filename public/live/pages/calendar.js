@@ -1054,72 +1054,79 @@
     `;
   }
 
+  // Track scale is fixed at 0–10%; extends to the next whole percent when a value exceeds it.
   function buildRefundMonitorViewModel(refundComparison) {
     const historical = refundComparison?.historical || {};
     const monthToDate = refundComparison?.monthToDate || {};
-    const historicalOrderRate = hasCalendarMetric(historical.orderRate)
-      ? Math.max(0, Number(historical.orderRate))
+    const rate = value => (hasCalendarMetric(value) ? Math.max(0, Number(value)) : null);
+    const historicalOrderRate = rate(historical.orderRate);
+    const monthToDateOrderRate = rate(monthToDate.orderRate);
+    const rangeLow = rate(historical.orderRateLow);
+    const rangeHigh = rate(historical.orderRateHigh);
+    const months = Math.max(0, toFiniteNumber(historical.orderRateMonthCount));
+    const monthToDateReturns = Math.max(0, toFiniteNumber(monthToDate.refundOrders));
+    const monthToDateOrders = Math.max(0, toFiniteNumber(monthToDate.recognizedOrders));
+    const hasRange = rangeLow != null && rangeHigh != null && months > 0;
+
+    const pointDifference = historicalOrderRate != null && monthToDateOrderRate != null
+      ? Number((monthToDateOrderRate - historicalOrderRate).toFixed(1))
       : null;
-    const monthToDateOrderRate = hasCalendarMetric(monthToDate.orderRate)
-      ? Math.max(0, Number(monthToDate.orderRate))
+    const relativeDifference = pointDifference != null && historicalOrderRate > 0
+      ? Math.abs((monthToDateOrderRate / historicalOrderRate - 1) * 100)
       : null;
-    const orderComparison = buildRefundMetricComparison(
-      tr('Orders', '주문'),
-      monthToDateOrderRate,
-      historicalOrderRate,
-      tr('No recognized orders', '확인된 주문 없음')
-    );
+    const tone = pointDifference == null
+      ? 'unavailable'
+      : pointDifference > 0 ? 'above' : pointDifference < 0 ? 'within' : 'equal';
+
+    const largest = Math.max(...[historicalOrderRate, monthToDateOrderRate, rangeHigh].filter(value => value != null), 0);
+    const axisMax = largest > 10 ? Math.floor(largest) + 1 : 10;
+    const position = value => (value == null ? null : Math.min(100, (value / axisMax) * 100));
+
+    const rangeStatus = !hasRange || monthToDateOrderRate == null
+      ? null
+      : monthToDateOrderRate > rangeHigh
+        ? tr(`above the ${formatCount(months)}-month range`, `${formatCount(months)}개월 범위 초과`)
+        : monthToDateOrderRate < rangeLow
+          ? tr(`below the ${formatCount(months)}-month range`, `${formatCount(months)}개월 범위 미만`)
+          : tr(`within the ${formatCount(months)}-month range`, `${formatCount(months)}개월 범위 이내`);
+
+    let deltaLabel = tr('No month-to-date comparison', '월 누계 비교 없음');
+    if (tone === 'equal') {
+      deltaLabel = tr('= matches the historical average', '= 과거 평균과 동일');
+    } else if (tone === 'above' || tone === 'within') {
+      const arrow = tone === 'above' ? '↑' : '↓';
+      const points = Math.abs(pointDifference).toFixed(1);
+      const relative = relativeDifference == null ? null : relativeDifference.toFixed(1);
+      deltaLabel = tone === 'above'
+        ? tr(
+          `${arrow} ${points} pt above average${relative == null ? '' : ` · ${relative}% higher`}`,
+          `${arrow} 평균보다 ${points}pt 높음${relative == null ? '' : ` · ${relative}% 높음`}`
+        )
+        : tr(
+          `${arrow} ${points} pt below average${relative == null ? '' : ` · ${relative}% lower`}`,
+          `${arrow} 평균보다 ${points}pt 낮음${relative == null ? '' : ` · ${relative}% 낮음`}`
+        );
+    }
 
     return {
       historicalOrderRate,
       monthToDateOrderRate,
-      orderComparison,
-      tone: orderComparison.tone,
-    };
-  }
-
-  function buildRefundMetricComparison(metricLabel, currentRate, historicalRate, unavailableLabel) {
-    if (currentRate == null || historicalRate == null) {
-      return {
-        label: `${metricLabel} · ${unavailableLabel}`,
-        symbol: '—',
-        tone: 'unavailable',
-      };
-    }
-    if (currentRate === historicalRate) {
-      return {
-        label: `${metricLabel} · ${tr('matches average', '평균과 동일')}`,
-        symbol: '=',
-        tone: 'within',
-      };
-    }
-
-    const delta = currentRate - historicalRate;
-    if (historicalRate === 0) {
-      return {
-        label: `${metricLabel} · ${tr(
-          `${formatPercent(currentRate, 1)} vs 0.0% average`,
-          `${formatPercent(currentRate, 1)} / 평균 0.0%`
-        )}`,
-        symbol: delta < 0 ? '↓' : '↑',
-        tone: delta < 0 ? 'within' : 'above',
-      };
-    }
-
-    const relativeDifference = Math.abs((delta / historicalRate) * 100);
-    const direction = delta < 0
-      ? tr(
-        `${relativeDifference.toFixed(1)}% below average`,
-        `평균보다 ${relativeDifference.toFixed(1)}% 낮음`
-      )
-      : tr(
-        `${relativeDifference.toFixed(1)}% above average`,
-        `평균보다 ${relativeDifference.toFixed(1)}% 높음`
-      );
-    return {
-      label: `${metricLabel} · ${direction}`,
-      symbol: delta < 0 ? '↓' : '↑',
-      tone: delta < 0 ? 'within' : 'above',
+      monthToDateReturns,
+      monthToDateOrders,
+      rangeLow,
+      rangeHigh,
+      months,
+      hasRange,
+      axisMax,
+      tone,
+      deltaLabel,
+      rangeStatus,
+      positions: {
+        average: position(historicalOrderRate),
+        monthToDate: position(monthToDateOrderRate),
+        low: position(rangeLow),
+        high: position(rangeHigh),
+      },
     };
   }
 
@@ -1171,20 +1178,26 @@
       );
       return;
     }
-    const comparison = viewModel.orderComparison;
-    const comparisonMarkup = comparison.tone === 'unavailable'
-      ? `
-        <div class="refund-monitor-delta is-unavailable">
-          <span aria-hidden="true">—</span>
-          <strong>${esc(tr('No month-to-date comparison', '월 누계 비교 없음'))}</strong>
-        </div>
-      `
-      : `
-        <div class="refund-monitor-delta is-${esc(comparison.tone)}" aria-label="${esc(comparison.label)}">
-          <span aria-hidden="true">${esc(comparison.symbol)}</span>
-          <strong>${esc(comparison.label)}</strong>
-        </div>
-      `;
+
+    const { positions } = viewModel;
+    const pct = value => `${Number(value).toFixed(2)}%`;
+    const rateLabel = value => (value == null ? '—' : formatPercent(value, 1));
+    // Drop the low/high captions when they would sit on top of the average caption.
+    const captionsCollide = viewModel.hasRange && (
+      Math.abs(positions.low - positions.average) < 12 || Math.abs(positions.high - positions.average) < 12
+    );
+    const monthToDateNote = viewModel.monthToDateOrderRate == null
+      ? tr('No eligible orders yet this month', '이번 달 취소 제외 주문 없음')
+      : tr(
+        `${formatCount(viewModel.monthToDateReturns)} of ${formatCount(viewModel.monthToDateOrders)} orders returned`,
+        `주문 ${formatCount(viewModel.monthToDateOrders)}건 중 ${formatCount(viewModel.monthToDateReturns)}건 반품`
+      );
+    const historicalNote = viewModel.hasRange
+      ? tr(
+        `${formatCount(viewModel.months)} months · range ${rateLabel(viewModel.rangeLow)}–${rateLabel(viewModel.rangeHigh)}`,
+        `${formatCount(viewModel.months)}개월 · 범위 ${rateLabel(viewModel.rangeLow)}–${rateLabel(viewModel.rangeHigh)}`
+      )
+      : tr('no monthly range yet', '월별 범위 없음');
 
     container.setAttribute('aria-busy', 'false');
     container.innerHTML = `
@@ -1193,35 +1206,43 @@
         aria-labelledby="refundMonitorTitle"
       >
         <header class="refund-monitor-header">
-          <div>
-            <div class="refund-monitor-kicker">${esc(tr('Refunds', '환불'))}</div>
-            <h2 id="refundMonitorTitle">${esc(tr('Post-delivery order return rate · cancellations excluded', '배송 후 주문 반품률 · 주문 취소 제외'))}</h2>
-          </div>
+          <div class="refund-monitor-kicker">${esc(tr('Refunds', '환불'))}</div>
+          <h2 id="refundMonitorTitle">${esc(tr('Post-delivery order return rate · cancellations excluded', '배송 후 주문 반품률 · 주문 취소 제외'))}</h2>
         </header>
 
         <div class="refund-monitor-comparison">
-          <div class="refund-monitor-period">
-            <span class="refund-monitor-period-label">${esc(tr('Historical monthly average', '과거 월평균'))}</span>
-            <div class="refund-monitor-metrics">
-              <div class="refund-monitor-metric">
-                <strong>${viewModel.historicalOrderRate == null ? '—' : esc(formatPercent(viewModel.historicalOrderRate, 1))}</strong>
-                <span>${esc(tr('order return rate', '주문 기준 반품률'))}</span>
-              </div>
+          <div class="refund-monitor-stat">
+            <span class="refund-monitor-stat-label">${esc(tr('Month to date', '월 누계'))}</span>
+            <strong class="refund-monitor-stat-value is-${esc(viewModel.tone)}">${esc(rateLabel(viewModel.monthToDateOrderRate))}</strong>
+            <span class="refund-monitor-stat-note">${esc(monthToDateNote)}</span>
+          </div>
+
+          <div class="refund-monitor-scale" aria-hidden="true">
+            <div class="refund-monitor-delta-line">
+              <span class="refund-monitor-delta is-${esc(viewModel.tone)}">${esc(viewModel.deltaLabel)}</span>
+              <span class="refund-monitor-range-status">${esc(viewModel.rangeStatus || '')}</span>
+            </div>
+            <div class="refund-monitor-value-row">
+              ${positions.monthToDate == null ? '' : `<span class="refund-monitor-value is-${esc(viewModel.tone)}" style="left:${pct(positions.monthToDate)}">${esc(rateLabel(viewModel.monthToDateOrderRate))}</span>`}
+            </div>
+            <div class="refund-monitor-track">
+              ${viewModel.hasRange ? `<span class="refund-monitor-band" style="left:${pct(positions.low)};width:${pct(positions.high - positions.low)}"></span>` : ''}
+              <span class="refund-monitor-tick is-average" style="left:${pct(positions.average)}"></span>
+              ${positions.monthToDate == null ? '' : `<span class="refund-monitor-tick is-current is-${esc(viewModel.tone)}" style="left:${pct(positions.monthToDate)}"></span>`}
+            </div>
+            <div class="refund-monitor-axis">
+              <span class="is-start">0%</span>
+              ${viewModel.hasRange && !captionsCollide ? `<span style="left:${pct(positions.low)}">${esc(tr('low', '최저'))} ${esc(rateLabel(viewModel.rangeLow))}</span>` : ''}
+              <span class="is-average" style="left:${pct(positions.average)}">${esc(tr('avg', '평균'))} ${esc(rateLabel(viewModel.historicalOrderRate))}</span>
+              ${viewModel.hasRange && !captionsCollide ? `<span style="left:${pct(positions.high)}">${esc(tr('high', '최고'))} ${esc(rateLabel(viewModel.rangeHigh))}</span>` : ''}
+              <span class="is-end">${esc(formatPercent(viewModel.axisMax, 0))}</span>
             </div>
           </div>
 
-          <div class="refund-monitor-deltas">
-            ${comparisonMarkup}
-          </div>
-
-          <div class="refund-monitor-period refund-monitor-period-current">
-            <span class="refund-monitor-period-label">${esc(tr('Month to date', '월 누계'))}</span>
-            <div class="refund-monitor-metrics">
-              <div class="refund-monitor-metric is-${esc(viewModel.orderComparison.tone)}">
-                <strong>${viewModel.monthToDateOrderRate == null ? '—' : esc(formatPercent(viewModel.monthToDateOrderRate, 1))}</strong>
-                <span>${esc(tr('order return rate', '주문 기준 반품률'))}</span>
-              </div>
-            </div>
+          <div class="refund-monitor-stat is-historical">
+            <span class="refund-monitor-stat-label">${esc(tr('Historical average', '과거 평균'))}</span>
+            <strong class="refund-monitor-stat-value">${esc(rateLabel(viewModel.historicalOrderRate))}</strong>
+            <span class="refund-monitor-stat-note">${esc(historicalNote)}</span>
           </div>
         </div>
       </section>

@@ -195,6 +195,8 @@ function calendarAnalysis({ ready, viewport, calendarDays, categoryRevenueByDate
         monthCount: refundComparison?.historical?.monthCount ?? 0,
         orderRateMonthCount: refundComparison?.historical?.orderRateMonthCount ?? 0,
         revenueRateMonthCount: refundComparison?.historical?.revenueRateMonthCount ?? 0,
+        orderRateLow: refundComparison?.historical?.orderRateLow ?? null,
+        orderRateHigh: refundComparison?.historical?.orderRateHigh ?? null,
         range: {
           start: refundComparison?.historical?.range?.start ?? null,
           end: refundComparison?.historical?.range?.end ?? null,
