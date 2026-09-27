@@ -530,10 +530,11 @@ test('failed photo sends do not mark the day as sent or attempt a duplicate text
 
 test('unavailable chart keeps the summary deliverable with explicit text fallback metadata', async () => {
   const data = buildDailyReportLatestData({ cost: 100, costCoverageRatio: 1 });
-  data.sources = { imweb: { stale: true } };
+  data.sources = { metaInsights: { stale: true } };
   await withTelegramModule(validEnv(), async (url, options) => {
     assert.match(url, /sendMessage$/);
     assert.match(JSON.parse(options.body).text, /Chart unavailable; summary sent as text/);
+    assert.match(JSON.parse(options.body).text, /Total Profits:<\/b> N\/A/);
     return { ok: true, json: async () => ({ ok: true, result: { message_id: 93 } }) };
   }, async telegram => {
     assert.equal((await telegram.sendDailySummaryReport(data, { now: new Date('2026-04-30T14:30:00Z') })).ok, true);

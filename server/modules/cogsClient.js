@@ -421,6 +421,11 @@ function parseKRW(str) {
   return Number.isNaN(num) ? 0 : num;
 }
 
+function hasValidKRWValue(value) {
+  const raw = String(value ?? '').trim();
+  return raw !== '' && /^-?\d+$/.test(raw.replace(/[₩,\s]/g, ''));
+}
+
 function normalizeSheetDate(value) {
   const input = String(value || '').trim();
   if (!input) return '';
@@ -538,6 +543,8 @@ function parseOrderItems(rows, options = {}) {
     const productName = String(row[6] || '').trim();
     const cost = parseKRW(row[7]);
     const shipping = parseKRW(row[8]);
+    const costPresent = hasValidKRWValue(row[7]);
+    const shippingPresent = hasValidKRWValue(row[8]);
     const payment = String(row[9] || '').toUpperCase() === 'TRUE';
     const delivery = String(row[10] || '').toUpperCase() === 'TRUE';
     const noteCell = String(row[11] || '').trim();
@@ -550,10 +557,11 @@ function parseOrderItems(rows, options = {}) {
     const address = compactDetails?.address || String(row[16] || '').trim();
 
     if (sequenceNo && date) {
+      const sameOrderAsPrevious = currentOrder && orderNumber && orderNumber === currentOrder.orderNumber;
       currentOrder = {
         sequenceNo,
         date,
-        name: compactDetails?.customerName || name,
+        name: compactDetails?.customerName || name || (sameOrderAsPrevious ? currentOrder.name : ''),
         orderNumber: orderNumber || sequenceNo,
         ordererPhone,
         receiverName,
@@ -580,8 +588,12 @@ function parseOrderItems(rows, options = {}) {
     if (!hasContent) continue;
 
     const warnings = [];
-    if (!isRefund && !isPendingRecovery && productName && cost === 0 && shipping === 0) {
-      warnings.push('missing_cost_and_shipping');
+    if (!isRefund && !isPendingRecovery && productName) {
+      if (!costPresent && !shippingPresent) warnings.push('missing_cost_and_shipping');
+      else if (!costPresent) warnings.push('missing_cost');
+      else if (!shippingPresent) warnings.push('missing_shipping');
+      if (String(row[7] ?? '').trim() && !costPresent) warnings.push('invalid_cost');
+      if (String(row[8] ?? '').trim() && !shippingPresent) warnings.push('invalid_shipping');
     }
     if (!isRefund && noteContainsCurrency(note)) {
       warnings.push('currency_in_note');
@@ -589,6 +601,8 @@ function parseOrderItems(rows, options = {}) {
     if (looksLikeUrl(orderNumber)) {
       warnings.push('order_number_looks_like_url');
     }
+    if (productName && !currentOrder.name) warnings.push('missing_customer_name');
+    if (productName && sequenceNo && !orderNumber) warnings.push('missing_order_number');
 
     items.push({
       sheetLabel,
@@ -608,6 +622,8 @@ function parseOrderItems(rows, options = {}) {
       productName,
       cost,
       shipping,
+      costPresent,
+      shippingPresent,
       payment,
       delivery,
       note,
@@ -691,13 +707,17 @@ function buildValidationSummary(items) {
   let missingValueRows = 0;
   let currencyInNoteRows = 0;
   let malformedOrderNumberRows = 0;
+  let missingCustomerNameRows = 0;
+  let missingOrderNumberRows = 0;
   let refundValueRows = 0;
 
   for (const item of items) {
     const warnings = Array.isArray(item?.warnings) ? item.warnings : [];
-    if (warnings.includes('missing_cost_and_shipping')) missingValueRows += 1;
+    if (warnings.some(warning => ['missing_cost_and_shipping', 'missing_cost', 'missing_shipping'].includes(warning))) missingValueRows += 1;
     if (warnings.includes('currency_in_note')) currencyInNoteRows += 1;
     if (warnings.includes('order_number_looks_like_url')) malformedOrderNumberRows += 1;
+    if (warnings.includes('missing_customer_name')) missingCustomerNameRows += 1;
+    if (warnings.includes('missing_order_number')) missingOrderNumberRows += 1;
     if (item?.isRefund && (Number(item?.cost || 0) > 0 || Number(item?.shipping || 0) > 0)) refundValueRows += 1;
 
     if (warnings.length > 0) {
@@ -718,6 +738,8 @@ function buildValidationSummary(items) {
     missingValueRows,
     currencyInNoteRows,
     malformedOrderNumberRows,
+    missingCustomerNameRows,
+    missingOrderNumberRows,
     refundValueRows,
     samples: rowsWithWarnings.slice(0, 10),
   };
@@ -742,7 +764,10 @@ function aggregateCOGSItems(items) {
       order.pendingRecoveryItemCount++;
     } else {
       order.purchaseItemCount++;
-      if (item.cost > 0 || item.shipping > 0) {
+      const hasExplicitCostFields = typeof item.costPresent === 'boolean' || typeof item.shippingPresent === 'boolean';
+      if (hasExplicitCostFields
+        ? item.costPresent === true && item.shippingPresent === true
+        : item.cost > 0 || item.shipping > 0) {
         order.costedItemCount++;
       } else {
         order.missingCostItemCount++;
@@ -961,6 +986,7 @@ async function fetchAllCOGS() {
   const refundMarkers = buildRefundMarkerMap(workbookMeta, fallbackTargets);
   const allItems = [];
   const sheets = [];
+  const failedSheets = [];
 
   for (const target of fallbackTargets) {
     try {
@@ -982,7 +1008,13 @@ async function fetchAllCOGS() {
       console.log(`[COGS]   → Sheet "${target.label}": ${items.length} rows`);
     } catch (err) {
       console.warn(`[COGS]   ⚠ Sheet "${target.label}" (${target.gid ? `gid=${target.gid}` : `sheet=${target.sheetName}`}) failed:`, err.message);
+      failedSheets.push(target.label);
     }
+  }
+
+  // Never publish a partial workbook as a successful financial snapshot.
+  if (failedSheets.length > 0) {
+    throw new Error(`COGS sheet fetch incomplete: ${failedSheets.join(', ')}`);
   }
 
   const result = aggregateCOGSItems(allItems);

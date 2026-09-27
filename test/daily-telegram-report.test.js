@@ -146,9 +146,37 @@ test('daily report does not invent zero refund rates when order data is unavaila
   assert.match(plan.text, /<b>N\/A vs N\/A<\/b>\nHistorical monthly average/);
 });
 
-test('daily report does not display stale refund comparison percentages', () => {
+test('daily report withholds cached revenue and refund figures when Imweb is stale', () => {
   const plan = buildDailySummaryReportPlan(buildLatestData({ sources: { imweb: { stale: true } } }), {}, new Date('2026-04-30T14:30:00Z'));
-  assert.match(plan.text, /N\/A — order source unavailable or stale/);
+  assert.equal(plan.shouldSend, false);
+  assert.equal(plan.reason, 'revenue-source-unavailable');
+  assert.equal(plan.text, null);
+});
+
+test('daily report withholds profit, ad spend and total costs when Meta insights are stale', () => {
+  const data = buildLatestData({ sources: { metaInsights: { status: 'error', stale: true, hasData: true } } });
+  const plan = buildDailySummaryReportPlan(data, {}, new Date('2026-04-30T14:30:00Z'));
+  assert.equal(plan.shouldSend, true);
+  assert.equal(plan.totals.profitAvailable, false);
+  assert.match(plan.text, /Total Profits:<\/b> N\/A \(financial source unavailable\)/);
+  assert.match(plan.text, /Total Costs:<\/b> N\/A \(financial source unavailable\)/);
+  assert.match(plan.text, /Ad Spend: N\/A \(source stale\)/);
+  assert.doesNotMatch(plan.text, /Total Profits:<\/b> ₩/);
+  const correction = buildDailyReportCorrectionPlan(data, '2026-04-30');
+  assert.equal(correction.shouldCorrect, false);
+  assert.equal(correction.reason, 'financial-source-unavailable');
+});
+
+test('daily report withholds COGS and profit when the sheet source is stale', () => {
+  const plan = buildDailySummaryReportPlan(
+    buildLatestData({ sources: { cogs: { stale: true, hasData: true } } }),
+    {},
+    new Date('2026-04-30T14:30:00Z')
+  );
+  assert.equal(plan.shouldSend, true);
+  assert.match(plan.text, /COGS: N\/A \(source stale\)/);
+  assert.match(plan.text, /Shipping: N\/A \(source stale\)/);
+  assert.match(plan.text, /Total Profits:<\/b> N\/A \(financial source unavailable\)/);
 });
 
 test('daily report skips duplicate report dates', () => {
@@ -253,6 +281,9 @@ test('daily report correction waits for complete COGS before replacing a pending
   assert.equal(estimated.reason, 'cogs-partial-estimate');
   assert.equal(estimated.totals.profitIsEstimated, true);
   assert.match(estimated.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
+  assert.match(estimated.text, /🧾 <b>Total Costs:<\/b> N\/A \(COGS incomplete\)/);
+  assert.match(estimated.text, /└ COGS: ₩4,000,000 recorded so far; incomplete/);
+  assert.match(estimated.text, /estimated profit may fall as missing costs are entered/);
 
   const corrected = buildDailyReportCorrectionPlan(buildLatestData(), '2026-04-30');
 

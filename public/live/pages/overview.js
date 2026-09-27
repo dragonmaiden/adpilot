@@ -271,8 +271,10 @@
         cogsEl.textContent = k.cogs != null ? '₩' + Math.round(k.cogs).toLocaleString() : '—';
       }
       const cogsSubEl = document.querySelector('[data-kpi="cogs"] .kpi-delta span');
-      if (cogsSubEl && k.cogs != null) {
-        cogsSubEl.textContent = tr(
+      if (cogsSubEl) {
+        cogsSubEl.textContent = k.cogs == null
+          ? tr('COGS source unavailable', 'COGS 소스를 사용할 수 없음')
+          : tr(
           `${(k.cogsRate || 0).toFixed(1)}% of revenue · Google Sheets`,
           `매출 대비 ${(k.cogsRate || 0).toFixed(1)}% · Google Sheets`
         );
@@ -280,16 +282,23 @@
 
       const spendEl = document.querySelector('[data-kpi="adspend"] .kpi-value');
       if (spendEl) {
-        spendEl.dataset.target = Math.round(k.adSpendKRW || 0);
-        spendEl.dataset.prefix = '₩';
-        spendEl.textContent = '₩' + Math.round(k.adSpendKRW || 0).toLocaleString();
+        if (k.adSpendKRW == null) {
+          delete spendEl.dataset.target;
+          spendEl.textContent = '—';
+        } else {
+          spendEl.dataset.target = Math.round(k.adSpendKRW);
+          spendEl.dataset.prefix = '₩';
+          spendEl.textContent = '₩' + Math.round(k.adSpendKRW).toLocaleString();
+        }
       }
       const spendSubEl = document.querySelector('[data-kpi="adspend"] .kpi-delta span');
       if (spendSubEl) {
         const fxRate = Number(data.fx?.usdToKrwRate || 0);
         const fxDate = data.fx?.rateDate || '';
         const usdText = '$' + Number(k.adSpend || 0).toFixed(2);
-        if (fxRate > 0 && fxDate) {
+        if (k.adSpendKRW == null) {
+          spendSubEl.textContent = tr('Meta ad spend unavailable', 'Meta 광고비를 사용할 수 없음');
+        } else if (fxRate > 0 && fxDate) {
           spendSubEl.textContent = tr(
             `${usdText} · ${fxDate} FX ₩${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/USD`,
             `${usdText} · ${fxDate} 환율 ₩${fxRate.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/USD`
@@ -301,14 +310,16 @@
 
       const profitEl = document.querySelector('[data-kpi="profit"] .kpi-value');
       if (profitEl) {
-        const profit = k.grossProfit || 0;
-        profitEl.textContent = profit >= 0
+        const profit = k.grossProfit;
+        profitEl.textContent = profit == null ? '—' : profit >= 0
           ? '₩' + Math.round(profit).toLocaleString()
           : '-₩' + Math.abs(Math.round(profit)).toLocaleString();
       }
       const profitSubEl = document.querySelector('[data-kpi="profit"] .kpi-delta span');
-      if (profitSubEl && k.grossMargin != null) {
-        profitSubEl.textContent = tr(
+      if (profitSubEl) {
+        profitSubEl.textContent = k.grossMargin == null
+          ? tr('Financial source unavailable', '재무 소스를 사용할 수 없음')
+          : tr(
           `₩${Math.round(k.netRevenue || 0).toLocaleString(getLocale())} net · ${k.grossMargin}% margin`,
           `순매출 ₩${Math.round(k.netRevenue || 0).toLocaleString(getLocale())} · 마진 ${k.grossMargin}%`
         );
@@ -316,7 +327,8 @@
 
       const roasEl = document.querySelector('[data-kpi="roas"] .kpi-value');
       if (roasEl) {
-        roasEl.dataset.target = k.roas != null ? k.roas.toFixed(2) : '0';
+        if (k.roas == null) delete roasEl.dataset.target;
+        else roasEl.dataset.target = k.roas.toFixed(2);
         roasEl.dataset.prefix = '';
         roasEl.dataset.suffix = 'x';
         roasEl.textContent = k.roas != null ? k.roas.toFixed(2) + 'x' : '—';
@@ -324,27 +336,34 @@
 
       const purchasesEl = document.querySelector('[data-kpi="purchases"] .kpi-value');
       if (purchasesEl) {
-        purchasesEl.dataset.target = k.purchases || 0;
+        if (k.purchases == null) delete purchasesEl.dataset.target;
+        else purchasesEl.dataset.target = k.purchases;
         purchasesEl.dataset.prefix = '';
-        purchasesEl.textContent = (k.purchases || 0).toString();
+        purchasesEl.textContent = k.purchases == null ? '—' : k.purchases.toString();
       }
       const purchasesSubEl = document.querySelector('[data-kpi="purchases"] .kpi-delta span');
-      if (purchasesSubEl && data.days) {
-        const avgPerDay = ((k.purchases || 0) / data.days).toFixed(1);
-        purchasesSubEl.textContent = tr(`${avgPerDay} avg/day`, `일평균 ${avgPerDay}`);
+      if (purchasesSubEl) {
+        const avgPerDay = k.purchases != null && data.days
+          ? (k.purchases / data.days).toFixed(1)
+          : null;
+        purchasesSubEl.textContent = avgPerDay == null
+          ? tr('COGS source unavailable', 'COGS 소스를 사용할 수 없음')
+          : tr(`${avgPerDay} avg/day`, `일평균 ${avgPerDay}`);
       }
 
       const ctrEl = document.querySelector('[data-kpi="ctr"] .kpi-value');
       if (ctrEl) {
-        ctrEl.dataset.target = (k.ctr || 0).toFixed(2);
+        if (k.ctr == null) delete ctrEl.dataset.target;
+        else ctrEl.dataset.target = k.ctr.toFixed(2);
         ctrEl.dataset.prefix = '';
         ctrEl.dataset.suffix = '%';
-        ctrEl.textContent = (k.ctr || 0).toFixed(2) + '%';
+        ctrEl.textContent = k.ctr == null ? '—' : k.ctr.toFixed(2) + '%';
       }
 
       const cpaEl = document.querySelector('[data-kpi="cpa"] .kpi-value');
       if (cpaEl) {
-        cpaEl.dataset.target = k.cpa != null ? k.cpa.toFixed(2) : '0';
+        if (k.cpa == null) delete cpaEl.dataset.target;
+        else cpaEl.dataset.target = k.cpa.toFixed(2);
         cpaEl.dataset.prefix = '$';
         cpaEl.textContent = k.cpa != null ? '$' + k.cpa.toFixed(2) : '—';
       }

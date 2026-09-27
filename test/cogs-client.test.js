@@ -143,6 +143,57 @@ test('fetchSheetCSV retries with the gid-resolved title when a shorthand month l
   });
 });
 
+test('fetchAllCOGS rejects a partial workbook when one monthly tab fails', async () => {
+  await withMockedCogsClient({
+    config: {
+      cogs: { spreadsheetId: 'spreadsheet-123', sheetGids: { Feb: '1', March: '2' } },
+    },
+    googleSheetsAuthService: {
+      isConfigured: () => true,
+      fetchSpreadsheetMetadata: async () => ({ sheets: [
+        { properties: { sheetId: '1', title: 'Feb' } },
+        { properties: { sheetId: '2', title: 'March' } },
+      ] }),
+      fetchSheetValues: async (_spreadsheetId, sheetName) => {
+        if (sheetName === 'March') throw new Error('temporary Sheets outage');
+        return [[], [], ['1', '2026-02-10', 'Customer', 'order-1', '', '', 'Item', '50000', '4000']];
+      },
+    },
+  }, async client => {
+    await assert.rejects(client.fetchAllCOGS(), /COGS sheet fetch incomplete: March/);
+  });
+});
+
+test('blank cost or shipping stays incomplete, while an explicit zero is a known value', () => {
+  const rows = [[], [],
+    ['1', '2026-09-20', 'A', 'order-1', '', '', 'Item', '50000', ''],
+    ['2', '2026-09-20', 'B', 'order-2', '', '', 'Item', '0', '0'],
+    ['3', '2026-09-20', 'C', 'order-3', '', '', 'Item', '', '4000'],
+    ['4', '2026-09-20', 'D', 'order-4', '', '', 'Item', 'TBD', '4000'],
+  ];
+  const items = parseOrderItems(rows, { sheetLabel: '9월' });
+  const result = aggregateCOGSItems(items);
+  assert.equal(result.missingCostItemCount, 3);
+  assert.equal(result.costedItemCount, 1);
+  assert.equal(result.incompletePurchaseCount, 3);
+  assert.deepEqual(items.map(item => item.warnings), [
+    ['missing_shipping'], [], ['missing_cost'], ['missing_cost', 'invalid_cost'],
+  ]);
+});
+
+test('COGS parsing preserves a repeated-order name but flags a genuinely missing name or order ID', () => {
+  const items = parseOrderItems([[], [],
+    ['1', '2026-09-24', 'Customer A', '202609240000001', '', '', 'First', '50000', '4000'],
+    ['1', '2026-09-24', '', '202609240000001', '', '', 'Second', '30000', '0'],
+    ['2', '2026-09-24', '', '202609240000002', '', '', 'Third', '', ''],
+    ['3', '2026-09-24', 'Customer C', '', '', '', 'Fourth', '', ''],
+  ], { sheetLabel: '9월' });
+  assert.equal(items[1].name, 'Customer A');
+  assert.deepEqual(items[1].warnings, []);
+  assert.ok(items[2].warnings.includes('missing_customer_name'));
+  assert.ok(items[3].warnings.includes('missing_order_number'));
+});
+
 test('parseOrderItems supports the compact delivery-details cell in column M', () => {
   const items = parseOrderItems([
     ['번호', '날짜', '이름', '주문번호', '', '', '', '', '', '', '', '', 'delivery note'],

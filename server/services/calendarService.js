@@ -483,7 +483,8 @@ function buildProductExplorerRows(orders, cogsItems) {
     existing.qty += 1;
     existing.cost += Number(item?.cost || 0);
     existing.shipping += Number(item?.shipping || 0);
-    if (Array.isArray(item?.warnings) && item.warnings.includes('missing_cost_and_shipping')) {
+    if (Array.isArray(item?.warnings) && item.warnings.some(warning =>
+      ['missing_cost_and_shipping', 'missing_cost', 'missing_shipping'].includes(warning))) {
       existing.missingCostCount += 1;
     }
     cogsByExactKey.set(key, existing);

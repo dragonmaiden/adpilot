@@ -128,6 +128,10 @@ function getCoverageRatio(row) {
   return Math.max(0, Math.min(1, ratio));
 }
 
+function isSourceUnavailable(source) {
+  return source?.stale === true || source?.status === 'error' || source?.hasData === false;
+}
+
 function getDailyRevenue(latestData) {
   const dailyRevenue = latestData?.revenueData?.dailyRevenue;
   return dailyRevenue && typeof dailyRevenue === 'object' && !Array.isArray(dailyRevenue)
@@ -153,7 +157,7 @@ function buildRevenueCoverageDiagnostics(latestData, reportDate) {
   const cogsRow = latestData?.cogsData?.dailyCOGS?.[reportDate] || null;
   const imwebSource = latestData?.sources?.imweb || {};
   const imwebStatus = String(imwebSource.status || '').toLowerCase();
-  const imwebUnavailable = imwebSource.stale === true || imwebStatus === 'error';
+  const imwebUnavailable = isSourceUnavailable(imwebSource);
   const cogsPurchases = asFiniteNumber(cogsRow?.purchases);
   const cogsCost = asFiniteNumber(cogsRow?.cost ?? cogsRow?.cogs);
   const cogsShipping = asFiniteNumber(cogsRow?.shipping);
@@ -170,19 +174,21 @@ function buildRevenueCoverageDiagnostics(latestData, reportDate) {
     imwebLastError: typeof imwebSource.lastError === 'string' ? imwebSource.lastError : null,
     hasCogsActivity,
     cogsPurchases,
-    unavailable: revenueRow == null && (
+    unavailable: imwebUnavailable || (revenueRow == null && (
       hasCogsActivity
       || reportBeforeRevenueRange
-      || (reportAfterRevenueRange && imwebUnavailable)
-      || (revenueRange.dayCount === 0 && imwebUnavailable)
-    ),
+      || reportAfterRevenueRange
+    )),
   };
 }
 
 function getUnavailableReason(diagnostics) {
   if (!diagnostics.unavailable) return null;
-  if (diagnostics.hasCogsActivity) {
+  if (!diagnostics.hasRevenueRow && diagnostics.hasCogsActivity) {
     return 'revenue-missing-for-cogs-activity';
+  }
+  if (diagnostics.imwebStale || diagnostics.imwebStatus === 'error') {
+    return 'revenue-source-unavailable';
   }
   if (diagnostics.revenueRange.lastDate && diagnostics.reportDate > diagnostics.revenueRange.lastDate) {
     return 'revenue-source-does-not-cover-report-date';
@@ -258,8 +264,14 @@ function buildDailyReportTotals(latestData, reportDate) {
   const paymentFees = asFiniteNumber(profitRow?.paymentFees);
   const trueNetProfit = asFiniteNumber(profitRow?.trueNetProfit);
   const cogsCoverageRatio = getCoverageRatio(profitRow);
-  const profitAvailable = !profitRow || profitRow.hasCOGS || orders === 0;
-  const profitIsEstimated = !profitAvailable && profitRow?.hasPartialCOGS && cogsCoverageRatio > 0;
+  const unavailableSources = ['cogs', 'metaInsights']
+    .filter(key => isSourceUnavailable(latestData?.sources?.[key]));
+  const financialUnavailableReason = unavailableSources.length > 0
+    ? `${unavailableSources.join(', ')} source unavailable or stale`
+    : null;
+  const profitAvailable = !financialUnavailableReason && (!profitRow || profitRow.hasCOGS || orders === 0);
+  const profitIsEstimated = !financialUnavailableReason && !profitAvailable
+    && profitRow?.hasPartialCOGS && cogsCoverageRatio > 0;
   const profitReportable = profitAvailable || profitIsEstimated;
   const marginRatio = profitReportable ? divideOrNull(trueNetProfit, netRevenue) : null;
   const refundRateRatio = divideOrNull(refunds, revenue);
@@ -279,6 +291,7 @@ function buildDailyReportTotals(latestData, reportDate) {
     paymentFees,
     trueNetProfit,
     profitAvailable,
+    financialUnavailableReason,
     profitIsEstimated,
     cogsCoverageRatio,
     marginPct: marginRatio == null ? null : marginRatio * 100,
@@ -313,6 +326,9 @@ function getReportMood(totals, latestData = {}) {
       'Audit review needed',
       'Pipeline needs a look',
     ]);
+  }
+  if (totals.financialUnavailableReason) {
+    return 'Financial data unavailable';
   }
   if (totals.profitIsEstimated) {
     return chooseDateVariant(totals.reportDate, [
@@ -377,18 +393,34 @@ function buildDailyReportInsights(totals, latestData = {}) {
 }
 
 function buildDailyReportMessage(totals, latestData = {}) {
-  const profitText = totals.profitAvailable
+  const cogsUnavailable = isSourceUnavailable(latestData?.sources?.cogs);
+  const metaUnavailable = isSourceUnavailable(latestData?.sources?.metaInsights);
+  const cogsIncomplete = !totals.profitAvailable && !totals.financialUnavailableReason;
+  const profitText = totals.financialUnavailableReason
+    ? 'N/A (financial source unavailable)'
+    : totals.profitAvailable
     ? formatKrw(totals.trueNetProfit)
     : totals.profitIsEstimated
     ? `⚠️ ${formatKrw(totals.trueNetProfit)} est. (${formatCoveragePercent(totals.cogsCoverageRatio)} COGS)`
     : 'N/A (COGS pending)';
-  const totalCosts = totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees;
-  const marginText = totals.profitAvailable
+  const totalCosts = cogsUnavailable || metaUnavailable
+    ? 'N/A (financial source unavailable)'
+    : cogsIncomplete
+    ? 'N/A (COGS incomplete)'
+    : formatKrw(totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees);
+  const marginText = totals.financialUnavailableReason
+    ? 'N/A'
+    : totals.profitAvailable
     ? formatPercent(totals.marginPct)
     : totals.profitIsEstimated
     ? `${formatPercent(totals.marginPct)} est.`
     : 'N/A';
   const insights = buildDailyReportInsights(totals, latestData);
+  if (totals.financialUnavailableReason) {
+    insights.unshift(`⚠️ <b>Financial data:</b> ${totals.financialUnavailableReason}; profit and total costs withheld`);
+  } else if (totals.profitIsEstimated) {
+    insights.unshift('⚠️ <b>Incomplete COGS:</b> estimated profit may fall as missing costs are entered');
+  }
   insights.push(buildMonthlyRefundComparisonLine(latestData, totals.reportDate));
   const insightSection = insights.length > 0
     ? `\n\n${insights.join('\n')}`
@@ -403,11 +435,11 @@ function buildDailyReportMessage(totals, latestData = {}) {
 📐 <b>Net Profit Margin:</b> ${marginText}
 ❌ <b>Total Refunds:</b> ${formatKrw(totals.refunds)}
 
-🧾 <b>Total Costs:</b> ${formatKrw(totalCosts)}
-   └ COGS: ${formatKrw(totals.cogs)}
-   └ Shipping: ${formatKrw(totals.shipping)}
+🧾 <b>Total Costs:</b> ${totalCosts}
+   └ COGS: ${cogsUnavailable ? 'N/A (source stale)' : `${formatKrw(totals.cogs)}${cogsIncomplete ? ' recorded so far; incomplete' : ''}`}
+   └ Shipping: ${cogsUnavailable ? 'N/A (source stale)' : `${formatKrw(totals.shipping)}${cogsIncomplete ? ' recorded so far; incomplete' : ''}`}
    └ Payment Fees: ${formatKrw(totals.paymentFees)}
-   └ Ad Spend: ${formatKrw(totals.adSpendKrw)}${insightSection}`;
+   └ Ad Spend: ${metaUnavailable ? 'N/A (source stale)' : formatKrw(totals.adSpendKrw)}${insightSection}`;
 }
 
 function buildMonthlyRefundComparisonLine(latestData, reportDate) {
@@ -482,6 +514,16 @@ function buildDailyReportCorrectionPlan(latestData, reportDate, options = {}) {
   }
 
   const totals = buildDailyReportTotals(latestData, reportDate);
+  if (totals.financialUnavailableReason) {
+    return {
+      shouldCorrect: false,
+      reason: 'financial-source-unavailable',
+      reportDate,
+      text: null,
+      totals,
+      diagnostics,
+    };
+  }
   if (totals.profitIsEstimated && options.allowEstimated === true) {
     return {
       shouldCorrect: true,

@@ -25,6 +25,12 @@ async function getOverviewResponse() {
 
   const revenue = data.revenueData || {};
   const cogs = data.cogsData || null;
+  const metaSource = data.sources?.metaInsights;
+  const cogsSource = data.sources?.cogs;
+  const imwebSource = data.sources?.imweb;
+  const metaUnavailable = metaSource?.stale === true || metaSource?.status === 'error' || metaSource?.hasData === false;
+  const cogsUnavailable = cogsSource?.stale === true || cogsSource?.status === 'error' || cogsSource?.hasData === false;
+  const imwebUnavailable = imwebSource?.stale === true || imwebSource?.status === 'error' || imwebSource?.hasData === false;
   const totalPurchases = cogs?.purchaseCount ?? revenue.totalOrders ?? 0;
   const cpa = calcCPA(totalSpend, totalPurchases, 0);
   const ctr = insightSummary.ctr;
@@ -45,11 +51,13 @@ async function getOverviewResponse() {
   // Compute gross profit margin
   const totalCOGSWithShipping = cogs ? cogs.totalCOGSWithShipping : 0;
   const adSpendKRW = Math.round(totalSpend * usdToKrwRate);
-  const grossProfit = Math.round((revenue.netRevenue || 0) - totalCOGSWithShipping - adSpendKRW);
-  const grossMargin = calcMargin(grossProfit, revenue.netRevenue || 0);
-  const roas = adSpendKRW > 0 ? (revenue.netRevenue || 0) / adSpendKRW : 0;
+  const grossProfit = metaUnavailable || cogsUnavailable || imwebUnavailable || !cogs
+    ? null
+    : Math.round((revenue.netRevenue || 0) - totalCOGSWithShipping - adSpendKRW);
+  const grossMargin = grossProfit == null ? null : calcMargin(grossProfit, revenue.netRevenue || 0);
+  const roas = metaUnavailable ? null : adSpendKRW > 0 ? (revenue.netRevenue || 0) / adSpendKRW : 0;
   const aov = calcAOV(revenue.totalRevenue || 0, revenue.totalOrders || 0);
-  const cogsRate = calcPercent(totalCOGSWithShipping, revenue.totalRevenue || 0);
+  const cogsRate = cogsUnavailable || !cogs ? null : calcPercent(totalCOGSWithShipping, revenue.totalRevenue || 0);
 
   return contracts.overview({
     kpis: {
@@ -57,19 +65,19 @@ async function getOverviewResponse() {
       refunded: revenue.totalRefunded || 0,
       netRevenue: revenue.netRevenue || 0,
       totalOrders: revenue.totalOrders || 0,
-      adSpend: totalSpend,
-      adSpendKRW,
-      purchases: totalPurchases,
-      cpa,
-      ctr,
+      adSpend: metaUnavailable ? null : totalSpend,
+      adSpendKRW: metaUnavailable ? null : adSpendKRW,
+      purchases: cogsUnavailable ? null : totalPurchases,
+      cpa: metaUnavailable || cogsUnavailable ? null : cpa,
+      ctr: metaUnavailable ? null : ctr,
       roas,
       refundRate: revenue.refundRate || 0,
       cancelRate: revenue.cancelRate || 0,
-      cogs: cogs ? cogs.totalCOGSWithShipping : null,
+      cogs: cogsUnavailable ? null : cogs ? cogs.totalCOGSWithShipping : null,
       aov: Math.round(aov),
-      cogsRate: parseFloat(cogsRate.toFixed(1)),
+      cogsRate: cogsRate == null ? null : parseFloat(cogsRate.toFixed(1)),
       grossProfit,
-      grossMargin: parseFloat(grossMargin.toFixed(1)),
+      grossMargin: grossMargin == null ? null : parseFloat(grossMargin.toFixed(1)),
     },
     days: dailyMerged.length,
     campaigns: data.campaigns || [],
