@@ -1266,6 +1266,29 @@ function alignCalendarDaysWithSelection(calendarDays, selectionDays) {
   }));
 }
 
+function buildCalendarMonthRoas(months, calendarDays, today) {
+  return (Array.isArray(months) ? months : []).map(month => {
+    const totals = (Array.isArray(calendarDays) ? calendarDays : []).reduce((sum, day) => {
+      if (!day?.date
+        || compareDateKeys(day.date, month.start) < 0
+        || compareDateKeys(day.date, month.end) > 0
+        || compareDateKeys(day.date, today) > 0) {
+        return sum;
+      }
+      sum.netRevenue += toFiniteNumber(day.netRevenue);
+      sum.adSpendKRW += toFiniteNumber(day.adSpendKRW);
+      return sum;
+    }, { netRevenue: 0, adSpendKRW: 0 });
+
+    return {
+      ...month,
+      roas: ratioOrNull(totals.netRevenue, totals.adSpendKRW),
+      roasNetRevenue: Math.round(totals.netRevenue),
+      roasAdSpendKRW: Math.round(totals.adSpendKRW),
+    };
+  });
+}
+
 function buildSummaryFinancialDays(projection, dates, paywayFinancials, context = {}) {
   const days = buildDailyRows(
     dates,
@@ -1470,7 +1493,10 @@ async function getCalendarAnalysisResponse(query = {}) {
   return contracts.calendarAnalysis({
     ready: true,
     fx: selectionFx,
-    viewport,
+    viewport: {
+      ...viewport,
+      months: buildCalendarMonthRoas(viewport.months, calendarDays, viewport.today),
+    },
     calendarDays,
     categoryRevenueByDate,
     categoryRevenueByMonth,
@@ -1497,6 +1523,7 @@ async function getCalendarAnalysisResponse(query = {}) {
 }
 
 module.exports = {
+  buildCalendarMonthRoas,
   buildSummaryFinancialDays,
   getCalendarAnalysisResponse,
   alignCalendarDaysWithSelection,

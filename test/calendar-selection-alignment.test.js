@@ -6,10 +6,47 @@ const {
 } = require('../server/domain/paywayFinancials');
 const {
   alignCalendarDaysWithSelection,
+  buildCalendarMonthRoas,
   buildSelectionSummary,
 } = require('../server/services/calendarService');
 const { buildDailyCogsWithSheetTotals } = require('../server/services/financialProjectionService');
 const { buildProfitWaterfall } = require('../server/transforms/charts');
+
+test('calendar month ROAS uses summed net revenue and Meta spend for that month', () => {
+  const months = [
+    { start: '2026-08-01', end: '2026-08-31' },
+    { start: '2026-09-01', end: '2026-09-30' },
+  ];
+  const days = [
+    { date: '2026-08-31', netRevenue: 100_000, adSpendKRW: 25_000 },
+    { date: '2026-09-01', netRevenue: 100_000, adSpendKRW: 20_000 },
+    { date: '2026-09-02', netRevenue: 50_000, adSpendKRW: 10_000 },
+    { date: '2026-09-03', netRevenue: 300_000, adSpendKRW: 100_000 },
+  ];
+
+  const result = buildCalendarMonthRoas(months, days, '2026-09-02');
+
+  assert.equal(result[0].roas, 4);
+  assert.equal(result[1].roas, 5);
+  assert.equal(result[1].roasNetRevenue, 150_000);
+  assert.equal(result[1].roasAdSpendKRW, 30_000);
+  assert.deepEqual(months, [
+    { start: '2026-08-01', end: '2026-08-31' },
+    { start: '2026-09-01', end: '2026-09-30' },
+  ]);
+});
+
+test('calendar month ROAS stays unavailable when no Meta spend was recorded', () => {
+  const [month] = buildCalendarMonthRoas(
+    [{ start: '2026-09-01', end: '2026-09-30' }],
+    [{ date: '2026-09-01', netRevenue: 80_000, adSpendKRW: 0 }],
+    '2026-09-02'
+  );
+
+  assert.equal(month.roas, null);
+  assert.equal(month.roasNetRevenue, 80_000);
+  assert.equal(month.roasAdSpendKRW, 0);
+});
 
 test('selected calendar cells use the same Payway-adjusted profit as the selected panels', () => {
   const calendarDays = [

@@ -514,6 +514,13 @@
         `${formatCount(totals.returnRefundOrders)} post-delivery returns of ${formatCount(totals.returnEligibleOrders)} eligible orders; cancellations excluded`,
         `취소 제외 주문 ${formatCount(totals.returnEligibleOrders)}건 중 배송 후 반품 ${formatCount(totals.returnRefundOrders)}건`
       );
+      const roasLabel = hasCalendarMetric(month.roas) ? `${Number(month.roas).toFixed(2)}×` : '—';
+      const roasTitle = hasCalendarMetric(month.roas)
+        ? tr(
+          `Blended ROAS: ${formatKrw(month.roasNetRevenue)} net revenue ÷ ${formatKrw(month.roasAdSpendKRW)} Meta ad spend`,
+          `통합 ROAS: 순매출 ${formatKrw(month.roasNetRevenue)} ÷ Meta 광고비 ${formatKrw(month.roasAdSpendKRW)}`
+        )
+        : tr('ROAS unavailable without Meta ad spend', 'Meta 광고비가 없어 ROAS를 계산할 수 없습니다');
 
       return `
         <div class="calendar-month">
@@ -523,6 +530,7 @@
             </div>
             <div class="calendar-month-totals">
               <span>${esc(tr('Revenue', '매출'))} <b>${esc(formatKrw(totals.revenue))}</b></span>
+              <span title="${esc(roasTitle)}">${esc(tr('ROAS', 'ROAS'))} <b>${esc(roasLabel)}</b></span>
               <span>${esc(tr('Net profit', '순이익'))} <b class="${netProfitTone}">${esc(netProfitLabel)}</b></span>
               <span title="${esc(refundRateTitle)}">${esc(tr('Refunds', '환불'))} <b class="is-refund">${esc(refundRateLabel)}</b></span>
             </div>
