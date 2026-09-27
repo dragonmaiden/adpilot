@@ -528,6 +528,41 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   margin-top: 0;
 }
 
+.summary-profit-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: stretch;
+}
+
+.summary-profit-topline .profit-hero {
+  height: 100%;
+  padding: var(--space-6);
+}
+
+.summary-profit-topline .profit-hero-main {
+  display: block;
+  margin-top: var(--space-5);
+}
+
+.summary-profit-topline .profit-hero-metrics {
+  display: none;
+}
+
+.summary-profit-kpis {
+  height: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.summary-profit-kpis .kpi-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--space-4);
+}
+
 .refund-rate-monitor {
   min-width: 0;
 }
@@ -3080,353 +3115,198 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   user-select: none;
 }
 
-/* Each month sheet scales its type to the column it lands in */
-.calendar-viewport > .calendar-month {
-  container-type: inline-size;
-  container-name: month-sheet;
-}
-
-/* ── Revenue calendar: printed-ledger sheet (one per month) ── */
-
 .calendar-month {
-  --calendar-paper: var(--color-surface);
-  --calendar-ink: var(--color-text);
-  --calendar-hairline: color-mix(in srgb, var(--color-text) 14%, var(--color-border));
-  --calendar-leader: color-mix(in srgb, var(--color-text) 22%, var(--color-border));
-  --calendar-profit-ink: var(--color-success);
-  --calendar-loss-ink: var(--color-error);
-  min-width: 0;
-  padding: clamp(14px, 2.6cqw, 28px) clamp(14px, 3cqw, 32px) clamp(14px, 2.4cqw, 26px);
-  border-radius: 4px;
-  background: var(--calendar-paper);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.08);
-  color: var(--calendar-ink);
-  font-variant-numeric: tabular-nums;
-}
-
-[data-theme="light"] .calendar-month {
-  --calendar-paper: #fdfcfa;
-  --calendar-hairline: #e0ded8;
-  --calendar-leader: #d4d4d8;
-  --calendar-profit-ink: #15803d;
-  --calendar-loss-ink: #b91c1c;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-lg);
+  padding: var(--calendar-month-padding);
 }
 
 .calendar-month-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-5);
-  padding-bottom: 12px;
-  border-bottom: 2px solid var(--calendar-ink);
-}
-
-.calendar-month-heading {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 14px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .calendar-month-title {
-  font-size: clamp(1.125rem, 3.4cqw, 1.75rem);
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: -0.015em;
   line-height: 1.2;
 }
 
-.calendar-month-totals {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  margin-left: auto;
-  gap: 4px clamp(10px, 1.8cqw, 18px);
-  color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: clamp(0.6875rem, 1.8cqw, 0.9375rem);
-}
-
-.calendar-month-totals b {
-  color: var(--calendar-ink);
-  font-weight: 600;
-}
-
-.calendar-month-totals b.is-refund,
-.calendar-month-totals b.is-loss {
-  color: var(--color-error);
-}
-
-.calendar-month-totals b.is-profit {
-  color: var(--calendar-profit-ink);
+.calendar-month-note {
+  font-size: var(--text-xs);
+  color: var(--color-text-faint);
 }
 
 .calendar-weekdays,
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .calendar-weekdays {
-  padding: 8px 0 6px;
-  border-bottom: 1px solid var(--calendar-ink);
+  margin-bottom: 8px;
 }
 
 .calendar-weekday {
-  padding-left: clamp(4px, 1cqw, 10px);
-  color: var(--calendar-ink);
-  font-size: clamp(0.625rem, 1.5cqw, 0.75rem);
+  font-size: var(--text-xs);
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.calendar-weekday:nth-child(6),
-.calendar-weekday:nth-child(7) {
-  color: var(--color-text-muted);
-}
-
-.calendar-grid {
-  border-left: 1px solid var(--calendar-hairline);
+  color: var(--color-text-faint);
+  text-align: center;
+  padding: 0 0 var(--space-1);
 }
 
 .calendar-spacer {
-  min-height: clamp(96px, 18cqw, 150px);
-  border-right: 1px solid var(--calendar-hairline);
-  border-bottom: 1px solid var(--calendar-hairline);
-  visibility: hidden;
+  min-height: 1px;
 }
 
 .calendar-day {
+  --calendar-alpha: 0;
   --calendar-tint-strength: 0;
+  --calendar-tint-rgb: var(--calendar-profit-breakeven-rgb);
+  min-height: 116px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.55rem;
+  background:
+    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.1 + var(--calendar-tint-strength) * 0.26)), transparent 68%),
+    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.08 + var(--calendar-tint-strength) * 0.32)), rgba(var(--calendar-tint-rgb), calc(0.02 + var(--calendar-tint-strength) * 0.14))),
+    var(--color-surface);
+  color: var(--color-text);
   display: flex;
-  min-width: 0;
-  min-height: clamp(96px, 18cqw, 150px);
   flex-direction: column;
-  padding: clamp(6px, 1cqw, 10px) clamp(5px, 1.2cqw, 12px) clamp(6px, 1.1cqw, 12px);
-  border: 0;
-  overflow: hidden;
-  border-right: 1px solid var(--calendar-hairline);
-  border-bottom: 1px solid var(--calendar-hairline);
-  border-radius: 0;
-  /* Profit tint: near-paper at t=0, soft green at t=1 */
-  background: color-mix(in srgb, var(--calendar-paper), var(--color-success) calc(var(--calendar-tint-strength) * 26%));
-  color: var(--calendar-ink);
-  font: inherit;
+  gap: 3px;
   text-align: left;
   cursor: pointer;
-  transition: box-shadow var(--transition-interactive), background-color var(--transition-interactive);
+  overflow: hidden;
+  transition:
+    transform var(--transition-interactive),
+    border-color var(--transition-interactive),
+    box-shadow var(--transition-interactive),
+    background var(--transition-interactive);
 }
 
-[data-theme="light"] .calendar-day.profit-positive {
-  background: oklch(
-    calc(97.5% - 8% * var(--calendar-tint-strength))
-    calc(0.012 + 0.07 * var(--calendar-tint-strength))
-    148
-  );
+.calendar-day.profit-positive {
+  --calendar-tint-rgb: var(--calendar-profit-positive-rgb);
+  border-color: rgba(var(--calendar-profit-positive-rgb), calc(0.1 + var(--calendar-tint-strength) * 0.22));
 }
 
 .calendar-day.profit-negative {
-  background: color-mix(in srgb, var(--calendar-paper), var(--color-error) 14%);
+  --calendar-tint-rgb: var(--calendar-profit-negative-rgb);
+  border-color: rgba(var(--calendar-profit-negative-rgb), calc(0.16 + var(--calendar-tint-strength) * 0.2));
 }
 
-[data-theme="light"] .calendar-day.profit-negative {
-  background: oklch(95% 0.04 25);
-}
-
-.calendar-day.profit-negative .calendar-day-number,
-.calendar-day.profit-negative .calendar-day-profit {
-  color: var(--calendar-loss-ink);
+.calendar-day.profit-breakeven {
+  --calendar-tint-rgb: var(--calendar-profit-breakeven-rgb);
 }
 
 .calendar-day:hover {
-  box-shadow: inset 0 0 0 1px var(--calendar-ink);
+  transform: translateY(-1px);
+  border-color: var(--color-primary);
+}
+
+.calendar-day.is-empty {
+  opacity: 0.78;
 }
 
 .calendar-day.is-future {
-  opacity: 0.55;
+  opacity: 0.52;
   cursor: default;
-  background: color-mix(in srgb, var(--calendar-paper) 92%, var(--color-border));
+  border-style: dashed;
 }
 
 .calendar-day.is-future:hover {
-  box-shadow: none;
+  transform: none;
+  border-color: var(--color-divider);
 }
 
-.calendar-day.is-future .calendar-day-number {
-  color: var(--color-text-faint);
+.calendar-day.is-today {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
-.calendar-day.is-empty .calendar-day-revenue,
-.calendar-day.is-empty .calendar-day-profit {
-  color: var(--color-text-faint);
+.calendar-day.is-selected {
+  border-color: rgba(var(--calendar-tint-rgb), 0.9);
+  box-shadow: 0 0 0 1px rgba(var(--calendar-tint-rgb), 0.88), 0 8px 20px rgba(var(--calendar-tint-rgb), 0.16);
 }
 
-.calendar-day.is-today,
-.calendar-day.is-today:hover {
-  box-shadow: inset 0 0 0 2px var(--calendar-ink);
-}
-
-/* Selected range reads as one continuous wash; only the endpoints are outlined */
 .calendar-day.is-range {
-  position: relative;
-}
-
-.calendar-day.is-range::after {
-  position: absolute;
-  inset: 0;
-  background: color-mix(in srgb, var(--color-primary) 11%, transparent);
-  content: '';
-  pointer-events: none;
+  background:
+    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.14 + var(--calendar-tint-strength) * 0.3)), transparent 68%),
+    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.12 + var(--calendar-tint-strength) * 0.34)), rgba(var(--calendar-tint-rgb), calc(0.05 + var(--calendar-tint-strength) * 0.18))),
+    var(--color-surface);
 }
 
 .calendar-day.is-selection-start,
 .calendar-day.is-selection-end,
-.calendar-day.is-selection-single,
-.calendar-day.is-today.is-range {
-  box-shadow: inset 0 0 0 2px var(--color-primary);
-}
-
-.calendar-day.is-range:hover {
-  box-shadow: inset 0 0 0 1px var(--color-primary);
-}
-
-.calendar-day.is-selection-start:hover,
-.calendar-day.is-selection-end:hover,
-.calendar-day.is-selection-single:hover {
-  box-shadow: inset 0 0 0 2px var(--color-primary);
+.calendar-day.is-selection-single {
+  border-color: rgba(var(--calendar-tint-rgb), 0.95);
+  background:
+    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.2 + var(--calendar-tint-strength) * 0.32)), transparent 68%),
+    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.16 + var(--calendar-tint-strength) * 0.36)), rgba(var(--calendar-tint-rgb), calc(0.08 + var(--calendar-tint-strength) * 0.22))),
+    var(--color-surface);
 }
 
 .calendar-day-top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 6px;
 }
 
 .calendar-day-number {
-  font-size: clamp(0.8125rem, 1.9cqw, 1rem);
+  font-size: 0.98rem;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1;
 }
 
 .calendar-day-label {
-  color: var(--calendar-ink);
-  font-size: 0.5625rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  line-height: 1.2;
-  text-transform: uppercase;
+  font-size: 0.68rem;
+  color: var(--color-text-faint);
+  line-height: 1;
   white-space: nowrap;
 }
 
 .calendar-day-revenue {
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: 0;
+  font-variant-numeric: lining-nums;
   min-width: 0;
-  margin-top: clamp(6px, 1cqw, 10px);
-  font-family: var(--font-mono);
-  font-size: clamp(0.75rem, 1.85cqw, 1.125rem);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-  text-align: right;
   white-space: nowrap;
 }
 
-.calendar-day-profit {
-  min-width: 0;
+.calendar-day-profit,
+.calendar-day-orders {
+  font-size: 0.7rem;
   color: var(--color-text-muted);
-  font-family: var(--font-mono);
-  font-size: clamp(0.625rem, 1.6cqw, 0.875rem);
-  line-height: 1.3;
-  text-align: right;
+  line-height: 1.1;
+  letter-spacing: 0;
+  font-variant-numeric: lining-nums;
+  min-width: 0;
   white-space: nowrap;
 }
 
 .calendar-day-profit.positive {
-  color: var(--calendar-profit-ink);
+  color: var(--color-success);
 }
 
 .calendar-day-profit.negative {
-  color: var(--calendar-loss-ink);
-}
-
-.calendar-day-footer {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px;
-  margin-top: auto;
-  padding-top: clamp(6px, 1cqw, 10px);
-  border-top: 1px dotted var(--calendar-leader);
-}
-
-.calendar-day-orders {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 4px;
-  line-height: 1.1;
-}
-
-.calendar-day-orders-count {
-  font-family: var(--font-mono);
-  font-size: clamp(0.8125rem, 2.1cqw, 1.125rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.calendar-day-orders-unit {
-  color: var(--color-text-muted);
-  font-size: clamp(0.5625rem, 1.3cqw, 0.75rem);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.calendar-day-refunds {
-  flex: 0 0 auto;
   color: var(--color-error);
-  font-size: clamp(0.8125rem, 2.3cqw, 1.25rem);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  line-height: 1;
-  text-align: right;
-  white-space: nowrap;
 }
 
-.calendar-day-refunds.is-count {
-  font-family: var(--font-mono);
-  font-size: clamp(0.75rem, 1.7cqw, 1rem);
-  letter-spacing: 0;
-}
-
-/* Narrow sheet (two-up desktop, tablets): full amounts must still fit, so
-   figures fall back to the narrower proportional face and tighter gutters. */
-@container month-sheet (max-width: 820px) {
-  .calendar-day {
-    padding-inline: 4px;
-  }
-
-  .calendar-day-revenue,
-  .calendar-day-profit,
-  .calendar-day-orders-count {
-    font-family: var(--font-body);
-    letter-spacing: -0.02em;
-  }
-
-  .calendar-day-revenue {
-    font-size: clamp(0.65rem, 1.85cqw, 1.125rem);
-  }
-}
-
-.calendar-month-footnote {
+.calendar-day-badges {
+  margin-top: auto;
   display: flex;
-  justify-content: space-between;
+  gap: 4px;
   flex-wrap: wrap;
-  gap: 4px var(--space-4);
-  margin-top: 14px;
-  color: var(--color-text-faint);
-  font-size: clamp(0.625rem, 1.5cqw, 0.75rem);
-  letter-spacing: 0.04em;
+  align-items: flex-start;
 }
 
 .calendar-mini-badge {
@@ -3440,6 +3320,26 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   line-height: 1;
   white-space: nowrap;
   max-width: 100%;
+}
+
+.calendar-mini-badge.refund {
+  background: var(--color-error-subtle);
+  color: var(--color-error);
+}
+
+.calendar-mini-badge.ops {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.calendar-mini-badge.coverage {
+  background: var(--color-surface-offset);
+  color: var(--color-text-muted);
+}
+
+.calendar-mini-badge.future {
+  background: var(--color-surface-offset);
+  color: var(--color-text-faint);
 }
 
 /* ── Income statement: printed-ledger sheet ── */
@@ -4045,11 +3945,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     grid-template-columns: repeat(2, 1fr);
   }
 
-  /* Two-up month sheets need ≥71px day cells for full KRW figures */
-  .calendar-viewport {
-    grid-template-columns: 1fr;
-  }
-
   .data-table th,
   .data-table td {
     padding-left: var(--space-2);
@@ -4071,6 +3966,15 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 @media (max-width: 1024px) {
   .charts-grid { grid-template-columns: 1fr; }
+  .summary-profit-topline {
+    grid-template-columns: 1fr;
+  }
+  .summary-profit-topline .profit-hero-metrics {
+    display: grid;
+  }
+  .summary-profit-topline .profit-hero-main {
+    display: grid;
+  }
   .calendar-viewport { grid-template-columns: 1fr; }
   .live-intraday-takeaway { grid-template-columns: 1fr; }
   .live-intraday-takeaway-side {
@@ -4309,29 +4213,18 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     justify-content: center;
   }
 
-  .calendar-month {
-    padding: var(--space-5) var(--space-4);
-  }
-
-  .calendar-spacer,
   .calendar-day {
-    min-height: 100px;
-  }
-
-  .calendar-day {
-    padding: 6px 8px 8px;
+    min-height: 106px;
+    padding: 0.55rem 0.5rem;
   }
 
   .calendar-day-revenue {
-    font-size: 0.8125rem;
+    font-size: 0.74rem;
   }
 
-  .calendar-day-profit {
-    font-size: 0.6875rem;
-  }
-
-  .calendar-day-orders-count {
-    font-size: 0.875rem;
+  .calendar-day-profit,
+  .calendar-day-orders {
+    font-size: 0.68rem;
   }
 
   /* Table mobile UX */
@@ -4465,26 +4358,14 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
   .chart-container { height: var(--chart-visual-height-mobile); }
 
-  .calendar-month {
-    padding: var(--space-4) var(--space-3);
-  }
-
-  .calendar-month-title {
-    font-size: 1.125rem;
-  }
-
-  .calendar-weekday {
-    padding-left: 4px;
-    letter-spacing: 0.08em;
-  }
-
-  .calendar-spacer,
-  .calendar-day {
-    min-height: 96px;
+  .calendar-weekdays,
+  .calendar-grid {
+    gap: 6px;
   }
 
   .calendar-day {
-    padding: 5px 4px 6px;
+    min-height: 112px;
+    padding: 0.55rem 0.4rem;
   }
 
   .calendar-day-top {
@@ -4512,37 +4393,9 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     font-size: 0.68rem;
   }
 
-  .calendar-day-profit {
+  .calendar-day-profit,
+  .calendar-day-orders {
     font-size: 0.64rem;
-  }
-
-  .calendar-day-revenue,
-  .calendar-day-profit {
-    line-height: 1.15;
-  }
-
-  .calendar-day-footer {
-    flex-wrap: wrap;
-    gap: 2px 4px;
-  }
-
-  .calendar-day-orders-count {
-    font-size: 0.8125rem;
-  }
-
-  .calendar-day-orders-unit {
-    font-size: 0.5625rem;
-  }
-
-  /* The bold count carries the meaning; the unit word does not fit 40px cells */
-  .calendar-day-orders-count + .calendar-day-orders-unit {
-    display: none;
-  }
-
-  .calendar-day-refunds {
-    font-size: 0.75rem;
-    letter-spacing: 0;
-    line-height: 1.1;
   }
 
   .calendar-day-badges {
@@ -4583,25 +4436,23 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .card { padding: var(--space-3); }
   .kpi-card { padding: var(--space-3); }
 
-  .calendar-spacer,
-  .calendar-day {
-    min-height: 92px;
+  .calendar-weekdays,
+  .calendar-grid {
+    gap: 4px;
   }
 
   .calendar-day {
-    padding: 4px 3px 5px;
+    min-height: 116px;
+    padding: 0.5rem 0.3rem;
   }
 
   .calendar-day-revenue {
     font-size: 0.62rem;
   }
 
-  .calendar-day-profit {
+  .calendar-day-profit,
+  .calendar-day-orders {
     font-size: 0.58rem;
-  }
-
-  .calendar-day-orders-count {
-    font-size: 0.75rem;
   }
 
   /* Opt items stack vertically */

@@ -93,6 +93,55 @@
       <div class="summary-profit-visuals">
         <div class="analytics-inline-notice" id="analyticsFreshnessNotice" hidden></div>
 
+        <div class="summary-profit-topline">
+          <div class="profit-hero" id="profitHero">
+            <div class="profit-hero-head">
+              <div class="profit-hero-kicker" id="profitHeroKicker">Selected range net profit</div>
+              <span class="confidence-badge" id="profitConfidence">—</span>
+            </div>
+            <div class="profit-hero-main">
+              <div class="profit-hero-primary">
+                <div class="profit-amount" id="profitAmount">—</div>
+                <div class="profit-verdict" id="profitVerdict">—</div>
+              </div>
+              <div class="profit-hero-metrics">
+                <div class="profit-hero-metric">
+                  <span data-i18n="analytics.hero.margin">Margin</span>
+                  <strong id="profitHeroMargin">—</strong>
+                </div>
+                <div class="profit-hero-metric">
+                  <span data-i18n="analytics.hero.trueRoas">ROAS</span>
+                  <strong id="profitHeroRoas">—</strong>
+                </div>
+                <div class="profit-hero-metric">
+                  <span data-i18n="analytics.hero.runRate">Avg/day</span>
+                  <strong id="profitHeroRunRate">—</strong>
+                </div>
+              </div>
+            </div>
+            <div class="profit-hero-sub" id="profitHeroSub" data-i18n="analytics.hero.waiting">Waiting for data...</div>
+            <div class="profit-hero-latest" id="profitLatestSignal" data-i18n="analytics.hero.latestWaiting">Selected range: waiting for data.</div>
+          </div>
+
+          <div class="kpi-grid summary-profit-kpis">
+            <div class="kpi-card" data-profit-source-kpi="grossRevenue">
+              <div class="kpi-label" data-i18n="analytics.kpi.grossRevenue">Gross Revenue</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="receipt"></i><span>—</span></div>
+            </div>
+            <div class="kpi-card" data-profit-source-kpi="refunds">
+              <div class="kpi-label" data-i18n="analytics.kpi.refunds">Refunds</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="rotate-ccw"></i><span>—</span></div>
+            </div>
+            <div class="kpi-card" data-profit-source-kpi="totalCosts">
+              <div class="kpi-label" data-i18n="analytics.kpi.totalCosts">Total Costs</div>
+              <div class="kpi-value">—</div>
+              <div class="kpi-delta neutral"><i data-lucide="package"></i><span>—</span></div>
+            </div>
+          </div>
+        </div>
+
         <div class="calendar-income-statement-deck" id="calendarIncomeStatementDeck">
           <div class="card">
             <div class="card-header">

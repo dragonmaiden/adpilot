@@ -358,16 +358,6 @@
     return classes.join(' ');
   }
 
-  // Tally marks stay on one line; beyond this the cell shows a count (×12)
-  const CALENDAR_MAX_REFUND_MARKS = 5;
-
-  function formatCalendarLedgerProfit(value) {
-    const rounded = Math.round(toFiniteNumber(value));
-    const digits = `₩${Math.abs(rounded).toLocaleString()}`;
-    if (rounded < 0) return `(${digits})`;
-    return rounded > 0 ? `+${digits}` : digits;
-  }
-
   function renderCalendarDayCell(dateKey, dayData, spectrum) {
     const data = dayData || {
       revenue: 0,
@@ -378,38 +368,56 @@
       revenueIntensity: 0,
     };
     const todayKey = getKstDateKey();
-    const isToday = dateKey === todayKey;
     const isFuture = compareDateKeys(dateKey, todayKey) > 0;
     const isEmptyDay = !isFuture && (data.revenue || 0) === 0 && (data.orders || 0) === 0 && (data.adSpend || 0) === 0 && (data.refundCount || 0) === 0;
     const profitAvailable = hasCalendarMetric(data.trueNetProfit);
-    const showProfit = !isFuture && profitAvailable;
-    const netProfit = showProfit ? Number(data.trueNetProfit) : null;
-    const profitClass = !showProfit ? '' : netProfit >= 0 ? 'positive' : 'negative';
+    const netProfit = profitAvailable ? Number(data.trueNetProfit) : null;
+    const profitClass = !profitAvailable ? '' : netProfit >= 0 ? 'positive' : 'negative';
     const maxPositiveProfit = Math.max(Number(spectrum?.maxPositiveProfit || 0), 1);
-    // Tint strength t = max(0, netProfit) / maxProfitInMonth
-    const tintStrength = showProfit && netProfit > 0
+    const maxNegativeLoss = Math.max(Number(spectrum?.maxNegativeLoss || 0), 1);
+    const profitSpectrum = profitAvailable && netProfit > 0
       ? Math.min(1, netProfit / maxPositiveProfit)
-      : 0;
-    const dayToneClass = showProfit && netProfit < 0
-      ? 'profit-negative'
-      : showProfit && netProfit > 0
+      : profitAvailable && netProfit < 0
+        ? Math.min(1, Math.abs(netProfit) / maxNegativeLoss)
+        : 0;
+    const dayToneClass = isFuture
+      ? 'profit-breakeven'
+      : profitAvailable && netProfit > 0
         ? 'profit-positive'
-        : 'profit-breakeven';
-    const refundCount = Math.max(0, Math.round(toFiniteNumber(data.refundCount)));
-    const orderCount = Math.max(0, Math.round(toFiniteNumber(data.orders)));
+        : profitAvailable && netProfit < 0
+          ? 'profit-negative'
+          : 'profit-breakeven';
+    const tintStrength = isFuture
+      ? 0
+      : profitAvailable && netProfit > 0
+        ? Math.min(1, 0.08 + profitSpectrum * 0.92)
+        : profitAvailable && netProfit < 0
+          ? Math.min(1, 0.08 + profitSpectrum * 0.92)
+          : 0;
+    const badges = [];
+
+    if (isFuture) {
+      badges.push(`<span class="calendar-mini-badge future">${esc(tr('Future', '예정'))}</span>`);
+    }
+
+    if ((data.refundCount || 0) > 0) {
+      badges.push(`<span class="calendar-mini-badge refund">${tr(`${formatCount(data.refundCount)} refund${data.refundCount === 1 ? '' : 's'}`, `환불 ${formatCount(data.refundCount)}건`)}</span>`);
+    }
+
+    if (isEmptyDay) {
+      badges.push(`<span class="calendar-mini-badge coverage">${esc(tr('No data', '데이터 없음'))}</span>`);
+    }
 
     const revenueFullLabel = isFuture ? '—' : formatKrw(data.revenue || 0);
     const profitFullLabel = isFuture || !profitAvailable ? '—' : formatSignedKrw(data.trueNetProfit);
     const revenueLabel = isFuture ? '—' : formatCalendarCellKrw(data.revenue || 0);
-    const profitLabel = isFuture || !profitAvailable ? '—' : formatCalendarLedgerProfit(netProfit);
-    const footerLabel = isFuture
+    const profitLabel = isFuture || !profitAvailable
+      ? '—'
+      : formatCalendarCellKrw(data.trueNetProfit, { signed: true });
+    const orderCount = Number(data.orders || 0);
+    const ordersLabel = isFuture
       ? tr('Future', '예정')
-      : isEmptyDay
-        ? tr('No data', '데이터 없음')
-        : null;
-    const refundTitle = refundCount > 0
-      ? tr(`${formatCount(refundCount)} refunded ${refundCount === 1 ? 'order' : 'orders'}`, `환불 ${formatCount(refundCount)}건`)
-      : '';
+      : tr(`${formatCount(orderCount)} ${orderCount === 1 ? 'order' : 'orders'}`, `주문 ${formatCount(orderCount)}건`);
 
     return `
       <button
@@ -421,16 +429,12 @@
       >
         <div class="calendar-day-top">
           <span class="calendar-day-number">${esc(String(Number(dateKey.slice(-2))))}</span>
-          ${isToday ? `<span class="calendar-day-label">${esc(tr('Today', '오늘'))}</span>` : ''}
+          ${dateKey === todayKey ? `<span class="calendar-day-label">${esc(tr('Today', '오늘'))}</span>` : ''}
         </div>
         <div class="calendar-day-revenue" title="${esc(revenueFullLabel)}">${esc(revenueLabel)}</div>
-        ${isFuture ? '' : `<div class="calendar-day-profit ${profitClass}" title="${esc(profitFullLabel)}">${esc(profitLabel)}</div>`}
-        <div class="calendar-day-footer">
-          ${footerLabel
-            ? `<span class="calendar-day-orders"><span class="calendar-day-orders-unit">${esc(footerLabel)}</span></span>`
-            : `<span class="calendar-day-orders" title="${esc(tr(`${formatCount(orderCount)} ${orderCount === 1 ? 'order' : 'orders'}`, `주문 ${formatCount(orderCount)}건`))}"><span class="calendar-day-orders-count">${formatCount(orderCount)}</span><span class="calendar-day-orders-unit">${esc(tr(orderCount === 1 ? 'order' : 'orders', '주문'))}</span></span>`}
-          ${refundCount > 0 ? `<span class="calendar-day-refunds ${refundCount > CALENDAR_MAX_REFUND_MARKS ? 'is-count' : ''}" title="${esc(refundTitle)}" aria-label="${esc(refundTitle)}">${refundCount > CALENDAR_MAX_REFUND_MARKS ? `×${formatCount(refundCount)}` : '×'.repeat(refundCount)}</span>` : ''}
-        </div>
+        <div class="calendar-day-profit ${profitClass}" title="${esc(profitFullLabel)}">${esc(profitLabel)}</div>
+        <div class="calendar-day-orders">${ordersLabel}</div>
+        ${badges.length ? `<div class="calendar-day-badges">${badges.join('')}</div>` : ''}
       </button>
     `;
   }
@@ -463,67 +467,35 @@
 
     const calendarDays = hasFreshViewport ? (calendarState.data?.calendarDays || []) : [];
     const dayMap = new Map(calendarDays.map(day => [day.date, day]));
-    const todayKey = getKstDateKey();
+    const tintSpectrum = calendarDays.reduce((acc, day) => {
+      const netProfit = Number(day?.trueNetProfit || 0);
+      if (netProfit > 0) {
+        acc.maxPositiveProfit = Math.max(acc.maxPositiveProfit, netProfit);
+      } else if (netProfit < 0) {
+        acc.maxNegativeLoss = Math.max(acc.maxNegativeLoss, Math.abs(netProfit));
+      }
+      return acc;
+    }, { maxPositiveProfit: 0, maxNegativeLoss: 0 });
     const weekdayLabels = tr(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], ['월', '화', '수', '목', '금', '토', '일']);
 
     viewportEl.innerHTML = months.map(month => {
       const days = enumerateDateKeys(month.start, month.end);
       const leadingSpaces = getCalendarWeekday(month.start);
-      const trailingSpaces = (7 - ((leadingSpaces + days.length) % 7)) % 7;
-      const recorded = days
-        .filter(dateKey => compareDateKeys(dateKey, todayKey) <= 0)
-        .map(dateKey => dayMap.get(dateKey))
-        .filter(day => day && ((day.revenue || 0) > 0 || (day.orders || 0) > 0 || (day.refundCount || 0) > 0));
-      const totals = recorded.reduce((acc, day) => {
-        acc.revenue += toFiniteNumber(day.revenue);
-        acc.orders += toFiniteNumber(day.orders);
-        acc.refunds += toFiniteNumber(day.refundCount);
-        acc.costs += toFiniteNumber(day.cogs) + toFiniteNumber(day.shipping)
-          + toFiniteNumber(day.paymentFees) + toFiniteNumber(day.adSpendKRW);
-        if (hasCalendarMetric(day.trueNetProfit)) {
-          acc.netProfit += Number(day.trueNetProfit);
-        } else {
-          acc.netProfitComplete = false;
-        }
-        const netProfit = toFiniteNumber(day.trueNetProfit);
-        if (netProfit > 0) acc.maxPositiveProfit = Math.max(acc.maxPositiveProfit, netProfit);
-        return acc;
-      }, { revenue: 0, orders: 0, refunds: 0, costs: 0, netProfit: 0, netProfitComplete: true, maxPositiveProfit: 0 });
-      const netProfitLabel = recorded.length === 0
-        ? '—'
-        : formatCalendarLedgerProfit(totals.netProfit) + (totals.netProfitComplete ? '' : ' est.');
-      const netProfitTone = recorded.length === 0 ? '' : totals.netProfit < 0 ? 'is-loss' : 'is-profit';
-      // Order-based refund rate, consistent with the per-order × marks in the cells
-      const refundRateLabel = totals.orders > 0 ? formatPercent((totals.refunds / totals.orders) * 100, 1) : '—';
-      const refundRateTitle = tr(
-        `${formatCount(totals.refunds)} refunded of ${formatCount(totals.orders)} orders`,
-        `주문 ${formatCount(totals.orders)}건 중 환불 ${formatCount(totals.refunds)}건`
-      );
-      const spacer = '<div class="calendar-spacer" aria-hidden="true"></div>';
-
       return `
         <div class="calendar-month">
           <div class="calendar-month-header">
-            <div class="calendar-month-heading">
-              <span class="calendar-month-title">${esc(month.label)}</span>
+            <div>
+              <div class="calendar-month-title">${esc(month.label)}</div>
+              <div class="calendar-month-note">${tr(`${formatCount(days.length)} days`, `${formatCount(days.length)}일`)}</div>
             </div>
-            <div class="calendar-month-totals">
-              <span>${esc(tr('Revenue', '매출'))} <b>${esc(formatKrw(totals.revenue))}</b></span>
-              <span>${esc(tr('Net profit', '순이익'))} <b class="${netProfitTone}">${esc(netProfitLabel)}</b></span>
-              <span title="${esc(refundRateTitle)}">${esc(tr('Refunds', '환불'))} <b class="is-refund">${esc(refundRateLabel)}</b></span>
-            </div>
+            <span class="badge badge-neutral">${esc(month.month)}</span>
           </div>
           <div class="calendar-weekdays">
             ${weekdayLabels.map(label => `<div class="calendar-weekday">${label}</div>`).join('')}
           </div>
           <div class="calendar-grid">
-            ${spacer.repeat(leadingSpaces)}
-            ${days.map(dateKey => renderCalendarDayCell(dateKey, dayMap.get(dateKey), totals)).join('')}
-            ${spacer.repeat(trailingSpaces)}
-          </div>
-          <div class="calendar-month-footnote" aria-hidden="true">
-            <span>${esc(tr('Each red × is one refunded order · ×N when six or more', '빨간 × 하나는 환불 주문 1건 · 6건 이상은 ×N'))}</span>
-            <span>${esc(tr('Parentheses denote a loss', '괄호는 손실'))}</span>
+            ${Array.from({ length: leadingSpaces }, () => '<div class="calendar-spacer"></div>').join('')}
+            ${days.map(dateKey => renderCalendarDayCell(dateKey, dayMap.get(dateKey), tintSpectrum)).join('')}
           </div>
         </div>
       `;
