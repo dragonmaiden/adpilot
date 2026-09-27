@@ -93,3 +93,26 @@ test('financial ledger includes estimated daily reports in COGS correction candi
     clearModule('../server/db/postgres');
   }
 });
+
+test('recent Telegram report lookup is bounded and includes already-complete reports', async () => {
+  const queries = [];
+  const postgres = {
+    isConfigured: () => true,
+    query: async (sql, params) => {
+      queries.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  clearModule('../server/db/financialLedgerRepository');
+  installMockModule('../server/db/postgres', postgres);
+  try {
+    const { listRecentDailyReportDeliveries } = require('../server/db/financialLedgerRepository');
+    await listRecentDailyReportDeliveries({ sinceDate: '2026-09-13', limit: 21 });
+    assert.match(queries[0].sql, /report_date >= \$1::date/);
+    assert.match(queries[0].sql, /status in \('sent', 'corrected'\)/);
+    assert.deepEqual(queries[0].params, ['2026-09-13', 21]);
+  } finally {
+    clearModule('../server/db/financialLedgerRepository');
+    clearModule('../server/db/postgres');
+  }
+});

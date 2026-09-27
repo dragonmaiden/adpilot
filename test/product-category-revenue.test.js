@@ -147,10 +147,10 @@ test('calendar income statement renders the financial sequence and every canonic
   const paymentRowsIndex = revenueLinesSource.indexOf('...paymentRows.map');
   const netRevenueIndex = revenueLinesSource.indexOf("label: tr('Net revenue'");
   const grossCogsIndex = calendarJs.indexOf("grossLabel: tr('Gross COGS purchased'");
-  const cogsRecoveryIndex = calendarJs.indexOf("recoveryLabel: tr('Less: recovered/returned COGS'");
+  const cogsRecoveryIndex = calendarJs.indexOf("recoveryLabel: tr('Less: refund-marked COGS adjustment'");
   const netCogsIndex = calendarJs.indexOf("netLabel: tr('Net COGS used in profit'");
   const grossShippingIndex = calendarJs.indexOf("grossLabel: tr('Shipping paid'");
-  const shippingRecoveryIndex = calendarJs.indexOf("recoveryLabel: tr('Less: shipping reimbursed'");
+  const shippingRecoveryIndex = calendarJs.indexOf("recoveryLabel: tr('Less: refund-marked shipping adjustment'");
   const netShippingIndex = calendarJs.indexOf("netLabel: tr('Net shipping used in profit'");
   const paymentFeesIndex = calendarJs.indexOf("label: tr('Payment processing fees'");
   const advertisingIndex = calendarJs.indexOf("label: tr('Meta ad spend'");
@@ -195,10 +195,11 @@ test('calendar income statement exposes the server-owned COGS Sheet reconciliati
   assert.match(calendarServiceJs, /sourcePartitionDelta = sheetTotal - purchaseTotal - refundMarkedTotal/);
   assert.match(calendarServiceJs, /netCheckDelta = purchaseTotal - refundMarkedTotal - netTotal/);
   assert.match(calendarJs, /Gross COGS purchased/);
-  assert.match(calendarJs, /Less: recovered\/returned COGS/);
+  assert.match(calendarJs, /Less: refund-marked COGS adjustment/);
   assert.match(calendarJs, /Shipping paid/);
-  assert.match(calendarJs, /Less: shipping reimbursed/);
-  assert.match(calendarJs, /raw positive-column totals/);
+  assert.match(calendarJs, /Less: refund-marked shipping adjustment/);
+  assert.match(calendarJs, /COGS Sheet column totals and income statement amounts align/);
+  assert.match(calendarJs, /markers alone do not prove the goods or shipping were recovered/);
   assert.match(calendarJs, /COGS Sheet classification does not reconcile/);
   assert.match(calendarJs, /COGS Sheet reconciliation/);
 });

@@ -40,6 +40,13 @@ test('profit summary cost card warns when selected COGS coverage is partial', ()
   assert.doesNotMatch(analyticsJs, /updateProfitInputCard\(\s*'trueNetProfit'/);
 });
 
+test('profit headline labels partial or incomplete COGS as an estimate', () => {
+  assert.match(analyticsJs, /sourceAudit\.status !== 'reconciled'/);
+  assert.match(analyticsJs, /estimated net profit/);
+  assert.match(analyticsJs, /Costs incomplete · estimate/);
+  assert.match(analyticsJs, /partialCogs \? ' est\.' : ''/);
+});
+
 test('order pattern chart rendering has been removed', () => {
   assert.doesNotMatch(
     analyticsJs,

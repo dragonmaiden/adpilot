@@ -105,20 +105,12 @@ function buildDailyCogsWithSheetTotals(cogsData = null) {
   const dailyCogs = Object.fromEntries(
     Object.entries(cogsData?.dailyCOGS || {}).map(([date, row]) => [date, { ...row }])
   );
-  const sourceTotalsByDate = new Map();
-
-  for (const item of Array.isArray(cogsData?.items) ? cogsData.items : []) {
-    const date = String(item?.date || '').slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-
-    const sourceTotals = sourceTotalsByDate.get(date) || { cogs: 0, shipping: 0 };
-    sourceTotals.cogs += Number.isFinite(Number(item?.cost)) ? Number(item.cost) : 0;
-    sourceTotals.shipping += Number.isFinite(Number(item?.shipping)) ? Number(item.shipping) : 0;
-    sourceTotalsByDate.set(date, sourceTotals);
-  }
+  const sourceTotalsByDate = cogsData?.sourceTotalsOrigin === 'raw_sheet_columns'
+    ? cogsData.sourceTotalsByDate || {}
+    : {};
 
   for (const [date, row] of Object.entries(dailyCogs)) {
-    const sourceTotals = sourceTotalsByDate.get(date);
+    const sourceTotals = sourceTotalsByDate[date];
     dailyCogs[date] = {
       ...row,
       cogsSheetTotal: sourceTotals?.cogs ?? null,

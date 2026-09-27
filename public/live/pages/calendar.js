@@ -600,8 +600,8 @@
           )
         : hasRefundCostAdjustments
           ? tr(
-            `COGS Sheet and income statement align. The raw positive-column totals are ${formatKrw(summary.cogsSheetTotal)} cost and ${formatKrw(summary.shippingSheetTotal)} shipping: ${formatKrw(summary.purchaseCogs)} purchases + ${formatKrw(summary.refundCogs)} refund-marked COGS, and ${formatKrw(summary.purchaseShipping)} shipping paid + ${formatKrw(summary.refundShipping)} refund-marked shipping. Profit shows those recoveries separately, producing net COGS of ${formatKrw(summary.cogs)} and net shipping of ${formatKrw(summary.shipping)}.`,
-            `COGS Sheet와 손익계산서가 일치합니다. 양수 열 원본 합계는 원가 ${formatKrw(summary.cogsSheetTotal)}, 배송비 ${formatKrw(summary.shippingSheetTotal)}이며, 매입 원가 ${formatKrw(summary.purchaseCogs)} + 환불 표시 원가 ${formatKrw(summary.refundCogs)}, 지급 배송비 ${formatKrw(summary.purchaseShipping)} + 환불 표시 배송비 ${formatKrw(summary.refundShipping)}로 구성됩니다. 손익에는 환급을 별도 표시하여 순원가 ${formatKrw(summary.cogs)}, 순배송비 ${formatKrw(summary.shipping)}를 반영합니다.`
+            `COGS Sheet column totals and income statement amounts align: ${formatKrw(summary.cogsSheetTotal)} cost and ${formatKrw(summary.shippingSheetTotal)} shipping. Profit deducts ${formatKrw(summary.refundCogs)} refund-marked COGS and ${formatKrw(summary.refundShipping)} refund-marked shipping. The Sheet markers alone do not prove the goods or shipping were recovered; verify those adjustments before treating profit as final.`,
+            `COGS Sheet 열 합계와 손익계산서 금액은 일치합니다: 원가 ${formatKrw(summary.cogsSheetTotal)}, 배송비 ${formatKrw(summary.shippingSheetTotal)}. 순이익 계산에서 환불 표시 원가 ${formatKrw(summary.refundCogs)}와 배송비 ${formatKrw(summary.refundShipping)}를 차감했습니다. 환불 표시는 상품 회수나 배송비 환급의 증거가 아니므로 확정 이익으로 사용하기 전에 확인하세요.`
           )
           : tr(
             'COGS Sheet cost and shipping totals match the net amounts used in profit; no refund/recovery adjustment applies to this range.',
@@ -648,10 +648,10 @@
     ];
     const cogsRecoveryMeta = summary.costReconciliationComplete
       ? tr('Refund-marked COGS Sheet rows shown separately from purchases', '매입과 분리 표시한 COGS Sheet 환불 표시 행')
-      : tr('Current recovery classification; source-row alignment is unavailable', '현재 환급 분류이며 원본 행 일치 여부는 확인할 수 없음');
+      : tr('Refund-marked adjustment; source-row alignment is unavailable', '환불 표시 조정이며 원본 행 일치 여부는 확인할 수 없음');
     const shippingRecoveryMeta = summary.costReconciliationComplete
       ? tr('Refund-marked shipping shown separately from shipping paid', '지급 배송비와 분리 표시한 환불 표시 배송비')
-      : tr('Current reimbursement classification; source-row alignment is unavailable', '현재 환급 배송비 분류이며 원본 행 일치 여부는 확인할 수 없음');
+      : tr('Refund-marked adjustment; source-row alignment is unavailable', '환불 표시 조정이며 원본 행 일치 여부는 확인할 수 없음');
 
     return {
       summary,
@@ -731,7 +731,7 @@
           grossMeta: tr('COGS Sheet purchase rows · refund-marked rows excluded', 'COGS Sheet 매입 행 · 환불 표시 행 제외'),
           grossTotal: summary.purchaseCogs,
           recoveryKey: 'recovered-cogs',
-          recoveryLabel: tr('Less: recovered/returned COGS', '차감: 회수/반품 원가'),
+          recoveryLabel: tr('Less: refund-marked COGS adjustment', '차감: 환불 표시 원가 조정'),
           recoveryMeta: cogsRecoveryMeta,
           recoveryTotal: summary.refundCogs,
           netKey: 'net-cogs',
@@ -745,7 +745,7 @@
           grossMeta: tr('COGS Sheet shipping on purchase rows · refund-marked rows excluded', 'COGS Sheet 매입 행 배송비 · 환불 표시 행 제외'),
           grossTotal: summary.purchaseShipping,
           recoveryKey: 'shipping-reimbursed',
-          recoveryLabel: tr('Less: shipping reimbursed', '차감: 환급 배송비'),
+          recoveryLabel: tr('Less: refund-marked shipping adjustment', '차감: 환불 표시 배송비 조정'),
           recoveryMeta: shippingRecoveryMeta,
           recoveryTotal: summary.refundShipping,
           netKey: 'net-shipping',

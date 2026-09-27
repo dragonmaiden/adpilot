@@ -5,6 +5,7 @@ const {
   normalizeSheetDate,
   buildSheetTargets,
   parseOrderItems,
+  observeSheetColumnTotals,
   aggregateCOGSItems,
 } = require('../server/modules/cogsClient');
 const { buildDataCoverage, buildProfitWaterfall } = require('../server/transforms/charts');
@@ -78,6 +79,35 @@ function makeItem(overrides = {}) {
 
 test('normalizeSheetDate parses Google Sheets serial dates', () => {
   assert.equal(normalizeSheetDate('46093'), '2026-03-12');
+  assert.equal(normalizeSheetDate('2026-02-30'), '');
+  assert.equal(normalizeSheetDate('not a date'), '');
+});
+
+test('malformed cost text is never partly included in profit', () => {
+  const items = parseOrderItems([[], [],
+    ['1', '2026-09-24', 'Customer', 'order-1', '', '', 'Bag', '50000abc', '4000'],
+  ], { sheetLabel: '9월' });
+  const result = aggregateCOGSItems(items);
+  assert.equal(items[0].cost, 0);
+  assert.ok(items[0].warnings.includes('invalid_cost'));
+  assert.equal(result.validation.invalidValueRows, 1);
+});
+
+test('a pending-recovery day without monetary columns is not a false Sheet mismatch', async () => {
+  await withMockedCogsClient({
+    config: { cogs: { spreadsheetId: 'spreadsheet-123', sheetGids: { Sep: '9' } } },
+    googleSheetsAuthService: {
+      isConfigured: () => true,
+      fetchSpreadsheetMetadata: async () => ({ sheets: [{ properties: { sheetId: '9', title: 'Sep' } }] }),
+      fetchSheetValues: async () => [[], [],
+        ['1', '2026-09-24', 'Customer', 'order-1', '', '', 'Bag', '', '', '', '', '회수 예정'],
+      ],
+    },
+  }, async client => {
+    const result = await client.fetchAllCOGS();
+    assert.equal(result.dailyCOGS['2026-09-24'].cost, 0);
+    assert.equal(result.validation.sourceColumnMismatchDays, 0);
+  });
 });
 
 test('buildSheetTargets merges configured month labels with workbook-discovered monthly tabs', () => {
@@ -164,6 +194,29 @@ test('fetchAllCOGS rejects a partial workbook when one monthly tab fails', async
   });
 });
 
+test('fetchAllCOGS carries the raw Sheet column control alongside parsed net costs', async () => {
+  await withMockedCogsClient({
+    config: { cogs: { spreadsheetId: 'spreadsheet-123', sheetGids: { Sep: '9' } } },
+    googleSheetsAuthService: {
+      isConfigured: () => true,
+      fetchSpreadsheetMetadata: async () => ({ sheets: [{ properties: { sheetId: '9', title: 'Sep' } }] }),
+      fetchSheetValues: async (_id, _name, range) => {
+        assert.equal(range, 'A:S');
+        return [[], [],
+          ['1', '2026-09-24', 'Customer', 'order-1', '', '', 'Bag', '50000', '4000'],
+          ['', '', '', '', '', '', 'Accessory', '10000', '0'],
+        ];
+      },
+    },
+  }, async client => {
+    const result = await client.fetchAllCOGS();
+    assert.equal(result.sourceTotalsOrigin, 'raw_sheet_columns');
+    assert.deepEqual(result.sourceTotalsByDate['2026-09-24'], { cogs: 60000, shipping: 4000 });
+    assert.equal(result.dailyCOGS['2026-09-24'].purchaseCost, 60000);
+    assert.equal(result.validation.sourceColumnMismatchDays, 0);
+  });
+});
+
 test('blank cost or shipping stays incomplete, while an explicit zero is a known value', () => {
   const rows = [[], [],
     ['1', '2026-09-20', 'A', 'order-1', '', '', 'Item', '50000', ''],
@@ -194,6 +247,71 @@ test('COGS parsing preserves a repeated-order name but flags a genuinely missing
   assert.ok(items[3].warnings.includes('missing_order_number'));
   assert.equal(items[3].orderNumber, '', 'a Sheet sequence is not an Imweb order ID');
   assert.equal(items[3].orderKey, '9월:row:6');
+});
+
+test('a new order ID without a sequence never inherits the previous order cost', () => {
+  const items = parseOrderItems([[], [],
+    ['1', '2026-09-24', 'First', 'order-1', '', '', 'Bag', '50000', '4000'],
+    ['', '2026-09-25', 'Second', 'order-2', '', '', 'Hat', '30000', '0'],
+    ['', '', '', '', '', '', 'Extra hat', '10000', '0'],
+  ], { sheetLabel: '9월' });
+  const result = aggregateCOGSItems(items);
+  assert.deepEqual(items.map(item => item.orderNumber), ['order-1', 'order-2', 'order-2']);
+  assert.equal(result.dailyCOGS['2026-09-24'].purchaseCost, 50000);
+  assert.equal(result.dailyCOGS['2026-09-25'].purchaseCost, 40000);
+});
+
+test('an undated new order is isolated and reported instead of being charged to the prior day', () => {
+  const items = parseOrderItems([[], [],
+    ['1', '2026-09-24', 'First', 'order-1', '', '', 'Bag', '50000', '4000'],
+    ['', '', 'Second', 'order-2', '', '', 'Hat', '30000', '0'],
+  ], { sheetLabel: '9월' });
+  const result = aggregateCOGSItems(items);
+  assert.equal(items[1].orderNumber, 'order-2');
+  assert.equal(items[1].date, null);
+  assert.ok(items[1].warnings.includes('missing_order_date'));
+  assert.equal(result.validation.missingOrderDateRows, 1);
+  assert.equal(result.dailyCOGS['2026-09-24'].purchaseCost, 50000);
+});
+
+test('raw Sheet column totals are read separately from parsed order items', () => {
+  const rows = [[], [],
+    ['1', '2026-09-24', 'First', 'order-1', '', '', 'Bag', '50000', '4000'],
+    ['', '', '', '', '', '', 'Extra', '10000', '0'],
+    ['', '', 'Second', 'order-2', '', '', 'Hat', '30000', '0'],
+  ];
+  assert.deepEqual(observeSheetColumnTotals(rows), {
+    byDate: { '2026-09-24': { cogs: 60000, shipping: 4000 } },
+    unassignedFinancialRows: 1,
+  });
+});
+
+test('invalid monetary text on a refund row cannot disappear as a zero adjustment', () => {
+  const items = parseOrderItems([[], [],
+    ['1', '2026-09-24', 'Customer', 'order-1', '', '', '', 'TBD', '', '', '', '환불'],
+  ], { sheetLabel: '9월' });
+  const result = aggregateCOGSItems(items);
+  assert.equal(items.length, 1);
+  assert.ok(items[0].warnings.includes('invalid_cost'));
+  assert.equal(result.validation.invalidValueRows, 1);
+});
+
+test('refund-marked amounts stay unverified until COGS recovery and shipping reimbursement are separately confirmed', () => {
+  const headers = Array(19).fill('');
+  headers[17] = 'COGS recovered';
+  headers[18] = 'Shipping reimbursed';
+  const rows = [[], headers,
+    ['1', '2026-09-24', 'Customer', 'order-1', '', '', 'Bag', '50000', '4000', '', '', '환불'],
+    ['2', '2026-09-24', 'Customer', 'order-2', '', '', 'Bag', '30000', '3000', '', '', '환불', '', '', '', '', '', 'TRUE', 'FALSE'],
+    ['3', '2026-09-24', 'Customer', 'order-3', '', '', 'Bag', '20000', '2000', '', '', '환불', '', '', '', '', '', 'TRUE', 'TRUE'],
+  ];
+  const items = parseOrderItems(rows, { sheetLabel: '9월' });
+  assert.deepEqual(items[0].warnings.filter(warning => warning.endsWith('_unverified')),
+    ['cogs_recovery_unverified', 'shipping_reimbursement_unverified']);
+  assert.deepEqual(items[1].warnings.filter(warning => warning.endsWith('_unverified')),
+    ['shipping_reimbursement_unverified']);
+  assert.deepEqual(items[2].warnings, []);
+  assert.equal(aggregateCOGSItems(items).validation.unverifiedRecoveryRows, 2);
 });
 
 test('parseOrderItems supports the compact delivery-details cell in column M', () => {

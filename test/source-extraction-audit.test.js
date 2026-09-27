@@ -188,8 +188,54 @@ test('arithmetic reconciliation does not hide missing COGS values or order ident
     incompletePurchaseCount: 1,
     missingCostItemCount: 1,
     missingOrderNumberRows: 2,
+    missingOrderDateRows: 0,
+    invalidValueRows: 0,
+    unverifiedRecoveryRows: 0,
+    unassignedSourceFinancialRows: 0,
     missingCustomerNameRows: 1,
   });
+});
+
+test('raw Sheet column mismatch fails the source audit even when parsed profit math agrees', () => {
+  const base = createLatestData();
+  const latestData = createLatestData({
+    cogsData: {
+      ...base.cogsData,
+      grossCOGS: 30000,
+      grossShipping: 5000,
+      refundCOGS: 0,
+      refundShipping: 0,
+      sourceTotalsOrigin: 'raw_sheet_columns',
+      sourceTotalsByDate: { '2026-04-30': { cogs: 32000, shipping: 5000 } },
+      validation: { sourceColumnMismatchDays: 1 },
+    },
+  });
+  const audit = buildSourceExtractionAudit({
+    scanId: 'raw-mismatch',
+    since: '2026-04-30',
+    until: '2026-04-30',
+    sourceResults: createSourceResults(),
+    latestData,
+  });
+  assert.equal(audit.status, 'mismatch');
+  assert.ok(audit.reconciliation.failedChecks.includes('raw_sheet_cogs_to_parsed_columns'));
+  assert.ok(audit.reconciliation.failedChecks.includes('raw_sheet_daily_column_alignment'));
+});
+
+test('unverified refund recovery keeps profit status incomplete even when cost cells are filled', () => {
+  const base = createLatestData();
+  const audit = buildSourceExtractionAudit({
+    scanId: 'recovery-unverified',
+    since: '2026-04-30',
+    until: '2026-04-30',
+    sourceResults: createSourceResults(),
+    latestData: createLatestData({
+      cogsData: { ...base.cogsData, validation: { unverifiedRecoveryRows: 1 } },
+    }),
+  });
+  assert.equal(audit.reconciliation.status, 'reconciled');
+  assert.equal(audit.status, 'incomplete');
+  assert.equal(audit.summary.costCompleteness.unverifiedRecoveryRows, 1);
 });
 
 test('source extraction audit reports distinct source dates instead of source row counts', () => {

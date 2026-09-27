@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════
 // AdPilot — COGS Client (Google Sheets Integration)
-// Reads cost, purchase, and refund markers from the public
-// Google Sheet. Red text in the workbook is treated as a
-// refund marker, with note keywords as a fallback.
+// Reads cost, purchase, and legacy refund markers from the
+// Google Sheet. A refund marker does not prove merchandise
+// recovery or shipping reimbursement; those need separate flags.
 // ═══════════════════════════════════════════════════════
 
 const AdmZip = require('adm-zip');
@@ -54,7 +54,7 @@ async function fetchSheetCSV(ref) {
     }
 
     try {
-      return await googleSheetsAuthService.fetchSheetValues(SPREADSHEET_ID, resolvedSheetName);
+      return await googleSheetsAuthService.fetchSheetValues(SPREADSHEET_ID, resolvedSheetName, 'A:S');
     } catch (err) {
       if (!gid || !/Unable to parse range:/i.test(String(err?.message || ''))) {
         throw err;
@@ -65,7 +65,7 @@ async function fetchSheetCSV(ref) {
         throw err;
       }
 
-      return googleSheetsAuthService.fetchSheetValues(SPREADSHEET_ID, canonicalSheetName);
+      return googleSheetsAuthService.fetchSheetValues(SPREADSHEET_ID, canonicalSheetName, 'A:S');
     }
   }
 
@@ -415,15 +415,18 @@ function parseCSV(text) {
  * Parse a Korean Won string like "₩45,000" into a number.
  */
 function parseKRW(str) {
-  if (!str || typeof str !== 'string') return 0;
-  const cleaned = str.replace(/[₩,\s]/g, '');
-  const num = Number.parseInt(cleaned, 10);
-  return Number.isNaN(num) ? 0 : num;
+  if (!hasValidKRWValue(str)) return 0;
+  return Number(String(str).replace(/[₩,\s]/g, ''));
 }
 
 function hasValidKRWValue(value) {
   const raw = String(value ?? '').trim();
   return raw !== '' && /^-?\d+$/.test(raw.replace(/[₩,\s]/g, ''));
+}
+
+function validDateKey(key) {
+  const parsed = new Date(`${key}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === key;
 }
 
 function normalizeSheetDate(value) {
@@ -433,13 +436,15 @@ function normalizeSheetDate(value) {
   const isoMatch = input.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
   if (isoMatch) {
     const [, year, month, day] = isoMatch;
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    const key = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    return validDateKey(key) ? key : '';
   }
 
   const usMatch = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (usMatch) {
     const [, month, day, year] = usMatch;
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    const key = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    return validDateKey(key) ? key : '';
   }
 
   if (/^\d{4,5}(?:\.\d+)?$/.test(input)) {
@@ -451,7 +456,38 @@ function normalizeSheetDate(value) {
     }
   }
 
-  return input;
+  return '';
+}
+
+// Raw numeric-column control, read before order-item parsing. This is an
+// independent source total; it must not be rebuilt from aggregated purchases.
+function observeSheetColumnTotals(rows) {
+  const byDate = {};
+  let currentDate = null;
+  let currentOrderNumber = '';
+  let unassignedFinancialRows = 0;
+  for (const row of rows.slice(2)) {
+    if (!Array.isArray(row)) continue;
+    const rawDate = String(row[1] || '').trim();
+    const orderNumber = String(row[3] || '').trim();
+    if (String(row[0] || '').trim() || rawDate || orderNumber) {
+      const sameOrder = orderNumber && orderNumber === currentOrderNumber;
+      currentDate = normalizeSheetDate(rawDate) || (sameOrder && !rawDate ? currentDate : null);
+      currentOrderNumber = orderNumber;
+    }
+    const hasCost = hasValidKRWValue(row[7]);
+    const hasShipping = hasValidKRWValue(row[8]);
+    if (!hasCost && !hasShipping) continue;
+    if (!currentDate) {
+      unassignedFinancialRows += 1;
+      continue;
+    }
+    const totals = byDate[currentDate] || { cogs: 0, shipping: 0 };
+    if (hasCost) totals.cogs += parseKRW(String(row[7]));
+    if (hasShipping) totals.shipping += parseKRW(String(row[8]));
+    byDate[currentDate] = totals;
+  }
+  return { byDate, unassignedFinancialRows };
 }
 
 function hasRefundNoteKeyword(note) {
@@ -522,6 +558,9 @@ function parseCompactDeliveryCell(value) {
 function parseOrderItems(rows, options = {}) {
   const sheetLabel = options.sheetLabel || '';
   const refundRows = options.refundRows instanceof Set ? options.refundRows : new Set();
+  const headers = rows[1] || [];
+  const hasCogsRecoveryColumn = /^(COGS recovered|원가 회수 확인)$/i.test(String(headers[17] || '').trim());
+  const hasShippingReimbursementColumn = /^(Shipping reimbursed|배송비 환급 확인)$/i.test(String(headers[18] || '').trim());
 
   if (rows.length < 3) return [];
 
@@ -556,12 +595,14 @@ function parseOrderItems(rows, options = {}) {
     const zipcode = compactDetails?.zipcode || String(row[15] || '').trim();
     const address = compactDetails?.address || String(row[16] || '').trim();
 
-    if (sequenceNo && date) {
+    // An order ID or date can start a new order even when the sequence cell is blank.
+    // Otherwise its cost would silently be charged to the preceding customer.
+    if (sequenceNo || rawDate || orderNumber || !currentOrder) {
       const sameOrderAsPrevious = currentOrder && orderNumber && orderNumber === currentOrder.orderNumber;
       currentOrder = {
-        sequenceNo,
+        sequenceNo: sequenceNo || (sameOrderAsPrevious ? currentOrder.sequenceNo : ''),
         headerRowNumber: sheetRowNumber,
-        date,
+        date: date || (sameOrderAsPrevious && !rawDate ? currentOrder.date : null),
         name: compactDetails?.customerName || name || (sameOrderAsPrevious ? currentOrder.name : ''),
         orderNumber,
         ordererPhone,
@@ -572,19 +613,20 @@ function parseOrderItems(rows, options = {}) {
       };
     }
 
-    if (!currentOrder) continue;
-
     const refundSignals = {
       redText: refundRows.has(sheetRowNumber),
       noteKeyword: hasRefundNoteKeyword(note),
     };
     const isRefund = refundSignals.redText || refundSignals.noteKeyword;
+    const costRecoveryConfirmed = hasCogsRecoveryColumn && String(row[17] || '').trim().toUpperCase() === 'TRUE';
+    const shippingReimbursementConfirmed = hasShippingReimbursementColumn && String(row[18] || '').trim().toUpperCase() === 'TRUE';
     const pendingRecoverySignals = {
       noteKeyword: hasPendingRecoveryNoteKeyword(note),
     };
     const isPendingRecovery = !isRefund && productName && cost === 0 && shipping === 0 && pendingRecoverySignals.noteKeyword;
     const hasMonetaryValue = cost > 0 || shipping > 0;
-    const hasContent = hasMonetaryValue || productName || note || isRefund || isPendingRecovery;
+    const hasContent = hasMonetaryValue || productName || note || isRefund || isPendingRecovery
+      || String(row[7] ?? '').trim() || String(row[8] ?? '').trim();
 
     if (!hasContent) continue;
 
@@ -593,17 +635,20 @@ function parseOrderItems(rows, options = {}) {
       if (!costPresent && !shippingPresent) warnings.push('missing_cost_and_shipping');
       else if (!costPresent) warnings.push('missing_cost');
       else if (!shippingPresent) warnings.push('missing_shipping');
-      if (String(row[7] ?? '').trim() && !costPresent) warnings.push('invalid_cost');
-      if (String(row[8] ?? '').trim() && !shippingPresent) warnings.push('invalid_shipping');
     }
+    if (String(row[7] ?? '').trim() && !costPresent) warnings.push('invalid_cost');
+    if (String(row[8] ?? '').trim() && !shippingPresent) warnings.push('invalid_shipping');
+    if (isRefund && cost > 0 && !costRecoveryConfirmed) warnings.push('cogs_recovery_unverified');
+    if (isRefund && shipping > 0 && !shippingReimbursementConfirmed) warnings.push('shipping_reimbursement_unverified');
     if (!isRefund && noteContainsCurrency(note)) {
       warnings.push('currency_in_note');
     }
     if (looksLikeUrl(orderNumber)) {
       warnings.push('order_number_looks_like_url');
     }
+    if (!currentOrder.date) warnings.push('missing_order_date');
     if (productName && !currentOrder.name) warnings.push('missing_customer_name');
-    if (productName && sequenceNo && !orderNumber) warnings.push('missing_order_number');
+    if (productName && !currentOrder.orderNumber) warnings.push('missing_order_number');
 
     items.push({
       sheetLabel,
@@ -630,6 +675,8 @@ function parseOrderItems(rows, options = {}) {
       note,
       isRefund,
       refundSignals,
+      costRecoveryConfirmed,
+      shippingReimbursementConfirmed,
       isPendingRecovery,
       pendingRecoverySignals,
       warnings,
@@ -710,6 +757,9 @@ function buildValidationSummary(items) {
   let malformedOrderNumberRows = 0;
   let missingCustomerNameRows = 0;
   let missingOrderNumberRows = 0;
+  let missingOrderDateRows = 0;
+  let invalidValueRows = 0;
+  let unverifiedRecoveryRows = 0;
   let refundValueRows = 0;
 
   for (const item of items) {
@@ -719,6 +769,9 @@ function buildValidationSummary(items) {
     if (warnings.includes('order_number_looks_like_url')) malformedOrderNumberRows += 1;
     if (warnings.includes('missing_customer_name')) missingCustomerNameRows += 1;
     if (warnings.includes('missing_order_number')) missingOrderNumberRows += 1;
+    if (warnings.includes('missing_order_date')) missingOrderDateRows += 1;
+    if (warnings.includes('invalid_cost') || warnings.includes('invalid_shipping')) invalidValueRows += 1;
+    if (warnings.includes('cogs_recovery_unverified') || warnings.includes('shipping_reimbursement_unverified')) unverifiedRecoveryRows += 1;
     if (item?.isRefund && (Number(item?.cost || 0) > 0 || Number(item?.shipping || 0) > 0)) refundValueRows += 1;
 
     if (warnings.length > 0) {
@@ -741,6 +794,9 @@ function buildValidationSummary(items) {
     malformedOrderNumberRows,
     missingCustomerNameRows,
     missingOrderNumberRows,
+    missingOrderDateRows,
+    invalidValueRows,
+    unverifiedRecoveryRows,
     refundValueRows,
     samples: rowsWithWarnings.slice(0, 10),
   };
@@ -986,6 +1042,8 @@ async function fetchAllCOGS() {
       }));
   const refundMarkers = buildRefundMarkerMap(workbookMeta, fallbackTargets);
   const allItems = [];
+  const sourceTotalsByDate = {};
+  let unassignedSourceFinancialRows = 0;
   const sheets = [];
   const failedSheets = [];
 
@@ -999,6 +1057,14 @@ async function fetchAllCOGS() {
         refundRows: refundMarkers[target.label] || new Set(),
       });
       allItems.push(...items);
+      const rawControl = observeSheetColumnTotals(rows);
+      unassignedSourceFinancialRows += rawControl.unassignedFinancialRows;
+      for (const [date, totals] of Object.entries(rawControl.byDate)) {
+        const existing = sourceTotalsByDate[date] || { cogs: 0, shipping: 0 };
+        existing.cogs += totals.cogs;
+        existing.shipping += totals.shipping;
+        sourceTotalsByDate[date] = existing;
+      }
       sheets.push({
         label: target.label,
         sheetName: target.sheetName,
@@ -1019,6 +1085,19 @@ async function fetchAllCOGS() {
   }
 
   const result = aggregateCOGSItems(allItems);
+  result.sourceTotalsByDate = sourceTotalsByDate;
+  result.sourceTotalsOrigin = 'raw_sheet_columns';
+  const sourceColumnMismatchDates = [...new Set([
+    ...Object.keys(sourceTotalsByDate), ...Object.keys(result.dailyCOGS),
+  ])].filter(date => {
+    const observed = sourceTotalsByDate[date];
+    const aggregate = result.dailyCOGS[date];
+    return (observed?.cogs || 0) !== (aggregate?.purchaseCost || 0) + (aggregate?.refundCost || 0)
+      || (observed?.shipping || 0) !== (aggregate?.purchaseShipping || 0) + (aggregate?.refundShipping || 0);
+    });
+  result.validation.sourceColumnMismatchDates = sourceColumnMismatchDates;
+  result.validation.sourceColumnMismatchDays = sourceColumnMismatchDates.length;
+  result.validation.unassignedSourceFinancialRows = unassignedSourceFinancialRows;
   result.sheets = sheets;
 
   console.log(
@@ -1037,6 +1116,7 @@ module.exports = {
   buildSheetTargets,
   buildRefundMarkerMap,
   parseOrderItems,
+  observeSheetColumnTotals,
   parseCompactDeliveryCell,
   parseCSV,
   parseKRW,

@@ -828,7 +828,7 @@ function buildSelectionSummary(selectionDays, selectionOrders, coverage, paywayS
   };
   const costReconciliation = {
     source: 'cogs_sheet',
-    basis: 'parsed_sheet_rows',
+    basis: 'raw_sheet_columns',
     complete: dayTotals.sheetTotalsComplete,
     coverageComplete: dayTotals.daysWithCOGS === dayTotals.daysRequiringCOGS,
     daysRequiringCOGS: dayTotals.daysRequiringCOGS,

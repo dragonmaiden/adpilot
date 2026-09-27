@@ -414,8 +414,19 @@ test('daily report warns about missing Sheet fields even when entered amounts re
     new Date('2026-04-30T14:30:00.000Z')
   );
 
-  assert.match(plan.text, /COGS Sheet incomplete:<\/b> 2 missing cost fields, 1 blank order IDs, 1 blank names/);
+  assert.match(plan.text, /COGS Sheet incomplete:<\/b> 2 missing cost fields, 0 invalid amounts, 0 unverified recoveries, 1 blank order IDs, 0 blank dates, 1 blank names/);
+  assert.match(plan.text, /Total Profits:<\/b> ⚠️ .* est\. \(100% COGS; Sheet incomplete\)/);
   assert.doesNotMatch(plan.text, /Data check:<\/b> 0/);
+});
+
+test('a source reconciliation mismatch withholds Telegram profit rather than printing a final amount', () => {
+  const plan = buildDailySummaryReportPlan(
+    buildLatestData({ sourceAudit: { status: 'mismatch', reconciliation: { failedChecks: ['raw_sheet_daily_column_alignment'] } } }),
+    { dailyReport: { reportDate: null, sentAt: null } },
+    new Date('2026-04-30T14:30:00.000Z')
+  );
+  assert.match(plan.text, /Total Profits:<\/b> N\/A \(financial source unavailable\)/);
+  assert.match(plan.text, /source reconciliation mismatch/);
 });
 
 test('daily report removes campaign watch items without changing ad spend', () => {

@@ -211,10 +211,13 @@ function buildDailyReportTotals(latestData, reportDate, financialDay) {
     .filter(key => isSourceUnavailable(latestData?.sources?.[key]));
   const financialUnavailableReason = unavailableSources.length > 0
     ? `${unavailableSources.join(', ')} source unavailable or stale`
+    : latestData?.sourceAudit?.status === 'mismatch'
+      ? 'source reconciliation mismatch'
     : null;
-  const profitAvailable = !financialUnavailableReason && (financialDay.hasCOGS || orders === 0);
+  const sheetIncomplete = latestData?.sourceAudit?.status === 'incomplete';
+  const profitAvailable = !financialUnavailableReason && !sheetIncomplete && (financialDay.hasCOGS || orders === 0);
   const profitIsEstimated = !financialUnavailableReason && !profitAvailable
-    && financialDay.hasPartialCOGS && cogsCoverageRatio > 0;
+    && cogsCoverageRatio > 0 && (financialDay.hasPartialCOGS || (sheetIncomplete && financialDay.hasCOGS));
   const profitReportable = profitAvailable || profitIsEstimated;
   const marginRatio = profitReportable ? divideOrNull(trueNetProfit, netRevenue) : null;
   const refundRateRatio = divideOrNull(refunds, revenue);
@@ -236,6 +239,7 @@ function buildDailyReportTotals(latestData, reportDate, financialDay) {
     profitAvailable,
     financialUnavailableReason,
     profitIsEstimated,
+    sheetIncomplete,
     cogsCoverageRatio,
     marginPct: marginRatio == null ? null : marginRatio * 100,
     refundRatePct: refundRateRatio == null ? null : refundRateRatio * 100,
@@ -325,7 +329,7 @@ function buildDailyReportInsights(totals, latestData = {}) {
 
   if (sourceAudit?.status === 'incomplete') {
     const gaps = sourceAudit.summary?.costCompleteness || {};
-    insights.push(`⚠️ <b>COGS Sheet incomplete:</b> ${formatWholeNumber(gaps.missingCostItemCount || 0)} missing cost fields, ${formatWholeNumber(gaps.missingOrderNumberRows || 0)} blank order IDs, ${formatWholeNumber(gaps.missingCustomerNameRows || 0)} blank names`);
+    insights.push(`⚠️ <b>COGS Sheet incomplete:</b> ${formatWholeNumber(gaps.missingCostItemCount || 0)} missing cost fields, ${formatWholeNumber(gaps.invalidValueRows || 0)} invalid amounts, ${formatWholeNumber(gaps.unverifiedRecoveryRows || 0)} unverified recoveries, ${formatWholeNumber(gaps.missingOrderNumberRows || 0)} blank order IDs, ${formatWholeNumber(gaps.missingOrderDateRows || 0)} blank dates, ${formatWholeNumber(gaps.missingCustomerNameRows || 0)} blank names`);
   } else if (sourceAudit?.status && sourceAudit.status !== 'reconciled') {
     const detail = failedSourceChecks.length > 0
       ? `${formatWholeNumber(failedSourceChecks.length)} source mismatch${failedSourceChecks.length === 1 ? '' : 'es'}`
@@ -347,7 +351,7 @@ function buildDailyReportMessage(totals, latestData = {}) {
     : totals.profitAvailable
     ? formatKrw(totals.trueNetProfit)
     : totals.profitIsEstimated
-    ? `⚠️ ${formatKrw(totals.trueNetProfit)} est. (${formatCoveragePercent(totals.cogsCoverageRatio)} COGS)`
+    ? `⚠️ ${formatKrw(totals.trueNetProfit)} est. (${formatCoveragePercent(totals.cogsCoverageRatio)} COGS${totals.sheetIncomplete ? '; Sheet incomplete' : ''})`
     : 'N/A (COGS pending)';
   const totalCosts = cogsUnavailable || metaUnavailable
     ? 'N/A (financial source unavailable)'

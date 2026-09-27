@@ -197,6 +197,25 @@ function buildProjectionReconciliation(latestData = {}, projection = buildFinanc
     compareAmounts('sheets_shipping_to_waterfall', cogsTotals.totalShipping, sumRows(waterfall, row => row.cogsShipping)),
   ];
 
+  if (latestData.cogsData?.sourceTotalsOrigin === 'raw_sheet_columns') {
+    const rawDays = Object.values(latestData.cogsData.sourceTotalsByDate || {});
+    checks.push(compareAmounts(
+      'raw_sheet_cogs_to_parsed_columns',
+      sumRows(rawDays, row => row.cogs),
+      toNumber(latestData.cogsData.grossCOGS) + toNumber(latestData.cogsData.refundCOGS)
+    ));
+    checks.push(compareAmounts(
+      'raw_sheet_shipping_to_parsed_columns',
+      sumRows(rawDays, row => row.shipping),
+      toNumber(latestData.cogsData.grossShipping) + toNumber(latestData.cogsData.refundShipping)
+    ));
+    checks.push(compareAmounts(
+      'raw_sheet_daily_column_alignment',
+      0,
+      toNumber(latestData.cogsData.validation?.sourceColumnMismatchDays)
+    ));
+  }
+
   if (cogsTotals.purchaseCount > 0 || cogsTotals.orderCount > 0) {
     checks.push(compareDateCoverage('revenue_date_range_covers_cogs', revenueTotals, cogsTotals));
   }
@@ -305,6 +324,10 @@ function buildSourceExtractionAudit({ scanId, since, until, sourceResults = {}, 
     incompletePurchaseCount: cogsSummary.incompletePurchaseCount,
     missingCostItemCount: cogsSummary.missingCostItemCount,
     missingOrderNumberRows: round(latestData.cogsData?.validation?.missingOrderNumberRows),
+    missingOrderDateRows: round(latestData.cogsData?.validation?.missingOrderDateRows),
+    invalidValueRows: round(latestData.cogsData?.validation?.invalidValueRows),
+    unverifiedRecoveryRows: round(latestData.cogsData?.validation?.unverifiedRecoveryRows),
+    unassignedSourceFinancialRows: round(latestData.cogsData?.validation?.unassignedSourceFinancialRows),
     missingCustomerNameRows: round(latestData.cogsData?.validation?.missingCustomerNameRows),
   };
   const hasIncompleteCosts = Object.values(costCompleteness).some(count => count > 0);

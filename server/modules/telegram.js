@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════
 
 const config = require('../config');
+const { createHash } = require('node:crypto');
 const telegramState = require('./telegramState');
 const { buildScanSummaryPlan } = require('../services/telegramDigestService');
 const {
@@ -26,6 +27,27 @@ const REQUEST_TIMEOUT_MS = Number.isFinite(config.telegram.requestTimeoutMs) && 
   : 10000;
 const API_BASE = BOT_TOKEN ? `https://api.telegram.org/bot${BOT_TOKEN}` : '';
 const BOT_TOKEN_PATTERN = /^\d{6,}:[A-Za-z0-9_-]{20,}$/;
+let lastRecentFinancialRevision = null;
+
+function recentFinancialRevision(latestData = {}) {
+  if (!latestData.cogsData?.dailyCOGS) return null;
+  const relevant = {
+    cogs: latestData.cogsData.dailyCOGS,
+    cogsValidation: latestData.cogsData.validation,
+    revenue: latestData.revenueData?.dailyRevenue,
+    meta: (latestData.campaignInsights || []).map(row => [row.date_start, row.spend]),
+    sourceStatus: latestData.sourceAudit?.status,
+  };
+  return createHash('sha256').update(JSON.stringify(relevant)).digest('hex');
+}
+
+function recentReportSinceDate(latestData = {}) {
+  const latestRevenueDate = Object.keys(latestData.revenueData?.dailyRevenue || {}).sort().at(-1);
+  const anchor = latestRevenueDate && /^\d{4}-\d{2}-\d{2}$/.test(latestRevenueDate)
+    ? Date.parse(`${latestRevenueDate}T00:00:00Z`)
+    : Date.now();
+  return new Date(anchor - 14 * 86400000).toISOString().slice(0, 10);
+}
 
 const statusState = {
   status: 'unknown',
@@ -460,11 +482,6 @@ async function deliverDailyReport(plan, latestData, previous = null) {
   return { ...result, reportMetadata };
 }
 
-function isEstimatedDailyReport(report = {}) {
-  if (report?.metadata?.profitIsEstimated === true) return true;
-  return /\best\.\s*\(\d+% COGS\)/i.test(String(report.payload || ''));
-}
-
 async function refreshPendingDailyReports(latestData = null, options = {}) {
   const local = Object.values(telegramState.getState().reportDeliveries || {});
   for (const record of local.filter(report => report.ledgerPending)) {
@@ -488,13 +505,35 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
   if (pending?.skipped && !local.length) {
     return { skipped: true, reason: pending.reason, corrected: 0, failed: 0, waiting: 0, reports: [] };
   }
+  const revision = recentFinancialRevision(latestData || {});
+  const recentChanged = revision && revision !== lastRecentFinancialRevision;
+  const sinceDate = recentReportSinceDate(latestData || {});
+  let recent = { reports: [] };
+  if (recentChanged && typeof financialLedgerRepository.listRecentDailyReportDeliveries === 'function') {
+    try {
+      recent = await financialLedgerRepository.listRecentDailyReportDeliveries({ sinceDate, limit: 3 });
+    } catch (err) {
+      console.warn('[TELEGRAM] Recent report check deferred:', err.message);
+      recent = { failed: true, reports: [] };
+    }
+  }
   // Local records include corrections not yet acknowledged by the database.
   const byDate = new Map((pending.reports || []).map(report => [report.reportDate, report]));
+  const recentDates = new Set();
+  for (const report of recent.reports || []) {
+    if (getTelegramMessageId(report.metadata)) {
+      byDate.set(report.reportDate, report);
+      recentDates.add(report.reportDate);
+    }
+  }
   for (const record of local) {
     byDate.delete(record.reportDate);
     if (String(record.payload).includes('N/A (COGS pending)') ||
-        record.metadata?.profitIsEstimated === true || record.metadata?.chartPending === true) {
+        record.metadata?.profitIsEstimated === true || record.metadata?.chartPending === true ||
+        (recentChanged && record.reportDate >= sinceDate
+          && getTelegramMessageId(record.metadata))) {
       byDate.set(record.reportDate, record);
+      if (recentChanged && record.reportDate >= sinceDate) recentDates.add(record.reportDate);
     }
   }
   const candidates = [...byDate.values()];
@@ -514,7 +553,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
       continue;
     }
     const plan = buildDailyReportCorrectionPlan(latestData || {}, report.reportDate, {
-      allowEstimated: !isEstimatedDailyReport(report),
+      allowEstimated: true,
       financialDay,
     });
     if (report.metadata?.chartPending && plan.reason === 'profit-still-pending-cogs') {
@@ -531,6 +570,12 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
       continue;
     }
 
+    if (report.metadata?.messageType !== 'photo' && report.payload === plan.text) {
+      waiting += 1;
+      reports.push({ reportDate: report.reportDate, status: 'waiting', reason: 'report-unchanged' });
+      continue;
+    }
+
     const messageId = getTelegramMessageId(report.metadata);
     let delivery = 'edited_message';
     let result = messageId ? await deliverDailyReport(plan, latestData, report) : null;
@@ -542,7 +587,8 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
     }
 
     if (!result?.ok) {
-      if (options.sendFallbackOnEditFailure === false || report.metadata?.messageType === 'photo') {
+      if (options.sendFallbackOnEditFailure === false || report.metadata?.messageType === 'photo'
+        || recentDates.has(report.reportDate)) {
         failed += 1;
         reports.push({
           reportDate: report.reportDate,
@@ -579,6 +625,10 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
     }
   }
 
+  const recentCheckIncomplete = reports.some(report => report.reason?.startsWith('financial-basis-unavailable'));
+  if (recentChanged && !recent.failed && !recent.skipped && failed === 0 && !recentCheckIncomplete) {
+    lastRecentFinancialRevision = revision;
+  }
   return { corrected, failed, waiting, reports };
 }
 

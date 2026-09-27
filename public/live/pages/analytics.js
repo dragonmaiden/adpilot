@@ -53,7 +53,7 @@
   function hasPartialCogsCoverage(coverage) {
     const partialDays = Number(coverage?.daysWithPartialCOGS || 0);
     const ratio = getCoverageRatio(coverage);
-    return partialDays > 0 || (ratio != null && ratio > 0 && ratio < 1);
+    return partialDays > 0 || (ratio != null && ratio < 1 && Number(coverage?.totalDays || 0) > 0);
   }
 
   function emptyCoverage() {
@@ -137,8 +137,8 @@
       const gaps = sourceAudit.summary?.costCompleteness || {};
       noticeElement.hidden = false;
       noticeElement.textContent = tr(
-        `COGS Sheet incomplete: ${Number(gaps.missingCostItemCount || 0)} missing costs, ${Number(gaps.missingOrderNumberRows || 0)} missing order numbers, ${Number(gaps.missingCustomerNameRows || 0)} missing names. Profit is not final.`,
-        `COGS Sheet 미완료: 원가 ${Number(gaps.missingCostItemCount || 0)}건, 주문번호 ${Number(gaps.missingOrderNumberRows || 0)}건, 이름 ${Number(gaps.missingCustomerNameRows || 0)}건. 순이익은 확정되지 않았습니다.`
+        `COGS Sheet incomplete: ${Number(gaps.missingCostItemCount || 0)} missing costs, ${Number(gaps.invalidValueRows || 0)} invalid amounts, ${Number(gaps.unverifiedRecoveryRows || 0)} unverified recovery rows, ${Number(gaps.missingOrderNumberRows || 0)} missing order numbers, ${Number(gaps.missingOrderDateRows || 0)} missing dates, ${Number(gaps.missingCustomerNameRows || 0)} missing names. Profit is not final.`,
+        `COGS Sheet 미완료: 원가 ${Number(gaps.missingCostItemCount || 0)}건, 금액 오류 ${Number(gaps.invalidValueRows || 0)}건, 회수 미확인 ${Number(gaps.unverifiedRecoveryRows || 0)}건, 주문번호 ${Number(gaps.missingOrderNumberRows || 0)}건, 날짜 ${Number(gaps.missingOrderDateRows || 0)}건, 이름 ${Number(gaps.missingCustomerNameRows || 0)}건. 순이익은 확정되지 않았습니다.`
       );
       return;
     }
@@ -227,7 +227,7 @@
       .filter(row => row.date);
   }
 
-  function renderProfitSummary(summary, windowLabel) {
+  function renderProfitSummary(summary, windowLabel, sourceAudit = null) {
     const coverage = summary.coverage || emptyCoverage();
     const {
       totalProfit,
@@ -245,7 +245,8 @@
       daysShown > 0 && hasNumericValue(totalProfit)
         ? Math.round(Number(totalProfit) / daysShown)
         : null;
-    const partialCogs = hasPartialCogsCoverage(coverage);
+    const partialCogs = hasPartialCogsCoverage(coverage)
+      || (sourceAudit?.status && sourceAudit.status !== 'reconciled');
     const coverageLabel = formatCoveragePercentLabel(coverage);
     const costsShareLabel = formatNullablePercent(costsShare);
     const marginLabel = formatNullablePercent(blendedMargin, 1);
@@ -261,10 +262,14 @@
     const latestSignalElement = document.getElementById('profitLatestSignal');
 
     if (kickerElement) {
-      kickerElement.textContent = tr(`${windowLabel} net profit`, `${windowLabel} 순이익`);
+      kickerElement.textContent = partialCogs
+        ? tr(`${windowLabel} estimated net profit`, `${windowLabel} 예상 순이익`)
+        : tr(`${windowLabel} net profit`, `${windowLabel} 순이익`);
     }
     if (verdictElement) {
-      verdictElement.textContent = isPositive
+      verdictElement.textContent = partialCogs
+        ? tr('Costs incomplete · estimate', '원가 미완료 · 추정치')
+        : isPositive
         ? tr('Profitable period', '수익 구간')
         : isNegative
         ? tr('Unprofitable period', '적자 구간')
@@ -274,7 +279,7 @@
       }`;
     }
     if (amountElement) {
-      amountElement.textContent = formatNullableSignedKrw(totalProfit);
+      amountElement.textContent = `${formatNullableSignedKrw(totalProfit)}${partialCogs ? ' est.' : ''}`;
       amountElement.className = `profit-amount ${
         isPositive ? 'verdict-positive' : isNegative ? 'verdict-negative' : ''
       }`;
@@ -405,7 +410,7 @@
       payload.contextLabel || selection.label || tr('Selected range', '선택 범위');
 
     updateAnalyticsNotice(payload.sourceAudit || null);
-    renderProfitSummary(summary, windowLabel);
+    renderProfitSummary(summary, windowLabel, payload.sourceAudit || null);
   }
 
   live.profitSummary = {

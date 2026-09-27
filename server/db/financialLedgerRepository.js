@@ -217,6 +217,19 @@ async function listPendingCogsDailyReportDeliveries(options = {}) {
   };
 }
 
+async function listRecentDailyReportDeliveries(options = {}) {
+  if (!postgres.isConfigured()) return { skipped: true, reason: 'database-url-missing' };
+  const result = await postgres.query(
+    `select report_date::text as report_date, status, payload, sent_at, error, metadata, updated_at
+    from telegram_report_deliveries
+    where status in ('sent', 'corrected') and report_date >= $1::date
+    order by report_date desc
+    limit $2`,
+    [options.sinceDate, normalizeTelegramReportLimit(options.limit || 21)]
+  );
+  return { ok: true, reports: result.rows.map(normalizeTelegramReportRow) };
+}
+
 function normalizeAuditLimit(value) {
   const limit = Number(value);
   if (!Number.isFinite(limit) || limit <= 0) return 500;
@@ -279,6 +292,7 @@ async function listRecentImwebOrdersForNotificationAudit(options = {}) {
 }
 
 module.exports = {
+  listRecentDailyReportDeliveries,
   listPendingCogsDailyReportDeliveries,
   listRecentImwebOrdersForNotificationAudit,
   persistScanLedger,

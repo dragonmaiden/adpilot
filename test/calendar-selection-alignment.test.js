@@ -130,10 +130,8 @@ test('selected income statement reconciles observed COGS Sheet totals through re
         costCoverageRatio: 1,
       },
     },
-    items: [
-      { date: '2026-08-01', cost: 8_025_000, shipping: 352_000 },
-      { date: '2026-08-01', cost: 325_000, shipping: 4_000, isRefund: true },
-    ],
+    sourceTotalsOrigin: 'raw_sheet_columns',
+    sourceTotalsByDate: { '2026-08-01': { cogs: 8_350_000, shipping: 356_000 } },
   });
   const [profitDay] = buildProfitWaterfall([
     {
