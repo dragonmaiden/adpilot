@@ -528,41 +528,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   margin-top: 0;
 }
 
-.summary-profit-topline {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: stretch;
-}
-
-.summary-profit-topline .profit-hero {
-  height: 100%;
-  padding: var(--space-6);
-}
-
-.summary-profit-topline .profit-hero-main {
-  display: block;
-  margin-top: var(--space-5);
-}
-
-.summary-profit-topline .profit-hero-metrics {
-  display: none;
-}
-
-.summary-profit-kpis {
-  height: 100%;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
-}
-
-.summary-profit-kpis .kpi-card {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: var(--space-4);
-}
-
 .refund-rate-monitor {
   min-width: 0;
 }
@@ -3124,21 +3089,52 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .calendar-month-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
   margin-bottom: var(--space-3);
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--color-text);
+}
+
+.calendar-month-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
 }
 
 .calendar-month-title {
-  font-size: 1rem;
+  font-size: 1.375rem;
   font-weight: 700;
+  letter-spacing: -0.015em;
   line-height: 1.2;
 }
 
-.calendar-month-note {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
+.calendar-month-totals {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+  gap: 4px 18px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar-month-totals b {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.calendar-month-totals b.is-refund,
+.calendar-month-totals b.is-loss {
+  color: var(--color-error);
+}
+
+.calendar-month-totals b.is-profit {
+  color: var(--color-success);
 }
 
 .calendar-weekdays,
@@ -3150,16 +3146,22 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 .calendar-weekdays {
   margin-bottom: 8px;
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--color-text);
 }
 
 .calendar-weekday {
-  font-size: var(--text-xs);
+  padding-left: 10px;
+  color: var(--color-text);
+  font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-text-faint);
-  text-align: center;
-  padding: 0 0 var(--space-1);
+}
+
+.calendar-weekday:nth-child(6),
+.calendar-weekday:nth-child(7) {
+  color: var(--color-text-muted);
 }
 
 .calendar-spacer {
@@ -3966,15 +3968,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 @media (max-width: 1024px) {
   .charts-grid { grid-template-columns: 1fr; }
-  .summary-profit-topline {
-    grid-template-columns: 1fr;
-  }
-  .summary-profit-topline .profit-hero-metrics {
-    display: grid;
-  }
-  .summary-profit-topline .profit-hero-main {
-    display: grid;
-  }
   .calendar-viewport { grid-template-columns: 1fr; }
   .live-intraday-takeaway { grid-template-columns: 1fr; }
   .live-intraday-takeaway-side {

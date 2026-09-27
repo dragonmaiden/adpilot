@@ -84,7 +84,7 @@ test('selected-range headline keeps one net-profit owner and one row of supporti
   assert.doesNotMatch(indexHtml, /data-profit-source-kpi="trueNetProfit"/);
   assert.doesNotMatch(analyticsJs, /updateProfitInputCard\(\s*'trueNetProfit'/);
   assert.doesNotMatch(analyticsJs, /\['grossRevenue', 'refunds', 'totalCosts', 'trueNetProfit'\]/);
-  assert.match(indexHtml, /class="kpi-grid summary-profit-kpis"/);
+  assert.doesNotMatch(indexHtml, /class="kpi-grid summary-profit-kpis"/);
 });
 
 test('profit summary no longer renders settlement reconciliation UI', () => {

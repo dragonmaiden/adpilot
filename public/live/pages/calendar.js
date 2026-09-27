@@ -481,14 +481,44 @@
     viewportEl.innerHTML = months.map(month => {
       const days = enumerateDateKeys(month.start, month.end);
       const leadingSpaces = getCalendarWeekday(month.start);
+      const todayKey = getKstDateKey();
+      const recorded = days
+        .filter(dateKey => compareDateKeys(dateKey, todayKey) <= 0)
+        .map(dateKey => dayMap.get(dateKey))
+        .filter(day => day && ((day.revenue || 0) > 0 || (day.orders || 0) > 0 || (day.refundCount || 0) > 0));
+      const totals = recorded.reduce((acc, day) => {
+        acc.revenue += toFiniteNumber(day.revenue);
+        acc.orders += toFiniteNumber(day.orders);
+        acc.refunds += toFiniteNumber(day.refundCount);
+        if (hasCalendarMetric(day.trueNetProfit)) {
+          acc.netProfit += Number(day.trueNetProfit);
+        } else {
+          acc.netProfitComplete = false;
+        }
+        return acc;
+      }, { revenue: 0, orders: 0, refunds: 0, netProfit: 0, netProfitComplete: true });
+      const netProfitLabel = recorded.length === 0
+        ? '—'
+        : `${totals.netProfit > 0 ? '+' : ''}${formatSignedKrw(totals.netProfit)}${totals.netProfitComplete ? '' : ' est.'}`;
+      const netProfitTone = recorded.length === 0 ? '' : totals.netProfit < 0 ? 'is-loss' : 'is-profit';
+      // Order-based refund rate: refunded orders ÷ recognized orders
+      const refundRateLabel = totals.orders > 0 ? formatPercent((totals.refunds / totals.orders) * 100, 1) : '—';
+      const refundRateTitle = tr(
+        `${formatCount(totals.refunds)} refunded of ${formatCount(totals.orders)} orders`,
+        `주문 ${formatCount(totals.orders)}건 중 환불 ${formatCount(totals.refunds)}건`
+      );
+
       return `
         <div class="calendar-month">
           <div class="calendar-month-header">
-            <div>
-              <div class="calendar-month-title">${esc(month.label)}</div>
-              <div class="calendar-month-note">${tr(`${formatCount(days.length)} days`, `${formatCount(days.length)}일`)}</div>
+            <div class="calendar-month-heading">
+              <span class="calendar-month-title">${esc(month.label)}</span>
             </div>
-            <span class="badge badge-neutral">${esc(month.month)}</span>
+            <div class="calendar-month-totals">
+              <span>${esc(tr('Revenue', '매출'))} <b>${esc(formatKrw(totals.revenue))}</b></span>
+              <span>${esc(tr('Net profit', '순이익'))} <b class="${netProfitTone}">${esc(netProfitLabel)}</b></span>
+              <span title="${esc(refundRateTitle)}">${esc(tr('Refunds', '환불'))} <b class="is-refund">${esc(refundRateLabel)}</b></span>
+            </div>
           </div>
           <div class="calendar-weekdays">
             ${weekdayLabels.map(label => `<div class="calendar-weekday">${label}</div>`).join('')}
