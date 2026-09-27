@@ -1,5 +1,8 @@
 const config = require('../config');
-const { extractOrderAttribution, getOrderItems } = require('../domain/imwebAttribution');
+const {
+  extractOrderAttribution,
+  getOrderItems,
+} = require('../domain/imwebAttribution');
 const { getOrderCashTotals } = require('../domain/imwebPayments');
 const { convertUsdToKrw } = require('../domain/metrics');
 const { formatDateInTimeZone } = require('../domain/time');
@@ -30,7 +33,9 @@ function summarizeOrderProducts(order) {
   const productNames = [];
 
   for (const item of items) {
-    const productName = asString(item?.productInfo?.prodName || item?.productName);
+    const productName = asString(
+      item?.productInfo?.prodName || item?.productName
+    );
     if (productName && !productNames.includes(productName)) {
       productNames.push(productName);
     }
@@ -62,7 +67,11 @@ function pushMoneyRow(rows, row) {
   });
 }
 
-function buildMetaSpendRows(campaignInsights, campaigns, usdToKrwRate = config.currency.usdToKrw) {
+function buildMetaSpendRows(
+  campaignInsights,
+  campaigns,
+  usdToKrwRate = config.currency.usdToKrw
+) {
   const campaignLookup = buildCampaignLookup(campaigns);
   const grouped = new Map();
 
@@ -76,7 +85,10 @@ function buildMetaSpendRows(campaignInsights, campaigns, usdToKrwRate = config.c
     const bucket = grouped.get(key) || {
       date,
       campaignId,
-      campaignName: asString(row?.campaign_name) || asString(campaignLookup.get(campaignId)?.name) || campaignId,
+      campaignName:
+        asString(row?.campaign_name) ||
+        asString(campaignLookup.get(campaignId)?.name) ||
+        campaignId,
       spendUsd: 0,
     };
     bucket.spendUsd += spendUsd;
@@ -85,10 +97,11 @@ function buildMetaSpendRows(campaignInsights, campaigns, usdToKrwRate = config.c
 
   return Array.from(grouped.values())
     .sort((left, right) => {
-      if (left.date === right.date) return left.campaignId.localeCompare(right.campaignId);
+      if (left.date === right.date)
+        return left.campaignId.localeCompare(right.campaignId);
       return left.date.localeCompare(right.date);
     })
-    .map(bucket => ({
+    .map((bucket) => ({
       ledgerId: `meta_spend:${bucket.campaignId}:${bucket.date}`,
       date: bucket.date,
       kind: 'meta_spend',
@@ -135,10 +148,12 @@ function buildEconomicsLedger({
     const orderedAt = order?.wtime || null;
     const date = orderedAt ? formatDateInTimeZone(orderedAt) : null;
     const attribution = extractOrderAttribution(order);
-    const cogsMatchEntry = orderCogsMatches.matchesByOrderNo.get(orderNo) || null;
+    const cogsMatchEntry =
+      orderCogsMatches.matchesByOrderNo.get(orderNo) || null;
     const cogsMatch = cogsMatchEntry?.cogsOrder || null;
     const cogsMatchMode = cogsMatchEntry?.matchMode || 'none';
-    const { approvedAmount, netPaidAmount, refundedAmount, hasRecognizedCash } = getOrderCashTotals(order);
+    const { approvedAmount, netPaidAmount, refundedAmount, hasRecognizedCash } =
+      getOrderCashTotals(order);
     const productSummary = summarizeOrderProducts(order);
 
     if (hasRecognizedCash) {
@@ -146,9 +161,12 @@ function buildEconomicsLedger({
       if (attribution.bucket !== 'unattributed') {
         attributedRecognizedOrders += 1;
       }
-      if (attribution.bucket === 'meta') metaAttributedNetRevenue += netPaidAmount;
-      if (attribution.bucket === 'non_meta') nonMetaAttributedNetRevenue += netPaidAmount;
-      if (attribution.bucket === 'unattributed') unattributedNetRevenue += netPaidAmount;
+      if (attribution.bucket === 'meta')
+        metaAttributedNetRevenue += netPaidAmount;
+      if (attribution.bucket === 'non_meta')
+        nonMetaAttributedNetRevenue += netPaidAmount;
+      if (attribution.bucket === 'unattributed')
+        unattributedNetRevenue += netPaidAmount;
       if (cogsMatch) {
         matchedOrdersToCogs += 1;
         if (cogsMatchMode === 'exact_order_number') {
@@ -240,94 +258,104 @@ function buildEconomicsLedger({
       });
     }
 
-    if (ledgerDate && cogsMatch?.cost > 0) {
-      pushMoneyRow(rows, {
-        ledgerId: `cogs_purchase:${orderNo || 'unknown'}`,
-        date: asString(cogsMatch.date) || ledgerDate,
-        kind: 'cogs_purchase',
-        source: 'cogs_sheet',
-        amount: cogsMatch.cost,
-        direction: 'debit',
-        orderNo,
-        attributionBucket: attribution.bucket,
-        attributionBasis: attribution.basis,
-        attributionConfidence: attribution.confidence,
-        marketingSource: attribution.marketingSource,
-        metadata: {
-          matchMode: cogsMatchMode,
-          costCoverageRatio: Number(cogsMatch.costCoverageRatio || 0),
-        },
-      });
-    }
+    const cogsSegments =
+      cogsMatchEntry?.cogsSegments || (cogsMatch ? [cogsMatch] : []);
+    for (const [segmentIndex, segment] of cogsSegments.entries()) {
+      const segmentDate = asString(segment.date) || ledgerDate;
+      const segmentSuffix =
+        cogsSegments.length > 1
+          ? `:${asString(segment.orderKey) || `${segmentDate}:${segmentIndex}`}`
+          : '';
+      if (segmentDate && segment.cost > 0) {
+        pushMoneyRow(rows, {
+          ledgerId: `cogs_purchase:${orderNo || 'unknown'}${segmentSuffix}`,
+          date: segmentDate,
+          kind: 'cogs_purchase',
+          source: 'cogs_sheet',
+          amount: segment.cost,
+          direction: 'debit',
+          orderNo,
+          attributionBucket: attribution.bucket,
+          attributionBasis: attribution.basis,
+          attributionConfidence: attribution.confidence,
+          marketingSource: attribution.marketingSource,
+          metadata: {
+            matchMode: cogsMatchMode,
+            costCoverageRatio: Number(segment.costCoverageRatio || 0),
+          },
+        });
+      }
 
-    if (ledgerDate && cogsMatch?.shipping > 0) {
-      pushMoneyRow(rows, {
-        ledgerId: `shipping_purchase:${orderNo || 'unknown'}`,
-        date: asString(cogsMatch.date) || ledgerDate,
-        kind: 'shipping_purchase',
-        source: 'cogs_sheet',
-        amount: cogsMatch.shipping,
-        direction: 'debit',
-        orderNo,
-        attributionBucket: attribution.bucket,
-        attributionBasis: attribution.basis,
-        attributionConfidence: attribution.confidence,
-        marketingSource: attribution.marketingSource,
-        metadata: {
-          matchMode: cogsMatchMode,
-          costCoverageRatio: Number(cogsMatch.costCoverageRatio || 0),
-        },
-      });
-    }
+      if (segmentDate && segment.shipping > 0) {
+        pushMoneyRow(rows, {
+          ledgerId: `shipping_purchase:${orderNo || 'unknown'}${segmentSuffix}`,
+          date: segmentDate,
+          kind: 'shipping_purchase',
+          source: 'cogs_sheet',
+          amount: segment.shipping,
+          direction: 'debit',
+          orderNo,
+          attributionBucket: attribution.bucket,
+          attributionBasis: attribution.basis,
+          attributionConfidence: attribution.confidence,
+          marketingSource: attribution.marketingSource,
+          metadata: {
+            matchMode: cogsMatchMode,
+            costCoverageRatio: Number(segment.costCoverageRatio || 0),
+          },
+        });
+      }
 
-    if (ledgerDate && cogsMatch?.refundCost > 0) {
-      pushMoneyRow(rows, {
-        ledgerId: `cogs_refund:${orderNo || 'unknown'}`,
-        date: asString(cogsMatch.date) || ledgerDate,
-        kind: 'cogs_refund',
-        source: 'cogs_sheet',
-        amount: cogsMatch.refundCost,
-        direction: 'credit',
-        orderNo,
-        attributionBucket: attribution.bucket,
-        attributionBasis: attribution.basis,
-        attributionConfidence: attribution.confidence,
-        marketingSource: attribution.marketingSource,
-        metadata: {
-          matchMode: cogsMatchMode,
-        },
-      });
-    }
+      if (segmentDate && segment.refundCost > 0) {
+        pushMoneyRow(rows, {
+          ledgerId: `cogs_refund:${orderNo || 'unknown'}${segmentSuffix}`,
+          date: segmentDate,
+          kind: 'cogs_refund',
+          source: 'cogs_sheet',
+          amount: segment.refundCost,
+          direction: 'credit',
+          orderNo,
+          attributionBucket: attribution.bucket,
+          attributionBasis: attribution.basis,
+          attributionConfidence: attribution.confidence,
+          marketingSource: attribution.marketingSource,
+          metadata: {
+            matchMode: cogsMatchMode,
+          },
+        });
+      }
 
-    if (ledgerDate && cogsMatch?.refundShipping > 0) {
-      pushMoneyRow(rows, {
-        ledgerId: `shipping_refund:${orderNo || 'unknown'}`,
-        date: asString(cogsMatch.date) || ledgerDate,
-        kind: 'shipping_refund',
-        source: 'cogs_sheet',
-        amount: cogsMatch.refundShipping,
-        direction: 'credit',
-        orderNo,
-        attributionBucket: attribution.bucket,
-        attributionBasis: attribution.basis,
-        attributionConfidence: attribution.confidence,
-        marketingSource: attribution.marketingSource,
-        metadata: {
-          matchMode: cogsMatchMode,
-        },
-      });
+      if (segmentDate && segment.refundShipping > 0) {
+        pushMoneyRow(rows, {
+          ledgerId: `shipping_refund:${orderNo || 'unknown'}${segmentSuffix}`,
+          date: segmentDate,
+          kind: 'shipping_refund',
+          source: 'cogs_sheet',
+          amount: segment.refundShipping,
+          direction: 'credit',
+          orderNo,
+          attributionBucket: attribution.bucket,
+          attributionBasis: attribution.basis,
+          attributionConfidence: attribution.confidence,
+          marketingSource: attribution.marketingSource,
+          metadata: {
+            matchMode: cogsMatchMode,
+          },
+        });
+      }
     }
   }
 
   const unmatchedCogsOrders = orderCogsMatches.unmatchedCogsOrders;
 
-  for (const cogsOrder of unmatchedCogsOrders) {
+  for (const [index, cogsOrder] of unmatchedCogsOrders.entries()) {
     const orderNo = asString(cogsOrder?.orderNumber);
     const date = asString(cogsOrder?.date);
+    const sourceKey = asString(cogsOrder?.orderKey) || `${orderNo || cogsOrder.sequenceNo || 'unknown'}:${date || 'undated'}:${index}`;
 
     if (cogsOrder?.cost > 0) {
       pushMoneyRow(rows, {
-        ledgerId: `cogs_purchase_unmatched:${orderNo || cogsOrder.sequenceNo || 'unknown'}`,
+        ledgerId: `cogs_purchase_unmatched:${sourceKey}`,
         date,
         kind: 'cogs_purchase',
         source: 'cogs_sheet',
@@ -347,7 +375,7 @@ function buildEconomicsLedger({
 
     if (cogsOrder?.shipping > 0) {
       pushMoneyRow(rows, {
-        ledgerId: `shipping_purchase_unmatched:${orderNo || cogsOrder.sequenceNo || 'unknown'}`,
+        ledgerId: `shipping_purchase_unmatched:${sourceKey}`,
         date,
         kind: 'shipping_purchase',
         source: 'cogs_sheet',
@@ -364,16 +392,56 @@ function buildEconomicsLedger({
         },
       });
     }
+    if (cogsOrder?.refundCost > 0) {
+      pushMoneyRow(rows, {
+        ledgerId: `cogs_refund_unmatched:${sourceKey}`,
+        date,
+        kind: 'cogs_refund',
+        source: 'cogs_sheet',
+        amount: cogsOrder.refundCost,
+        direction: 'credit',
+        orderNo,
+        attributionBucket: 'unattributed',
+        attributionBasis: 'none',
+        attributionConfidence: 'none',
+        marketingSource: null,
+        metadata: { matchMode: 'unmatched' },
+      });
+    }
+    if (cogsOrder?.refundShipping > 0) {
+      pushMoneyRow(rows, {
+        ledgerId: `shipping_refund_unmatched:${sourceKey}`,
+        date,
+        kind: 'shipping_refund',
+        source: 'cogs_sheet',
+        amount: cogsOrder.refundShipping,
+        direction: 'credit',
+        orderNo,
+        attributionBucket: 'unattributed',
+        attributionBasis: 'none',
+        attributionConfidence: 'none',
+        marketingSource: null,
+        metadata: { matchMode: 'unmatched' },
+      });
+    }
   }
 
-  const metaSpendRows = buildMetaSpendRows(campaignInsights, campaigns, usdToKrwRate);
+  const metaSpendRows = buildMetaSpendRows(
+    campaignInsights,
+    campaigns,
+    usdToKrwRate
+  );
   rows.push(...metaSpendRows);
   rows.sort((left, right) => {
-    if (left.date === right.date) return String(left.ledgerId).localeCompare(String(right.ledgerId));
+    if (left.date === right.date)
+      return String(left.ledgerId).localeCompare(String(right.ledgerId));
     return String(left.date).localeCompare(String(right.date));
   });
 
-  const totalMetaSpendKrw = metaSpendRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const totalMetaSpendKrw = metaSpendRows.reduce(
+    (sum, row) => sum + Number(row.amount || 0),
+    0
+  );
 
   return {
     generatedAt: new Date().toISOString(),
@@ -385,7 +453,10 @@ function buildEconomicsLedger({
       matchedOrdersToCogs,
       exactMatchedOrdersToCogs,
       fallbackMatchedOrdersToCogs,
-      unmatchedOrdersToCogs: Math.max(recognizedOrders - matchedOrdersToCogs, 0),
+      unmatchedOrdersToCogs: Math.max(
+        recognizedOrders - matchedOrdersToCogs,
+        0
+      ),
       unmatchedCogsOrders: unmatchedCogsOrders.length,
       metaSpendRows: metaSpendRows.length,
       totalMetaSpendKrw: roundMoney(totalMetaSpendKrw),
@@ -393,8 +464,12 @@ function buildEconomicsLedger({
       unattributedNetRevenue: roundMoney(unattributedNetRevenue),
       metaAttributedNetRevenue: roundMoney(metaAttributedNetRevenue),
       nonMetaAttributedNetRevenue: roundMoney(nonMetaAttributedNetRevenue),
-      cogsMatchRate: recognizedOrders > 0 ? matchedOrdersToCogs / recognizedOrders : 0,
-      attributionCoverageRate: recognizedOrders > 0 ? attributedRecognizedOrders / recognizedOrders : 0,
+      cogsMatchRate:
+        recognizedOrders > 0 ? matchedOrdersToCogs / recognizedOrders : 0,
+      attributionCoverageRate:
+        recognizedOrders > 0
+          ? attributedRecognizedOrders / recognizedOrders
+          : 0,
     },
   };
 }

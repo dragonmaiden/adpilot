@@ -214,7 +214,8 @@ function buildDailyReportTotals(latestData, reportDate, financialDay) {
     : latestData?.sourceAudit?.status === 'mismatch'
       ? 'source reconciliation mismatch'
     : null;
-  const sheetIncomplete = latestData?.sourceAudit?.status === 'incomplete';
+  const sheetIncomplete = Boolean(latestData?.sourceAudit?.status
+    && latestData.sourceAudit.status !== 'reconciled');
   const profitAvailable = !financialUnavailableReason && !sheetIncomplete && (financialDay.hasCOGS || orders === 0);
   const profitIsEstimated = !financialUnavailableReason && !profitAvailable
     && cogsCoverageRatio > 0 && (financialDay.hasPartialCOGS || (sheetIncomplete && financialDay.hasCOGS));
@@ -331,10 +332,15 @@ function buildDailyReportInsights(totals, latestData = {}) {
     const gaps = sourceAudit.summary?.costCompleteness || {};
     insights.push(`⚠️ <b>COGS Sheet incomplete:</b> ${formatWholeNumber(gaps.missingCostItemCount || 0)} missing cost fields, ${formatWholeNumber(gaps.invalidValueRows || 0)} invalid amounts, ${formatWholeNumber(gaps.unverifiedRecoveryRows || 0)} unverified recoveries, ${formatWholeNumber(gaps.missingOrderNumberRows || 0)} blank order IDs, ${formatWholeNumber(gaps.missingOrderDateRows || 0)} blank dates, ${formatWholeNumber(gaps.missingCustomerNameRows || 0)} blank names`);
   } else if (sourceAudit?.status && sourceAudit.status !== 'reconciled') {
-    const detail = failedSourceChecks.length > 0
-      ? `${formatWholeNumber(failedSourceChecks.length)} source mismatch${failedSourceChecks.length === 1 ? '' : 'es'}`
-      : 'source data unavailable';
-    insights.push(`⚠️ <b>Data check:</b> ${detail}`);
+    const unassigned = sourceAudit.summary?.unassignedSourceTotals || {};
+    if (Number(unassigned.cogs || 0) || Number(unassigned.shipping || 0)) {
+      insights.push(`⚠️ <b>COGS Sheet undated across tabs:</b> ${formatKrw(unassigned.cogs || 0)} COGS, ${formatKrw(unassigned.shipping || 0)} shipping. Profit is not final.`);
+    } else {
+      const detail = failedSourceChecks.length > 0
+        ? `${formatWholeNumber(failedSourceChecks.length)} source mismatch${failedSourceChecks.length === 1 ? '' : 'es'}`
+        : 'source data unavailable';
+      insights.push(`⚠️ <b>Data check:</b> ${detail}`);
+    }
   }
   if (orderAudit?.status === 'failed') {
     insights.push(`⚠️ <b>Telegram audit:</b> ${formatWholeNumber(orderAuditIssues)} order alert issue${orderAuditIssues === 1 ? '' : 's'}`);

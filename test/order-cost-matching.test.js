@@ -31,6 +31,20 @@ test('matchOrdersToCogs prefers exact order-number matches', () => {
   assert.equal(result.unmatchedCogsOrders.length, 0);
 });
 
+test('exact matching keeps every dated COGS segment for one Imweb order', () => {
+  const result = matchOrdersToCogs(
+    [createOrder({ orderNo: '1001' })],
+    [
+      createCogsOrder({ orderKey: '3월:2026-03-10:1001', cost: 50000, shipping: 4000, netCost: 50000, netShipping: 4000, itemCount: 1, costedItemCount: 1 }),
+      createCogsOrder({ orderKey: '3월:2026-03-11:1001', date: '2026-03-11', cost: 30000, shipping: 0, netCost: 30000, netShipping: 0, itemCount: 1, costedItemCount: 1 }),
+    ]
+  );
+  const match = result.matchesByOrderNo.get('1001');
+  assert.equal(match.cogsOrder.netCost, 80000);
+  assert.equal(match.cogsSegments.length, 2);
+  assert.equal(result.unmatchedCogsOrders.length, 0);
+});
+
 test('matchOrdersToCogs falls back to a unique date and customer-name match', () => {
   const result = matchOrdersToCogs(
     [createOrder({ orderNo: '2001', ordererName: '김가영' })],

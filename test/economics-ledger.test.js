@@ -153,3 +153,21 @@ test('buildEconomicsLedger records conservative fallback matches from date and c
   assert.equal(ledger.summary.fallbackMatchedOrdersToCogs, 1);
   assert.equal(ledger.orderSnapshots[0].cogsMatchMode, 'date_customer_unique');
 });
+
+test('ledger keeps dated exact segments and repeated exchange labels without ID collisions', () => {
+  const ledger = buildEconomicsLedger({
+    orders: [createOrder({ orderNo: '1001' })],
+    cogsData: { orders: [
+      { orderKey: '3월:2026-03-10:1001', orderNumber: '1001', date: '2026-03-10', cost: 50000, shipping: 4000, netCost: 50000, netShipping: 4000, itemCount: 1, costedItemCount: 1 },
+      { orderKey: '3월:2026-03-11:1001', orderNumber: '1001', date: '2026-03-11', cost: 30000, shipping: 0, netCost: 30000, netShipping: 0, itemCount: 1, costedItemCount: 1 },
+      { orderKey: '3월:row:8', orderNumber: '교환', date: '2026-03-11', cost: 10000, shipping: 0, refundCost: 0, refundShipping: 0 },
+      { orderKey: '3월:row:9', orderNumber: '교환', date: '2026-03-12', cost: 20000, shipping: 0, refundCost: 0, refundShipping: 0 },
+    ] },
+    campaignInsights: [],
+    campaigns: [],
+  });
+  assert.equal(ledger.orderSnapshots[0].cogsCost, 80000);
+  assert.equal(ledger.rows.filter(row => row.kind === 'cogs_purchase').length, 4);
+  assert.equal(new Set(ledger.rows.map(row => row.ledgerId)).size, ledger.rows.length);
+  assert.deepEqual(ledger.rows.filter(row => row.ledgerId.startsWith('cogs_purchase:')).map(row => row.date), ['2026-03-10', '2026-03-11']);
+});

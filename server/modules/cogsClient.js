@@ -463,6 +463,7 @@ function normalizeSheetDate(value) {
 // independent source total; it must not be rebuilt from aggregated purchases.
 function observeSheetColumnTotals(rows) {
   const byDate = {};
+  const unassignedTotals = { cogs: 0, shipping: 0 };
   let currentDate = null;
   let currentOrderNumber = '';
   let unassignedFinancialRows = 0;
@@ -480,6 +481,8 @@ function observeSheetColumnTotals(rows) {
     if (!hasCost && !hasShipping) continue;
     if (!currentDate) {
       unassignedFinancialRows += 1;
+      if (hasCost) unassignedTotals.cogs += parseKRW(String(row[7]));
+      if (hasShipping) unassignedTotals.shipping += parseKRW(String(row[8]));
       continue;
     }
     const totals = byDate[currentDate] || { cogs: 0, shipping: 0 };
@@ -487,7 +490,14 @@ function observeSheetColumnTotals(rows) {
     if (hasShipping) totals.shipping += parseKRW(String(row[8]));
     byDate[currentDate] = totals;
   }
-  return { byDate, unassignedFinancialRows };
+  return { byDate, unassignedTotals, unassignedFinancialRows };
+}
+
+function sheetOrderKey({ sheetLabel, date, orderNumber, headerRowNumber }) {
+  // Only an actual Imweb order ID identifies rows across separate Sheet blocks.
+  // Labels such as "exchange" are reused, and a real order can span two dates.
+  if (date && /^\d{15}$/.test(orderNumber)) return `${sheetLabel}:${date}:${orderNumber}`;
+  return `${sheetLabel}:row:${headerRowNumber}`;
 }
 
 function hasRefundNoteKeyword(note) {
@@ -655,7 +665,7 @@ function parseOrderItems(rows, options = {}) {
       rowNumber: sheetRowNumber,
       sequenceNo: currentOrder.sequenceNo,
       orderNumber: currentOrder.orderNumber,
-      orderKey: currentOrder.orderNumber || `${sheetLabel}:row:${currentOrder.headerRowNumber}`,
+      orderKey: sheetOrderKey({ sheetLabel, ...currentOrder }),
       date: currentOrder.date,
       name: currentOrder.name,
       ordererPhone: currentOrder.ordererPhone,
@@ -1043,6 +1053,7 @@ async function fetchAllCOGS() {
   const refundMarkers = buildRefundMarkerMap(workbookMeta, fallbackTargets);
   const allItems = [];
   const sourceTotalsByDate = {};
+  const unassignedSourceTotals = { cogs: 0, shipping: 0 };
   let unassignedSourceFinancialRows = 0;
   const sheets = [];
   const failedSheets = [];
@@ -1059,6 +1070,8 @@ async function fetchAllCOGS() {
       allItems.push(...items);
       const rawControl = observeSheetColumnTotals(rows);
       unassignedSourceFinancialRows += rawControl.unassignedFinancialRows;
+      unassignedSourceTotals.cogs += rawControl.unassignedTotals.cogs;
+      unassignedSourceTotals.shipping += rawControl.unassignedTotals.shipping;
       for (const [date, totals] of Object.entries(rawControl.byDate)) {
         const existing = sourceTotalsByDate[date] || { cogs: 0, shipping: 0 };
         existing.cogs += totals.cogs;
@@ -1086,6 +1099,7 @@ async function fetchAllCOGS() {
 
   const result = aggregateCOGSItems(allItems);
   result.sourceTotalsByDate = sourceTotalsByDate;
+  result.unassignedSourceTotals = unassignedSourceTotals;
   result.sourceTotalsOrigin = 'raw_sheet_columns';
   const sourceColumnMismatchDates = [...new Set([
     ...Object.keys(sourceTotalsByDate), ...Object.keys(result.dailyCOGS),

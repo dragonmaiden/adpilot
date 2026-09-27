@@ -110,6 +110,14 @@
     if (sourceAudit?.status === 'mismatch') {
       noticeElement.hidden = false;
       noticeElement.classList.add('is-error');
+      const unassigned = sourceAudit.summary?.unassignedSourceTotals || {};
+      if (Number(unassigned.cogs || 0) || Number(unassigned.shipping || 0)) {
+        noticeElement.textContent = tr(
+          `COGS Sheet has undated costs across its tabs: ₩${Number(unassigned.cogs || 0).toLocaleString()} COGS and ₩${Number(unassigned.shipping || 0).toLocaleString()} shipping. Profit is not final.`,
+          `원가 시트 전체에 날짜 없는 비용이 있습니다: 원가 ₩${Number(unassigned.cogs || 0).toLocaleString()}, 배송비 ₩${Number(unassigned.shipping || 0).toLocaleString()}. 순이익은 확정되지 않았습니다.`
+        );
+        return;
+      }
       noticeElement.textContent = failedChecks.length > 0
         ? tr(
             `Source audit mismatch: ${failedChecks.join(', ')}. Financial totals need review before use.`,

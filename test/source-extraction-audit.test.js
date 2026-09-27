@@ -222,6 +222,33 @@ test('raw Sheet column mismatch fails the source audit even when parsed profit m
   assert.ok(audit.reconciliation.failedChecks.includes('raw_sheet_daily_column_alignment'));
 });
 
+test('undated Sheet costs fail full-column reconciliation instead of disappearing', () => {
+  const base = createLatestData();
+  const latestData = createLatestData({
+    cogsData: {
+      ...base.cogsData,
+      grossCOGS: 30000,
+      grossShipping: 5000,
+      refundCOGS: 0,
+      refundShipping: 0,
+      sourceTotalsOrigin: 'raw_sheet_columns',
+      sourceTotalsByDate: { '2026-04-30': { cogs: 30000, shipping: 5000 } },
+      unassignedSourceTotals: { cogs: 12000, shipping: 4000 },
+      validation: { unassignedSourceFinancialRows: 1 },
+    },
+  });
+  const audit = buildSourceExtractionAudit({
+    scanId: 'undated-cost',
+    since: '2026-04-30',
+    until: '2026-04-30',
+    sourceResults: createSourceResults(),
+    latestData,
+  });
+  assert.equal(audit.status, 'mismatch');
+  assert.ok(audit.reconciliation.failedChecks.includes('raw_sheet_all_cogs_to_parsed_columns'));
+  assert.ok(audit.reconciliation.failedChecks.includes('raw_sheet_all_shipping_to_parsed_columns'));
+});
+
 test('unverified refund recovery keeps profit status incomplete even when cost cells are filled', () => {
   const base = createLatestData();
   const audit = buildSourceExtractionAudit({

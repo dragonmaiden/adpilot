@@ -148,6 +148,16 @@
     const failedFetches = Array.isArray(sourceAudit.summary?.failedFetches) ? sourceAudit.summary.failedFetches : [];
 
     if (sourceAudit.status === 'mismatch') {
+      const unassigned = sourceAudit.summary?.unassignedSourceTotals || {};
+      if (Number(unassigned.cogs || 0) || Number(unassigned.shipping || 0)) {
+        return {
+          isError: true,
+          text: tr(
+            `COGS Sheet has undated costs across its tabs: ₩${Number(unassigned.cogs || 0).toLocaleString()} COGS and ₩${Number(unassigned.shipping || 0).toLocaleString()} shipping. Profit is not final.`,
+            `원가 시트 전체에 날짜 없는 비용이 있습니다: 원가 ₩${Number(unassigned.cogs || 0).toLocaleString()}, 배송비 ₩${Number(unassigned.shipping || 0).toLocaleString()}. 순이익은 확정되지 않았습니다.`
+          ),
+        };
+      }
       return {
         isError: true,
         text: failedChecks.length > 0

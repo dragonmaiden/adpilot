@@ -199,15 +199,28 @@ function buildProjectionReconciliation(latestData = {}, projection = buildFinanc
 
   if (latestData.cogsData?.sourceTotalsOrigin === 'raw_sheet_columns') {
     const rawDays = Object.values(latestData.cogsData.sourceTotalsByDate || {});
+    const unassigned = latestData.cogsData.unassignedSourceTotals || {};
+    const parsedCogs = toNumber(latestData.cogsData.grossCOGS) + toNumber(latestData.cogsData.refundCOGS);
+    const parsedShipping = toNumber(latestData.cogsData.grossShipping) + toNumber(latestData.cogsData.refundShipping);
     checks.push(compareAmounts(
       'raw_sheet_cogs_to_parsed_columns',
       sumRows(rawDays, row => row.cogs),
-      toNumber(latestData.cogsData.grossCOGS) + toNumber(latestData.cogsData.refundCOGS)
+      parsedCogs
     ));
     checks.push(compareAmounts(
       'raw_sheet_shipping_to_parsed_columns',
       sumRows(rawDays, row => row.shipping),
-      toNumber(latestData.cogsData.grossShipping) + toNumber(latestData.cogsData.refundShipping)
+      parsedShipping
+    ));
+    checks.push(compareAmounts(
+      'raw_sheet_all_cogs_to_parsed_columns',
+      sumRows(rawDays, row => row.cogs) + toNumber(unassigned.cogs),
+      parsedCogs
+    ));
+    checks.push(compareAmounts(
+      'raw_sheet_all_shipping_to_parsed_columns',
+      sumRows(rawDays, row => row.shipping) + toNumber(unassigned.shipping),
+      parsedShipping
     ));
     checks.push(compareAmounts(
       'raw_sheet_daily_column_alignment',
@@ -351,6 +364,7 @@ function buildSourceExtractionAudit({ scanId, since, until, sourceResults = {}, 
       passedChecks: reconciliation.checks.filter(check => check.status === 'pass').length,
       failedChecks: reconciliation.failedChecks,
       costCompleteness,
+      unassignedSourceTotals: latestData.cogsData?.unassignedSourceTotals || { cogs: 0, shipping: 0 },
     },
     sources,
     reconciliation,

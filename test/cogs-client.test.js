@@ -107,7 +107,31 @@ test('a pending-recovery day without monetary columns is not a false Sheet misma
     const result = await client.fetchAllCOGS();
     assert.equal(result.dailyCOGS['2026-09-24'].cost, 0);
     assert.equal(result.validation.sourceColumnMismatchDays, 0);
+    assert.deepEqual(result.unassignedSourceTotals, { cogs: 0, shipping: 0 });
   });
+});
+
+test('reused exchange labels cannot merge dated costs into an undated first row', () => {
+  const items = parseOrderItems([[], [],
+    ['1', '', '', '교환', '', '', 'Undated exchange', '10000', '4000'],
+    ['2', '2026-09-18', '', '교환', '', '', 'Dated exchange', '50000', '4000'],
+    ['3', '2026-09-19', '', '교환', '', '', 'Another exchange', '30000', '0'],
+  ], { sheetLabel: '9월' });
+  const result = aggregateCOGSItems(items);
+  assert.equal(new Set(items.map(item => item.orderKey)).size, 3);
+  assert.equal(result.dailyCOGS['2026-09-18'].purchaseCost, 50000);
+  assert.equal(result.dailyCOGS['2026-09-19'].purchaseCost, 30000);
+  assert.equal(result.validation.missingOrderDateRows, 1);
+});
+
+test('one real order on two dates remains in its own daily periods', () => {
+  const items = parseOrderItems([[], [],
+    ['1', '2026-09-18', 'Customer', '202609180000001', '', '', 'Bag', '50000', '4000'],
+    ['1', '2026-09-19', 'Customer', '202609180000001', '', '', 'Accessory', '30000', '0'],
+  ], { sheetLabel: '9월' });
+  const result = aggregateCOGSItems(items);
+  assert.equal(result.dailyCOGS['2026-09-18'].purchaseCost, 50000);
+  assert.equal(result.dailyCOGS['2026-09-19'].purchaseCost, 30000);
 });
 
 test('buildSheetTargets merges configured month labels with workbook-discovered monthly tabs', () => {
@@ -217,6 +241,28 @@ test('fetchAllCOGS carries the raw Sheet column control alongside parsed net cos
   });
 });
 
+test('fetchAllCOGS retains every raw monetary cell even when its date is missing', async () => {
+  await withMockedCogsClient({
+    config: { cogs: { spreadsheetId: 'spreadsheet-123', sheetGids: { Sep: '9' } } },
+    googleSheetsAuthService: {
+      isConfigured: () => true,
+      fetchSpreadsheetMetadata: async () => ({ sheets: [{ properties: { sheetId: '9', title: 'Sep' } }] }),
+      fetchSheetValues: async () => [[], [],
+        ['1', '', '', '교환', '', '', 'Undated', '12000', '4000'],
+        ['2', '2026-09-24', 'Customer', '202609240000001', '', '', 'Bag', '50000', '4000'],
+        ['3', '2026-09-25', '', '교환', '', '', 'Dated exchange', '30000', '0'],
+      ],
+    },
+  }, async client => {
+    const result = await client.fetchAllCOGS();
+    assert.equal(result.dailyCOGS['2026-09-25'].purchaseCost, 30000);
+    assert.equal(result.validation.sourceColumnMismatchDays, 0);
+    assert.equal(result.validation.unassignedSourceFinancialRows, 1);
+    assert.deepEqual(result.unassignedSourceTotals, { cogs: 12000, shipping: 4000 });
+    assert.equal(result.grossCOGS + result.unassignedSourceTotals.cogs, 92000);
+  });
+});
+
 test('blank cost or shipping stays incomplete, while an explicit zero is a known value', () => {
   const rows = [[], [],
     ['1', '2026-09-20', 'A', 'order-1', '', '', 'Item', '50000', ''],
@@ -282,6 +328,7 @@ test('raw Sheet column totals are read separately from parsed order items', () =
   ];
   assert.deepEqual(observeSheetColumnTotals(rows), {
     byDate: { '2026-09-24': { cogs: 60000, shipping: 4000 } },
+    unassignedTotals: { cogs: 30000, shipping: 0 },
     unassignedFinancialRows: 1,
   });
 });

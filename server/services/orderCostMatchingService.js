@@ -60,12 +60,30 @@ function assignExactMatches(orders, exactCogsByOrderNumber, assignedCogsIds) {
     if (!orderNo) continue;
 
     const candidates = exactCogsByOrderNumber.get(orderNo) || [];
-    const next = candidates.find(candidate => !assignedCogsIds.has(candidate.id)) || null;
-    if (!next) continue;
+    const available = candidates.filter(candidate => !assignedCogsIds.has(candidate.id));
+    if (available.length === 0) continue;
 
-    assignedCogsIds.add(next.id);
+    available.forEach(candidate => assignedCogsIds.add(candidate.id));
+    const segments = available.map(candidate => candidate.order);
+    const combined = available.length === 1 ? segments[0] : {
+      ...segments[0],
+      cost: segments.reduce((sum, row) => sum + Number(row.cost || 0), 0),
+      shipping: segments.reduce((sum, row) => sum + Number(row.shipping || 0), 0),
+      refundCost: segments.reduce((sum, row) => sum + Number(row.refundCost || 0), 0),
+      refundShipping: segments.reduce((sum, row) => sum + Number(row.refundShipping || 0), 0),
+      netCost: segments.reduce((sum, row) => sum + Number(row.netCost ?? (Number(row.cost || 0) - Number(row.refundCost || 0))), 0),
+      netShipping: segments.reduce((sum, row) => sum + Number(row.netShipping ?? (Number(row.shipping || 0) - Number(row.refundShipping || 0))), 0),
+      itemCount: segments.reduce((sum, row) => sum + Number(row.itemCount || 0), 0),
+      costedItemCount: segments.reduce((sum, row) => sum + Number(row.costedItemCount || 0), 0),
+    };
+    if (available.length > 1) {
+      combined.costCoverageRatio = combined.itemCount > 0
+        ? combined.costedItemCount / combined.itemCount
+        : Math.min(...segments.map(row => Number(row.costCoverageRatio ?? 0)));
+    }
     matchesByOrderNo.set(orderNo, {
-      cogsOrder: next.order,
+      cogsOrder: combined,
+      cogsSegments: segments,
       matchMode: 'exact_order_number',
     });
   }

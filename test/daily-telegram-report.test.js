@@ -429,6 +429,20 @@ test('a source reconciliation mismatch withholds Telegram profit rather than pri
   assert.match(plan.text, /source reconciliation mismatch/);
 });
 
+test('Telegram names the undated COGS gap and withholds final profit', () => {
+  const plan = buildDailySummaryReportPlan(
+    buildLatestData({ sourceAudit: {
+      status: 'mismatch',
+      reconciliation: { failedChecks: ['raw_sheet_all_cogs_to_parsed_columns'] },
+      summary: { unassignedSourceTotals: { cogs: 812000, shipping: 37000 } },
+    } }),
+    { dailyReport: { reportDate: null, sentAt: null } },
+    new Date('2026-04-30T14:30:00.000Z')
+  );
+  assert.match(plan.text, /COGS Sheet undated across tabs:<\/b> ₩812,000 COGS, ₩37,000 shipping/);
+  assert.match(plan.text, /Total Profits:<\/b> N\/A/);
+});
+
 test('daily report removes campaign watch items without changing ad spend', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData({
