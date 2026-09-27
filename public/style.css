@@ -528,41 +528,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   margin-top: 0;
 }
 
-.summary-profit-topline {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: stretch;
-}
-
-.summary-profit-topline .profit-hero {
-  height: 100%;
-  padding: var(--space-6);
-}
-
-.summary-profit-topline .profit-hero-main {
-  display: block;
-  margin-top: var(--space-5);
-}
-
-.summary-profit-topline .profit-hero-metrics {
-  display: none;
-}
-
-.summary-profit-kpis {
-  height: 100%;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
-}
-
-.summary-profit-kpis .kpi-card {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: var(--space-4);
-}
-
 .refund-rate-monitor {
   min-width: 0;
 }
@@ -3115,198 +3080,353 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   user-select: none;
 }
 
+/* Each month sheet scales its type to the column it lands in */
+.calendar-viewport > .calendar-month {
+  container-type: inline-size;
+  container-name: month-sheet;
+}
+
+/* ── Revenue calendar: printed-ledger sheet (one per month) ── */
+
 .calendar-month {
-  background: var(--color-surface-2);
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-lg);
-  padding: var(--calendar-month-padding);
+  --calendar-paper: var(--color-surface);
+  --calendar-ink: var(--color-text);
+  --calendar-hairline: color-mix(in srgb, var(--color-text) 14%, var(--color-border));
+  --calendar-leader: color-mix(in srgb, var(--color-text) 22%, var(--color-border));
+  --calendar-profit-ink: var(--color-success);
+  --calendar-loss-ink: var(--color-error);
+  min-width: 0;
+  padding: clamp(14px, 2.6cqw, 28px) clamp(14px, 3cqw, 32px) clamp(14px, 2.4cqw, 26px);
+  border-radius: 4px;
+  background: var(--calendar-paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.08);
+  color: var(--calendar-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="light"] .calendar-month {
+  --calendar-paper: #fdfcfa;
+  --calendar-hairline: #e0ded8;
+  --calendar-leader: #d4d4d8;
+  --calendar-profit-ink: #15803d;
+  --calendar-loss-ink: #b91c1c;
 }
 
 .calendar-month-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--calendar-ink);
+}
+
+.calendar-month-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 14px;
 }
 
 .calendar-month-title {
-  font-size: 1rem;
+  font-size: clamp(1rem, 2.2cqw, 1.375rem);
   font-weight: 700;
+  letter-spacing: -0.015em;
   line-height: 1.2;
 }
 
-.calendar-month-note {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
+.calendar-month-totals {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+  gap: 4px clamp(10px, 1.8cqw, 18px);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: clamp(0.625rem, 1.2cqw, 0.75rem);
+}
+
+.calendar-month-totals b {
+  color: var(--calendar-ink);
+  font-weight: 600;
+}
+
+.calendar-month-totals b.is-refund,
+.calendar-month-totals b.is-loss {
+  color: var(--color-error);
+}
+
+.calendar-month-totals b.is-profit {
+  color: var(--calendar-profit-ink);
 }
 
 .calendar-weekdays,
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
 }
 
 .calendar-weekdays {
-  margin-bottom: 8px;
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--calendar-ink);
 }
 
 .calendar-weekday {
-  font-size: var(--text-xs);
+  padding-left: clamp(4px, 1cqw, 10px);
+  color: var(--calendar-ink);
+  font-size: 0.625rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-text-faint);
-  text-align: center;
-  padding: 0 0 var(--space-1);
+}
+
+.calendar-weekday:nth-child(6),
+.calendar-weekday:nth-child(7) {
+  color: var(--color-text-muted);
+}
+
+.calendar-grid {
+  border-left: 1px solid var(--calendar-hairline);
 }
 
 .calendar-spacer {
-  min-height: 1px;
+  min-height: clamp(84px, 11cqw, 112px);
+  border-right: 1px solid var(--calendar-hairline);
+  border-bottom: 1px solid var(--calendar-hairline);
+  visibility: hidden;
 }
 
 .calendar-day {
-  --calendar-alpha: 0;
   --calendar-tint-strength: 0;
-  --calendar-tint-rgb: var(--calendar-profit-breakeven-rgb);
-  min-height: 116px;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  padding: 0.6rem 0.55rem;
-  background:
-    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.1 + var(--calendar-tint-strength) * 0.26)), transparent 68%),
-    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.08 + var(--calendar-tint-strength) * 0.32)), rgba(var(--calendar-tint-rgb), calc(0.02 + var(--calendar-tint-strength) * 0.14))),
-    var(--color-surface);
-  color: var(--color-text);
   display: flex;
+  min-width: 0;
+  min-height: clamp(84px, 11cqw, 112px);
   flex-direction: column;
-  gap: 3px;
+  padding: clamp(5px, 0.8cqw, 8px) clamp(4px, 1cqw, 10px) clamp(6px, 1cqw, 10px);
+  border: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--calendar-hairline);
+  border-bottom: 1px solid var(--calendar-hairline);
+  border-radius: 0;
+  /* Profit tint: near-paper at t=0, soft green at t=1 */
+  background: color-mix(in srgb, var(--calendar-paper), var(--color-success) calc(var(--calendar-tint-strength) * 26%));
+  color: var(--calendar-ink);
+  font: inherit;
   text-align: left;
   cursor: pointer;
-  overflow: hidden;
-  transition:
-    transform var(--transition-interactive),
-    border-color var(--transition-interactive),
-    box-shadow var(--transition-interactive),
-    background var(--transition-interactive);
+  transition: box-shadow var(--transition-interactive), background-color var(--transition-interactive);
 }
 
-.calendar-day.profit-positive {
-  --calendar-tint-rgb: var(--calendar-profit-positive-rgb);
-  border-color: rgba(var(--calendar-profit-positive-rgb), calc(0.1 + var(--calendar-tint-strength) * 0.22));
+[data-theme="light"] .calendar-day.profit-positive {
+  background: oklch(
+    calc(97.5% - 8% * var(--calendar-tint-strength))
+    calc(0.012 + 0.07 * var(--calendar-tint-strength))
+    148
+  );
 }
 
 .calendar-day.profit-negative {
-  --calendar-tint-rgb: var(--calendar-profit-negative-rgb);
-  border-color: rgba(var(--calendar-profit-negative-rgb), calc(0.16 + var(--calendar-tint-strength) * 0.2));
+  background: color-mix(in srgb, var(--calendar-paper), var(--color-error) 14%);
 }
 
-.calendar-day.profit-breakeven {
-  --calendar-tint-rgb: var(--calendar-profit-breakeven-rgb);
+[data-theme="light"] .calendar-day.profit-negative {
+  background: oklch(95% 0.04 25);
+}
+
+.calendar-day.profit-negative .calendar-day-number,
+.calendar-day.profit-negative .calendar-day-profit {
+  color: var(--calendar-loss-ink);
 }
 
 .calendar-day:hover {
-  transform: translateY(-1px);
-  border-color: var(--color-primary);
-}
-
-.calendar-day.is-empty {
-  opacity: 0.78;
+  box-shadow: inset 0 0 0 1px var(--calendar-ink);
 }
 
 .calendar-day.is-future {
-  opacity: 0.52;
+  opacity: 0.55;
   cursor: default;
-  border-style: dashed;
+  background: color-mix(in srgb, var(--calendar-paper) 92%, var(--color-border));
 }
 
 .calendar-day.is-future:hover {
-  transform: none;
-  border-color: var(--color-divider);
+  box-shadow: none;
 }
 
-.calendar-day.is-today {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+.calendar-day.is-future .calendar-day-number {
+  color: var(--color-text-faint);
 }
 
-.calendar-day.is-selected {
-  border-color: rgba(var(--calendar-tint-rgb), 0.9);
-  box-shadow: 0 0 0 1px rgba(var(--calendar-tint-rgb), 0.88), 0 8px 20px rgba(var(--calendar-tint-rgb), 0.16);
+.calendar-day.is-empty .calendar-day-revenue,
+.calendar-day.is-empty .calendar-day-profit {
+  color: var(--color-text-faint);
 }
 
+.calendar-day.is-today,
+.calendar-day.is-today:hover {
+  box-shadow: inset 0 0 0 2px var(--calendar-ink);
+}
+
+/* Selected range reads as one continuous wash; only the endpoints are outlined */
 .calendar-day.is-range {
-  background:
-    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.14 + var(--calendar-tint-strength) * 0.3)), transparent 68%),
-    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.12 + var(--calendar-tint-strength) * 0.34)), rgba(var(--calendar-tint-rgb), calc(0.05 + var(--calendar-tint-strength) * 0.18))),
-    var(--color-surface);
+  position: relative;
+}
+
+.calendar-day.is-range::after {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-primary) 11%, transparent);
+  content: '';
+  pointer-events: none;
 }
 
 .calendar-day.is-selection-start,
 .calendar-day.is-selection-end,
-.calendar-day.is-selection-single {
-  border-color: rgba(var(--calendar-tint-rgb), 0.95);
-  background:
-    radial-gradient(circle at top right, rgba(var(--calendar-tint-rgb), calc(0.2 + var(--calendar-tint-strength) * 0.32)), transparent 68%),
-    linear-gradient(180deg, rgba(var(--calendar-tint-rgb), calc(0.16 + var(--calendar-tint-strength) * 0.36)), rgba(var(--calendar-tint-rgb), calc(0.08 + var(--calendar-tint-strength) * 0.22))),
-    var(--color-surface);
+.calendar-day.is-selection-single,
+.calendar-day.is-today.is-range {
+  box-shadow: inset 0 0 0 2px var(--color-primary);
+}
+
+.calendar-day.is-range:hover {
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.calendar-day.is-selection-start:hover,
+.calendar-day.is-selection-end:hover,
+.calendar-day.is-selection-single:hover {
+  box-shadow: inset 0 0 0 2px var(--color-primary);
 }
 
 .calendar-day-top {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 6px;
 }
 
 .calendar-day-number {
-  font-size: 0.98rem;
+  font-size: clamp(0.75rem, 1.4cqw, 0.875rem);
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.2;
 }
 
 .calendar-day-label {
-  font-size: 0.68rem;
-  color: var(--color-text-faint);
-  line-height: 1;
+  color: var(--calendar-ink);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .calendar-day-revenue {
-  font-size: 0.74rem;
-  font-weight: 700;
-  line-height: 1.12;
-  letter-spacing: 0;
-  font-variant-numeric: lining-nums;
   min-width: 0;
+  margin-top: clamp(4px, 0.8cqw, 8px);
+  font-family: var(--font-mono);
+  font-size: clamp(0.6875rem, 1.45cqw, 0.9375rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  text-align: right;
   white-space: nowrap;
 }
 
-.calendar-day-profit,
-.calendar-day-orders {
-  font-size: 0.7rem;
-  color: var(--color-text-muted);
-  line-height: 1.1;
-  letter-spacing: 0;
-  font-variant-numeric: lining-nums;
+.calendar-day-profit {
   min-width: 0;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: clamp(0.5625rem, 1.15cqw, 0.75rem);
+  line-height: 1.3;
+  text-align: right;
   white-space: nowrap;
 }
 
 .calendar-day-profit.positive {
-  color: var(--color-success);
+  color: var(--calendar-profit-ink);
 }
 
 .calendar-day-profit.negative {
-  color: var(--color-error);
+  color: var(--calendar-loss-ink);
 }
 
-.calendar-day-badges {
-  margin-top: auto;
+.calendar-day-footer {
   display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: clamp(4px, 0.8cqw, 8px);
+  border-top: 1px dotted var(--calendar-leader);
+}
+
+.calendar-day-orders {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
   gap: 4px;
+  line-height: 1.1;
+}
+
+.calendar-day-orders-count {
+  font-family: var(--font-mono);
+  font-size: clamp(0.75rem, 1.55cqw, 1rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.calendar-day-orders-unit {
+  color: var(--color-text-muted);
+  font-size: clamp(0.5rem, 0.95cqw, 0.625rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.calendar-day-refunds {
+  flex: 0 0 auto;
+  color: var(--color-error);
+  font-size: clamp(0.75rem, 1.7cqw, 1.125rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.calendar-day-refunds.is-count {
+  font-family: var(--font-mono);
+  font-size: clamp(0.6875rem, 1.3cqw, 0.875rem);
+  letter-spacing: 0;
+}
+
+/* Narrow sheet (two-up desktop, tablets): full amounts must still fit, so
+   figures fall back to the narrower proportional face and tighter gutters. */
+@container month-sheet (max-width: 720px) {
+  .calendar-day {
+    padding-inline: 4px;
+  }
+
+  .calendar-day-revenue,
+  .calendar-day-profit,
+  .calendar-day-orders-count {
+    font-family: var(--font-body);
+    letter-spacing: -0.02em;
+  }
+
+  .calendar-day-revenue {
+    font-size: clamp(0.65rem, 1.75cqw, 0.9375rem);
+  }
+}
+
+.calendar-month-footnote {
+  display: flex;
+  justify-content: space-between;
   flex-wrap: wrap;
-  align-items: flex-start;
+  gap: 4px var(--space-4);
+  margin-top: 12px;
+  color: var(--color-text-faint);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
 }
 
 .calendar-mini-badge {
@@ -3322,91 +3442,84 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   max-width: 100%;
 }
 
-.calendar-mini-badge.refund {
-  background: var(--color-error-subtle);
-  color: var(--color-error);
-}
-
-.calendar-mini-badge.ops {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
-}
-
-.calendar-mini-badge.coverage {
-  background: var(--color-surface-offset);
-  color: var(--color-text-muted);
-}
-
-.calendar-mini-badge.future {
-  background: var(--color-surface-offset);
-  color: var(--color-text-faint);
-}
+/* ── Income statement: printed-ledger sheet ── */
 
 .income-statement-card {
-  --statement-rule: color-mix(in srgb, var(--color-text) 18%, var(--color-border));
-  padding: clamp(var(--space-5), 2.5vw, var(--space-8));
-}
-
-.income-statement-header,
-.income-statement-body {
+  --statement-paper: var(--color-surface);
+  --statement-ink: var(--color-text);
+  --statement-ink-soft: color-mix(in srgb, var(--color-text) 78%, var(--color-text-muted));
+  --statement-leader: color-mix(in srgb, var(--color-text) 22%, var(--color-border));
   width: 100%;
   max-width: 920px;
   margin-inline: auto;
+  padding: 44px 56px 48px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--statement-paper);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 12px 32px rgba(0, 0, 0, 0.08);
+  color: var(--statement-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="light"] .income-statement-card {
+  --statement-paper: #fdfcfa;
 }
 
 .income-statement-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-3) var(--space-6);
-  padding-bottom: var(--space-2);
+  padding-bottom: 18px;
+  border-bottom: 2px solid var(--statement-ink);
+  text-align: center;
 }
 
 .income-statement-heading {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: var(--space-1);
+  align-items: center;
+}
+
+.income-statement-brand {
+  color: var(--color-text-muted);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
 }
 
 .income-statement-header h2 {
-  margin: 0;
-  font-size: var(--text-lg);
+  margin: 6px 0 0;
+  font-size: 1.625rem;
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
 .income-statement-period {
   display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 0.3em;
+  margin-top: 6px;
   color: var(--color-text-muted);
-  font-size: var(--text-xs);
+  font-size: 0.75rem;
 }
 
-.income-statement-period svg {
-  width: 13px;
-  height: 13px;
-  color: var(--color-text-faint);
-}
-
+.income-statement-result,
 .income-statement-columns,
 .income-statement-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 90px minmax(150px, 190px);
-  align-items: center;
-  column-gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr) 110px 190px;
+  align-items: baseline;
+  column-gap: var(--space-4);
 }
 
 .income-statement-columns {
-  padding: var(--space-4) 0 var(--space-2);
-  border-bottom: 1px solid var(--color-divider);
-  color: var(--color-text-faint);
+  padding: 12px 0 8px;
+  border-bottom: 1px solid var(--statement-ink);
+  color: var(--statement-ink);
   font-size: 0.625rem;
   font-weight: 600;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
@@ -3415,58 +3528,64 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   text-align: right;
 }
 
-.income-statement-section {
-  margin-top: var(--space-5);
-}
-
-.income-statement-section + .income-statement-section {
-  margin-top: var(--space-6);
-}
-
 .income-statement-section-title {
-  padding-bottom: var(--space-1);
-  color: var(--color-text);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  padding: 24px 0 6px;
+  color: var(--statement-ink);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.income-statement-section + .income-statement-section .income-statement-section-title {
+  padding-top: 26px;
 }
 
 .income-statement-line {
-  min-height: 44px;
-  padding: var(--space-2) 0;
+  padding: 8px 0;
+  border-bottom: 1px dotted var(--statement-leader);
+}
+
+/* Level 1: deductions and cost lines; level 2: "of which…" and "Less: …" */
+.income-statement-line.deduction,
+.income-statement-line.cost {
+  padding-left: 22px;
+}
+
+.income-statement-line.detail {
+  padding-left: 44px;
+}
+
+.income-statement-line.detail .income-statement-account > span,
+.income-statement-line.detail .income-statement-amount {
+  color: var(--statement-ink-soft);
 }
 
 .income-statement-account {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  gap: 1px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
 }
 
 .income-statement-account > span {
   min-width: 0;
-  font-size: var(--text-sm);
-  font-weight: 500;
+  font-size: 0.875rem;
+  font-weight: 400;
   overflow-wrap: anywhere;
 }
 
 .income-statement-account small {
   color: var(--color-text-faint);
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
+  font-style: italic;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
-.income-statement-line.detail .income-statement-account {
-  padding-left: var(--space-4);
-}
-
-.income-statement-line.recovery .income-statement-amount {
-  color: var(--color-success);
-}
-
 .income-statement-percent {
-  color: var(--color-text-faint);
+  color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
@@ -3474,12 +3593,11 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 }
 
 .income-statement-amount {
-  color: var(--color-text);
+  color: var(--statement-ink);
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: 500;
+  font-size: 0.875rem;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
   text-align: right;
   white-space: nowrap;
 }
@@ -3500,6 +3618,10 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   line-height: 1.25;
 }
 
+.income-statement-line.cost .income-statement-ad-spend-values .income-statement-amount {
+  font-weight: 400;
+}
+
 .income-statement-source-amount {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
@@ -3518,19 +3640,40 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   overflow-wrap: anywhere;
 }
 
-.income-statement-line.subtotal,
-.income-statement-line.total,
-.income-statement-line.total-costs {
-  border-top: 1px solid var(--statement-rule);
+/* Emphasised lines (Total revenue, Net COGS, Net shipping): bold on a dotted rule */
+.income-statement-line.subtotal .income-statement-account > span,
+.income-statement-line.subtotal .income-statement-amount {
+  font-weight: 600;
 }
 
-.income-statement-line.subtotal .income-statement-account > span,
-.income-statement-line.subtotal .income-statement-amount,
+/* Subtotals (Net revenue, Total costs): single rule above, no rule below */
+.income-statement-line.total,
+.income-statement-line.total-costs {
+  padding: 10px 0;
+  border-top: 1px solid var(--statement-ink);
+  border-bottom: 0;
+}
+
 .income-statement-line.total .income-statement-account > span,
 .income-statement-line.total .income-statement-amount,
 .income-statement-line.total-costs .income-statement-account > span,
 .income-statement-line.total-costs .income-statement-amount {
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.income-statement-line.total .income-statement-percent,
+.income-statement-line.total-costs .income-statement-percent,
+.income-statement-result .income-statement-percent {
+  color: var(--statement-ink);
   font-weight: 600;
+}
+
+/* The subtotal's solid rule replaces the preceding dotted leader */
+.income-statement-line:has(+ .income-statement-line.total),
+.income-statement-line:has(+ .income-statement-line.total-costs),
+.income-statement-lines > .income-statement-line:last-child {
+  border-bottom: 0;
 }
 
 .income-statement-alert {
@@ -3591,73 +3734,65 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   color: var(--color-warning);
 }
 
+/* Grand total: single rule above, double rule under the figure */
 .income-statement-result {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-4) var(--space-8);
-  margin-top: var(--space-6);
-  padding-top: var(--space-4);
-  border-top: 2px solid var(--color-text);
+  margin-top: 8px;
+  padding: 14px 0 6px;
+  border-top: 1px solid var(--statement-ink);
 }
 
 .income-statement-result-copy {
   display: flex;
   min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
 }
 
 .income-statement-result-label {
-  color: var(--color-text);
-  font-size: var(--text-base);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  color: var(--statement-ink);
+  font-size: 1.0625rem;
+  font-weight: 700;
 }
 
 .income-statement-result-copy small {
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
+  color: var(--color-text-faint);
+  font-size: 0.6875rem;
+  font-style: italic;
 }
 
 .income-statement-result-values {
   display: flex;
-  align-items: flex-end;
   min-width: 0;
-  flex-direction: column;
-  gap: 2px;
+  justify-content: flex-end;
 }
 
 .income-statement-result-amount {
+  padding-bottom: 3px;
+  border-bottom: 3px double var(--statement-ink);
+  color: var(--statement-ink);
   font-family: var(--font-mono);
-  font-size: clamp(1.35rem, 2.4vw, 1.7rem);
+  font-size: 1.125rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
-.income-statement-result.positive .income-statement-result-amount {
-  color: var(--color-success);
+.income-statement-result.unavailable .income-statement-result-amount {
+  border-bottom-color: var(--color-text-faint);
+  color: var(--color-text-faint);
 }
 
-.income-statement-result.negative .income-statement-result-amount {
-  color: var(--color-error);
-}
-
-.income-statement-result-margin {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  color: var(--color-text-muted);
-  font-size: var(--text-xs);
-}
-
-.income-statement-result-margin b {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
+.income-statement-footnote {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+  flex-wrap: wrap;
+  margin-top: 36px;
+  color: var(--color-text-faint);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
 }
 
 .income-statement-coverage {
@@ -3910,6 +4045,11 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     grid-template-columns: repeat(2, 1fr);
   }
 
+  /* Two-up month sheets need ≥71px day cells for full KRW figures */
+  .calendar-viewport {
+    grid-template-columns: 1fr;
+  }
+
   .data-table th,
   .data-table td {
     padding-left: var(--space-2);
@@ -3931,15 +4071,6 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
 @media (max-width: 1024px) {
   .charts-grid { grid-template-columns: 1fr; }
-  .summary-profit-topline {
-    grid-template-columns: 1fr;
-  }
-  .summary-profit-topline .profit-hero-metrics {
-    display: grid;
-  }
-  .summary-profit-topline .profit-hero-main {
-    display: grid;
-  }
   .calendar-viewport { grid-template-columns: 1fr; }
   .live-intraday-takeaway { grid-template-columns: 1fr; }
   .live-intraday-takeaway-side {
@@ -4033,7 +4164,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .charts-grid { grid-template-columns: 1fr; }
 
   .income-statement-card {
-    padding: var(--space-4);
+    padding: var(--space-6) var(--space-5) var(--space-6);
   }
 
   .refund-monitor-card {
@@ -4060,6 +4191,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     align-items: flex-start;
   }
 
+  .income-statement-result,
   .income-statement-columns,
   .income-statement-line {
     grid-template-columns: minmax(0, 1fr) 64px minmax(120px, 150px);
@@ -4177,18 +4309,29 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     justify-content: center;
   }
 
+  .calendar-month {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .calendar-spacer,
   .calendar-day {
-    min-height: 106px;
-    padding: 0.55rem 0.5rem;
+    min-height: 100px;
+  }
+
+  .calendar-day {
+    padding: 6px 8px 8px;
   }
 
   .calendar-day-revenue {
-    font-size: 0.74rem;
+    font-size: 0.8125rem;
   }
 
-  .calendar-day-profit,
-  .calendar-day-orders {
-    font-size: 0.68rem;
+  .calendar-day-profit {
+    font-size: 0.6875rem;
+  }
+
+  .calendar-day-orders-count {
+    font-size: 0.875rem;
   }
 
   /* Table mobile UX */
@@ -4261,38 +4404,49 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     white-space: normal;
   }
 
+  .income-statement-card {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .income-statement-header h2 {
+    font-size: 1.375rem;
+  }
+
+  .income-statement-result,
   .income-statement-columns,
   .income-statement-line {
     grid-template-columns: minmax(0, 1fr) minmax(110px, 44%);
     column-gap: var(--space-3);
   }
 
+  .income-statement-result .income-statement-percent,
   .income-statement-columns span:nth-child(2),
   .income-statement-line .income-statement-percent {
     display: none;
   }
 
-  .income-statement-section + .income-statement-section {
-    margin-top: var(--space-5);
+  .income-statement-line.deduction,
+  .income-statement-line.cost {
+    padding-left: 12px;
   }
 
-  .income-statement-line {
-    min-height: 52px;
+  .income-statement-line.detail {
+    padding-left: 24px;
   }
 
   .income-statement-result {
+    display: flex;
     align-items: flex-start;
     flex-direction: column;
     gap: var(--space-2);
   }
 
   .income-statement-result-values {
-    align-items: flex-end;
     width: 100%;
   }
 
-  .income-statement-result-amount {
-    font-size: 1.45rem;
+  .income-statement-footnote {
+    flex-direction: column;
   }
 
   .refund-monitor-metric strong {
@@ -4311,14 +4465,26 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
 
   .chart-container { height: var(--chart-visual-height-mobile); }
 
-  .calendar-weekdays,
-  .calendar-grid {
-    gap: 6px;
+  .calendar-month {
+    padding: var(--space-4) var(--space-3);
+  }
+
+  .calendar-month-title {
+    font-size: 1.125rem;
+  }
+
+  .calendar-weekday {
+    padding-left: 4px;
+    letter-spacing: 0.08em;
+  }
+
+  .calendar-spacer,
+  .calendar-day {
+    min-height: 96px;
   }
 
   .calendar-day {
-    min-height: 112px;
-    padding: 0.55rem 0.4rem;
+    padding: 5px 4px 6px;
   }
 
   .calendar-day-top {
@@ -4346,9 +4512,37 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
     font-size: 0.68rem;
   }
 
-  .calendar-day-profit,
-  .calendar-day-orders {
+  .calendar-day-profit {
     font-size: 0.64rem;
+  }
+
+  .calendar-day-revenue,
+  .calendar-day-profit {
+    line-height: 1.15;
+  }
+
+  .calendar-day-footer {
+    flex-wrap: wrap;
+    gap: 2px 4px;
+  }
+
+  .calendar-day-orders-count {
+    font-size: 0.8125rem;
+  }
+
+  .calendar-day-orders-unit {
+    font-size: 0.5625rem;
+  }
+
+  /* The bold count carries the meaning; the unit word does not fit 40px cells */
+  .calendar-day-orders-count + .calendar-day-orders-unit {
+    display: none;
+  }
+
+  .calendar-day-refunds {
+    font-size: 0.75rem;
+    letter-spacing: 0;
+    line-height: 1.1;
   }
 
   .calendar-day-badges {
@@ -4389,23 +4583,25 @@ html, body { height: 100%; overflow: hidden; margin: 0; }
   .card { padding: var(--space-3); }
   .kpi-card { padding: var(--space-3); }
 
-  .calendar-weekdays,
-  .calendar-grid {
-    gap: 4px;
+  .calendar-spacer,
+  .calendar-day {
+    min-height: 92px;
   }
 
   .calendar-day {
-    min-height: 116px;
-    padding: 0.5rem 0.3rem;
+    padding: 4px 3px 5px;
   }
 
   .calendar-day-revenue {
     font-size: 0.62rem;
   }
 
-  .calendar-day-profit,
-  .calendar-day-orders {
+  .calendar-day-profit {
     font-size: 0.58rem;
+  }
+
+  .calendar-day-orders-count {
+    font-size: 0.75rem;
   }
 
   /* Opt items stack vertically */

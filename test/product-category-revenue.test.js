@@ -237,10 +237,14 @@ test('calendar income statement keeps Meta ad spend visible as an explicit cost 
 test('calendar selected-range financial sequence ends with the income statement', () => {
   assert.doesNotMatch(calendarJs, /calendar-summary-grid-secondary|summaryCards|renderCalendarSummaryCard/);
   assert.doesNotMatch(css, /\.calendar-summary-grid/);
-  assert.match(indexHtml, /class="summary-profit-topline"[\s\S]*id="calendarIncomeStatementDeck"/);
+  // The selected-range headline and KPI cards were folded into the month sheet header totals.
+  assert.doesNotMatch(indexHtml, /summary-profit-topline|summary-profit-kpis|id="profitHero"/);
   assert.doesNotMatch(indexHtml, /summary-profit-charts|calendarSelectionDeck/);
-  assert.match(css, /\.summary-profit-topline\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(0,\s*1fr\);/);
-  assert.match(css, /\.summary-profit-kpis\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(indexHtml, /id="calendarIncomeStatementDeck"[\s\S]*id="refundRateMonitor"/);
+  assert.match(calendarJs, /class="calendar-month-totals"/);
+  assert.match(calendarJs, /tr\('Net profit', '순이익'\)\)\} <b class="\$\{netProfitTone\}"/);
+  assert.doesNotMatch(calendarJs, /tr\('Costs', '비용'\)\)\} <b>/);
+  assert.match(calendarJs, /const refundRateLabel = totals\.orders > 0 \? formatPercent\(\(totals\.refunds \/ totals\.orders\) \* 100, 1\) : '—';/);
   assert.match(calendarJs, /const statementContainer = document\.getElementById\('calendarIncomeStatementDeck'\);/);
   assert.match(calendarJs, /statementContainer\.innerHTML = renderCalendarIncomeStatement\(selection, calendarState\.data\.fx\);/);
   assert.doesNotMatch(calendarJs, /Daily Breakdown|Orders Ledger|Product Explorer/);
