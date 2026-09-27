@@ -485,27 +485,34 @@
       const recorded = days
         .filter(dateKey => compareDateKeys(dateKey, todayKey) <= 0)
         .map(dateKey => dayMap.get(dateKey))
-        .filter(day => day && ((day.revenue || 0) > 0 || (day.orders || 0) > 0 || (day.refundCount || 0) > 0));
+        .filter(day => day && (
+          (day.revenue || 0) > 0
+          || (day.orders || 0) > 0
+          || (day.refundCount || 0) > 0
+          || (day.returnEligibleOrders || 0) > 0
+          || (day.returnRefundOrders || 0) > 0
+        ));
       const totals = recorded.reduce((acc, day) => {
         acc.revenue += toFiniteNumber(day.revenue);
-        acc.orders += toFiniteNumber(day.orders);
-        acc.refunds += toFiniteNumber(day.refundCount);
+        acc.returnEligibleOrders += toFiniteNumber(day.returnEligibleOrders);
+        acc.returnRefundOrders += toFiniteNumber(day.returnRefundOrders);
         if (hasCalendarMetric(day.trueNetProfit)) {
           acc.netProfit += Number(day.trueNetProfit);
         } else {
           acc.netProfitComplete = false;
         }
         return acc;
-      }, { revenue: 0, orders: 0, refunds: 0, netProfit: 0, netProfitComplete: true });
+      }, { revenue: 0, returnEligibleOrders: 0, returnRefundOrders: 0, netProfit: 0, netProfitComplete: true });
       const netProfitLabel = recorded.length === 0
         ? '—'
         : `${totals.netProfit > 0 ? '+' : ''}${formatSignedKrw(totals.netProfit)}${totals.netProfitComplete ? '' : ' est.'}`;
       const netProfitTone = recorded.length === 0 ? '' : totals.netProfit < 0 ? 'is-loss' : 'is-profit';
-      // Order-based refund rate: refunded orders ÷ recognized orders
-      const refundRateLabel = totals.orders > 0 ? formatPercent((totals.refunds / totals.orders) * 100, 1) : '—';
+      const refundRateLabel = totals.returnEligibleOrders > 0
+        ? formatPercent((totals.returnRefundOrders / totals.returnEligibleOrders) * 100, 1)
+        : '—';
       const refundRateTitle = tr(
-        `${formatCount(totals.refunds)} refunded of ${formatCount(totals.orders)} orders`,
-        `주문 ${formatCount(totals.orders)}건 중 환불 ${formatCount(totals.refunds)}건`
+        `${formatCount(totals.returnRefundOrders)} post-delivery returns of ${formatCount(totals.returnEligibleOrders)} eligible orders; cancellations excluded`,
+        `취소 제외 주문 ${formatCount(totals.returnEligibleOrders)}건 중 배송 후 반품 ${formatCount(totals.returnRefundOrders)}건`
       );
 
       return `
@@ -1053,38 +1060,21 @@
     const historicalOrderRate = hasCalendarMetric(historical.orderRate)
       ? Math.max(0, Number(historical.orderRate))
       : null;
-    const historicalRevenueRate = hasCalendarMetric(historical.revenueRate)
-      ? Math.max(0, Number(historical.revenueRate))
-      : null;
     const monthToDateOrderRate = hasCalendarMetric(monthToDate.orderRate)
       ? Math.max(0, Number(monthToDate.orderRate))
       : null;
-    const monthToDateRevenueRate = hasCalendarMetric(monthToDate.revenueRate)
-      ? Math.max(0, Number(monthToDate.revenueRate))
-      : null;
+    const orderComparison = buildRefundMetricComparison(
+      tr('Orders', '주문'),
+      monthToDateOrderRate,
+      historicalOrderRate,
+      tr('No recognized orders', '확인된 주문 없음')
+    );
 
     return {
       historicalOrderRate,
-      historicalRevenueRate,
       monthToDateOrderRate,
-      monthToDateRevenueRate,
-      orderComparison: buildRefundMetricComparison(
-        tr('Orders', '주문'),
-        monthToDateOrderRate,
-        historicalOrderRate,
-        tr('No recognized orders', '확인된 주문 없음')
-      ),
-      revenueComparison: buildRefundMetricComparison(
-        tr('Revenue', '매출'),
-        monthToDateRevenueRate,
-        historicalRevenueRate,
-        tr('No revenue', '매출 없음')
-      ),
-      tone: monthToDate.status === 'above_benchmark'
-        ? 'above'
-        : monthToDateOrderRate == null && monthToDateRevenueRate == null
-          ? 'unavailable'
-          : 'within',
+      orderComparison,
+      tone: orderComparison.tone,
     };
   }
 
@@ -1141,7 +1131,7 @@
     container.innerHTML = `
       <div class="card refund-monitor-card refund-monitor-placeholder ${tone === 'error' ? 'is-error' : ''}">
         <div class="refund-monitor-kicker">${esc(tr('Refunds', '환불'))}</div>
-        <h2>${esc(tr('Post-delivery return rates · cancellations excluded', '배송 후 반품률 · 주문 취소 제외'))}</h2>
+        <h2>${esc(tr('Post-delivery order return rate · cancellations excluded', '배송 후 주문 반품률 · 주문 취소 제외'))}</h2>
         <p>${esc(message)}</p>
       </div>
     `;
@@ -1172,32 +1162,29 @@
 
     const refundComparison = calendarState.data.refundComparison || {};
     const viewModel = buildRefundMonitorViewModel(refundComparison);
-    if (viewModel.historicalOrderRate == null && viewModel.historicalRevenueRate == null) {
+    if (viewModel.historicalOrderRate == null) {
       renderRefundMonitorPlaceholder(
         tr(
-          'The historical comparison will appear after recognized orders or gross revenue are available.',
-          '확인된 주문 또는 총매출 데이터가 확보되면 과거 비교가 표시됩니다.'
+          'The historical comparison will appear after eligible orders are available.',
+          '취소 제외 주문 데이터가 확보되면 과거 비교가 표시됩니다.'
         )
       );
       return;
     }
-    const metricComparisons = [
-      viewModel.orderComparison,
-      viewModel.revenueComparison,
-    ];
-    const comparisonMarkup = metricComparisons.every(comparison => comparison.tone === 'unavailable')
+    const comparison = viewModel.orderComparison;
+    const comparisonMarkup = comparison.tone === 'unavailable'
       ? `
         <div class="refund-monitor-delta is-unavailable">
           <span aria-hidden="true">—</span>
           <strong>${esc(tr('No month-to-date comparison', '월 누계 비교 없음'))}</strong>
         </div>
       `
-      : metricComparisons.map(comparison => `
+      : `
         <div class="refund-monitor-delta is-${esc(comparison.tone)}" aria-label="${esc(comparison.label)}">
           <span aria-hidden="true">${esc(comparison.symbol)}</span>
           <strong>${esc(comparison.label)}</strong>
         </div>
-      `).join('');
+      `;
 
     container.setAttribute('aria-busy', 'false');
     container.innerHTML = `
@@ -1208,7 +1195,7 @@
         <header class="refund-monitor-header">
           <div>
             <div class="refund-monitor-kicker">${esc(tr('Refunds', '환불'))}</div>
-            <h2 id="refundMonitorTitle">${esc(tr('Post-delivery return rates · cancellations excluded', '배송 후 반품률 · 주문 취소 제외'))}</h2>
+            <h2 id="refundMonitorTitle">${esc(tr('Post-delivery order return rate · cancellations excluded', '배송 후 주문 반품률 · 주문 취소 제외'))}</h2>
           </div>
         </header>
 
@@ -1219,10 +1206,6 @@
               <div class="refund-monitor-metric">
                 <strong>${viewModel.historicalOrderRate == null ? '—' : esc(formatPercent(viewModel.historicalOrderRate, 1))}</strong>
                 <span>${esc(tr('order return rate', '주문 기준 반품률'))}</span>
-              </div>
-              <div class="refund-monitor-metric">
-                <strong>${viewModel.historicalRevenueRate == null ? '—' : esc(formatPercent(viewModel.historicalRevenueRate, 1))}</strong>
-                <span>${esc(tr('revenue return rate', '매출 기준 반품률'))}</span>
               </div>
             </div>
           </div>
@@ -1237,10 +1220,6 @@
               <div class="refund-monitor-metric is-${esc(viewModel.orderComparison.tone)}">
                 <strong>${viewModel.monthToDateOrderRate == null ? '—' : esc(formatPercent(viewModel.monthToDateOrderRate, 1))}</strong>
                 <span>${esc(tr('order return rate', '주문 기준 반품률'))}</span>
-              </div>
-              <div class="refund-monitor-metric is-${esc(viewModel.revenueComparison.tone)}">
-                <strong>${viewModel.monthToDateRevenueRate == null ? '—' : esc(formatPercent(viewModel.monthToDateRevenueRate, 1))}</strong>
-                <span>${esc(tr('revenue return rate', '매출 기준 반품률'))}</span>
               </div>
             </div>
           </div>

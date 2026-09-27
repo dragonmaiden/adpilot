@@ -242,7 +242,7 @@ test('calendar selected-range financial sequence ends with the income statement'
   assert.doesNotMatch(indexHtml, /summary-profit-charts|calendarSelectionDeck/);
   assert.match(indexHtml, /id="calendarIncomeStatementDeck"[\s\S]*id="refundRateMonitor"/);
   assert.match(calendarJs, /class="calendar-month-totals"/);
-  assert.match(calendarJs, /const refundRateLabel = totals\.orders > 0 \? formatPercent\(\(totals\.refunds \/ totals\.orders\) \* 100, 1\) : '—';/);
+  assert.match(calendarJs, /formatPercent\(\(totals\.returnRefundOrders \/ totals\.returnEligibleOrders\) \* 100, 1\)/);
   assert.match(calendarJs, /const statementContainer = document\.getElementById\('calendarIncomeStatementDeck'\);/);
   assert.match(calendarJs, /statementContainer\.innerHTML = renderCalendarIncomeStatement\(selection, calendarState\.data\.fx\);/);
   assert.doesNotMatch(calendarJs, /Daily Breakdown|Orders Ledger|Product Explorer/);

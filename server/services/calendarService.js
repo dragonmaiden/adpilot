@@ -1197,6 +1197,7 @@ function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, opera
     };
     const orders = ordersByDate.get(date) || [];
     const orderMetrics = buildOrderMetrics(orders);
+    const returnMetrics = buildRefundDeductionMetrics(orders);
     const reconciliation = reconciliationByDate.get(date) || null;
     const reconciliationGapAmount = reconciliation
       ? Math.abs(Number(reconciliation?.unmatchedSettlement?.netAmount || 0)) + Math.abs(Number(reconciliation?.unmatchedImweb?.netAmount || 0))
@@ -1232,6 +1233,8 @@ function buildDailyRows(dateKeys, maps, metaPurchasesByDate, ordersByDate, opera
       refundRate: ratioPercentOrNull(merged.refunded || 0, merged.revenue || 0),
       cancelRate: Number(orderMetrics.cancelRate.toFixed(1)),
       refundCount: orderMetrics.refundOrders,
+      returnEligibleOrders: returnMetrics.recognizedOrders,
+      returnRefundOrders: returnMetrics.returnRefundOrders,
       opCount: (operationsByDate.get(date) || []).length,
       reconciliationGapCount: reconciliationGapAmount > 0 ? 1 : 0,
       reconciliationGapAmount,

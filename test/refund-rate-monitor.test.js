@@ -8,6 +8,7 @@ const {
   buildRefundWindowSummary,
   buildHistoricalMonthlyRefundAverage,
   buildRefundRateComparison,
+  buildSummaryFinancialDays,
 } = require('../server/services/calendarService');
 const contracts = require('../server/contracts/v1');
 
@@ -119,6 +120,38 @@ test('refund deductions keep unknown Imweb statuses visible instead of mislabell
   assert.equal(metrics.returnRefundedAmount, 0);
   assert.equal(metrics.cancellationRefundedAmount, 0);
   assert.equal(metrics.unclassifiedRefundedAmount, 25_000);
+});
+
+test('calendar month header uses post-delivery returned orders over eligible orders', () => {
+  const date = '2026-07-01';
+  const orders = [
+    {
+      totalPaymentPrice: 80_000,
+      totalRefundedPrice: 20_000,
+      sections: [{ orderSectionStatus: 'RETURN_COMPLETE' }],
+    },
+    {
+      totalPaymentPrice: 100_000,
+      totalRefundedPrice: 0,
+      sections: [{ orderSectionStatus: 'PURCHASE_CONFIRMATION' }],
+    },
+    {
+      totalPaymentPrice: 0,
+      totalRefundedPrice: 40_000,
+      sections: [{ orderSectionStatus: 'CANCEL_COMPLETE' }],
+    },
+  ];
+  const [day] = buildSummaryFinancialDays(
+    { dailyMerged: [{ date, revenue: 180_000, orders: 2 }], profitWaterfall: [] },
+    [date],
+    { ready: true, totals: { feesComplete: true }, daily: [] },
+    { ordersByDate: new Map([[date, orders]]) }
+  );
+
+  assert.equal(day.refundCount, 2);
+  assert.equal(day.returnRefundOrders, 1);
+  assert.equal(day.returnEligibleOrders, 2);
+  assert.equal(day.returnRefundOrders / day.returnEligibleOrders, 0.5);
 });
 
 test('completed historical months use arithmetic averages for order and revenue refund rates', () => {
@@ -342,7 +375,7 @@ test('calendar contract preserves nullable refund rates instead of coercing them
   assert.equal(payload.refundComparison.monthToDate.revenueDeltaPoints, null);
 });
 
-test('summary shows historical and month-to-date return refund rates', () => {
+test('summary shows only historical and month-to-date order return rates', () => {
   const monitorIndex = indexHtml.indexOf('id="refundRateMonitor"');
   const statementIndex = indexHtml.indexOf('id="calendarIncomeStatementDeck"');
   const patternsIndex = indexHtml.indexOf('id="calendarOrderPatterns"');
@@ -355,9 +388,9 @@ test('summary shows historical and month-to-date return refund rates', () => {
   assert.match(calendarJs, /renderCalendarRefundRateMonitor\(\);/);
   assert.match(calendarJs, /Historical monthly average/);
   assert.match(calendarJs, /Month to date/);
-  assert.match(calendarJs, /Post-delivery return rates · cancellations excluded/);
+  assert.match(calendarJs, /Post-delivery order return rate · cancellations excluded/);
   assert.match(calendarJs, /order return rate/);
-  assert.match(calendarJs, /revenue return rate/);
+  assert.doesNotMatch(calendarJs, /revenue return rate/);
   assert.doesNotMatch(calendarJs, /refund orders \/ month/);
   assert.doesNotMatch(calendarJs, /role="meter"/);
   assert.doesNotMatch(calendarJs, /refund-monitor-(meter|track|axis|audit|benchmark)/);
@@ -366,7 +399,10 @@ test('summary shows historical and month-to-date return refund rates', () => {
   assert.match(calendarJs, /% below average/);
   assert.match(calendarJs, /% above average/);
   assert.match(calendarJs, /refund-monitor-metrics/);
-  assert.equal((calendarJs.match(/class="refund-monitor-metric(?:\s|")/g) || []).length, 4);
+  assert.equal((calendarJs.match(/class="refund-monitor-metric(?:\s|")/g) || []).length, 2);
+  assert.doesNotMatch(calendarJs, /historicalRevenueRate|monthToDateRevenueRate|revenueComparison/);
+  assert.match(calendarJs, /\(day\.returnEligibleOrders \|\| 0\) > 0/);
+  assert.match(calendarJs, /\(day\.returnRefundOrders \|\| 0\) > 0/);
   assert.doesNotMatch(calendarJs, /refund-monitor-(order-total|rate)/);
   assert.match(
     css,
