@@ -972,7 +972,7 @@ async function runScan(manual = false) {
       });
       if (ledgerResult?.ok) {
         console.log(
-          `[SCHEDULER]   → Postgres ledger persisted (${ledgerResult.imwebOrders} Imweb orders)`
+          `[SCHEDULER]   → Postgres ledger persisted (${ledgerResult.imwebOrders} Imweb orders updated, ${ledgerResult.unchangedOrders} unchanged)`
         );
       }
     } catch (err) {

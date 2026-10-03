@@ -1,6 +1,10 @@
+const { createHash } = require('node:crypto');
 const postgres = require('./postgres');
 const { getOrderCashTotals } = require('../domain/imwebPayments');
 const { formatDateInTimeZone } = require('../domain/time');
+
+// Rebuilt by a full reconciliation on process startup; never advance before commit.
+let committedOrderFingerprints = new Map();
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -58,10 +62,22 @@ async function upsertScanRun(client, scanResult, latestData) {
 
 async function upsertImwebOrders(client, scanId, orders) {
   let persisted = 0;
+  const unchangedOrderNos = [];
+  const nextFingerprints = new Map();
 
   for (const order of asArray(orders)) {
     const orderNo = getOrderNo(order);
     if (!orderNo) continue;
+
+    const raw = json(order);
+    const fingerprint = createHash('sha256').update(raw).digest('hex');
+    const previousFingerprint = nextFingerprints.has(orderNo)
+      ? nextFingerprints.get(orderNo) : committedOrderFingerprints.get(orderNo);
+    nextFingerprints.set(orderNo, fingerprint);
+    if (previousFingerprint === fingerprint) {
+      unchangedOrderNos.push(orderNo);
+      continue;
+    }
 
     const orderedAt = parseDate(order?.wtime);
     const cash = getOrderCashTotals(order);
@@ -92,14 +108,23 @@ async function upsertImwebOrders(client, scanId, orders) {
         orderedAt ? formatDateInTimeZone(orderedAt) : null,
         Math.round(cash.approvedAmount),
         Math.round(cash.refundedAmount),
-        json(order),
+        raw,
         String(scanId),
       ]
     );
     persisted += 1;
   }
 
-  return persisted;
+  // Keep scan freshness without sending unchanged financial payloads over the network.
+  if (unchangedOrderNos.length) {
+    await client.query(
+      `update imweb_orders set last_seen_scan_id = $2, last_seen_at = now()
+       where order_no = any($1::text[])`,
+      [unchangedOrderNos, String(scanId)]
+    );
+  }
+
+  return { persisted, unchanged: unchangedOrderNos.length, nextFingerprints };
 }
 
 async function persistScanLedger({ scanResult, latestData }) {
@@ -114,9 +139,10 @@ async function persistScanLedger({ scanResult, latestData }) {
     await client.query('begin');
     try {
       await upsertScanRun(client, scanResult, latestData || {});
-      const imwebOrders = await upsertImwebOrders(client, scanResult.scanId, latestData?.orders);
+      const orders = await upsertImwebOrders(client, scanResult.scanId, latestData?.orders);
       await client.query('commit');
-      return { ok: true, imwebOrders };
+      committedOrderFingerprints = orders.nextFingerprints;
+      return { ok: true, imwebOrders: orders.persisted, unchangedOrders: orders.unchanged };
     } catch (err) {
       await client.query('rollback');
       throw err;
