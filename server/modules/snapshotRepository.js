@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const runtimePaths = require('../runtime/paths');
+const { writeJsonFileSync, measureJsonBytes } = require('../runtime/jsonFile');
 const { getMaxSnapshotScanSets, pruneSnapshots } = require('../runtime/snapshotRetention');
 
 const SNAP_DIR = path.join(runtimePaths.dataDir, 'snapshots');
@@ -13,8 +14,7 @@ function ensureSnapshotDir() {
 
 function saveSnapshotFile(filename, data) {
   const filepath = path.join(SNAP_DIR, filename);
-  fs.writeFileSync(filepath, JSON.stringify(data), { mode: 0o600 });
-  fs.chmodSync(filepath, 0o600);
+  writeJsonFileSync(filepath, data);
 }
 
 function cleanupSnapshots(maxScanSets = getMaxSnapshotScanSets()) {
@@ -73,8 +73,7 @@ function saveSnapshot(scanId, snapshotData) {
   if (parts.some(part => fs.existsSync(path.join(SNAP_DIR, part.filename)))) {
     throw new Error('Snapshot already exists; refusing to overwrite recovery data');
   }
-  // Measure one serialized part at a time to avoid retaining another whole scan in memory.
-  const reservedBytes = parts.reduce((total, part) => total + Buffer.byteLength(JSON.stringify(part.data)), 0);
+  const reservedBytes = parts.reduce((total, part) => total + measureJsonBytes(part.data), 0);
   const maxScanSets = getMaxSnapshotScanSets();
   const prepare = limit => {
     const storage = pruneSnapshots(runtimePaths.dataDir, { maxScanSets: limit, reservedBytes });

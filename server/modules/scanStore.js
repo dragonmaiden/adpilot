@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const runtimePaths = require('../runtime/paths');
+const { writeJsonFileSync } = require('../runtime/jsonFile');
 
 const DATA_DIR = runtimePaths.dataDir;
 const SNAPSHOT_DIR = path.join(DATA_DIR, 'snapshots');
@@ -50,8 +51,7 @@ function createLatestDataState() {
 
 function saveData(filename, data) {
   const filepath = path.join(DATA_DIR, filename);
-  fs.writeFileSync(filepath, JSON.stringify(data, null, 2), { mode: 0o600 });
-  fs.chmodSync(filepath, 0o600);
+  writeJsonFileSync(filepath, data);
 }
 
 function loadData(filename, fallback = null) {
@@ -484,9 +484,14 @@ function saveLatestArtifacts(scanResult) {
 }
 
 function saveLatestData() {
+  console.log('[MEMORY] latest_data write start', process.memoryUsage());
   saveData(LATEST_DATA_FILE, {
     ...state.latestData,
     timestamp: new Date().toISOString(),
+  });
+  console.log('[MEMORY] latest_data write complete', {
+    ...process.memoryUsage(),
+    maxRssKiB: process.resourceUsage().maxRSS,
   });
 }
 
