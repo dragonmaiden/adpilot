@@ -22,7 +22,7 @@ export default [
     },
   },
   {
-    files: ['server/**/*.js', 'test/**/*.js'],
+    files: ['server/**/*.js', 'test/**/*.js', 'scripts/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'commonjs',

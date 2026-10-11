@@ -99,16 +99,16 @@ test('saveSnapshot retries after ENOSPC by pruning more aggressively', async () 
       );
     }
 
-    const originalWriteFileSync = fs.writeFileSync;
+    const originalRenameSync = fs.renameSync;
     let firstWrite = true;
-    fs.writeFileSync = (filepath, data, options) => {
+    fs.renameSync = (temporaryPath, filepath) => {
       if (firstWrite && String(filepath).includes('5000_normalized.json')) {
         firstWrite = false;
         const error = new Error('disk full');
         error.code = 'ENOSPC';
         throw error;
       }
-      return originalWriteFileSync(filepath, data, options);
+      return originalRenameSync(temporaryPath, filepath);
     };
 
     try {
@@ -121,7 +121,7 @@ test('saveSnapshot retries after ENOSPC by pruning more aggressively', async () 
         });
       });
     } finally {
-      fs.writeFileSync = originalWriteFileSync;
+      fs.renameSync = originalRenameSync;
     }
 
     assert.deepEqual(listSnapshotScanIds(dataDir), ['3000', '4000', '5000']);
@@ -134,8 +134,14 @@ test('saveSnapshot retries after ENOSPC by pruning more aggressively', async () 
   }
 });
 
-test('saveSnapshot persists a complete recovery projection with source freshness metadata', async () => {
+test('saveSnapshot sizes and persists a complete recovery projection without whole-document stringify', async t => {
   const dataDir = createTempDataDir();
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const stringify = JSON.stringify;
+  t.mock.method(JSON, 'stringify', value => {
+    assert.ok(value === null || typeof value !== 'object', 'snapshot sizing and writing must stay bounded');
+    return stringify(value);
+  });
 
   await withMockedSnapshotRepository({
     dataDir,
@@ -203,13 +209,12 @@ test('repeated disk-full writes remove only the failed new set and preserve the 
   fs.mkdirSync(snapshotDir);
   fs.writeFileSync(path.join(snapshotDir, '4000_normalized.json'), '{"keep":true}');
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
-  const original = fs.writeFileSync;
-  t.mock.method(fs, 'writeFileSync', (filepath, ...args) => {
+  const original = fs.renameSync;
+  t.mock.method(fs, 'renameSync', (temporaryPath, filepath) => {
     if (String(filepath).endsWith('5000_normalized.json')) {
-      original(filepath, 'partial');
       throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
     }
-    return original(filepath, ...args);
+    return original(temporaryPath, filepath);
   });
   await withMockedSnapshotRepository({ dataDir }, async repository => {
     assert.throws(() => repository.saveSnapshot('5000', { orders: [], revenueData: {} }), /disk full/);

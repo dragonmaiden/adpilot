@@ -37,6 +37,10 @@ function asArray(value) {
 }
 
 function pushStep(scanResult, payload) {
+  console.log(`[MEMORY] scan=${scanResult.scanId} step=${payload.step} status=${payload.status}`, {
+    ...process.memoryUsage(),
+    maxRssKiB: process.resourceUsage().maxRSS,
+  });
   scanResult.steps.push(payload);
 }
 
