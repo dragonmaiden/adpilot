@@ -269,3 +269,22 @@ test('chart builds the financial projection once and renders the resulting PNG',
   assert.equal(projections, 1);
   assert.equal((await sharp(result.png).metadata()).format, 'png');
 });
+
+
+test('unchanged charts skip native rendering but still validate and recompute financial inputs', async () => {
+  const data = fixture();
+  const initial = await buildDailyProfitChart(data, '2026-01-04');
+  const render = test.mock.method(sharp.prototype, 'toBuffer');
+  const options = { unchangedFingerprint: initial.fingerprint };
+  const unchanged = await buildDailyProfitChart(data, '2026-01-04', options);
+  assert.equal(unchanged.png, null);
+  assert.equal(render.mock.callCount(), 0);
+  assert.equal(unchanged.fingerprint, initial.fingerprint);
+  data.cogsData.dailyCOGS['2026-01-01'].cost += 100;
+  const changed = await buildDailyProfitChart(data, '2026-01-04', options);
+  assert.equal(render.mock.callCount(), 1);
+  assert.ok(Buffer.isBuffer(changed.png));
+  assert.notEqual(changed.fingerprint, initial.fingerprint);
+  data.sources = { imweb: { stale: true } };
+  await assert.rejects(buildDailyProfitChart(data, '2026-01-04', options), /stale/);
+});

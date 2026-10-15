@@ -437,7 +437,10 @@ async function deliverDailyReport(plan, latestData, previous = null) {
   try {
     // Telegram counts caption text after parsing our formatting tags.
     if (plan.text.replace(/<\/?(?:b|i)>/g, '').length > 1024) throw new Error('Summary exceeds photo caption limit');
-    chart = await buildDailyProfitChart(latestData || {}, plan.reportDate);
+    chart = await buildDailyProfitChart(latestData || {}, plan.reportDate, {
+      unchangedFingerprint: messageId && previous.payload === plan.text
+        ? previous.metadata.chartFingerprint : null,
+    });
   } catch (err) {
     if (messageId) return { ok: false, description: `Chart correction unavailable: ${err.message}` };
     const deliveredText = `${plan.text}\n\nChart unavailable; summary sent as text.`;

@@ -11,6 +11,9 @@ services:
       mountPath: /data
       sizeGB: 1
     envVars:
+      # Bound glibc memory arenas before Node starts on the 512 MiB service.
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: NODE_ENV
         value: production
       - key: DATA_DIR

@@ -147,7 +147,7 @@ function buildProfitChartSvg(historyPoints, reportDate) {
     </g></svg>`;
 }
 
-async function buildDailyProfitChart(data, reportDate) {
+async function buildDailyProfitChart(data, reportDate, { unchangedFingerprint = null } = {}) {
   for (const key of ['imweb', 'cogs', 'metaInsights']) {
     const source = data.sources?.[key];
     if (source?.stale || source?.status === 'error' || source?.hasData === false) {
@@ -167,15 +167,21 @@ async function buildDailyProfitChart(data, reportDate) {
   const points = buildCumulativeProfitSeries(data, reportDate, days);
   if (!points.length) throw new Error('No recorded financial history for chart');
   const svg = buildProfitChartSvg(points, reportDate);
+  const fingerprint = crypto.createHash('sha256').update(svg).digest('hex');
+  const pending = points.some(point => point.pending || point.estimated);
+  if (fingerprint === unchangedFingerprint) {
+    console.log('[MEMORY] profit_chart ' + JSON.stringify({ reportDate, stage: 'unchanged', ...process.memoryUsage() }));
+    return { png: null, pending, fingerprint };
+  }
   const sharp = require('sharp');
   // Each report has a different SVG; retaining image operations between reports wastes RAM.
   sharp.cache(false);
+  // Keep native image parallelism bounded even when the host exposes many CPUs.
+  sharp.concurrency(1);
+  console.log('[MEMORY] profit_chart ' + JSON.stringify({ reportDate, stage: 'render_start', ...process.memoryUsage() }));
   const png = await sharp(Buffer.from(svg)).png().toBuffer();
-  return {
-    png,
-    pending: points.some(point => point.pending || point.estimated),
-    fingerprint: crypto.createHash('sha256').update(svg).digest('hex'),
-  };
+  console.log('[MEMORY] profit_chart ' + JSON.stringify({ reportDate, stage: 'render_complete', bytes: png.length, ...process.memoryUsage() }));
+  return { png, pending, fingerprint };
 }
 
 module.exports = { buildCumulativeProfitSeries, buildMonthlyProfitSeries, buildProfitChartSvg, buildDailyProfitChart };
