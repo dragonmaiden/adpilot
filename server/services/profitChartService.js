@@ -13,19 +13,20 @@ function buildCumulativeProfitSeries(data, reportDate, financialDays) {
   for (let date = rows[0].date; date <= reportDate; date = shiftDate(date, 1)) {
     const row = byDate.get(date);
     let dailyPending = false;
+    let missingCosts = false;
     let dailyEstimated = data.sourceAudit?.status === 'incomplete';
     if (row) {
       const needsCosts = Number(row.orders) > 0 || row.revenue > 0;
       const missingRevenue = !Object.hasOwn(data.revenueData?.dailyRevenue || {}, date)
         && Number(data.cogsData?.dailyCOGS?.[date]?.purchases) > 0;
-      if (missingRevenue || !Number.isFinite(row.trueNetProfit)
-        || (needsCosts && !row.hasCOGS && !(row.cogsCoverageRatio > 0))) {
+      missingCosts = needsCosts && !row.hasCOGS;
+      if (missingRevenue || !Number.isFinite(row.trueNetProfit)) {
         dailyPending = true;
       }
-      dailyEstimated ||= (needsCosts && !row.hasCOGS) || row.hasPendingRecovery === true;
+      dailyEstimated ||= missingCosts || row.hasPendingRecovery === true;
     }
     points.push({ date,
-      dailyValue: dailyPending ? null : (row?.trueNetProfit ?? 0), dailyEstimated });
+      dailyValue: dailyPending ? null : (row?.trueNetProfit ?? 0), dailyEstimated, missingCosts });
   }
   // Start at the first usable monthly period, never at a few isolated days
   // before an incomplete month. Keep all daily values for the monthly bars.
@@ -90,6 +91,7 @@ function buildMonthlyProfitSvg(months) {
     elements.push(`<rect data-month="${month.month}" x="${x - width / 2}" y="${Math.min(y(0), y(month.value))}" width="${width}" height="${Math.max(2, Math.abs(y(month.value) - y(0)))}" fill="${month.current ? '#ffffff' : color}" stroke="${color}" stroke-width="3" ${month.current ? 'stroke-dasharray="1 7" stroke-linecap="round"' : ''}/>`);
     if (months.length <= 12) elements.push(`<text x="${x}" y="${month.value < 0 ? y(month.value) + 23 : y(month.value) - 12}" text-anchor="middle" font-size="15" fill="#334155">${compact(month.value)}${month.estimated ? ' est.' : ''}</text>`);
   });
+  if (months.some(month => month.estimated)) elements.push('<text x="48" y="976" font-size="18" fill="#64748b">Estimates deduct recorded costs only; missing costs may overstate profit.</text>');
   if (months.some(month => month.pending)) elements.push('<text x="48" y="1000" font-size="18" fill="#64748b">N/A: monthly profit is pending complete financial data.</text>');
   return elements.join('\n');
 }
@@ -133,6 +135,7 @@ function buildProfitChartSvg(historyPoints, reportDate) {
   for (const { i, week } of weekTicks.filter((_, index) => index % tickStride === 0)) {
     elements.push(`<text x="${x(i)}" y="461" text-anchor="${i === 0 ? 'start' : 'middle'}" font-size="18" fill="#64748b">${(i === 0 ? points[0].date : week).slice(5)}</text>`);
   }
+  const missingCostDays = points.filter(point => point.missingCosts).length;
   const headline = last.value == null ? 'Pending complete financial data' : `${money(last.value)}${last.estimated ? '  estimated' : ''}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1040">
     <rect width="1100" height="1040" rx="24" fill="#ffffff"/>
@@ -141,7 +144,7 @@ function buildProfitChartSvg(historyPoints, reportDate) {
       <text x="48" y="84" font-size="18" fill="#64748b">Through ${reportDate} (KST)${firstUsableIndex > 0 ? ' · Earlier history excluded: incomplete financial data' : ''}</text>
       <text x="48" y="128" font-size="30" font-weight="bold" fill="#0f172a">${headline}</text>
       ${elements.join('\n')}
-      ${last.pending ? '<text x="48" y="520" font-size="18" fill="#64748b">Line stops where financial data is incomplete.</text>' : ''}
+      ${last.pending ? '<text x="48" y="520" font-size="18" fill="#64748b">Line stops where revenue or required financial data is unavailable.</text>' : missingCostDays ? `<text x="48" y="520" font-size="18" fill="#64748b">Estimated from recorded costs · ${missingCostDays} sales day${missingCostDays === 1 ? ' has' : 's have'} incomplete COGS.</text>` : ''}
       <line x1="48" x2="1052" y1="546" y2="546" stroke="#e2e8f0"/>
       ${buildMonthlyProfitSvg(buildMonthlyProfitSeries(historyPoints, reportDate))}
     </g></svg>`;
@@ -180,7 +183,7 @@ async function buildDailyProfitChart(data, reportDate, { unchangedFingerprint = 
   sharp.concurrency(1);
   console.log('[MEMORY] profit_chart ' + JSON.stringify({ reportDate, stage: 'render_start', ...process.memoryUsage() }));
   const png = await sharp(Buffer.from(svg)).png().toBuffer();
-  console.log('[MEMORY] profit_chart ' + JSON.stringify({ reportDate, stage: 'render_complete', bytes: png.length, ...process.memoryUsage() }));
+  console.log('[MEMORY] profit_chart ' + JSON.stringify({ reportDate, stage: 'render_complete', bytes: png.length, lineComplete: Number.isFinite(points.at(-1)?.value), missingCostDays: points.filter(point => point.missingCosts).length, ...process.memoryUsage() }));
   return { png, pending, fingerprint };
 }
 

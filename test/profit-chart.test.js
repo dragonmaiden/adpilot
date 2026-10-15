@@ -60,13 +60,15 @@ test('cumulative chart sums canonical daily profits, fills quiet days and exclud
   assert.match(svg, /<path[^>]+stroke="#15803d"/);
 });
 
-test('unknown COGS prevents all later cumulative values from looking final', () => {
+test('missing COGS keeps the line continuous and all subsequent totals estimated', () => {
   const data = fixture();
   delete data.cogsData.dailyCOGS['2026-01-03'];
   const points = buildCumulativeProfitSeries(data, '2026-01-04');
-  assert.equal(points[2].value, null);
-  assert.equal(points[3].value, null);
-  assert.equal(points[3].pending, true);
+  assert.equal(points[3].value, summaryDays(data).filter(row => row.date <= '2026-01-04').reduce((sum, row) => sum + row.trueNetProfit, 0));
+  assert.equal(points[2].missingCosts, true);
+  assert.equal(points[3].estimated, true);
+  assert.equal(points[3].pending, false);
+  assert.match(buildProfitChartSvg(points, '2026-01-04'), /1 sales day has incomplete COGS/);
 });
 
 test('recovered costs recompute the entire cumulative series without estimates', () => {
@@ -128,14 +130,15 @@ test('monthly bars reconcile to cumulative profit and only the report month is d
   assert.doesNotMatch(svg, /data-month="2026-0[12]"[^>]+stroke-dasharray/);
 });
 
-test('missing costs invalidate only their month, not later monthly profits', () => {
+test('months with missing costs remain estimates and reconcile to the cumulative total', () => {
   const data = fixture();
   data.revenueData.dailyRevenue['2026-02-01'] = { revenue: 1000, refunded: 0, orders: 1 };
   data.cogsData.dailyCOGS['2026-02-01'] = { cost: 300, costCoverageRatio: 1 };
   const points = buildCumulativeProfitSeries(data, '2026-02-01');
   const months = buildMonthlyProfitSeries(points, '2026-02-01');
-  assert.equal(points.at(-1).value, months[1].value);
-  assert.equal(months[0].value, null);
+  assert.equal(points.at(-1).value, months.reduce((sum, month) => sum + month.value, 0));
+  assert.equal(months[0].estimated, true);
+  assert.ok(Number.isFinite(months[0].value));
   assert.ok(months[1].value > 0);
   assert.equal(months[1].pending, false);
 });
