@@ -438,8 +438,7 @@ async function deliverDailyReport(plan, latestData, previous = null) {
     // Telegram counts caption text after parsing our formatting tags.
     if (plan.text.replace(/<\/?(?:b|i)>/g, '').length > 1024) throw new Error('Summary exceeds photo caption limit');
     chart = await buildDailyProfitChart(latestData || {}, plan.reportDate, {
-      unchangedFingerprint: messageId && previous.payload === plan.text
-        ? previous.metadata.chartFingerprint : null,
+      unchangedFingerprint: messageId ? previous.metadata.chartFingerprint : null,
     });
   } catch (err) {
     if (messageId) return { ok: false, description: `Chart correction unavailable: ${err.message}` };
@@ -456,23 +455,32 @@ async function deliverDailyReport(plan, latestData, previous = null) {
   if (messageId && previous.metadata.chartFingerprint === chart.fingerprint && previous.payload === plan.text) {
     return { ok: true, unchanged: true, reportMetadata };
   }
-  const form = new FormData();
-  form.set('chat_id', CHAT_ID);
-  form.set('photo', new Blob([chart.png], { type: 'image/png' }), 'cumulative-profit.png');
-  if (messageId) {
-    form.set('message_id', String(messageId));
-    form.set('media', JSON.stringify({
-      type: 'photo', media: 'attach://photo', caption: plan.text, parse_mode: 'HTML',
-    }));
+  let endpoint;
+  let payload;
+  if (messageId && !chart.png) {
+    endpoint = 'editMessageCaption';
+    payload = { chat_id: CHAT_ID, message_id: messageId, caption: plan.text, parse_mode: 'HTML' };
   } else {
-    form.set('caption', plan.text);
-    form.set('parse_mode', 'HTML');
+    endpoint = messageId ? 'editMessageMedia' : 'sendPhoto';
+    const form = new FormData();
+    form.set('chat_id', CHAT_ID);
+    form.set('photo', new Blob([chart.png], { type: 'image/png' }), 'cumulative-profit.png');
+    if (messageId) {
+      form.set('message_id', String(messageId));
+      form.set('media', JSON.stringify({
+        type: 'photo', media: 'attach://photo', caption: plan.text, parse_mode: 'HTML',
+      }));
+    } else {
+      form.set('caption', plan.text);
+      form.set('parse_mode', 'HTML');
+    }
+    payload = form;
   }
   let result;
   try {
-    result = await requestTelegram(messageId ? 'editMessageMedia' : 'sendPhoto', { payload: form });
+    result = await requestTelegram(endpoint, { payload });
   } catch (_) {
-    result = { ok: false, description: 'Telegram chart upload failed' };
+    result = { ok: false, description: 'Telegram chart update failed' };
   }
   if (!result?.ok && /message is not modified/i.test(result?.description || '')) {
     return { ok: true, reportMetadata };

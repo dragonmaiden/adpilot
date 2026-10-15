@@ -616,3 +616,33 @@ test('unavailable chart keeps the summary deliverable with explicit text fallbac
     } },
   });
 });
+
+
+test('caption-only corrections keep the existing photo without allocating another PNG', async () => {
+  const data = buildDailyReportLatestData({ cost: 4000000, shipping: 50000, purchases: 6, costCoverageRatio: 0.5 });
+  const chart = await buildDailyProfitChart(data, '2026-04-30');
+  const render = test.mock.method(require('sharp').prototype, 'toBuffer');
+  const report = {
+    reportDate: '2026-04-30', payload: 'Old caption',
+    metadata: { telegramMessageId: 91, messageType: 'photo', chartPending: true, profitIsEstimated: true, chartFingerprint: chart.fingerprint },
+  };
+  let calls = 0;
+  await withTelegramModule(validEnv(), async (url, options) => {
+    assert.match(url, /editMessageCaption$/);
+    const payload = JSON.parse(options.body);
+    assert.equal(payload.message_id, 91);
+    assert.match(payload.caption, /Summary Report/);
+    calls += 1;
+    return { ok: true, json: async () => ({ ok: true }) };
+  }, async telegram => {
+    assert.equal((await telegram.refreshPendingDailyReports(data)).corrected, 1);
+    assert.equal(render.mock.callCount(), 0);
+    assert.equal(calls, 1);
+    assert.equal((await telegram.refreshPendingDailyReports(data)).waiting, 1);
+    assert.equal(render.mock.callCount(), 0);
+    assert.equal(calls, 1);
+  }, { financialLedgerRepository: {
+    listPendingCogsDailyReportDeliveries: async () => ({ reports: [report] }),
+    recordTelegramReportDelivery: async () => {},
+  } });
+});
