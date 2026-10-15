@@ -7,8 +7,8 @@ const {
 const {
   alignCalendarDaysWithSelection,
   buildCalendarMonthRoas,
-  buildSelectionSummary,
 } = require('../server/services/calendarService');
+const { buildSelectionSummary } = require('../server/domain/financialSummary');
 const { buildDailyCogsWithSheetTotals } = require('../server/services/financialProjectionService');
 const { buildProfitWaterfall } = require('../server/transforms/charts');
 

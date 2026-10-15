@@ -9,7 +9,7 @@ const {
   buildHistoricalMonthlyRefundAverage,
   buildRefundRateComparison,
   buildSummaryFinancialDays,
-} = require('../server/services/calendarService');
+} = require('../server/domain/financialSummary');
 const contracts = require('../server/contracts/v1');
 
 const INDEX_HTML_PATH = path.join(__dirname, '..', 'public', 'index.html');

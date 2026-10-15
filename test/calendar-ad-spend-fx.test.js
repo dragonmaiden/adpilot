@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const contracts = require('../server/contracts/v1');
 const { buildDailyUsdToKrwRates } = require('../server/services/fxService');
-const { buildSelectionFxContext } = require('../server/services/calendarService');
+const { buildSelectionFxContext } = require('../server/domain/financialSummary');
 
 const CALENDAR_SERVICE_PATH = path.join(__dirname, '..', 'server', 'services', 'calendarService.js');
 const API_JS_PATH = path.join(__dirname, '..', 'public', 'live', 'api.js');

@@ -1,4 +1,4 @@
-const { buildFinancialProjection } = require('./financialProjectionService');
+const { buildAllTimeOrderPatterns, buildRefundWindowSummary, buildHistoricalMonthlyRefundAverage } = require('../domain/financialSummary');
 const { KST_TIME_ZONE, formatDateInTimeZone, shiftDate } = require('../domain/time');
 
 const KST_UTC_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -412,15 +412,12 @@ function buildMonthlyRefundComparisonLine(latestData, reportDate) {
   if (source?.stale || source?.status === 'error' || source?.hasData === false) {
     return '↩️ <b>MTD return/refund rate:</b> N/A — order source unavailable or stale';
   }
-  // Resolve lazily: calendarService loads the scheduler, which also uses this report service.
-  const {
-    buildAllTimeOrderPatterns,
-    buildRefundWindowSummary,
-    buildHistoricalMonthlyRefundAverage,
-  } = require('./calendarService');
   const monthStart = `${reportDate.slice(0, 7)}-01`;
   const orders = Array.isArray(latestData?.orders) ? latestData.orders : [];
-  const rangeStart = buildAllTimeOrderPatterns(buildFinancialProjection(latestData || {})).range.start;
+  const rangeStart = buildAllTimeOrderPatterns({
+    dailyMerged: Object.entries(latestData?.revenueData?.dailyRevenue || {})
+      .map(([date, row]) => ({ ...row, date })),
+  }).range.start;
   const current = buildRefundWindowSummary({ orders, start: monthStart, end: reportDate });
   const historical = buildHistoricalMonthlyRefundAverage({
     orders,

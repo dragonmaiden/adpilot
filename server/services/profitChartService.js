@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { buildFinancialProjection } = require('./financialProjectionService');
+const { getDailySourceDates } = require('../transforms/charts');
 const { getReportFinancialDays } = require('./reportFinancialDaysService');
 const { shiftDate } = require('../domain/time');
 
@@ -158,8 +158,9 @@ async function buildDailyProfitChart(data, reportDate) {
   if (auditStatus && auditStatus !== 'reconciled') {
     throw new Error('Financial sources do not reconcile; profit chart unavailable');
   }
-  const dates = buildFinancialProjection(data).dailyMerged.map(row => row.date)
-    .filter(date => date <= reportDate).sort();
+  const dates = getDailySourceDates(
+    data.revenueData?.dailyRevenue, data.campaignInsights, data.cogsData?.dailyCOGS
+  ).filter(date => date <= reportDate);
   if (!dates.length) throw new Error('No recorded financial history for chart');
   const startDate = dates[0];
   const { days } = await getReportFinancialDays(data, startDate, reportDate);

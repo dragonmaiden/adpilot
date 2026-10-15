@@ -16,6 +16,7 @@ const INDEX_HTML_PATH = path.join(__dirname, '..', 'public', 'index.html');
 
 const contractsJs = fs.readFileSync(CONTRACTS_PATH, 'utf8');
 const calendarServiceJs = fs.readFileSync(CALENDAR_SERVICE_PATH, 'utf8');
+const financialSummaryJs = fs.readFileSync(path.join(__dirname, '..', 'server', 'domain', 'financialSummary.js'), 'utf8');
 const calendarJs = fs.readFileSync(CALENDAR_JS_PATH, 'utf8');
 const css = fs.readFileSync(STYLE_PATH, 'utf8');
 const indexHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
@@ -121,8 +122,8 @@ test('calendar payload preserves all-time order patterns for API compatibility',
   assert.match(contractsJs, /orderPatterns:\s*\{/);
   assert.match(contractsJs, /weekday:\s*orderPatterns\?\.weekday\s*\?\?\s*\[\]/);
   assert.match(contractsJs, /hourly:\s*orderPatterns\?\.hourly\s*\?\?\s*\[\]/);
-  assert.match(calendarServiceJs, /function buildAllTimeOrderPatterns\(projection\)/);
-  assert.match(calendarServiceJs, /const dailyRows = Array\.isArray\(projection\?\.dailyMerged\) \? projection\.dailyMerged : \[\];/);
+  assert.match(financialSummaryJs, /function buildAllTimeOrderPatterns\(projection\)/);
+  assert.match(financialSummaryJs, /const dailyRows = Array\.isArray\(projection\?\.dailyMerged\) \? projection\.dailyMerged : \[\];/);
   assert.match(calendarServiceJs, /const orderPatterns = buildAllTimeOrderPatterns\(projection\);/);
   assert.match(calendarServiceJs, /const refundComparison = buildRefundRateComparison\(/);
   assert.match(calendarServiceJs, /orderPatterns,\s*\n\s*refundComparison,/);
@@ -178,10 +179,10 @@ test('calendar income statement renders the financial sequence and every canonic
 });
 
 test('calendar income statement reads the server-owned refund split', () => {
-  assert.match(calendarServiceJs, /const refundDeductions = buildRefundDeductionMetrics\(selectionOrders\)/);
-  assert.match(calendarServiceJs, /returnRefundedAmount,/);
-  assert.match(calendarServiceJs, /cancellationRefundedAmount,/);
-  assert.match(calendarServiceJs, /unclassifiedRefundedAmount,/);
+  assert.match(financialSummaryJs, /const refundDeductions = buildRefundDeductionMetrics\(selectionOrders\)/);
+  assert.match(financialSummaryJs, /returnRefundedAmount,/);
+  assert.match(financialSummaryJs, /cancellationRefundedAmount,/);
+  assert.match(financialSummaryJs, /unclassifiedRefundedAmount,/);
   assert.match(calendarJs, /returnRefundedAmount:\s*toFiniteNumber\(canonical\.returnRefundedAmount\)/);
   assert.match(calendarJs, /cancellationRefundedAmount:\s*toFiniteNumber\(canonical\.cancellationRefundedAmount\)/);
   assert.match(calendarJs, /unclassifiedRefundedAmount:\s*toFiniteNumber\(canonical\.unclassifiedRefundedAmount\)/);
@@ -190,10 +191,10 @@ test('calendar income statement reads the server-owned refund split', () => {
 });
 
 test('calendar income statement exposes the server-owned COGS Sheet reconciliation', () => {
-  assert.match(calendarServiceJs, /costReconciliation = \{/);
-  assert.match(calendarServiceJs, /sheetTotal:\s*dayTotals\.cogsSheetTotal/);
-  assert.match(calendarServiceJs, /sourcePartitionDelta = sheetTotal - purchaseTotal - refundMarkedTotal/);
-  assert.match(calendarServiceJs, /netCheckDelta = purchaseTotal - refundMarkedTotal - netTotal/);
+  assert.match(financialSummaryJs, /costReconciliation = \{/);
+  assert.match(financialSummaryJs, /sheetTotal:\s*dayTotals\.cogsSheetTotal/);
+  assert.match(financialSummaryJs, /sourcePartitionDelta = sheetTotal - purchaseTotal - refundMarkedTotal/);
+  assert.match(financialSummaryJs, /netCheckDelta = purchaseTotal - refundMarkedTotal - netTotal/);
   assert.match(calendarJs, /Gross COGS purchased/);
   assert.match(calendarJs, /Less: refund-marked COGS adjustment/);
   assert.match(calendarJs, /Shipping paid/);

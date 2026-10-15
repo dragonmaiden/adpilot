@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const sharp = require('sharp');
 const { buildFinancialProjection } = require('../server/services/financialProjectionService');
 const { buildCumulativeProfitSeries: sumProfitDays, buildMonthlyProfitSeries, buildDailyProfitChart, buildProfitChartSvg } = require('../server/services/profitChartService');
-const { buildSummaryFinancialDays, buildSelectionSummary } = require('../server/services/calendarService');
+const { buildSummaryFinancialDays, buildSelectionSummary } = require('../server/domain/financialSummary');
 const fxService = require('../server/services/fxService');
 const paywayService = require('../server/services/paywayFinancialService');
 const fees = { ready: true, totals: { feesComplete: true }, daily: [] };
@@ -254,5 +254,18 @@ test('incomplete Sheet metadata produces a PNG with estimated monthly and cumula
   assert.match(buildProfitChartSvg(points, '2026-01-04'), /estimated/);
   const result = await buildDailyProfitChart(data, '2026-01-04');
   assert.equal(result.pending, true);
+  assert.equal((await sharp(result.png).metadata()).format, 'png');
+});
+
+test('chart builds the financial projection once and renders the resulting PNG', async t => {
+  const transforms = require('../server/transforms/charts');
+  const original = transforms.buildProfitWaterfall;
+  let projections = 0;
+  t.mock.method(transforms, 'buildProfitWaterfall', (...args) => {
+    projections += 1;
+    return original(...args);
+  });
+  const result = await buildDailyProfitChart(fixture(), '2026-01-04');
+  assert.equal(projections, 1);
   assert.equal((await sharp(result.png).metadata()).format, 'png');
 });

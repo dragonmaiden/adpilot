@@ -4,20 +4,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const transforms = require('../server/transforms/charts');
-const { buildAllTimeOrderPatterns } = require('../server/services/calendarService');
+const { buildAllTimeOrderPatterns } = require('../server/domain/financialSummary');
 
 const INDEX_HTML_PATH = path.join(__dirname, '..', 'public', 'index.html');
 const CALENDAR_JS_PATH = path.join(__dirname, '..', 'public', 'live', 'pages', 'calendar.js');
 const STYLE_CSS_PATH = path.join(__dirname, '..', 'public', 'style.css');
 const IMWEB_CLIENT_PATH = path.join(__dirname, '..', 'server', 'modules', 'imwebClient.js');
-const CALENDAR_SERVICE_PATH = path.join(__dirname, '..', 'server', 'services', 'calendarService.js');
+const FINANCIAL_SUMMARY_PATH = path.join(__dirname, '..', 'server', 'domain', 'financialSummary.js');
 const PROJECTION_SERVICE_PATH = path.join(__dirname, '..', 'server', 'services', 'financialProjectionService.js');
 
 const indexHtml = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
 const calendarJs = fs.readFileSync(CALENDAR_JS_PATH, 'utf8');
 const css = fs.readFileSync(STYLE_CSS_PATH, 'utf8');
 const imwebClientJs = fs.readFileSync(IMWEB_CLIENT_PATH, 'utf8');
-const calendarServiceJs = fs.readFileSync(CALENDAR_SERVICE_PATH, 'utf8');
+const financialSummaryJs = fs.readFileSync(FINANCIAL_SUMMARY_PATH, 'utf8');
 const projectionServiceJs = fs.readFileSync(PROJECTION_SERVICE_PATH, 'utf8');
 
 test('buildHourlyOrders carries per-hour revenue alongside order counts', () => {
@@ -48,8 +48,8 @@ test('order sync accumulates recognized revenue per KST hour', () => {
 
 test('projection and calendar service carry hourly revenue through to order patterns', () => {
   assert.match(projectionServiceJs, /buildHourlyOrders\(revenue\.hourlyOrders, revenue\.hourlyRevenue\)/);
-  assert.match(calendarServiceJs, /\{ hour, orders: 0, revenue: 0 \}/);
-  assert.match(calendarServiceJs, /buckets\[hour\]\.revenue = toFiniteNumber\(row\?\.revenue\);/);
+  assert.match(financialSummaryJs, /\{ hour, orders: 0, revenue: 0 \}/);
+  assert.match(financialSummaryJs, /buckets\[hour\]\.revenue = toFiniteNumber\(row\?\.revenue\);/);
 });
 
 test('order patterns range ignores Meta-spend-only days without orders', () => {

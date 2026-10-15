@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 test('calendar financial rates preserve unavailable denominator states', () => {
-  const service = fs.readFileSync(path.join(__dirname, '..', 'server/services/calendarService.js'), 'utf8');
+  const service = fs.readFileSync(path.join(__dirname, '..', 'server/domain/financialSummary.js'), 'utf8');
   const client = fs.readFileSync(path.join(__dirname, '..', 'public/live/pages/calendar.js'), 'utf8');
 
   assert.match(service, /trueNetProfit == null \? null : ratioPercentOrNull\(trueNetProfit, dayTotals\.netRevenue\)/);

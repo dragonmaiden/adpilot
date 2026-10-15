@@ -76,6 +76,19 @@ function resolveUsdToKrwContext(options = {}, dateKey = null) {
   };
 }
 
+function getDailySourceDates(revenueByDay, dailyInsights, dailyCogs) {
+  const dates = new Set();
+  for (const source of [revenueByDay, dailyCogs]) {
+    if (source && typeof source === 'object' && !Array.isArray(source)) {
+      for (const date of Object.keys(source)) dates.add(date);
+    }
+  }
+  for (const row of dailyInsights || []) {
+    if (row.date_start) dates.add(row.date_start);
+  }
+  return [...dates].sort((a, b) => a.localeCompare(b));
+}
+
 function buildDailyMerged(revenueByDay, dailyInsights, dailyCogs = null, options = {}) {
   const byDate = aggregateInsightsBy(
     dailyInsights,
@@ -129,9 +142,9 @@ function buildDailyMerged(revenueByDay, dailyInsights, dailyCogs = null, options
     }
   }
 
-  return Object.values(byDate)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map(day => {
+  return getDailySourceDates(revenueByDay, dailyInsights, dailyCogs)
+    .map(date => {
+      const day = byDate[date];
       const netRevenue = day.revenue - day.refunded;
       const purchases = day.actualPurchases != null ? day.actualPurchases : (day.orders || 0);
       const fx = resolveUsdToKrwContext(options, day.date);
@@ -594,6 +607,7 @@ function buildDataCoverage(dailyMerged, dailyCOGS) {
 }
 
 module.exports = {
+  getDailySourceDates,
   buildDailyMerged,
   buildWeekdayPerf,
   buildHourlyOrders,

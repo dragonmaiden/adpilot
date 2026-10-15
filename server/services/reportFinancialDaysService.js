@@ -1,3 +1,4 @@
+const { buildSummaryFinancialDays } = require('../domain/financialSummary');
 const { shiftDate } = require('../domain/time');
 const { buildFinancialProjection } = require('./financialProjectionService');
 const fxService = require('./fxService');
@@ -25,8 +26,6 @@ async function getReportFinancialDays(data, startDate, endDate) {
   const projection = buildFinancialProjection(data, {
     usdToKrwRatesByDate: historicalFx.ratesByDate,
   });
-  // Lazy import avoids calendar → scheduler → Telegram dependency cycle.
-  const { buildSummaryFinancialDays } = require('./calendarService');
   const days = buildSummaryFinancialDays(projection, dateKeys(startDate, endDate), paywayFinancials);
   if (days.some(day => day.fxStale || !day.paymentFeesComplete)) {
     throw new Error('Financial day has incomplete FX or Payway fees');

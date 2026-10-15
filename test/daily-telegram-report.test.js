@@ -9,7 +9,7 @@ const {
   resolveDailyReportDate,
 } = require('../server/services/dailyTelegramReportService');
 const { buildFinancialProjection } = require('../server/services/financialProjectionService');
-const { buildSummaryFinancialDays } = require('../server/services/calendarService');
+const { buildSummaryFinancialDays } = require('../server/domain/financialSummary');
 
 function financialDay(data, date) {
   const projection = buildFinancialProjection(data);
