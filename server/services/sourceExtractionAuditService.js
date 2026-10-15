@@ -212,15 +212,16 @@ function buildProjectionReconciliation(latestData = {}, projection = buildFinanc
       sumRows(rawDays, row => row.shipping),
       parsedShipping
     ));
+    const undatedItems = (latestData.cogsData.items || []).filter(item => !item.date);
     checks.push(compareAmounts(
       'raw_sheet_all_cogs_to_parsed_columns',
       sumRows(rawDays, row => row.cogs) + toNumber(unassigned.cogs),
-      parsedCogs
+      parsedCogs + sumRows(undatedItems, item => item.cost)
     ));
     checks.push(compareAmounts(
       'raw_sheet_all_shipping_to_parsed_columns',
       sumRows(rawDays, row => row.shipping) + toNumber(unassigned.shipping),
-      parsedShipping
+      parsedShipping + sumRows(undatedItems, item => item.shipping)
     ));
     checks.push(compareAmounts(
       'raw_sheet_daily_column_alignment',

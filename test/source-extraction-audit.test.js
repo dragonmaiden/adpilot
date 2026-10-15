@@ -222,7 +222,7 @@ test('raw Sheet column mismatch fails the source audit even when parsed profit m
   assert.ok(audit.reconciliation.failedChecks.includes('raw_sheet_daily_column_alignment'));
 });
 
-test('undated Sheet costs fail full-column reconciliation instead of disappearing', () => {
+test('preserved undated Sheet costs reconcile but keep the audit incomplete', () => {
   const base = createLatestData();
   const latestData = createLatestData({
     cogsData: {
@@ -234,6 +234,7 @@ test('undated Sheet costs fail full-column reconciliation instead of disappearin
       sourceTotalsOrigin: 'raw_sheet_columns',
       sourceTotalsByDate: { '2026-04-30': { cogs: 30000, shipping: 5000 } },
       unassignedSourceTotals: { cogs: 12000, shipping: 4000 },
+      items: [{ date: null, cost: 12000, shipping: 4000 }],
       validation: { unassignedSourceFinancialRows: 1 },
     },
   });
@@ -244,9 +245,18 @@ test('undated Sheet costs fail full-column reconciliation instead of disappearin
     sourceResults: createSourceResults(),
     latestData,
   });
-  assert.equal(audit.status, 'mismatch');
-  assert.ok(audit.reconciliation.failedChecks.includes('raw_sheet_all_cogs_to_parsed_columns'));
-  assert.ok(audit.reconciliation.failedChecks.includes('raw_sheet_all_shipping_to_parsed_columns'));
+  assert.equal(audit.status, 'incomplete');
+  assert.equal(audit.reconciliation.status, 'reconciled');
+  assert.deepEqual(audit.summary.unassignedSourceTotals, { cogs: 12000, shipping: 4000 });
+  latestData.cogsData.items = [];
+  const lostCosts = buildSourceExtractionAudit({
+    scanId: 'lost-undated-cost', since: '2026-04-30', until: '2026-04-30',
+    sourceResults: createSourceResults(), latestData,
+  });
+  assert.equal(lostCosts.status, 'mismatch');
+  assert.ok(lostCosts.reconciliation.failedChecks.includes('raw_sheet_all_cogs_to_parsed_columns'));
+  assert.ok(lostCosts.reconciliation.failedChecks.includes('raw_sheet_all_shipping_to_parsed_columns'));
+
 });
 
 test('unverified refund recovery keeps profit status incomplete even when cost cells are filled', () => {

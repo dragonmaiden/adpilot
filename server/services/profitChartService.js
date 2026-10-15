@@ -13,7 +13,7 @@ function buildCumulativeProfitSeries(data, reportDate, financialDays) {
   for (let date = rows[0].date; date <= reportDate; date = shiftDate(date, 1)) {
     const row = byDate.get(date);
     let dailyPending = false;
-    let dailyEstimated = false;
+    let dailyEstimated = data.sourceAudit?.status === 'incomplete';
     if (row) {
       const needsCosts = Number(row.orders) > 0 || row.revenue > 0;
       const missingRevenue = !Object.hasOwn(data.revenueData?.dailyRevenue || {}, date)
@@ -22,7 +22,7 @@ function buildCumulativeProfitSeries(data, reportDate, financialDays) {
         || (needsCosts && !row.hasCOGS && !(row.cogsCoverageRatio > 0))) {
         dailyPending = true;
       }
-      dailyEstimated = (needsCosts && !row.hasCOGS) || row.hasPendingRecovery === true;
+      dailyEstimated ||= (needsCosts && !row.hasCOGS) || row.hasPendingRecovery === true;
     }
     points.push({ date,
       dailyValue: dailyPending ? null : (row?.trueNetProfit ?? 0), dailyEstimated });

@@ -330,12 +330,19 @@ function buildDailyReportInsights(totals, latestData = {}) {
 
   if (sourceAudit?.status === 'incomplete') {
     const gaps = sourceAudit.summary?.costCompleteness || {};
-    insights.push(`⚠️ <b>COGS Sheet incomplete:</b> ${formatWholeNumber(gaps.missingCostItemCount || 0)} missing cost fields, ${formatWholeNumber(gaps.invalidValueRows || 0)} invalid amounts, ${formatWholeNumber(gaps.unverifiedRecoveryRows || 0)} unverified recoveries, ${formatWholeNumber(gaps.missingOrderNumberRows || 0)} blank order IDs, ${formatWholeNumber(gaps.missingOrderDateRows || 0)} blank dates, ${formatWholeNumber(gaps.missingCustomerNameRows || 0)} blank names`);
-  } else if (sourceAudit?.status && sourceAudit.status !== 'reconciled') {
+    const missingFields = [
+      ['missingCostItemCount', 'missing costs'], ['invalidValueRows', 'invalid amounts'],
+      ['unverifiedRecoveryRows', 'unverified recoveries'], ['missingOrderNumberRows', 'blank IDs'],
+      ['missingOrderDateRows', 'blank dates'], ['missingCustomerNameRows', 'blank names'],
+    ].filter(([key]) => Number(gaps[key]) > 0)
+      .map(([key, label]) => `${formatWholeNumber(gaps[key])} ${label}`);
+    if (missingFields.length) insights.push(`⚠️ <b>Sheet gaps (all tabs):</b> ${missingFields.join(', ')}`);
+  }
+  if (sourceAudit?.status && sourceAudit.status !== 'reconciled') {
     const unassigned = sourceAudit.summary?.unassignedSourceTotals || {};
     if (Number(unassigned.cogs || 0) || Number(unassigned.shipping || 0)) {
       insights.push(`⚠️ <b>COGS Sheet undated across tabs:</b> ${formatKrw(unassigned.cogs || 0)} COGS, ${formatKrw(unassigned.shipping || 0)} shipping. Profit is not final.`);
-    } else {
+    } else if (sourceAudit.status !== 'incomplete') {
       const detail = failedSourceChecks.length > 0
         ? `${formatWholeNumber(failedSourceChecks.length)} source mismatch${failedSourceChecks.length === 1 ? '' : 'es'}`
         : 'source data unavailable';
@@ -359,8 +366,10 @@ function buildDailyReportMessage(totals, latestData = {}) {
     : totals.profitIsEstimated
     ? `⚠️ ${formatKrw(totals.trueNetProfit)} est. (${formatCoveragePercent(totals.cogsCoverageRatio)} COGS${totals.sheetIncomplete ? '; Sheet incomplete' : ''})`
     : 'N/A (COGS pending)';
-  const totalCosts = cogsUnavailable || metaUnavailable
+  const totalCosts = totals.financialUnavailableReason || cogsUnavailable || metaUnavailable
     ? 'N/A (financial source unavailable)'
+    : totals.profitIsEstimated
+    ? `${formatKrw(totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees)} est.`
     : cogsIncomplete
     ? 'N/A (COGS incomplete)'
     : formatKrw(totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees);

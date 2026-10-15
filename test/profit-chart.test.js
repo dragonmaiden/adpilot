@@ -241,3 +241,18 @@ test('incomplete Payway fees remain unknown and stale fees or failed FX do not f
   test.mock.method(fxService, 'getUsdToKrwRatesForRange', async () => { throw new Error('FX unavailable'); });
   await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /FX unavailable/);
 });
+
+
+test('incomplete Sheet metadata produces a PNG with estimated monthly and cumulative values', async () => {
+  const data = fixture();
+  data.cogsData.dailyCOGS['2026-01-03'].costCoverageRatio = 1;
+  data.sourceAudit = { status: 'incomplete', reconciliation: { status: 'reconciled' } };
+  const points = buildCumulativeProfitSeries(data, '2026-01-04');
+  assert.ok(points.every(point => point.dailyEstimated));
+  assert.equal(points.at(-1).estimated, true);
+  assert.equal(buildMonthlyProfitSeries(points, '2026-01-04')[0].estimated, true);
+  assert.match(buildProfitChartSvg(points, '2026-01-04'), /estimated/);
+  const result = await buildDailyProfitChart(data, '2026-01-04');
+  assert.equal(result.pending, true);
+  assert.equal((await sharp(result.png).metadata()).format, 'png');
+});

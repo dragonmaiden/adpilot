@@ -295,6 +295,44 @@ test('COGS parsing preserves a repeated-order name but flags a genuinely missing
   assert.equal(items[3].orderKey, '9월:row:6');
 });
 
+test('repeated sequence-only continuation retains its order and reconciles raw costs', () => {
+  const rows = [[], [],
+    ['12', '2026-04-04', 'Customer', '202604042231287', '', '', 'First', '30000', '4000'],
+    ['12', '', '', '', '', '', 'Second', '30000', '4000'],
+    ['12', '', '', '', '', '', 'Third', '62000', ''],
+  ];
+  const items = parseOrderItems(rows, { sheetLabel: '4월' });
+  const result = aggregateCOGSItems(items);
+  assert.equal(result.orders.length, 1);
+  assert.ok(items.every(item => item.date === '2026-04-04' && item.orderNumber === '202604042231287'));
+  assert.equal(result.dailyCOGS['2026-04-04'].purchaseCost, 122000);
+  assert.equal(result.validation.missingOrderDateRows, 0);
+  assert.equal(result.missingCostItemCount, 1, 'blank shipping must remain unknown');
+  assert.deepEqual(observeSheetColumnTotals(rows), {
+    byDate: { '2026-04-04': { cogs: 122000, shipping: 8000 } },
+    unassignedTotals: { cogs: 0, shipping: 0 },
+    unassignedFinancialRows: 0,
+  });
+});
+
+test('reused sequence with a new identity or date never borrows the prior order', () => {
+  for (const header of [
+    ['12', '', 'Different customer', ''],
+    ['12', '', '', '202604042231288'],
+    ['13', '', '', ''],
+    ['12', 'invalid date', '', ''],
+  ]) {
+    const rows = [[], [],
+      ['12', '2026-04-04', 'First', '202604042231287', '', '', 'Bag', '30000', '4000'],
+      [...header, '', '', 'Other', '50000', '4000'],
+    ];
+    const items = parseOrderItems(rows, { sheetLabel: '4월' });
+    assert.equal(items[1].date, null);
+    assert.notEqual(items[1].orderKey, items[0].orderKey);
+    assert.deepEqual(observeSheetColumnTotals(rows).unassignedTotals, { cogs: 50000, shipping: 4000 });
+  }
+});
+
 test('a new order ID without a sequence never inherits the previous order cost', () => {
   const items = parseOrderItems([[], [],
     ['1', '2026-09-24', 'First', 'order-1', '', '', 'Bag', '50000', '4000'],

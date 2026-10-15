@@ -459,6 +459,14 @@ function normalizeSheetDate(value) {
   return '';
 }
 
+function isRepeatedSequenceContinuation(row, previousSequenceNo) {
+  const sequenceNo = String(row[0] || '').trim();
+  return Boolean(sequenceNo && sequenceNo === previousSequenceNo
+    && !String(row[1] || '').trim()
+    && !String(row[2] || '').trim()
+    && !String(row[3] || '').trim());
+}
+
 // Raw numeric-column control, read before order-item parsing. This is an
 // independent source total; it must not be rebuilt from aggregated purchases.
 function observeSheetColumnTotals(rows) {
@@ -466,15 +474,18 @@ function observeSheetColumnTotals(rows) {
   const unassignedTotals = { cogs: 0, shipping: 0 };
   let currentDate = null;
   let currentOrderNumber = '';
+  let currentSequenceNo = '';
   let unassignedFinancialRows = 0;
   for (const row of rows.slice(2)) {
     if (!Array.isArray(row)) continue;
     const rawDate = String(row[1] || '').trim();
     const orderNumber = String(row[3] || '').trim();
-    if (String(row[0] || '').trim() || rawDate || orderNumber) {
+    if ((String(row[0] || '').trim() || rawDate || orderNumber)
+      && !isRepeatedSequenceContinuation(row, currentSequenceNo)) {
       const sameOrder = orderNumber && orderNumber === currentOrderNumber;
       currentDate = normalizeSheetDate(rawDate) || (sameOrder && !rawDate ? currentDate : null);
       currentOrderNumber = orderNumber;
+      currentSequenceNo = String(row[0] || '').trim();
     }
     const hasCost = hasValidKRWValue(row[7]);
     const hasShipping = hasValidKRWValue(row[8]);
@@ -607,7 +618,8 @@ function parseOrderItems(rows, options = {}) {
 
     // An order ID or date can start a new order even when the sequence cell is blank.
     // Otherwise its cost would silently be charged to the preceding customer.
-    if (sequenceNo || rawDate || orderNumber || !currentOrder) {
+    if (!currentOrder || ((sequenceNo || rawDate || orderNumber)
+      && !isRepeatedSequenceContinuation(row, currentOrder.sequenceNo))) {
       const sameOrderAsPrevious = currentOrder && orderNumber && orderNumber === currentOrder.orderNumber;
       currentOrder = {
         sequenceNo: sequenceNo || (sameOrderAsPrevious ? currentOrder.sequenceNo : ''),

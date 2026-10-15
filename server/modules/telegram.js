@@ -435,8 +435,8 @@ async function deliverDailyReport(plan, latestData, previous = null) {
   }
   let chart;
   try {
-    // Conservative raw-HTML length check keeps captions within Telegram's limit.
-    if (plan.text.length > 1024) throw new Error('Summary exceeds photo caption limit');
+    // Telegram counts caption text after parsing our formatting tags.
+    if (plan.text.replace(/<\/?(?:b|i)>/g, '').length > 1024) throw new Error('Summary exceeds photo caption limit');
     chart = await buildDailyProfitChart(latestData || {}, plan.reportDate);
   } catch (err) {
     if (messageId) return { ok: false, description: `Chart correction unavailable: ${err.message}` };

@@ -302,7 +302,7 @@ test('daily report correction waits for complete COGS before replacing a pending
   assert.equal(estimated.reason, 'cogs-partial-estimate');
   assert.equal(estimated.totals.profitIsEstimated, true);
   assert.match(estimated.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
-  assert.match(estimated.text, /🧾 <b>Total Costs:<\/b> N\/A \(COGS incomplete\)/);
+  assert.match(estimated.text, /🧾 <b>Total Costs:<\/b> ₩4,747,836 est\./);
   assert.match(estimated.text, /└ COGS: ₩4,000,000 recorded so far; incomplete/);
   assert.match(estimated.text, /estimated profit may fall as missing costs are entered/);
 
@@ -414,7 +414,7 @@ test('daily report warns about missing Sheet fields even when entered amounts re
     new Date('2026-04-30T14:30:00.000Z')
   );
 
-  assert.match(plan.text, /COGS Sheet incomplete:<\/b> 2 missing cost fields, 0 invalid amounts, 0 unverified recoveries, 1 blank order IDs, 0 blank dates, 1 blank names/);
+  assert.match(plan.text, /Sheet gaps \(all tabs\):<\/b> 2 missing costs, 1 blank IDs, 1 blank names/);
   assert.match(plan.text, /Total Profits:<\/b> ⚠️ .* est\. \(100% COGS; Sheet incomplete\)/);
   assert.doesNotMatch(plan.text, /Data check:<\/b> 0/);
 });
@@ -427,20 +427,24 @@ test('a source reconciliation mismatch withholds Telegram profit rather than pri
   );
   assert.match(plan.text, /Total Profits:<\/b> N\/A \(financial source unavailable\)/);
   assert.match(plan.text, /source reconciliation mismatch/);
+  assert.match(plan.text, /Total Costs:<\/b> N\/A \(financial source unavailable\)/);
+  assert.doesNotMatch(plan.text, /Total Costs:<\/b> ₩/);
 });
 
-test('Telegram names the undated COGS gap and withholds final profit', () => {
+test('Telegram estimates profit and costs and names the undated COGS gap', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData({ sourceAudit: {
-      status: 'mismatch',
-      reconciliation: { failedChecks: ['raw_sheet_all_cogs_to_parsed_columns'] },
+      status: 'incomplete',
+      reconciliation: { status: 'reconciled', failedChecks: [] },
       summary: { unassignedSourceTotals: { cogs: 812000, shipping: 37000 } },
     } }),
     { dailyReport: { reportDate: null, sentAt: null } },
     new Date('2026-04-30T14:30:00.000Z')
   );
+  assert.ok(plan.text.replace(/<\/?(?:b|i)>/g, '').length <= 1024);
   assert.match(plan.text, /COGS Sheet undated across tabs:<\/b> ₩812,000 COGS, ₩37,000 shipping/);
-  assert.match(plan.text, /Total Profits:<\/b> N\/A/);
+  assert.match(plan.text, /Total Profits:<\/b> ⚠️ .* est\./);
+  assert.match(plan.text, /Total Costs:<\/b> ₩[\d,]+ est\./);
 });
 
 test('daily report removes campaign watch items without changing ad spend', () => {
