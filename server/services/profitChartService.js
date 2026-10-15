@@ -166,7 +166,10 @@ async function buildDailyProfitChart(data, reportDate) {
   const points = buildCumulativeProfitSeries(data, reportDate, days);
   if (!points.length) throw new Error('No recorded financial history for chart');
   const svg = buildProfitChartSvg(points, reportDate);
-  const png = await require('sharp')(Buffer.from(svg)).png().toBuffer();
+  const sharp = require('sharp');
+  // Each report has a different SVG; retaining image operations between reports wastes RAM.
+  sharp.cache(false);
+  const png = await sharp(Buffer.from(svg)).png().toBuffer();
   return {
     png,
     pending: points.some(point => point.pending || point.estimated),

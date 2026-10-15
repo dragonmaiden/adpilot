@@ -113,3 +113,57 @@ test('large nested scan persists repeatedly in a small V8 heap', t => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.signal, null);
 });
+
+test('startup reads only needed recovery parts and preserves newer source health', t => {
+  const dataDir = path.dirname(tempFile(t));
+  const snapshotDir = path.join(dataDir, 'snapshots');
+  fs.mkdirSync(snapshotDir);
+  const source = { status: 'connected', hasData: true, stale: false,
+    lastAttemptAt: '2026-10-15T13:37:00Z', lastSuccessAt: '2026-10-15T13:38:00Z' };
+  const latest = {
+    campaigns: [{}], adSets: [{}], ads: [{}], campaignInsights: [{}], adInsights: [{}],
+    orders: [{ orderNo: 'canonical-order' }], revenueData: { totalRevenue: 100 },
+    cogsData: { totalCOGS: 20 }, economicsLedger: {}, orderNotificationAudit: {},
+    fx: { usdToKrwRate: 1400 }, sourceAudit: { status: 'incomplete' },
+    timestamp: '2026-10-15T13:38:00Z',
+    sources: Object.fromEntries(['metaStructure', 'metaInsights', 'imweb', 'cogs'].map(key => [key, source])),
+  };
+  writeJsonFileSync(path.join(dataDir, 'latest_data.json'), latest);
+  writeJsonFileSync(path.join(dataDir, 'latest_scan.json'), {
+    scanId: 1, endTime: '2026-10-15T13:35:00Z', steps: [{ step: 'meta_insights', status: 'failed' }],
+  });
+  for (const [part, value] of Object.entries({
+    meta_structure: { campaigns: [{ old: true }] }, meta_insights: { campaignInsights: [{ old: true }] },
+    imweb_orders: [{ orderNo: 'recovered-order' }],
+    normalized: { cogsData: { totalCOGS: 30 }, sources: { metaInsights: { status: 'error', stale: true } } },
+  })) writeJsonFileSync(path.join(snapshotDir, `1_${part}.json`), value);
+  const storePath = require.resolve('../server/modules/scanStore');
+  const pathsPath = require.resolve('../server/runtime/paths');
+  const previousStore = require.cache[storePath];
+  const previousPaths = require.cache[pathsPath];
+  require.cache[pathsPath] = { exports: { dataDir } };
+  t.after(() => {
+    if (previousStore) require.cache[storePath] = previousStore;
+    else delete require.cache[storePath];
+    if (previousPaths) require.cache[pathsPath] = previousPaths;
+    else delete require.cache[pathsPath];
+  });
+  const reads = [];
+  const readFile = fs.readFileSync;
+  t.mock.method(fs, 'readFileSync', (file, ...args) => {
+    if (String(file).startsWith(snapshotDir)) reads.push(path.basename(file));
+    return readFile(file, ...args);
+  });
+  delete require.cache[storePath];
+  let data = require(storePath).getLatestData();
+  assert.deepEqual(reads, [], 'complete checkpoint must not allocate recovery snapshots');
+  assert.deepEqual(data.orders, latest.orders);
+  assert.equal(data.sources.metaInsights.status, 'connected');
+  writeJsonFileSync(path.join(dataDir, 'latest_data.json'), { ...latest, orders: [], cogsData: null });
+  delete require.cache[storePath];
+  data = require(storePath).getLatestData();
+  assert.deepEqual(reads, ['1_imweb_orders.json', '1_normalized.json']);
+  assert.deepEqual(data.orders, [{ orderNo: 'recovered-order' }]);
+  assert.equal(data.cogsData.totalCOGS, 30);
+  assert.equal(data.sources.metaInsights.stale, false);
+});

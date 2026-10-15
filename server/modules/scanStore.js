@@ -214,10 +214,17 @@ function hydrateLatestDataFromSnapshot(scanId, latestData) {
   }
 
   const snapshotPatch = {};
-  const structure = loadSnapshotPart(scanId, 'meta_structure');
-  const insights = loadSnapshotPart(scanId, 'meta_insights');
-  const orders = loadSnapshotPart(scanId, 'imweb_orders');
-  const normalized = loadSnapshotPart(scanId, 'normalized');
+  // Recovery files are fallbacks, not a second copy of every source at startup.
+  const structure = [latestData.campaigns, latestData.adSets, latestData.ads].some(rows => rows.length === 0)
+    ? loadSnapshotPart(scanId, 'meta_structure') : null;
+  const insights = [latestData.campaignInsights, latestData.adInsights].some(rows => rows.length === 0)
+    ? loadSnapshotPart(scanId, 'meta_insights') : null;
+  const orders = latestData.orders.length === 0 ? loadSnapshotPart(scanId, 'imweb_orders') : null;
+  const needsNormalized = !hasUsableRevenueData(latestData.revenueData)
+    || !hasUsableCogsData(latestData.cogsData) || !latestData.economicsLedger
+    || !latestData.orderNotificationAudit || !latestData.fx || !latestData.sourceAudit
+    || !latestData.timestamp || SOURCE_KEYS.some(key => latestData.sources[key].status === 'unknown');
+  const normalized = needsNormalized ? loadSnapshotPart(scanId, 'normalized') : null;
 
   if (latestData.campaigns.length === 0 && structure?.campaigns) snapshotPatch.campaigns = structure.campaigns;
   if (latestData.adSets.length === 0 && structure?.adSets) snapshotPatch.adSets = structure.adSets;
@@ -232,10 +239,12 @@ function hydrateLatestDataFromSnapshot(scanId, latestData) {
   if (!latestData.fx && normalized?.fx) snapshotPatch.fx = normalized.fx;
   if (!latestData.sourceAudit && normalized?.sourceAudit) snapshotPatch.sourceAudit = normalized.sourceAudit;
   if (normalized?.sources && typeof normalized.sources === 'object') {
-    snapshotPatch.sources = {
-      ...latestData.sources,
-      ...normalized.sources,
-    };
+    snapshotPatch.sources = { ...latestData.sources };
+    for (const key of SOURCE_KEYS) {
+      if (snapshotPatch.sources[key].status === 'unknown' && normalized.sources[key]) {
+        snapshotPatch.sources[key] = normalized.sources[key];
+      }
+    }
   }
   if (!latestData.timestamp && normalized?.timestamp) snapshotPatch.timestamp = normalized.timestamp;
 
@@ -346,6 +355,8 @@ function applyLastScanSourceHealth(latestData, lastScanResult) {
     if (!stepResult) continue;
 
     const sourceState = latestData.sources[source] || createSourceState();
+    // A checkpoint from a newer in-progress scan outranks the last completed scan.
+    if (Date.parse(sourceState.lastAttemptAt) > Date.parse(attemptedAt)) continue;
     if (stepResult.status === 'ok') {
       latestData.sources[source] = {
         ...sourceState,
