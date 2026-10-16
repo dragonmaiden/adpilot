@@ -101,10 +101,6 @@ function formatPercent(value) {
   return Number.isFinite(Number(value)) ? `${Math.round(Number(value))}%` : 'N/A';
 }
 
-function formatCoveragePercent(value) {
-  return Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : '0%';
-}
-
 function divideOrNull(numerator, denominator) {
   const parsedDenominator = asFiniteNumber(denominator);
   if (parsedDenominator <= 0) return null;
@@ -217,8 +213,8 @@ function buildDailyReportTotals(latestData, reportDate, financialDay) {
   const sheetIncomplete = Boolean(latestData?.sourceAudit?.status
     && latestData.sourceAudit.status !== 'reconciled');
   const profitAvailable = !financialUnavailableReason && !sheetIncomplete && (financialDay.hasCOGS || orders === 0);
-  const profitIsEstimated = !financialUnavailableReason && !profitAvailable
-    && cogsCoverageRatio > 0 && (financialDay.hasPartialCOGS || (sheetIncomplete && financialDay.hasCOGS));
+  // Cost coverage describes the recorded sheet; it must never gate report delivery.
+  const profitIsEstimated = !financialUnavailableReason && !profitAvailable;
   const profitReportable = profitAvailable || profitIsEstimated;
   const marginRatio = profitReportable ? divideOrNull(trueNetProfit, netRevenue) : null;
   const refundRateRatio = divideOrNull(refunds, revenue);
@@ -262,7 +258,7 @@ function chooseDateVariant(dateKey, variants) {
 
 function getReportMood(totals, latestData = {}) {
   const sourceAuditFailed = latestData?.sourceAudit?.status
-    && latestData.sourceAudit.status !== 'reconciled';
+    && !['reconciled', 'incomplete'].includes(latestData.sourceAudit.status);
   const orderAuditFailed = latestData?.orderNotificationAudit?.status === 'failed';
 
   if (sourceAuditFailed || orderAuditFailed) {
@@ -278,15 +274,8 @@ function getReportMood(totals, latestData = {}) {
   if (totals.profitIsEstimated) {
     return chooseDateVariant(totals.reportDate, [
       'Estimated profit',
-      'Partial COGS estimate',
+      'Based on recorded costs',
       'Profit estimate active',
-    ]);
-  }
-  if (!totals.profitAvailable) {
-    return chooseDateVariant(totals.reportDate, [
-      'COGS pending',
-      'Profit pending final costs',
-      'Waiting on cost coverage',
     ]);
   }
   if (totals.orders <= 0 || totals.revenue <= 0) {
@@ -328,26 +317,11 @@ function buildDailyReportInsights(totals, latestData = {}) {
   const orderAuditIssues = asFiniteNumber(orderAudit?.summary?.missingDeliveryCount)
     + asFiniteNumber(orderAudit?.summary?.staleNotificationCount);
 
-  if (sourceAudit?.status === 'incomplete') {
-    const gaps = sourceAudit.summary?.costCompleteness || {};
-    const missingFields = [
-      ['missingCostItemCount', 'missing costs'], ['invalidValueRows', 'invalid amounts'],
-      ['unverifiedRecoveryRows', 'unverified recoveries'], ['missingOrderNumberRows', 'blank IDs'],
-      ['missingOrderDateRows', 'blank dates'], ['missingCustomerNameRows', 'blank names'],
-    ].filter(([key]) => Number(gaps[key]) > 0)
-      .map(([key, label]) => `${formatWholeNumber(gaps[key])} ${label}`);
-    if (missingFields.length) insights.push(`⚠️ <b>Sheet gaps (all tabs):</b> ${missingFields.join(', ')}`);
-  }
-  if (sourceAudit?.status && sourceAudit.status !== 'reconciled') {
-    const unassigned = sourceAudit.summary?.unassignedSourceTotals || {};
-    if (Number(unassigned.cogs || 0) || Number(unassigned.shipping || 0)) {
-      insights.push(`⚠️ <b>COGS Sheet undated across tabs:</b> ${formatKrw(unassigned.cogs || 0)} COGS, ${formatKrw(unassigned.shipping || 0)} shipping. Profit is not final.`);
-    } else if (sourceAudit.status !== 'incomplete') {
-      const detail = failedSourceChecks.length > 0
-        ? `${formatWholeNumber(failedSourceChecks.length)} source mismatch${failedSourceChecks.length === 1 ? '' : 'es'}`
-        : 'source data unavailable';
-      insights.push(`⚠️ <b>Data check:</b> ${detail}`);
-    }
+  if (sourceAudit?.status && !['reconciled', 'incomplete'].includes(sourceAudit.status)) {
+    const detail = failedSourceChecks.length > 0
+      ? `${formatWholeNumber(failedSourceChecks.length)} source mismatch${failedSourceChecks.length === 1 ? '' : 'es'}`
+      : 'source data unavailable';
+    insights.push(`⚠️ <b>Data check:</b> ${detail}`);
   }
   if (orderAudit?.status === 'failed') {
     insights.push(`⚠️ <b>Telegram audit:</b> ${formatWholeNumber(orderAuditIssues)} order alert issue${orderAuditIssues === 1 ? '' : 's'}`);
@@ -358,33 +332,21 @@ function buildDailyReportInsights(totals, latestData = {}) {
 function buildDailyReportMessage(totals, latestData = {}) {
   const cogsUnavailable = isSourceUnavailable(latestData?.sources?.cogs);
   const metaUnavailable = isSourceUnavailable(latestData?.sources?.metaInsights);
-  const cogsIncomplete = !totals.profitAvailable && !totals.financialUnavailableReason;
+  const estimateSuffix = totals.profitIsEstimated ? ' est.' : '';
   const profitText = totals.financialUnavailableReason
     ? 'N/A (financial source unavailable)'
-    : totals.profitAvailable
-    ? formatKrw(totals.trueNetProfit)
-    : totals.profitIsEstimated
-    ? `⚠️ ${formatKrw(totals.trueNetProfit)} est. (${formatCoveragePercent(totals.cogsCoverageRatio)} COGS${totals.sheetIncomplete ? '; Sheet incomplete' : ''})`
-    : 'N/A (COGS pending)';
+    : `${formatKrw(totals.trueNetProfit)}${estimateSuffix}`;
   const totalCosts = totals.financialUnavailableReason || cogsUnavailable || metaUnavailable
     ? 'N/A (financial source unavailable)'
-    : totals.profitIsEstimated
-    ? `${formatKrw(totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees)} est.`
-    : cogsIncomplete
-    ? 'N/A (COGS incomplete)'
-    : formatKrw(totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees);
+    : `${formatKrw(totals.cogsWithShipping + totals.adSpendKrw + totals.paymentFees)}${estimateSuffix}`;
   const marginText = totals.financialUnavailableReason
     ? 'N/A'
-    : totals.profitAvailable
-    ? formatPercent(totals.marginPct)
-    : totals.profitIsEstimated
-    ? `${formatPercent(totals.marginPct)} est.`
-    : 'N/A';
+    : `${formatPercent(totals.marginPct)}${estimateSuffix}`;
   const insights = buildDailyReportInsights(totals, latestData);
   if (totals.financialUnavailableReason) {
     insights.unshift(`⚠️ <b>Financial data:</b> ${totals.financialUnavailableReason}; profit and total costs withheld`);
   } else if (totals.profitIsEstimated) {
-    insights.unshift('⚠️ <b>Incomplete COGS:</b> estimated profit may fall as missing costs are entered');
+    insights.unshift('Profit estimate based on recorded costs.');
   }
   insights.push(buildMonthlyRefundComparisonLine(latestData, totals.reportDate));
   const insightSection = insights.length > 0
@@ -401,8 +363,8 @@ function buildDailyReportMessage(totals, latestData = {}) {
 ❌ <b>Total Refunds:</b> ${formatKrw(totals.refunds)}
 
 🧾 <b>Total Costs:</b> ${totalCosts}
-   └ COGS: ${cogsUnavailable ? 'N/A (source stale)' : `${formatKrw(totals.cogs)}${cogsIncomplete ? ' recorded so far; incomplete' : ''}`}
-   └ Shipping: ${cogsUnavailable ? 'N/A (source stale)' : `${formatKrw(totals.shipping)}${cogsIncomplete ? ' recorded so far; incomplete' : ''}`}
+   └ COGS: ${cogsUnavailable ? 'N/A (source stale)' : formatKrw(totals.cogs)}
+   └ Shipping: ${cogsUnavailable ? 'N/A (source stale)' : formatKrw(totals.shipping)}
    └ Payment Fees: ${formatKrw(totals.paymentFees)}
    └ Ad Spend: ${metaUnavailable ? 'N/A (source stale)' : formatKrw(totals.adSpendKrw)}${insightSection}`;
 }
@@ -492,23 +454,12 @@ function buildDailyReportCorrectionPlan(latestData, reportDate, options = {}) {
       diagnostics,
     };
   }
-  if (totals.profitIsEstimated && options.allowEstimated === true) {
+  if (totals.profitIsEstimated) {
     return {
       shouldCorrect: true,
       reason: 'cogs-partial-estimate',
       reportDate,
       text: buildDailyReportMessage(totals, latestData),
-      totals,
-      diagnostics,
-    };
-  }
-
-  if (!totals.profitAvailable) {
-    return {
-      shouldCorrect: false,
-      reason: 'profit-still-pending-cogs',
-      reportDate,
-      text: null,
       totals,
       diagnostics,
     };

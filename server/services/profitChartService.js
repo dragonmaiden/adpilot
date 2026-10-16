@@ -91,7 +91,7 @@ function buildMonthlyProfitSvg(months) {
     elements.push(`<rect data-month="${month.month}" x="${x - width / 2}" y="${Math.min(y(0), y(month.value))}" width="${width}" height="${Math.max(2, Math.abs(y(month.value) - y(0)))}" fill="${month.current ? '#ffffff' : color}" stroke="${color}" stroke-width="3" ${month.current ? 'stroke-dasharray="1 7" stroke-linecap="round"' : ''}/>`);
     if (months.length <= 12) elements.push(`<text x="${x}" y="${month.value < 0 ? y(month.value) + 23 : y(month.value) - 12}" text-anchor="middle" font-size="15" fill="#334155">${compact(month.value)}${month.estimated ? ' est.' : ''}</text>`);
   });
-  if (months.some(month => month.estimated)) elements.push('<text x="48" y="976" font-size="18" fill="#64748b">Estimates deduct recorded costs only; missing costs may overstate profit.</text>');
+  if (months.some(month => month.estimated)) elements.push('<text x="48" y="976" font-size="18" fill="#64748b">Profit estimates are based on recorded costs.</text>');
   if (months.some(month => month.pending)) elements.push('<text x="48" y="1000" font-size="18" fill="#64748b">N/A: monthly profit is pending complete financial data.</text>');
   return elements.join('\n');
 }
@@ -135,7 +135,6 @@ function buildProfitChartSvg(historyPoints, reportDate) {
   for (const { i, week } of weekTicks.filter((_, index) => index % tickStride === 0)) {
     elements.push(`<text x="${x(i)}" y="461" text-anchor="${i === 0 ? 'start' : 'middle'}" font-size="18" fill="#64748b">${(i === 0 ? points[0].date : week).slice(5)}</text>`);
   }
-  const missingCostDays = points.filter(point => point.missingCosts).length;
   const headline = last.value == null ? 'Pending complete financial data' : `${money(last.value)}${last.estimated ? '  estimated' : ''}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1040">
     <rect width="1100" height="1040" rx="24" fill="#ffffff"/>
@@ -144,7 +143,7 @@ function buildProfitChartSvg(historyPoints, reportDate) {
       <text x="48" y="84" font-size="18" fill="#64748b">Through ${reportDate} (KST)${firstUsableIndex > 0 ? ' · Earlier history excluded: incomplete financial data' : ''}</text>
       <text x="48" y="128" font-size="30" font-weight="bold" fill="#0f172a">${headline}</text>
       ${elements.join('\n')}
-      ${last.pending ? '<text x="48" y="520" font-size="18" fill="#64748b">Line stops where revenue or required financial data is unavailable.</text>' : missingCostDays ? `<text x="48" y="520" font-size="18" fill="#64748b">Estimated from recorded costs · ${missingCostDays} sales day${missingCostDays === 1 ? ' has' : 's have'} incomplete COGS.</text>` : ''}
+      ${last.pending ? '<text x="48" y="520" font-size="18" fill="#64748b">Line stops where revenue or required financial data is unavailable.</text>' : last.estimated ? '<text x="48" y="520" font-size="18" fill="#64748b">Estimated from recorded costs</text>' : ''}
       <line x1="48" x2="1052" y1="546" y2="546" stroke="#e2e8f0"/>
       ${buildMonthlyProfitSvg(buildMonthlyProfitSeries(historyPoints, reportDate))}
     </g></svg>`;

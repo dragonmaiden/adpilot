@@ -235,7 +235,7 @@ test('daily report refuses to print zero revenue when revenue source is stale fo
   assert.equal(plan.diagnostics.cogsPurchases, 6);
 });
 
-test('daily report does not fake profit when COGS are pending for a sales day', () => {
+test('daily report shows recorded-cost profit even with zero COGS coverage', () => {
   const latestData = buildLatestData({ cogsData: { dailyCOGS: {} } });
   const plan = buildDailySummaryReportPlan(
     latestData,
@@ -244,9 +244,23 @@ test('daily report does not fake profit when COGS are pending for a sales day', 
   );
 
   assert.equal(plan.totals.profitAvailable, false);
-  assert.match(plan.text, /📈 <b>Total Profits:<\/b> N\/A \(COGS pending\)/);
-  assert.match(plan.text, /📐 <b>Net Profit Margin:<\/b> N\/A/);
+  assert.equal(plan.shouldSend, true);
+  assert.equal(plan.totals.profitIsEstimated, true);
+  assert.match(plan.text, /📈 <b>Total Profits:<\/b> ₩[\d,]+ est\./);
+  assert.match(plan.text, /🧾 <b>Total Costs:<\/b> ₩[\d,]+ est\./);
+  assert.equal(plan.totals.trueNetProfit, plan.totals.netRevenue - plan.totals.cogs - plan.totals.shipping - plan.totals.paymentFees - plan.totals.adSpendKrw);
+  assert.match(plan.text, /📐 <b>Net Profit Margin:<\/b> \d+% est\./);
   assert.doesNotMatch(plan.text, /⏳ <b>Watch:<\/b> profit is pending final COGS coverage/);
+});
+
+test('zero-coverage report corrections remain available', () => {
+  const plan = buildDailyReportCorrectionPlan(
+    buildLatestData({ cogsData: { dailyCOGS: {} } }), '2026-04-30'
+  );
+  assert.equal(plan.shouldCorrect, true);
+  assert.equal(plan.totals.cogsCoverageRatio, 0);
+  assert.match(plan.text, /Profit estimate based on recorded costs/);
+  assert.doesNotMatch(plan.text, /COGS pending|COGS incomplete|Sheet gaps/);
 });
 
 test('daily report labels partial COGS profit as an estimate instead of N/A', () => {
@@ -265,13 +279,13 @@ test('daily report labels partial COGS profit as an estimate instead of N/A', ()
   assert.equal(plan.totals.profitAvailable, false);
   assert.equal(plan.totals.profitIsEstimated, true);
   assert.equal(plan.totals.cogsCoverageRatio, 0.5);
-  assert.match(plan.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
+  assert.match(plan.text, /📈 <b>Total Profits:<\/b> ₩6,882,764 est\./);
   assert.match(plan.text, /📐 <b>Net Profit Margin:<\/b> 59% est\./);
   assert.doesNotMatch(plan.text, /⏳ <b>Watch:<\/b> profit is estimated until final COGS coverage \(50% covered\)/);
   assert.doesNotMatch(plan.text, /N\/A \(COGS pending\)/);
 });
 
-test('daily report correction waits for complete COGS before replacing a pending report', () => {
+test('daily report corrections never wait for cost coverage', () => {
   const pending = buildDailyReportCorrectionPlan(
     buildLatestData({
       cogsData: {
@@ -283,8 +297,8 @@ test('daily report correction waits for complete COGS before replacing a pending
     '2026-04-30'
   );
 
-  assert.equal(pending.shouldCorrect, false);
-  assert.equal(pending.reason, 'profit-still-pending-cogs');
+  assert.equal(pending.shouldCorrect, true);
+  assert.equal(pending.reason, 'cogs-partial-estimate');
 
   const estimated = buildDailyReportCorrectionPlan(
     buildLatestData({
@@ -301,10 +315,10 @@ test('daily report correction waits for complete COGS before replacing a pending
   assert.equal(estimated.shouldCorrect, true);
   assert.equal(estimated.reason, 'cogs-partial-estimate');
   assert.equal(estimated.totals.profitIsEstimated, true);
-  assert.match(estimated.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
+  assert.match(estimated.text, /📈 <b>Total Profits:<\/b> ₩6,882,764 est\./);
   assert.match(estimated.text, /🧾 <b>Total Costs:<\/b> ₩4,747,836 est\./);
-  assert.match(estimated.text, /└ COGS: ₩4,000,000 recorded so far; incomplete/);
-  assert.match(estimated.text, /estimated profit may fall as missing costs are entered/);
+  assert.match(estimated.text, /└ COGS: ₩4,000,000/);
+  assert.match(estimated.text, /Profit estimate based on recorded costs/);
 
   const corrected = buildDailyReportCorrectionPlan(buildLatestData(), '2026-04-30');
 
@@ -397,7 +411,7 @@ test('daily report adds data and Telegram audit warnings without changing core t
   assert.match(plan.text, /📦 <b>Total Orders:<\/b> 50/);
 });
 
-test('daily report warns about missing Sheet fields even when entered amounts reconcile', () => {
+test('daily report keeps sheet completeness diagnostics out of report warnings', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData({
       sourceAudit: {
@@ -414,8 +428,8 @@ test('daily report warns about missing Sheet fields even when entered amounts re
     new Date('2026-04-30T14:30:00.000Z')
   );
 
-  assert.match(plan.text, /Sheet gaps \(all tabs\):<\/b> 2 missing costs, 1 blank IDs, 1 blank names/);
-  assert.match(plan.text, /Total Profits:<\/b> ⚠️ .* est\. \(100% COGS; Sheet incomplete\)/);
+  assert.doesNotMatch(plan.text, /Sheet gaps|Sheet incomplete|Audit review needed|Pipeline needs a look|Incomplete COGS/);
+  assert.match(plan.text, /Total Profits:<\/b> ₩[\d,]+ est\./);
   assert.doesNotMatch(plan.text, /Data check:<\/b> 0/);
 });
 
@@ -431,7 +445,7 @@ test('a source reconciliation mismatch withholds Telegram profit rather than pri
   assert.doesNotMatch(plan.text, /Total Costs:<\/b> ₩/);
 });
 
-test('Telegram estimates profit and costs and names the undated COGS gap', () => {
+test('Telegram uses recorded costs without undated sheet warnings', () => {
   const plan = buildDailySummaryReportPlan(
     buildLatestData({ sourceAudit: {
       status: 'incomplete',
@@ -442,8 +456,8 @@ test('Telegram estimates profit and costs and names the undated COGS gap', () =>
     new Date('2026-04-30T14:30:00.000Z')
   );
   assert.ok(plan.text.replace(/<\/?(?:b|i)>/g, '').length <= 1024);
-  assert.match(plan.text, /COGS Sheet undated across tabs:<\/b> ₩812,000 COGS, ₩37,000 shipping/);
-  assert.match(plan.text, /Total Profits:<\/b> ⚠️ .* est\./);
+  assert.doesNotMatch(plan.text, /COGS Sheet undated|Sheet gaps/);
+  assert.match(plan.text, /Total Profits:<\/b> ₩[\d,]+ est\./);
   assert.match(plan.text, /Total Costs:<\/b> ₩[\d,]+ est\./);
 });
 

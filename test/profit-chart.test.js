@@ -68,7 +68,7 @@ test('missing COGS keeps the line continuous and all subsequent totals estimated
   assert.equal(points[2].missingCosts, true);
   assert.equal(points[3].estimated, true);
   assert.equal(points[3].pending, false);
-  assert.match(buildProfitChartSvg(points, '2026-01-04'), /1 sales day has incomplete COGS/);
+  assert.match(buildProfitChartSvg(points, '2026-01-04'), /Estimated from recorded costs/);
 });
 
 test('recovered costs recompute the entire cumulative series without estimates', () => {

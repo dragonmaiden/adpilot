@@ -273,7 +273,7 @@ test('sendDailySummaryReport records partial COGS metadata for the correction sw
     assert.equal(result.ok, true);
     assert.equal(requests.length, 1);
     assert.match(requests[0].url, /sendPhoto$/);
-    assert.match(requests[0].body.caption, /⚠️ ₩6,882,764 est\. \(50% COGS\)/);
+    assert.match(requests[0].body.caption, /₩6,882,764 est\./);
     assert.equal(requests[0].body.photo.type, 'image/png');
     assert.ok(requests[0].body.photo.size > 0);
     assert.equal(requests[0].headers['Content-Type'], undefined);
@@ -370,7 +370,7 @@ test('refreshPendingDailyReports edits stale COGS-pending reports once partial C
     assert.equal(requests.length, 1);
     assert.match(requests[0].url, /editMessageText$/);
     assert.equal(requests[0].body.message_id, 87);
-    assert.match(requests[0].body.text, /📈 <b>Total Profits:<\/b> ⚠️ ₩6,882,764 est\. \(50% COGS\)/);
+    assert.match(requests[0].body.text, /📈 <b>Total Profits:<\/b> ₩6,882,764 est\./);
     assert.doesNotMatch(requests[0].body.text, /N\/A \(COGS pending\)/);
     assert.equal(records.length, 1);
     assert.equal(records[0].status, 'corrected');
