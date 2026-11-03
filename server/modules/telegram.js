@@ -391,25 +391,22 @@ function getTelegramMessageId(metadata = {}) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function buildCorrectionMetadata(report, delivery, result, plan) {
+function buildCorrectionMetadata(report, plan) {
   const existing = report?.metadata && typeof report.metadata === 'object'
     ? report.metadata
     : {};
   const previousTelegramMessageId = getTelegramMessageId(existing);
-  const telegramMessageId = delivery === 'new_message'
-    ? result?.result?.message_id || previousTelegramMessageId
-    : previousTelegramMessageId;
 
   return {
     ...existing,
-    telegramMessageId: telegramMessageId || null,
+    telegramMessageId: previousTelegramMessageId || null,
     originalTelegramMessageId: existing.originalTelegramMessageId || previousTelegramMessageId || null,
     profitAvailable: plan?.totals?.profitAvailable === true,
     profitIsEstimated: plan?.totals?.profitIsEstimated === true,
     cogsCoverageRatio: Number.isFinite(Number(plan?.totals?.cogsCoverageRatio))
       ? Number(plan.totals.cogsCoverageRatio)
       : existing.cogsCoverageRatio ?? null,
-    correctionDelivery: delivery,
+    correctionDelivery: 'edited_message',
     correctedAt: nowIso(),
     correctionReason: plan?.reason || 'cogs-complete',
   };
@@ -530,11 +527,9 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
   }
   // Local records include corrections not yet acknowledged by the database.
   const byDate = new Map((pending.reports || []).map(report => [report.reportDate, report]));
-  const recentDates = new Set();
   for (const report of recent.reports || []) {
     if (getTelegramMessageId(report.metadata)) {
       byDate.set(report.reportDate, report);
-      recentDates.add(report.reportDate);
     }
   }
   for (const record of local) {
@@ -544,7 +539,6 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
         (recentChanged && record.reportDate >= sinceDate
           && getTelegramMessageId(record.metadata))) {
       byDate.set(record.reportDate, record);
-      if (recentChanged && record.reportDate >= sinceDate) recentDates.add(record.reportDate);
     }
   }
   const candidates = [...byDate.values()];
@@ -588,28 +582,16 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
     }
 
     const messageId = getTelegramMessageId(report.metadata);
-    let delivery = 'edited_message';
-    let result = messageId ? await deliverDailyReport(plan, latestData, report) : null;
+    // Historical corrections must never create a new message, even after an
+    // ambiguous network failure or when the original message ID is unavailable.
+    const delivery = 'edited_message';
+    const result = messageId ? await deliverDailyReport(plan, latestData, report)
+      : { ok: false, description: 'original-message-id-unavailable' };
 
     if (result?.unchanged) {
       waiting += 1;
       reports.push({ reportDate: report.reportDate, status: 'waiting', reason: 'chart-unchanged' });
       continue;
-    }
-
-    if (!result?.ok) {
-      if (options.sendFallbackOnEditFailure === false || report.metadata?.messageType === 'photo'
-        || recentDates.has(report.reportDate)) {
-        failed += 1;
-        reports.push({
-          reportDate: report.reportDate,
-          status: 'failed',
-          reason: result?.description || 'telegram-edit-failed',
-        });
-        continue;
-      }
-      delivery = 'new_message';
-      result = await sendMessage(plan.text);
     }
 
     if (result?.ok) {
@@ -619,7 +601,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
         payload: plan.text,
         sentAt: report.sentAt || null,
         error: null,
-        metadata: { ...buildCorrectionMetadata(report, delivery, result, plan), ...result.reportMetadata },
+        metadata: { ...buildCorrectionMetadata(report, plan), ...result.reportMetadata },
       });
       reports.push({
         reportDate: report.reportDate,
@@ -631,7 +613,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
       reports.push({
         reportDate: report.reportDate,
         status: 'failed',
-        reason: result?.description || 'telegram-send-failed',
+        reason: result?.description || 'telegram-edit-failed',
       });
     }
   }

@@ -551,6 +551,31 @@ test('historical COGS completion refreshes a chart even when the report day rema
   } });
 });
 
+for (const failure of ['network', 'rejected', 'missing-id']) {
+  test(`historical text correction is edit-only: ${failure}`, async () => {
+    const calls = [];
+    await withTelegramModule(validEnv(), async url => {
+      calls.push(url.split('/').pop());
+      if (failure === 'network') throw new Error('fetch failed');
+      return { ok: true, json: async () => ({ ok: false, description: 'message to edit not found' }) };
+    }, async telegram => {
+      const data = buildDailyReportLatestData({ cost: 8000000, shipping: 100000, costCoverageRatio: 1 });
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const result = await telegram.refreshPendingDailyReports(data, { sendFallbackOnEditFailure: true });
+        assert.equal(result.failed, 1);
+        assert.equal(result.corrected, 0);
+      }
+      assert.deepEqual(calls, failure === 'missing-id' ? [] : ['editMessageText', 'editMessageText']);
+    }, { financialLedgerRepository: {
+      listPendingCogsDailyReportDeliveries: async () => ({ reports: [{
+        reportDate: '2026-04-30', payload: 'N/A (COGS pending)',
+        metadata: { telegramMessageId: failure === 'missing-id' ? null : 92, messageType: 'text' },
+      }] }),
+      recordTelegramReportDelivery: async () => assert.fail('Failed correction must remain retryable'),
+    } });
+  });
+}
+
 test('failed photo edits stay failed without posting duplicate summaries', async () => {
   let calls = 0;
   await withTelegramModule(validEnv(), async () => {
