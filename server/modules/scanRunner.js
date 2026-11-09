@@ -48,6 +48,17 @@ function pushError(scanResult, step, err) {
   scanResult.errors.push({ step, error: err.message });
 }
 
+// Projection persistence is not a source fetch. Keep refreshing independent
+// sources when storage fails, but retain the failure in the scan result.
+function persistCheckpoint(scanResult) {
+  try {
+    scanStore.saveLatestData();
+  } catch (err) {
+    pushError(scanResult, 'checkpoint', err);
+    console.warn('[SCHEDULER] Checkpoint failed:', err.message);
+  }
+}
+
 function filterRecentOrderNotificationAuditRows(orders, now = new Date()) {
   const cutoffMs = now.getTime() - (ORDER_NOTIFICATION_AUDIT_LOOKBACK_HOURS * 60 * 60 * 1000);
 
@@ -123,7 +134,7 @@ async function refreshFxRate(scanResult) {
       stale: false,
     };
     scanStore.patchLatestData({ fx: storedFx });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
     pushStep(scanResult, {
       step: 'fx_rate',
       status: 'ok',
@@ -147,7 +158,7 @@ async function refreshFxRate(scanResult) {
       lastError: err.message,
     };
     scanStore.patchLatestData({ fx: fallbackFx });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
     pushError(scanResult, 'fx_rate', err);
     pushStep(scanResult, {
       step: 'fx_rate',
@@ -211,7 +222,7 @@ async function fetchMetaStructure(scanResult) {
     markSourceSuccess('metaStructure', attemptedAt, {
       hasData: campaigns.length > 0 || adSets.length > 0 || ads.length > 0,
     });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
 
     pushStep(scanResult, {
       step: 'meta_structure',
@@ -244,7 +255,7 @@ async function fetchMetaStructure(scanResult) {
     markSourceFailure('metaStructure', attemptedAt, err, {
       hasData: (latestData.campaigns || []).length > 0 || (latestData.adSets || []).length > 0 || (latestData.ads || []).length > 0,
     });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
     return { ok: false, error: err.message };
   }
 }
@@ -269,7 +280,7 @@ async function fetchMetaInsights(scanResult, since, until) {
     markSourceSuccess('metaInsights', attemptedAt, {
       hasData: campaignInsights.length > 0 || adInsights.length > 0,
     });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
 
     pushStep(scanResult, {
       step: 'meta_insights',
@@ -319,7 +330,7 @@ async function fetchMetaInsights(scanResult, since, until) {
     markSourceFailure('metaInsights', attemptedAt, err, {
       hasData: (latestData.campaignInsights || []).length > 0 || (latestData.adInsights || []).length > 0,
     });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
     return { ok: false, error: err.message, adSince };
   }
 }
@@ -339,7 +350,7 @@ async function fetchImwebOrders(scanResult) {
     markSourceSuccess('imweb', attemptedAt, {
       hasData: Boolean(revenueData) || orders.length > 0,
     });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
 
     pushStep(scanResult, {
       step: 'imweb_orders',
@@ -368,7 +379,7 @@ async function fetchImwebOrders(scanResult) {
     markSourceFailure('imweb', attemptedAt, err, {
       hasData: Boolean(latestData.revenueData) || (latestData.orders || []).length > 0,
     });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
     return { ok: false, error: err.message };
   }
 }
@@ -383,7 +394,7 @@ async function fetchCogs(scanResult) {
     markSourceSuccess('cogs', attemptedAt, {
       hasData: Boolean(cogsData),
     });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
 
     pushStep(scanResult, {
       step: 'cogs_sheets',
@@ -410,7 +421,7 @@ async function fetchCogs(scanResult) {
     markSourceFailure('cogs', attemptedAt, err, {
       hasData: Boolean(latestData.cogsData),
     });
-    scanStore.saveLatestData();
+    persistCheckpoint(scanResult);
     return { ok: false, error: err.message };
   }
 }
@@ -803,7 +814,7 @@ async function runScan(manual = false) {
         usdToKrwRate: fx.usdToKrwRate,
       });
       scanStore.patchLatestData({ economicsLedger });
-      scanStore.saveLatestData();
+      persistCheckpoint(scanResult);
       pushStep(scanResult, {
         step: 'economics_ledger',
         status: 'ok',
@@ -842,7 +853,7 @@ async function runScan(manual = false) {
         latestData,
       });
       scanStore.patchLatestData({ sourceAudit });
-      scanStore.saveLatestData();
+      persistCheckpoint(scanResult);
       scanResult.sourceAudit = {
         status: sourceAudit.status,
         summary: sourceAudit.summary,
@@ -950,12 +961,17 @@ async function runScan(manual = false) {
     const completedAt = new Date();
     scanStore.setLastScanTime(completedAt);
     scanStore.setLastScanResult(scanResult);
-    scanStore.addScanHistory({
-      scanId,
-      time: completedAt.toISOString(),
-      optimizations: scanResult.optimizations.length,
-      errors: scanResult.errors.length,
-    });
+    try {
+      scanStore.addScanHistory({
+        scanId,
+        time: completedAt.toISOString(),
+        optimizations: scanResult.optimizations.length,
+        errors: scanResult.errors.length,
+      });
+    } catch (err) {
+      pushError(scanResult, 'scan_history', err);
+      console.warn('[SCHEDULER] Scan history persistence failed:', err.message);
+    }
 
     scanResult.status = scanResult.errors.length === 0
       ? 'success'
@@ -1013,5 +1029,7 @@ module.exports = {
   runScan,
   __private: {
     resolveAdInsightsSince,
+    persistCheckpoint,
+    fetchCogs,
   },
 };

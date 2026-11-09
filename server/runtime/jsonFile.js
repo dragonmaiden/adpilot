@@ -1,6 +1,38 @@
 const fs = require('node:fs');
+const path = require('node:path');
 
 const CHUNK_CHARS = 64 * 1024;
+
+// Call only during startup, before writers start. SIGKILL bypasses the writer's
+// finally block; its partial files are not recovery copies. A reused current PID
+// is safe here, but files belonging to another live process must be preserved.
+function cleanupAbandonedJsonWrites(filepath) {
+  const directory = path.dirname(filepath);
+  if (!fs.existsSync(directory)) return 0;
+  const prefix = `${path.basename(filepath)}.`;
+  let freedBytes = 0;
+  for (const name of fs.readdirSync(directory)) {
+    if (!name.startsWith(prefix)) continue;
+    const match = /^(\d+)\.[a-f0-9]+\.tmp$/.exec(name.slice(prefix.length));
+    if (!match) continue;
+    const pid = Number(match[1]);
+    if (!Number.isSafeInteger(pid) || pid <= 0) continue;
+    if (pid !== process.pid) {
+      try {
+        process.kill(pid, 0);
+        continue;
+      } catch (err) {
+        if (err.code !== 'ESRCH') continue;
+      }
+    }
+    const temporaryPath = path.join(directory, name);
+    const stat = fs.lstatSync(temporaryPath);
+    if (!stat.isFile()) continue;
+    fs.unlinkSync(temporaryPath);
+    freedBytes += stat.size;
+  }
+  return freedBytes;
+}
 
 // Persist JSON data without allocating a string and UTF-8 buffer for the entire
 // scan. Memory is bounded by the chunk size plus the largest scalar and keys list.
@@ -96,4 +128,4 @@ function writeJsonFileSync(filepath, data) {
   }
 }
 
-module.exports = { writeJsonFileSync, measureJsonBytes };
+module.exports = { writeJsonFileSync, measureJsonBytes, cleanupAbandonedJsonWrites };

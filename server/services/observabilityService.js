@@ -93,7 +93,13 @@ function persistLocalEvent({
     sentryStatus,
   };
 
-  observabilityStore.addObservabilityEvent(event);
+  try {
+    observabilityStore.addObservabilityEvent(event);
+  } catch (err) {
+    // Diagnostics must not replace the original failure or stop scan recovery.
+    serviceState.lastError = `Local event persistence failed: ${err.message}`;
+    console.warn('[OBSERVABILITY]', serviceState.lastError);
+  }
   serviceState.lastEventAt = event.timestamp;
   return event;
 }

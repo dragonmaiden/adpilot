@@ -68,3 +68,13 @@ test('captureMessage records a local observability event even when Sentry is dis
     assert.ok(service.getStatus().lastEventAt);
   });
 });
+
+test('full disk does not let diagnostic persistence replace the original scan error', async t => {
+  await withMockedObservabilityService(async service => {
+    const store = require('../server/modules/observabilityStore');
+    t.mock.method(store, 'addObservabilityEvent', () => { throw new Error('disk full'); });
+    const event = service.captureException(new Error('source failed'));
+    assert.equal(event.message, 'source failed');
+    assert.match(service.getStatus().lastError, /Local event persistence failed: disk full/);
+  });
+});

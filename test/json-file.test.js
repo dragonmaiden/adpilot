@@ -4,7 +4,27 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { writeJsonFileSync, measureJsonBytes } = require('../server/runtime/jsonFile');
+const { writeJsonFileSync, measureJsonBytes, cleanupAbandonedJsonWrites } = require('../server/runtime/jsonFile');
+
+test('startup removes only abandoned atomic-write files and preserves active writers and recovery data', t => {
+  const filepath = tempFile(t);
+  fs.writeFileSync(filepath, '{"keep":true}');
+  const abandoned = `${filepath}.999999.a123.tmp`;
+  const reusedPid = `${filepath}.${process.pid}.b123.tmp`;
+  const active = `${filepath}.999998.c123.tmp`;
+  const unrelated = `${filepath}.backup.tmp`;
+  for (const file of [abandoned, reusedPid, active, unrelated]) fs.writeFileSync(file, 'partial');
+  const symlink = `${filepath}.999999.d123.tmp`;
+  fs.symlinkSync(filepath, symlink);
+  t.mock.method(process, 'kill', pid => {
+    if (pid === 999999) throw Object.assign(new Error('not running'), { code: 'ESRCH' });
+  });
+  assert.equal(cleanupAbandonedJsonWrites(filepath), 14);
+  assert.deepEqual(JSON.parse(fs.readFileSync(filepath)), { keep: true });
+  for (const file of [active, unrelated, symlink]) assert.ok(fs.existsSync(file));
+  for (const file of [abandoned, reusedPid]) assert.equal(fs.existsSync(file), false);
+  assert.equal(cleanupAbandonedJsonWrites(filepath), 0);
+});
 
 function tempFile(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adpilot-json-'));
