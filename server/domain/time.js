@@ -1,7 +1,7 @@
 const KST_TIME_ZONE = 'Asia/Seoul';
 
-function getDatePartsInTimeZone(dateInput, timeZone = KST_TIME_ZONE) {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
+function createDateFormatter(timeZone) {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
@@ -9,7 +9,14 @@ function getDatePartsInTimeZone(dateInput, timeZone = KST_TIME_ZONE) {
     hour: '2-digit',
     hour12: false,
   });
+}
 
+// Transaction and order loops share this immutable formatter. Constructing an
+// ICU formatter per row adds synchronous CPU work and native memory pressure.
+const kstDateFormatter = createDateFormatter(KST_TIME_ZONE);
+
+function getDatePartsInTimeZone(dateInput, timeZone = KST_TIME_ZONE) {
+  const formatter = timeZone === KST_TIME_ZONE ? kstDateFormatter : createDateFormatter(timeZone);
   const parts = formatter.formatToParts(new Date(dateInput));
   const values = {};
   for (const part of parts) {

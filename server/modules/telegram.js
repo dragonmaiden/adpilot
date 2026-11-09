@@ -541,7 +541,8 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
       byDate.set(record.reportDate, record);
     }
   }
-  const candidates = [...byDate.values()];
+  // The newest chart loads the widest history; older charts can reuse its fresh payment cache.
+  const candidates = [...byDate.values()].sort((a, b) => b.reportDate.localeCompare(a.reportDate));
 
   const reports = [];
   let corrected = 0;

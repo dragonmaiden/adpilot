@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildDailyProfitChart } = require('../server/services/profitChartService');
 const { buildDailyReportCorrectionPlan } = require('../server/services/dailyTelegramReportService');
+const getPaywayFinancialSummary = require('../server/services/paywayFinancialService').getPaywayFinancialSummary;
 test.beforeEach(() => {
   test.mock.method(require('../server/services/fxService'), 'getUsdToKrwRatesForRange', async (startDate, endDate) => {
     const ratesByDate = {};
@@ -101,6 +102,45 @@ function validEnv(overrides = {}) {
     ...overrides,
   };
 }
+
+test('historical photo corrections reuse fresh containing payment history without losing any report', async t => {
+  const payway = require('../server/modules/paywayClient');
+  const financials = require('../server/services/paywayFinancialService');
+  financials.clearCache();
+  t.after(() => financials.clearCache());
+  t.mock.method(financials, 'getPaywayFinancialSummary', getPaywayFinancialSummary);
+  t.mock.method(payway, 'isConfigured', () => true);
+  const historyReads = [];
+  t.mock.method(payway, 'fetchPaymentHistory', async range => {
+    historyReads.push(range);
+    return [];
+  });
+  const dates = ['2026-04-28', '2026-04-29', '2026-04-30'];
+  const data = buildDailyReportLatestData({ cost: 8000000, shipping: 100000, costCoverageRatio: 1 });
+  for (const date of dates) {
+    data.revenueData.dailyRevenue[date] = { ...data.revenueData.dailyRevenue['2026-04-30'] };
+    data.cogsData.dailyCOGS[date] = { ...data.cogsData.dailyCOGS['2026-04-30'] };
+  }
+  const deliveredIds = [];
+  await withTelegramModule(validEnv(), async (url, options) => {
+    assert.match(url, /editMessageMedia$/);
+    deliveredIds.push(Number(options.body.get('message_id')));
+    return { ok: true, json: async () => ({ ok: true }) };
+  }, async telegram => {
+    const result = await telegram.refreshPendingDailyReports(data);
+    assert.equal(result.corrected, 3);
+    assert.equal(result.failed, 0);
+    assert.deepEqual(deliveredIds.slice().sort((a, b) => a - b), [91, 92, 93]);
+    assert.equal(historyReads.length, 2, 'one daily basis and one containing chart history, not a new history per old chart');
+    assert.deepEqual(deliveredIds, [93, 92, 91]);
+  }, { financialLedgerRepository: {
+    listPendingCogsDailyReportDeliveries: async () => ({ reports: dates.map((reportDate, index) => ({
+      reportDate, payload: 'Old estimate',
+      metadata: { telegramMessageId: 91 + index, messageType: 'photo', chartPending: true },
+    })) }),
+    recordTelegramReportDelivery: async () => ({ ok: true }),
+  } });
+});
 
 test('database outage preserves delivery, prevents duplicate sends, corrects locally and replays after recovery', async () => {
   let unavailable = true;

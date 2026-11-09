@@ -913,8 +913,6 @@ async function runScan(manual = false) {
       pushStep(scanResult, { step: 'daily_report_corrections', status: 'failed' });
     }
 
-    scanResult.stats = buildScanStats(scanStore.getLatestData(), until);
-
     const latestData = scanStore.getLatestData();
     const anySourceUpdated = Object.values(sourceStatus).some(Boolean);
 
