@@ -156,6 +156,21 @@ test('Payway fees replace the estimated fee and recalculate canonical selected p
   assert.equal(day.paymentFeesComplete, true);
 });
 
+test('missing fees affect only their day; stale data still invalidates every day', () => {
+  const rows = ['2026-07-01', '2026-07-02', '2026-07-03'].map(date => ({ date, netRevenue: 100 }));
+  const summary = { ready: true, range: { start: '2026-07-01', end: '2026-07-03' }, totals: { feesComplete: false }, daily: [
+    { date: '2026-07-01', feesComplete: true, processingFees: 7 },
+    { date: '2026-07-02', feesComplete: false, processingFees: 0 },
+  ] };
+  const days = applyPaywayFeesToFinancialDays(rows, summary);
+  assert.equal(days[0].trueNetProfit, 93);
+  assert.equal(days[1].trueNetProfit, null);
+  assert.equal(days[1].paymentFees, null);
+  assert.equal(days[2].paymentFees, 0);
+  assert.equal(days[2].trueNetProfit, 100);
+  assert.ok(applyPaywayFeesToFinancialDays(rows, { ...summary, stale: true }).every(day => day.trueNetProfit === null));
+});
+
 test('selected profit becomes unavailable when Payway fees are incomplete', () => {
   const [day] = applyPaywayFeesToFinancialDays([
     {

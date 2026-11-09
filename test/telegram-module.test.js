@@ -103,6 +103,34 @@ function validEnv(overrides = {}) {
   };
 }
 
+for (const succeeds of [true, false]) {
+  test(`text chart fallback recovers by editing the original message; success=${succeeds}`, async () => {
+    const data = buildDailyReportLatestData({ cost: 8000000, shipping: 100000, costCoverageRatio: 1 });
+    const calls = [];
+    const records = [];
+    await withTelegramModule(validEnv(), async (url, options) => {
+      calls.push(url.split('/').at(-1));
+      assert.equal(options.body.get('message_id'), '92');
+      return { ok: succeeds, json: async () => ({ ok: succeeds, description: 'edit rejected' }) };
+    }, async telegram => {
+      const result = await telegram.refreshPendingDailyReports(data);
+      assert.equal(result.corrected, succeeds ? 1 : 0);
+      assert.equal(result.failed, succeeds ? 0 : 1);
+      assert.deepEqual(calls, ['editMessageMedia']);
+      if (succeeds) {
+        assert.equal(records[0].metadata.messageType, 'photo');
+        assert.equal(records[0].metadata.chartError, null);
+        assert.equal(records[0].metadata.telegramMessageId, 92);
+      }
+    }, { financialLedgerRepository: {
+      listPendingCogsDailyReportDeliveries: async () => ({ reports: [{ reportDate: '2026-04-30',
+        payload: 'Old estimate', metadata: { telegramMessageId: 92, messageType: 'text',
+          chartError: 'Actual Payway fees are unavailable or incomplete' } }] }),
+      recordTelegramReportDelivery: async record => { records.push(record); return { ok: true }; },
+    } });
+  });
+}
+
 test('historical photo corrections reuse fresh containing payment history without losing any report', async t => {
   const payway = require('../server/modules/paywayClient');
   const financials = require('../server/services/paywayFinancialService');

@@ -427,7 +427,7 @@ async function deliverDailyReport(plan, latestData, previous = null) {
   if (getConfigurationError()) return { ok: false, description: getConfigurationError() };
   const messageId = getTelegramMessageId(previous?.metadata);
   // Legacy text reports keep their existing correction path.
-  if (messageId && previous.metadata?.messageType !== 'photo') {
+  if (messageId && previous.metadata?.messageType !== 'photo' && !previous.metadata?.chartError) {
     return editMessageText(messageId, plan.text);
   }
   let chart;
@@ -441,7 +441,7 @@ async function deliverDailyReport(plan, latestData, previous = null) {
     if (messageId) return { ok: false, description: `Chart correction unavailable: ${err.message}` };
     const deliveredText = `${plan.text}\n\nChart unavailable; summary sent as text.`;
     const result = await sendMessage(deliveredText);
-    return { ...result, deliveredText, reportMetadata: { messageType: 'text', chartError: err.message } };
+    return { ...result, deliveredText, reportMetadata: { messageType: 'text', chartPending: true, chartError: err.message } };
   }
   const reportMetadata = {
     messageType: 'photo',
@@ -535,7 +535,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
   for (const record of local) {
     byDate.delete(record.reportDate);
     if (String(record.payload).includes('N/A (COGS pending)') ||
-        record.metadata?.profitIsEstimated === true || record.metadata?.chartPending === true ||
+        record.metadata?.profitIsEstimated === true || record.metadata?.chartPending === true || record.metadata?.chartError ||
         (recentChanged && record.reportDate >= sinceDate
           && getTelegramMessageId(record.metadata))) {
       byDate.set(record.reportDate, record);
@@ -562,7 +562,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
       allowEstimated: true,
       financialDay,
     });
-    if (report.metadata?.chartPending && plan.reason === 'profit-still-pending-cogs') {
+    if ((report.metadata?.chartPending || report.metadata?.chartError) && plan.reason === 'profit-still-pending-cogs') {
       plan.shouldCorrect = true;
       plan.text = buildDailyReportMessage(plan.totals, latestData || {});
     }
@@ -576,7 +576,7 @@ async function refreshPendingDailyReports(latestData = null, options = {}) {
       continue;
     }
 
-    if (report.metadata?.messageType !== 'photo' && report.payload === plan.text) {
+    if (report.metadata?.messageType !== 'photo' && !report.metadata?.chartError && report.payload === plan.text) {
       waiting += 1;
       reports.push({ reportDate: report.reportDate, status: 'waiting', reason: 'report-unchanged' });
       continue;

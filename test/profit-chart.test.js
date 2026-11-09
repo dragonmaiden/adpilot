@@ -230,6 +230,25 @@ test('Telegram PNG uses website Summary daily, monthly and cumulative profits wi
   assert.match(plan.text, /└ Payment Fees: ₩21/);
 });
 
+test('one incomplete fee month does not erase other monthly profits or invent a cumulative total', async () => {
+  const data = fixture();
+  const financials = { ready: true, totals: { feesComplete: false }, daily: [
+    { date: '2026-01-01', feesComplete: false, processingFees: 0 },
+    { date: '2026-02-01', feesComplete: true, processingFees: 10 },
+  ] };
+  const projection = buildFinancialProjection(data);
+  const days = buildSummaryFinancialDays(projection, ['2026-01-01', '2026-02-01'], financials);
+  assert.equal(days[0].trueNetProfit, null);
+  assert.equal(days[1].paymentFees, 10);
+  const points = sumProfitDays(data, '2026-02-01', days);
+  const months = buildMonthlyProfitSeries(points, '2026-02-01');
+  assert.equal(months[0].value, null);
+  assert.equal(months[1].value, days[1].trueNetProfit);
+  const svg = buildProfitChartSvg(points, '2026-02-01');
+  assert.match(svg, /N\/A/);
+  assert.match(svg, /Earlier history excluded/);
+});
+
 test('incomplete Payway fees remain unknown and stale fees or failed FX do not fall back to estimated profit', async () => {
   const data = fixture();
   const incomplete = { ready: true, totals: { feesComplete: false }, daily: [] };
@@ -238,7 +257,10 @@ test('incomplete Payway fees remain unknown and stale fees or failed FX do not f
   assert.equal(days[0].trueNetProfit, null);
   assert.equal(sumProfitDays(data, '2026-01-01', days)[0].value, null);
   test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => incomplete);
-  await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /Payway fees are unavailable or incomplete/);
+  const chart = await buildDailyProfitChart(data, '2026-01-04');
+  assert.ok(chart.png.length > 0);
+  assert.equal(chart.pending, true);
+  await assert.rejects(require('../server/services/reportFinancialDaysService').getReportFinancialDays(data, '2026-01-04', '2026-01-04'), /Payway fees are unavailable or incomplete/);
   test.mock.method(paywayService, 'getPaywayFinancialSummary', async () => ({ ...fees, stale: true }));
   await assert.rejects(buildDailyProfitChart(data, '2026-01-04'), /Payway fees are unavailable or incomplete/);
   test.mock.method(fxService, 'getUsdToKrwRatesForRange', async () => { throw new Error('FX unavailable'); });

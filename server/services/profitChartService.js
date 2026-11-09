@@ -165,7 +165,8 @@ async function buildDailyProfitChart(data, reportDate, { unchangedFingerprint = 
   ).filter(date => date <= reportDate);
   if (!dates.length) throw new Error('No recorded financial history for chart');
   const startDate = dates[0];
-  const { days } = await getReportFinancialDays(data, startDate, reportDate);
+  // Unknown fees stay null: the chart shows gaps/N/A instead of losing every period.
+  const { days } = await getReportFinancialDays(data, startDate, reportDate, { allowIncompleteFees: true });
   const points = buildCumulativeProfitSeries(data, reportDate, days);
   if (!points.length) throw new Error('No recorded financial history for chart');
   const svg = buildProfitChartSvg(points, reportDate);

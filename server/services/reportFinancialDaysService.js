@@ -10,7 +10,7 @@ function dateKeys(startDate, endDate) {
   return dates;
 }
 
-async function getReportFinancialDays(data, startDate, endDate) {
+async function getReportFinancialDays(data, startDate, endDate, { allowIncompleteFees = false } = {}) {
   const [historicalFx, paywayFinancials] = await Promise.all([
     fxService.getUsdToKrwRatesForRange(startDate, endDate),
     paywayFinancialService.getPaywayFinancialSummary({ startDate, endDate }),
@@ -19,7 +19,7 @@ async function getReportFinancialDays(data, startDate, endDate) {
     throw new Error('Historical FX is unavailable');
   }
   if (!paywayFinancials?.ready || paywayFinancials.stale || paywayFinancials.error
-    || paywayFinancials.totals?.feesComplete !== true) {
+    || (!allowIncompleteFees && paywayFinancials.totals?.feesComplete !== true)) {
     throw new Error('Actual Payway fees are unavailable or incomplete');
   }
 
@@ -27,7 +27,7 @@ async function getReportFinancialDays(data, startDate, endDate) {
     usdToKrwRatesByDate: historicalFx.ratesByDate,
   });
   const days = buildSummaryFinancialDays(projection, dateKeys(startDate, endDate), paywayFinancials);
-  if (days.some(day => day.fxStale || !day.paymentFeesComplete)) {
+  if (days.some(day => day.fxStale || (!allowIncompleteFees && !day.paymentFeesComplete))) {
     throw new Error('Financial day has incomplete FX or Payway fees');
   }
   return { projection, days };

@@ -217,14 +217,20 @@ function buildNetPaymentChannels({
 
 function applyPaywayFeesToFinancialDays(days, paywaySummary) {
   const rows = Array.isArray(days) ? days : [];
-  const feesComplete = paywaySummary?.ready === true
-    && paywaySummary?.totals?.feesComplete === true;
+  const sourceReady = paywaySummary?.ready === true
+    && !paywaySummary.stale && !paywaySummary.error;
   const paywayByDate = new Map(
     (Array.isArray(paywaySummary?.daily) ? paywaySummary.daily : [])
       .map(row => [row.date, row])
   );
 
   return rows.map(day => {
+    const paymentDay = paywayByDate.get(day.date);
+    // A successful bounded history read proves zero fees on a day with no transactions.
+    const coveredQuietDay = !paymentDay && Array.isArray(paywaySummary?.daily)
+      && day.date >= paywaySummary?.range?.start && day.date <= paywaySummary?.range?.end;
+    const feesComplete = sourceReady && (coveredQuietDay || (paymentDay?.feesComplete
+      ?? paywaySummary?.totals?.feesComplete) === true);
     if (!feesComplete) {
       return {
         ...day,
