@@ -1,16 +1,15 @@
 const fs = require('fs');
 const path = require('path');
 const runtimePaths = require('../runtime/paths');
-const { writeJsonFileSync } = require('../runtime/jsonFile');
+const { writeJsonFileSync, writeJsonFile } = require('../runtime/jsonFile');
+const { SCAN_FILES } = require('../runtime/scanFiles');
 
 const DATA_DIR = runtimePaths.dataDir;
 const SNAPSHOT_DIR = path.join(DATA_DIR, 'snapshots');
 const MAX_SCAN_HISTORY = 100;
-const LATEST_SCAN_FILE = 'latest_scan.json';
-const LATEST_DATA_FILE = 'latest_data.json';
-const SCAN_HISTORY_FILE = 'scan_history.json';
-const LAST_SUCCESSFUL_IMWEB_ORDERS_FILE = 'last_successful_imweb_orders.json';
-const LAST_SUCCESSFUL_REVENUE_FILE = 'last_successful_revenue.json';
+const { latestScan: LATEST_SCAN_FILE, latestData: LATEST_DATA_FILE,
+  history: SCAN_HISTORY_FILE, imwebOrders: LAST_SUCCESSFUL_IMWEB_ORDERS_FILE,
+  revenue: LAST_SUCCESSFUL_REVENUE_FILE } = SCAN_FILES;
 const SOURCE_KEYS = ['metaStructure', 'metaInsights', 'imweb', 'cogs'];
 
 function createSourceState() {
@@ -290,14 +289,14 @@ function hydrateLatestDataFromImwebBackup(latestData) {
   });
 }
 
-function saveLastSuccessfulImwebData({ orders, revenueData }) {
+async function saveLastSuccessfulImwebData({ orders, revenueData }) {
   const normalizedOrders = asArray(orders);
   if (normalizedOrders.length > 0) {
-    saveData(LAST_SUCCESSFUL_IMWEB_ORDERS_FILE, normalizedOrders);
+    await writeJsonFile(path.join(DATA_DIR, LAST_SUCCESSFUL_IMWEB_ORDERS_FILE), normalizedOrders);
   }
 
   if (hasUsableRevenueData(revenueData)) {
-    saveData(LAST_SUCCESSFUL_REVENUE_FILE, {
+    await writeJsonFile(path.join(DATA_DIR, LAST_SUCCESSFUL_REVENUE_FILE), {
       revenueData,
       timestamp: new Date().toISOString(),
     });
@@ -489,14 +488,14 @@ function setIsScanning(isScanning) {
   return state.isScanning;
 }
 
-function saveLatestArtifacts(scanResult) {
-  saveData(LATEST_SCAN_FILE, scanResult);
-  saveLatestData();
+async function saveLatestArtifacts(scanResult) {
+  await writeJsonFile(path.join(DATA_DIR, LATEST_SCAN_FILE), scanResult);
+  await saveLatestData();
 }
 
-function saveLatestData() {
+async function saveLatestData() {
   console.log('[MEMORY] latest_data write start', process.memoryUsage());
-  saveData(LATEST_DATA_FILE, {
+  await writeJsonFile(path.join(DATA_DIR, LATEST_DATA_FILE), {
     ...state.latestData,
     timestamp: new Date().toISOString(),
   });

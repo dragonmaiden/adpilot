@@ -50,9 +50,9 @@ function pushError(scanResult, step, err) {
 
 // Projection persistence is not a source fetch. Keep refreshing independent
 // sources when storage fails, but retain the failure in the scan result.
-function persistCheckpoint(scanResult) {
+async function persistCheckpoint(scanResult) {
   try {
-    scanStore.saveLatestData();
+    await scanStore.saveLatestData();
   } catch (err) {
     pushError(scanResult, 'checkpoint', err);
     console.warn('[SCHEDULER] Checkpoint failed:', err.message);
@@ -134,7 +134,7 @@ async function refreshFxRate(scanResult) {
       stale: false,
     };
     scanStore.patchLatestData({ fx: storedFx });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
     pushStep(scanResult, {
       step: 'fx_rate',
       status: 'ok',
@@ -158,7 +158,7 @@ async function refreshFxRate(scanResult) {
       lastError: err.message,
     };
     scanStore.patchLatestData({ fx: fallbackFx });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
     pushError(scanResult, 'fx_rate', err);
     pushStep(scanResult, {
       step: 'fx_rate',
@@ -222,7 +222,7 @@ async function fetchMetaStructure(scanResult) {
     markSourceSuccess('metaStructure', attemptedAt, {
       hasData: campaigns.length > 0 || adSets.length > 0 || ads.length > 0,
     });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
 
     pushStep(scanResult, {
       step: 'meta_structure',
@@ -255,7 +255,7 @@ async function fetchMetaStructure(scanResult) {
     markSourceFailure('metaStructure', attemptedAt, err, {
       hasData: (latestData.campaigns || []).length > 0 || (latestData.adSets || []).length > 0 || (latestData.ads || []).length > 0,
     });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
     return { ok: false, error: err.message };
   }
 }
@@ -280,7 +280,7 @@ async function fetchMetaInsights(scanResult, since, until) {
     markSourceSuccess('metaInsights', attemptedAt, {
       hasData: campaignInsights.length > 0 || adInsights.length > 0,
     });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
 
     pushStep(scanResult, {
       step: 'meta_insights',
@@ -330,7 +330,7 @@ async function fetchMetaInsights(scanResult, since, until) {
     markSourceFailure('metaInsights', attemptedAt, err, {
       hasData: (latestData.campaignInsights || []).length > 0 || (latestData.adInsights || []).length > 0,
     });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
     return { ok: false, error: err.message, adSince };
   }
 }
@@ -346,11 +346,11 @@ async function fetchImwebOrders(scanResult) {
 
     const revenueData = imweb.processOrders(orders);
     scanStore.patchLatestData({ orders, revenueData });
-    scanStore.saveLastSuccessfulImwebData({ orders, revenueData });
+    await scanStore.saveLastSuccessfulImwebData({ orders, revenueData });
     markSourceSuccess('imweb', attemptedAt, {
       hasData: Boolean(revenueData) || orders.length > 0,
     });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
 
     pushStep(scanResult, {
       step: 'imweb_orders',
@@ -379,7 +379,7 @@ async function fetchImwebOrders(scanResult) {
     markSourceFailure('imweb', attemptedAt, err, {
       hasData: Boolean(latestData.revenueData) || (latestData.orders || []).length > 0,
     });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
     return { ok: false, error: err.message };
   }
 }
@@ -394,7 +394,7 @@ async function fetchCogs(scanResult) {
     markSourceSuccess('cogs', attemptedAt, {
       hasData: Boolean(cogsData),
     });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
 
     pushStep(scanResult, {
       step: 'cogs_sheets',
@@ -421,7 +421,7 @@ async function fetchCogs(scanResult) {
     markSourceFailure('cogs', attemptedAt, err, {
       hasData: Boolean(latestData.cogsData),
     });
-    persistCheckpoint(scanResult);
+    await persistCheckpoint(scanResult);
     return { ok: false, error: err.message };
   }
 }
@@ -814,7 +814,7 @@ async function runScan(manual = false) {
         usdToKrwRate: fx.usdToKrwRate,
       });
       scanStore.patchLatestData({ economicsLedger });
-      persistCheckpoint(scanResult);
+      await persistCheckpoint(scanResult);
       pushStep(scanResult, {
         step: 'economics_ledger',
         status: 'ok',
@@ -853,7 +853,7 @@ async function runScan(manual = false) {
         latestData,
       });
       scanStore.patchLatestData({ sourceAudit });
-      persistCheckpoint(scanResult);
+      await persistCheckpoint(scanResult);
       scanResult.sourceAudit = {
         status: sourceAudit.status,
         summary: sourceAudit.summary,
@@ -920,7 +920,7 @@ async function runScan(manual = false) {
 
     if (anySourceUpdated) {
       try {
-        snapshotRepository.saveSnapshot(scanId, {
+        await snapshotRepository.saveSnapshot(scanId, {
           campaigns: latestData.campaigns,
           adSets: latestData.adSets,
           ads: latestData.ads,
@@ -980,7 +980,7 @@ async function runScan(manual = false) {
       : 'failed';
 
     try {
-      scanStore.saveLatestArtifacts(scanResult);
+      await scanStore.saveLatestArtifacts(scanResult);
     } catch (err) {
       console.warn('[SCHEDULER]   ⚠ Failed to persist latest scan artifacts:', err.message);
     }

@@ -3,8 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { writeJsonFileSync, measureJsonBytes, cleanupAbandonedJsonWrites } = require('../server/runtime/jsonFile');
+const { spawnSync, spawn } = require('node:child_process');
+const { once } = require('node:events');
+const http = require('node:http');
+const { writeJsonFile, writeJsonFileSync, measureJsonBytes, cleanupAbandonedJsonWrites } = require('../server/runtime/jsonFile');
 
 test('startup removes only abandoned atomic-write files and preserves active writers and recovery data', t => {
   const filepath = tempFile(t);
@@ -31,6 +33,94 @@ function tempFile(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return path.join(dir, 'data.json');
 }
+
+test('large checkpoint writes keep HTTP health requests responsive', async t => {
+  const filepath = tempFile(t);
+  const server = http.createServer((req, res) => res.end('ok'));
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  let completed = false;
+  const data = { rows: Array.from({ length: 20000 }, (_, id) => ({ id, cost: 123, payload: 'x'.repeat(1024) })) };
+  const writing = writeJsonFile(filepath, data).then(() => { completed = true; });
+  let responsesDuringWrite = 0;
+  while (!completed) {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}`, { signal: AbortSignal.timeout(1000) });
+    assert.equal(await response.text(), 'ok');
+    if (!completed) responsesDuringWrite++;
+  }
+  await writing;
+  assert.ok(responsesDuringWrite > 1, 'health must respond during serialization, not just afterward');
+  assert.deepEqual(JSON.parse(fs.readFileSync(filepath)), data);
+});
+
+test('SIGKILL during each checkpoint type recovers on real startup without touching valid or unrelated files', { timeout: 20000 }, async t => {
+  const dataDir = path.dirname(tempFile(t));
+  fs.mkdirSync(path.join(dataDir, 'snapshots'));
+  const files = ['latest_data.json', 'latest_scan.json', 'scan_history.json',
+    'last_successful_imweb_orders.json', 'last_successful_revenue.json',
+    ...['meta_structure', 'meta_insights', 'imweb_orders', 'normalized'].map(part => `snapshots/123_${part}.json`)];
+  const writer = require.resolve('../server/runtime/jsonFile');
+  for (const name of files) {
+    const filepath = path.join(dataDir, name);
+    fs.writeFileSync(filepath, '{"keep":"valid"}');
+    const child = spawn(process.execPath, ['-e', `
+      const { writeJsonFile } = require(${JSON.stringify(writer)});
+      writeJsonFile(${JSON.stringify(filepath)}, { padding: 'x'.repeat(200000), barrier: {
+        toJSON() { process.stdout.write('READY'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0); }
+      }});
+    `], { stdio: ['ignore', 'pipe', 'pipe'] });
+    t.after(() => child.kill('SIGKILL'));
+    const exit = once(child, 'exit');
+    const ready = await Promise.race([once(child.stdout, 'data'), exit.then(() => { throw Error('Writer exited before barrier'); })]);
+    assert.match(ready[0].toString(), /READY/);
+    const partial = fs.readdirSync(path.dirname(filepath)).find(name => name.startsWith(`${path.basename(filepath)}.${child.pid}.`));
+    assert.ok(partial && fs.statSync(path.join(path.dirname(filepath), partial)).size > 0);
+    child.kill('SIGKILL');
+    assert.equal((await exit)[1], 'SIGKILL');
+    assert.deepEqual(JSON.parse(fs.readFileSync(filepath)), { keep: 'valid' });
+  }
+  fs.writeFileSync(path.join(dataDir, 'payment_state.json.999999.abc.tmp'), 'preserve');
+  const restart = spawnSync(process.execPath, ['-e', `
+    const configPath = require.resolve(${JSON.stringify(require.resolve('../server/config'))});
+    require.cache[configPath] = { exports: { paths: { defaultDataDir: ${JSON.stringify(dataDir)} } } };
+    const paths = require(${JSON.stringify(require.resolve('../server/runtime/paths'))});
+    if (paths.usedFallback) process.exit(2);
+  `], { encoding: 'utf8', timeout: 5000 });
+  assert.equal(restart.status, 0, restart.stderr);
+  for (const name of files) assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, name))), { keep: 'valid' });
+  assert.deepEqual(fs.readdirSync(dataDir).filter(name => name.endsWith('.tmp')), ['payment_state.json.999999.abc.tmp']);
+  assert.equal(fs.readdirSync(path.join(dataDir, 'snapshots')).filter(name => name.endsWith('.tmp')).length, 0);
+  for (const name of files) {
+    await writeJsonFile(path.join(dataDir, name), { recovered: true });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataDir, name))), { recovered: true });
+  }
+});
+
+test('async checkpoint handles short writes and preserves recovery on disk-full and encoding errors', async t => {
+  const filepath = tempFile(t);
+  const open = fs.promises.open.bind(fs.promises);
+  let fail = false;
+  t.mock.method(fs.promises, 'open', async (...args) => {
+    const file = await open(...args);
+    const write = file.write.bind(file);
+    let writes = 0;
+    file.write = (buffer, offset, length) => {
+      if (fail && ++writes > 1) return Promise.reject(Object.assign(new Error('disk full'), { code: 'ENOSPC' }));
+      return write(buffer, offset, Math.min(length, 7));
+    };
+    return file;
+  });
+  const valid = { total: 12345, name: '슈에' };
+  await writeJsonFile(filepath, valid);
+  assert.deepEqual(JSON.parse(fs.readFileSync(filepath)), valid);
+  fail = true;
+  await assert.rejects(writeJsonFile(filepath, { total: 987654321 }), { code: 'ENOSPC' });
+  fail = false;
+  await assert.rejects(writeJsonFile(filepath, { total: 1n }), TypeError);
+  assert.deepEqual(JSON.parse(fs.readFileSync(filepath)), valid);
+  assert.deepEqual(fs.readdirSync(path.dirname(filepath)), ['data.json']);
+});
 
 test('bounded JSON preserves financial data and native JSON encoding semantics', t => {
   const filepath = tempFile(t);
@@ -82,7 +172,7 @@ test('short writes are completed and ENOSPC keeps the last successful recovery c
   assert.deepEqual(fs.readdirSync(path.dirname(filepath)), ['data.json']);
 });
 
-test('scan store persists and reloads every projection and Imweb backup without whole-document stringify', t => {
+test('scan store persists and reloads every projection and Imweb backup without whole-document stringify', async t => {
   const filepath = tempFile(t);
   const storePath = require.resolve('../server/modules/scanStore');
   const pathsPath = require.resolve('../server/runtime/paths');
@@ -111,8 +201,8 @@ test('scan store persists and reloads every projection and Imweb backup without 
     assert.ok(value === null || typeof value !== 'object', 'persistence must not stringify an entire collection');
     return stringify(value);
   });
-  store.saveLatestData();
-  store.saveLastSuccessfulImwebData(projection);
+  await store.saveLatestData();
+  await store.saveLastSuccessfulImwebData(projection);
   delete require.cache[storePath];
   const restarted = require(storePath);
   for (const [key, value] of Object.entries(projection)) assert.deepEqual(restarted.getLatestData()[key], value);

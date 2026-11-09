@@ -19,7 +19,7 @@ test('a failed checkpoint does not prevent a fresh COGS read and reports persist
   t.mock.method(store, 'saveLatestData', () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); });
   t.mock.method(cogs, 'fetchAllCOGS', async () => ({ totalCOGS: 123, totalShipping: 4, itemCount: 1, orderCount: 1, orders: [] }));
   const scan = { steps: [], errors: [] };
-  __private.persistCheckpoint(scan);
+  await __private.persistCheckpoint(scan);
   const result = await __private.fetchCogs(scan);
   assert.equal(result.ok, true);
   assert.equal(store.getLatestData().cogsData.totalCOGS, 123);

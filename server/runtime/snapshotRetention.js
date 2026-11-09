@@ -71,4 +71,4 @@ function pruneSnapshots(dataDir, { maxScanSets = getMaxSnapshotScanSets(), reser
   };
 }
 
-module.exports = { getMaxSnapshotScanSets, getMaxSnapshotBytes, listSnapshotSets, pruneSnapshots };
+module.exports = { SNAPSHOT_FILE, getMaxSnapshotScanSets, getMaxSnapshotBytes, listSnapshotSets, pruneSnapshots };

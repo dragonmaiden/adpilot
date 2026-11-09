@@ -68,7 +68,7 @@ test('saveSnapshot prunes old scan sets before writing new snapshots', async () 
       dataDir,
       logDir: path.join(dataDir, 'logs'),
     }, async repository => {
-      repository.saveSnapshot('5000', {
+      await repository.saveSnapshot('5000', {
         revenueData: { totalRevenue: 1 },
       });
     });
@@ -99,16 +99,16 @@ test('saveSnapshot retries after ENOSPC by pruning more aggressively', async () 
       );
     }
 
-    const originalRenameSync = fs.renameSync;
+    const originalRename = fs.promises.rename;
     let firstWrite = true;
-    fs.renameSync = (temporaryPath, filepath) => {
+    fs.promises.rename = (temporaryPath, filepath) => {
       if (firstWrite && String(filepath).includes('5000_normalized.json')) {
         firstWrite = false;
         const error = new Error('disk full');
         error.code = 'ENOSPC';
         throw error;
       }
-      return originalRenameSync(temporaryPath, filepath);
+      return originalRename(temporaryPath, filepath);
     };
 
     try {
@@ -116,12 +116,12 @@ test('saveSnapshot retries after ENOSPC by pruning more aggressively', async () 
         dataDir,
         logDir: path.join(dataDir, 'logs'),
       }, async repository => {
-        repository.saveSnapshot('5000', {
+        await repository.saveSnapshot('5000', {
           revenueData: { totalRevenue: 1 },
         });
       });
     } finally {
-      fs.renameSync = originalRenameSync;
+      fs.promises.rename = originalRename;
     }
 
     assert.deepEqual(listSnapshotScanIds(dataDir), ['3000', '4000', '5000']);
@@ -147,7 +147,7 @@ test('saveSnapshot sizes and persists a complete recovery projection without who
     dataDir,
     logDir: path.join(dataDir, 'logs'),
   }, async repository => {
-    repository.saveSnapshot('5000', {
+    await repository.saveSnapshot('5000', {
       campaigns: [{ id: 'c1' }],
       adSets: [{ id: 'a1' }],
       ads: [{ id: 'ad1' }],
@@ -195,11 +195,11 @@ test('oversized snapshot is refused without replacing the latest recovery copy',
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
   await withMockedSnapshotRepository({ dataDir }, async repository => {
-    assert.throws(() => repository.saveSnapshot('5000', { orders: [{ data: 'x'.repeat(100) }] }), /preserve disk headroom/);
+    await assert.rejects(() => repository.saveSnapshot('5000', { orders: [{ data: 'x'.repeat(100) }] }), /preserve disk headroom/);
     assert.deepEqual(listSnapshotScanIds(dataDir), ['4000']);
     assert.deepEqual(repository.getSnapshot('4000').data.normalized, { keep: true });
-    assert.throws(() => repository.saveSnapshot('../bad', { orders: [] }), /Invalid snapshot/);
-    assert.throws(() => repository.saveSnapshot('4000', { revenueData: {} }), /refusing to overwrite/);
+    await assert.rejects(() => repository.saveSnapshot('../bad', { orders: [] }), /Invalid snapshot/);
+    await assert.rejects(() => repository.saveSnapshot('4000', { revenueData: {} }), /refusing to overwrite/);
   });
 });
 
@@ -209,15 +209,15 @@ test('repeated disk-full writes remove only the failed new set and preserve the 
   fs.mkdirSync(snapshotDir);
   fs.writeFileSync(path.join(snapshotDir, '4000_normalized.json'), '{"keep":true}');
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
-  const original = fs.renameSync;
-  t.mock.method(fs, 'renameSync', (temporaryPath, filepath) => {
+  const original = fs.promises.rename;
+  t.mock.method(fs.promises, 'rename', (temporaryPath, filepath) => {
     if (String(filepath).endsWith('5000_normalized.json')) {
       throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
     }
     return original(temporaryPath, filepath);
   });
   await withMockedSnapshotRepository({ dataDir }, async repository => {
-    assert.throws(() => repository.saveSnapshot('5000', { orders: [], revenueData: {} }), /disk full/);
+    await assert.rejects(() => repository.saveSnapshot('5000', { orders: [], revenueData: {} }), /disk full/);
     assert.deepEqual(listSnapshotScanIds(dataDir), ['4000']);
     assert.deepEqual(repository.getSnapshot('4000').data.normalized, { keep: true });
   });

@@ -103,6 +103,47 @@ function measureJsonBytes(data) {
   return bytes;
 }
 
+async function measureJsonBytesAsync(data) {
+  let bytes = 0;
+  for (const chunk of jsonChunks(data)) {
+    bytes += Buffer.byteLength(chunk);
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  return bytes;
+}
+
+// Large scan projections must yield between chunks so health checks and payment
+// polling continue. Await the rename before reporting persistence success.
+async function writeJsonFile(filepath, data) {
+  const temporaryPath = `${filepath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+  let file;
+  try {
+    file = await fs.promises.open(temporaryPath, 'wx', 0o600);
+    for (const chunk of jsonChunks(data)) {
+      const buffer = Buffer.from(chunk);
+      let offset = 0;
+      while (offset < buffer.length) {
+        const { bytesWritten } = await file.write(buffer, offset, buffer.length - offset);
+        if (bytesWritten === 0) throw new Error('JSON file write made no progress');
+        offset += bytesWritten;
+      }
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    await file.sync();
+    await file.close();
+    file = undefined;
+    await fs.promises.rename(temporaryPath, filepath);
+  } finally {
+    try {
+      if (file) await file.close();
+    } finally {
+      await fs.promises.unlink(temporaryPath).catch(err => {
+        if (err.code !== 'ENOENT') throw err;
+      });
+    }
+  }
+}
+
 function writeJsonFileSync(filepath, data) {
   const temporaryPath = `${filepath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
   let fd;
@@ -128,4 +169,4 @@ function writeJsonFileSync(filepath, data) {
   }
 }
 
-module.exports = { writeJsonFileSync, measureJsonBytes, cleanupAbandonedJsonWrites };
+module.exports = { writeJsonFile, writeJsonFileSync, measureJsonBytes, measureJsonBytesAsync, cleanupAbandonedJsonWrites };

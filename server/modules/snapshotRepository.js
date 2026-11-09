@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const runtimePaths = require('../runtime/paths');
-const { writeJsonFileSync, measureJsonBytes } = require('../runtime/jsonFile');
+const { writeJsonFile, measureJsonBytesAsync } = require('../runtime/jsonFile');
 const { getMaxSnapshotScanSets, pruneSnapshots } = require('../runtime/snapshotRetention');
 
 const SNAP_DIR = path.join(runtimePaths.dataDir, 'snapshots');
@@ -12,9 +12,9 @@ function ensureSnapshotDir() {
   }
 }
 
-function saveSnapshotFile(filename, data) {
+async function saveSnapshotFile(filename, data) {
   const filepath = path.join(SNAP_DIR, filename);
-  writeJsonFileSync(filepath, data);
+  await writeJsonFile(filepath, data);
 }
 
 function cleanupSnapshots(maxScanSets = getMaxSnapshotScanSets()) {
@@ -66,14 +66,15 @@ function snapshotParts(scanId, snapshotData) {
   return parts;
 }
 
-function saveSnapshot(scanId, snapshotData) {
+async function saveSnapshot(scanId, snapshotData) {
   if (!/^\d+$/.test(String(scanId))) throw new Error('Invalid snapshot scan ID');
   ensureSnapshotDir();
   const parts = snapshotParts(scanId, snapshotData);
   if (parts.some(part => fs.existsSync(path.join(SNAP_DIR, part.filename)))) {
     throw new Error('Snapshot already exists; refusing to overwrite recovery data');
   }
-  const reservedBytes = parts.reduce((total, part) => total + measureJsonBytes(part.data), 0);
+  let reservedBytes = 0;
+  for (const part of parts) reservedBytes += await measureJsonBytesAsync(part.data);
   const maxScanSets = getMaxSnapshotScanSets();
   const prepare = limit => {
     const storage = pruneSnapshots(runtimePaths.dataDir, { maxScanSets: limit, reservedBytes });
@@ -86,7 +87,7 @@ function saveSnapshot(scanId, snapshotData) {
   prepare(Math.max(1, maxScanSets - 1));
 
   try {
-    for (const part of parts) saveSnapshotFile(part.filename, part.data);
+    for (const part of parts) await saveSnapshotFile(part.filename, part.data);
   } catch (err) {
     // Remove only this failed new set, never an existing recovery set or workflow file.
     for (const part of parts) {
@@ -101,7 +102,7 @@ function saveSnapshot(scanId, snapshotData) {
     console.warn(`[SCHEDULER] Snapshot disk full — pruning to ${retryMaxSets} scan sets and retrying save`);
     prepare(retryMaxSets);
     try {
-      for (const part of parts) saveSnapshotFile(part.filename, part.data);
+      for (const part of parts) await saveSnapshotFile(part.filename, part.data);
     } catch (retryError) {
       for (const part of parts) {
         const filepath = path.join(SNAP_DIR, part.filename);

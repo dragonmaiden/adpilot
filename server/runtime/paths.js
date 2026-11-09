@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const { pruneSnapshots } = require('./snapshotRetention');
-const { cleanupAbandonedJsonWrites } = require('./jsonFile');
+const { cleanupAbandonedScanWrites } = require('./scanFiles');
 
 const STARTUP_RECOVERY_SCAN_SETS = 24;
 
@@ -73,9 +73,9 @@ const configuredDataDir = config.paths.defaultDataDir;
 const fallbackDataDir = path.join(__dirname, '..', 'data');
 
 // Recover disk headroom before the write probe can select a fallback data path.
-// Only the observed disposable checkpoint temp files are in scope.
+// Never remove committed recovery data or unrelated workflow files.
 try {
-  const freedBytes = cleanupAbandonedJsonWrites(path.join(configuredDataDir, 'latest_data.json'));
+  const freedBytes = cleanupAbandonedScanWrites(configuredDataDir);
   if (freedBytes) console.log(`[STORAGE] Removed abandoned checkpoint writes; freed ${freedBytes} bytes`);
 } catch (err) {
   console.warn('[STORAGE] Abandoned checkpoint cleanup failed:', err.message);
